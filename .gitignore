@@ -119,6 +119,11 @@ scripts/*.js
 !scripts/ccg-review-decider.js
 !scripts/plan-review.sh
 !scripts/deep-review.sh
+# 证据锚写入侧本体。同上一条理由：第 106 行 scripts/*.js 会**静默忽略**新建脚本 ——
+# 它在盘上、CI 上不存在，而 deep-review.sh 收口时 `node scripts/ccg-record-ledger.js` 会直接
+# MODULE_NOT_FOUND，表现为「评审跑完了但台账永远没字段」，判据于是对所有 dual PR 报欠账假红。
+# 测试文件不单独反选：第 207 行 !scripts/*.test.js 的通用例外已兜住。
+!scripts/ccg-record-ledger.js
 !scripts/openspec-sync-check.js
 # Gate 9 覆盖审计的 PR 画像判据（2026-10-12，change: gate9-scope-fix）。
 # ⚠ 同 #3011 同族：`scripts/*.js` 会把门禁本体静默忽略掉 —— 实测三个 commit 反复 CI 红，

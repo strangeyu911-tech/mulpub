@@ -114,6 +114,7 @@ scripts/*.js
 # 测试文件不单独反选 —— 第 204 行 !scripts/*.test.js 的通用例外已兜住（同上方各条注释口径）。
 !scripts/check-precommit-spawn-budget.js
 !scripts/quality-rhythm-wrapper.js
+!scripts/ccg-artifact-shape-survey.js
 !scripts/ccg-gate.js
 !scripts/ccg-deep-review.js
 !scripts/ccg-review-decider.js

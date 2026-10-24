@@ -1,0 +1,125 @@
+{
+  "sha": "30a4cce9ad660fe7fba45c394b0139a95966ffe1",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 421 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 421,
+    "fileCount": 9,
+    "codeFileCount": 4,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "f2281b64c547c24afeeb17fc1ba8ebe9345a88337a88be4924ed4513734eee84",
+  "decidedAt": "2026-10-24T21:15:41.536Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "n32 mutation allows unguarded vendor load; sandboxEnv is env-only. checkSideEffects detects writes after the fact but cannot prevent .ccg/.adversarial overwrite by malicious module-level execution.",
+        "highRiskDomains": [],
+        "prosecution": "反证里 n32 摘掉的正是\"不许 require 未守卫驱动\"那道闸；只要本机装了 vendor，那一轮就会真的把别人的评审流水线跑起来并覆写 `.ccg/reviews/*.json`。`checkSideEffects` 是**事后**体检，它只能在跑完之后说\"这里有新脏文件\"，不能让覆写没发生。",
+        "defense": "两条否证，都是当场重取的读数（取证脚本一次性，等价判据在仓内 A24 + n39/n40/n41）：① **反证运行态见不到真 vendor**：驱动把每一轮套件的 env 设成 `sandboxEnv()`（`CCG_ARL_DIR`/`HOME`/`USERPROFILE` 同指一个空临时目录），`locateVendor()` 恒 null ⇒ 探针 rc=2。实测：在同样那份沙箱 env 里跑 `node scripts/ccg-convergence-probe.js --json` ⇒ `rc=2`、stderr 命中「探针失明」、stdout **不是可解析 JSON**（失明档不输出结论行）。所以 n32 那一轮根本没有\"可被 require 的驱动\"，主张描述的现场在反证里不可达。② 主张的另一半「一份被判 ok 的驱动仍可在加载期写文件」**不属本支引入，且已作为边界登记**（执行记录遗留 9 的\"残留\"段 + 遗留 10），正解是子进程隔离 —— 而那等于以\"探测\"之名真的把别人的评审流水线跑起来（多花一遍时长、覆写别人的判定产物、`.adversarial` 再多一轮），代价方向与判据相反。本轮新增的第二道闸也已经落过：`checkSideEffects` 让\"写了之后\"不可能被读成通过（本支一次全量跑中途被我并发写仓库绊到，当场 `PROBLEM id=side-effects` + `RESULT=FAIL` —— 这正是要的形状）。",
+        "verdict": "dismissed",
+        "rationale": "可达性被沙箱读数否证（rc=2 / stdout 不可解析），剩余真实边界已在遗留 9/10 显式登记并给出为什么不采纳子进程隔离的理由；采纳的那一半（防不住的必须可见）已在本支落地且有实测现场。引用：`scripts/qm6-exit-capabilities.mutation.js` 的 `sandboxEnv()`/`checkSideEffects()`、A24（含\"沙箱内探针必须 rc=2 才允许开跑\"的开工自证）、n39-n41。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "Self-written .ccg/reviews/*.json claims tier=external signed by tool 水位出口; performedBy=self-play means no independent reviewer verifies findings, making adversarial review circular.",
+        "highRiskDomains": [],
+        "prosecution": "产物写 `tier=external` 却 `performedBy=self-play`。外部评审的全部意义在于\"第二双眼睛\"，自扮演签出来的 external 是循环论证：判据看 external 就放行，而 external 由同一次会话写。",
+        "defense": "这条主张打的是**机制本身**，不是本支的实现 —— 水位出口（`tierBasis=adjudicated-self-play`）是 #4308 经用户裁决落地的既有能力，本支只是第二次真的用它。三条\"它不是循环\"的现场：① 它**不伪装**：`tierBasis` 与 `adjudicationDigest` 都写进产物，本支实测`scripts/ccg-review-writeback.js` 里 `tierBasis` 出现 3 次、`adjudicated-self-play` 出现 2 次，读数侧 `TIER-COVERAGE` 分档打印且 `external(直签)+external(自扮演复核)==external` 由锁钉住（#4308）；② 它的**对第三方负责的载体是公开的**：`evidence` 必须是 `https://github.com/<owner>/<repo>/pull/<n>#issuecomment-<id>`，任何人点开能看见 critique 原文与逐条处置 —— 不是\"我自己说我审过了\"；③ 合取缺一件就拒签且点名（`no-adjudication-evidence` / `backend-mismatch` / `verdicts-incomplete` 等），本支这一轮就先是 `reason=not-closed`（裁决未填 ⇒ 不写回），填完才签。至于\"应当由真跨家族后端签\"—— 那是 #4304 拆闸那一刀的判据（本支是探测器，不动闸门语义），并且额度/后端不可得是本仓实测过的现实（记忆「QM-6 后端不可得要分四档」）。",
+        "verdict": "dismissed",
+        "rationale": "对本支的指控不成立：本支没有改 tier 判定语义，只是按既有合取用了一次。其真实关切（自扮演签出的 external 是否足以替代第二双眼睛）已在执行记录遗留 2 与 #4304 的顺序合同里作为**待裁决的机制问题**登记，不在本刀偷偷定案。产物侧可读回的区分字段是 `tierBasis`，本条 rationale 也如实写明 `performedBy=self-play`（未改名、未美化）。"
+      },
+      {
+        "id": "i4",
+        "severity": "High",
+        "finding": "Freeze array for BEHAVIORAL_SKIP_REASONS; mutation n30 edits source literal directly. Runtime freeze does not block source mutation; defense relies only on test assertions (A21).",
+        "highRiskDomains": [],
+        "prosecution": "冻结数组挡的是运行时 `.push`，挡不住\"把源码里那条字面量改掉\"；n30 直接改源级字面量 ⇒ 真正的防线只剩 A21 的断言，评审建议补一道源级完整性检查。",
+        "defense": "\"只剩断言\"这句不成立，源级那一道**已经存在并且是两把**：① A22 扫四个消费文件，断言这条枚举字面量**只出现在读数器那一条表定义里**（`owners` 必须逐字等于只含 `scripts/qm6-exit-capabilities.js` 的那一个元素），并带一条正控证明它真能被内联抓到；② n30 就是源级改写的靶子 —— 本支终跑读数原文：`CAUGHT  n30 把 no-exports 混进「按设计的跳过」表 ⇒ 真失明被读成「这台机器没装引擎」，P11 那条 rc=1 就此失效`。运行时冻结那一层是**额外**的（它的价值在挡住\"消费方顺手扩一档\"，A21 里还有一条实测记录`Object.freeze(new Set())` 之后 `.add` 照旧生效 —— 那条正是为什么不用 Set）。三层不是替代关系，本支的注释与执行记录都写明\"别因为有 freeze 就删断言\"。",
+        "verdict": "dismissed",
+        "rationale": "评审建议的\"源级完整性检查\"= A22（存在性/单一实现锁）+ n30（源级改写靶子），两者都在仓内且本支刚被 n30 实测 CAUGHT。追加一句边界：n30 只覆盖**这条字面量**被改的情形；若有人新增一个 `isBehavioralSkip` 的第二实现（不改表），A22 的另一条断言（探针只准调 `isBehavioralSkip(`、不得直接摸表）负责那一格 —— 已在 A22 里。"
+      },
+      {
+        "id": "i3",
+        "severity": "High",
+        "finding": "Loadability uses regex heuristics instead of AST parser; 7 mutations (n43-n49) test each strip step, indicating high fragility and maintenance burden.",
+        "highRiskDomains": [],
+        "prosecution": "判据是启发式而非解析器；需要七条靶子（n43-n49）逐段证明，本身就说明它脆。评审建议换成轻量 AST/tokenizer。",
+        "defense": "两点。① **方向已经反转，脆的方向因此是安全的那一侧**：现在的形状是删除式 —— 只剥掉已证明不执行的部分，剥不动就整体拒绝（`unparsable-driver`）。所以\"脆\"的失败模式是少一路读数且**出声**，不是放行。七条靶子逐段摘（本支终跑 `n43`-`n49` 全 CAUGHT=7/7）不是脆弱的证据，是\"每一段剥离都真的有牙\"的证据 —— 没有它们才是装饰性判据。② 引入 AST 的代价本支实测过一条同类：仓内没有第二个可复用的 JS 解析器（`vm` 那条路已被否证并记在 design §1.2 第 1 条），把探测器升级成解析器会把\"探测失败\"变成\"解析器自己崩\"，而这条判据是**每次收口都要跑**的常驻件。真正的修法在 vendor 侧导出\"我可否被安全加载\"这张表 —— 属 #4304 的接口设计，已记在遗留 11/12。一条事实纠正：现实现**不再是单条正则**，是三段\"括号配对 + 逐字符状态机\"（design §1.2 第 3/4 条记来路）。",
+        "verdict": "dismissed",
+        "rationale": "指出的风险真实存在但方向已被反转成保守侧，且已有七条靶子 + 14 份形态夹具承担回归；AST 化的建议作为遗留 11 保留（含不采纳的两条理由）。顺带纠正评审的一处事实：判据已从正则改为逐字符状态机 + 括号配对。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "expectGreen body fixes undefined behavior, but mutation n42 removes it. Protection relies only on A25; bypassing it makes framework behavior undefined again.",
+        "highRiskDomains": [],
+        "prosecution": "`expectGreen` 的执行体现在是 `greenViolations`；如果框架里谁绕过它或把它删掉，\"声明保持绿\"的语义又变成未定义。建议：`expectGreen` 有值而执行体缺失时框架必须失败。",
+        "defense": "三格都已失败关闭，且各有实测：① **执行体缺失** ⇒ A25 第一条断言「`typeof D.greenViolations` 必须是 function」当场红（导出面没了它就没法被测）；② **执行体在但变成 no-op** ⇒ n42 把它改成 `return []`，本支终跑读数原文：`CAUGHT  n42 摘掉 expectGreen 的执行体 ⇒ …读结果的人会以为绿档被守住了`；③ **声明指向不存在的套件** ⇒ 驱动开工预检在 `scripts/qm6-exit-capabilities.mutation.js:615` 抛错（\"要求 X 保持绿，但它不在靶子套件清单里\"），根本不开跑。而\"框架里谁绕过它\"这一格不成立：判定路径只有一处调用 `greenViolations(m.expectGreen, runs)`，原来的内联写法已删（本支把它抽成函数正是为了让它能被 A25 直接调、被 n42 摘）。",
+        "verdict": "dismissed",
+        "rationale": "评审要的\"expectGreen 有值而执行体缺失必须失败\"由 ①②③ 三格共同满足，且 ② 是本支新加的靶子（此前它只有\"上一刀 m18 被打脸过一次\"这条历史陈述）。这一条的观察本身是被采纳的：`greenViolations` + A25 + n42 就是为了这条才存在。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "Diff exceeds 2275 lines with embedded defenses and self-review artifacts. Independent verification is impractical; self-certification undermines the red-team mechanism.",
+        "highRiskDomains": [],
+        "prosecution": "整支对 origin/main 的差量已经很大，里面混着自写判据、反证驱动与评审产物；独立验证不现实，还会让\"红队机制\"变成自我认证。建议拆小 PR、把自审产物移出版本控制。",
+        "defense": "① 规模数字必须分清口径，本支当场重取：**本笔提交 insertions=725**，整支对 origin/main 才是 2474（那两个数差一个数量级，评审拿的是\"变更基线 origin/main（2288 行）\"那个口径 —— 它是**整支**，不是这一刀）。② \"拆小 PR\"正是本支所在的做法：这一条链已经拆成 #4304（只交付规格）/ #4305 / #4308 / #4326 / #4413，本支是 #4413 的第二笔；再拆就要把\"判据反转\"与\"它的夹具与靶子\"分家，而本仓明令禁止判据与回归锁分 PR 落（AGENTS：测试与被测同批，否则留下\"改宽无人红\"的窗口）。③ \"自审产物移出版本控制\"是在**改谁来守门**：`.ccg/reviews/*.json` 由 pre-commit 自动入库并被 `check-pr-exec-record.js` 读取，把它移出受管面等于关掉 QM-6 的载体 —— 属人工过目项，不在探测器这一刀偷偷做。",
+        "verdict": "dismissed",
+        "rationale": "规模口径取错面（整支 vs 本笔），且两条建议分别撞上\"判据与回归锁必须同批\"与本仓\"改守门面须人工过目\"两条既有规则。真实关切（大 PR 里独立验证难）由**逐条 rationale 必须引用可重取读数**这条纪律承担 —— 本文件六条即是；不留给读者\"信我\"的余地。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-24T21:37:16.178Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4413#issuecomment-6389836902",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@941878f14b29d841fa61dd2aaa354748c87fadae8693fce25939d9820d54a689"
+  }
+}

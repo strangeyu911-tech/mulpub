@@ -59,7 +59,9 @@
 
 - `upheld` 那一格 SHALL 同时有两路读数：结构谓词（块配对 + 守卫识别）与行为真跑
   （`require` vendor 驱动导出的 `blockingFromAdjudication`，喂"无凭证 / 带齐凭证"两份合成裁决各调一次）。
-- 行为真跑**不得**用 `vm` 从源码另编译一份相似实现：有导出面可用时 `require` 拿到的才是评审链真正会调用那个函数。
+- 行为真跑**不得**用 `vm` 从另编译一份相似实现：有导出面可用时 `require` 拿到的才是评审链真正会调用那个函数。
+  但 `require` 之前 SHALL 先过 `driverLoadability`（见 Requirement 6）——"取到的是真函数"这个理由
+  不成立到可以覆盖"把别人的整条流水线跑进本进程"。
 - 无凭证那份若不阻断，行为档 SHALL 抛错而不是返回 true（"随便填两格就能收口"的实现不得被判成"出口在位"）。
 - 行为真跑 SHALL 自带**正控**：`externalReviewReceiptLive(fn)` 用一份 vendor 自己承认的凭证（高危域那条出口读的
   `externalReview.{performedBy,evidenceRef,reviewedAt}`）证明"这份形状确实被某个分支消费"。
@@ -67,9 +69,12 @@
   夹具键名没人消费时，"带凭证仍阻断"与"这条出口确实不存在"在 `false` 这个读数上完全同形。
 - `crossCheckUpheld(structural, behavioral)`：两路不一致 ⇒ 进 `problems` ⇒ 退出码 **1** 并点名"结构读法失效"；
   **禁止**自动采用其中一路当结论。
-- 行为档 `unavailable`（没有 vendor）与结构档 `unknown` 一律**不参与比较**且 `ok:true`，但不得被措辞成结论。
-- 探针走到交叉这一步即意味着 vendor 在位；此时行为档仍取不到数 SHALL 记一条 `problems`（退出码 1）。
-  缺这道守卫时，"两路全瞎"会打印成"两路一致：这条出口不在位"，与真跑确认过的句子**逐字同形**。
+- 行为档 `unavailable` 与结构档 `unknown` 一律**不参与比较**且 `ok:true`，但不得被措辞成结论。
+- 行为档取不到数 SHALL 分两档，且**成因表由 `driverLoadability` 一侧唯一持有**（探针不得抄第二份）：
+  ① **按设计的跳过**（`executes-on-require`、`unreadable`）⇒ 如实打印 `behavioral=skipped(<成因>)`，
+     不影响退出码；② **真失明**（`no-exports`、`require-failed`、正控不成立）⇒ 记一条 `problems` ⇒ 退出码 **1**。
+  把 ② 当成 ①（或把两者塌成一句"没有 vendor"）都会让"两路全瞎"打印成"两路一致：这条出口不在位"，
+  与真跑确认过的句子**逐字同形**。
 
 #### Scenario: CI runner 上没有 vendor 引擎
 - **WHEN** `locateVendor()` 返回 null
@@ -81,7 +86,51 @@
 
 #### Scenario: 调用在位但结果被常数覆盖
 - **WHEN** 探针仍调用行为档函数，但把返回值写成 `'unavailable'` 常量
-- **THEN** 探针测试红在"本机有 vendor 时行为档不得是 unavailable"这一条（源码形状锁查不出这一格）
+- **THEN** 探针测试红在这一条上（源码形状锁查不出这一格）——因此该测试**不得**以"本机装了 vendor"为成立前提
+
+## Requirement 6：探针不得在 require 期执行不可安全加载的宿主模块，锁的前提不得是机器局部状态
+
+- `driverLoadability(driverSrc)` SHALL 返回 `{loadable, reason}`，`reason` 认闭集
+  `ok | no-exports | executes-on-require | unparsable-driver | unreadable`；五种成因**不得合并**（修法各不相同）。
+- 判据 SHALL 是「先剥安全区、再在剩下的顶层区找 `main` **被调用**」：剥掉 ① `require.main === module` 守卫整段
+  （块形态按花括号配对、单语句形态剥到行末）② shebang、注释、字符串与正则字面量（模板串正文剥、`${}` 插值段
+  递归保留）③ 任何 `function` 的花括号体；任一形态剥不动 SHALL 走保守侧并判 `unparsable-driver`。
+  **MUST NOT** 用"文件里出现过 `process.exit`"当判据 —— 函数体内 `process.exit(2)` 做缺依赖早退是合法的
+  （两份真实 vendor 都有那一处）；也 **MUST NOT** 只认 `process.exit(main())` 一种坏形态 —— 实测漏掉
+  `main.apply` / `main.call` / `const c = main(); process.exit(c)` / 裸 `main();` 四种**真会执行**的形态。
+- `executes-on-require` 与 `unparsable-driver` ⇒ **禁止 require**，且本次不得产生任何副作用（不得覆写 `.ccg` 判定产物、不得发起出站）。
+- 真源码档（A9）里 vendor 侧两格 SHALL 写成**蕴含式**："驱动声明了被声明物 ⇒ 必须读得出"、
+  "驱动没有声明 ⇒ 必须是 `unknown` 且结论句自带'读不出'"。
+  **MUST NOT** 断言"vendor 文件在位 ⇒ 读得出" —— 本机那份补丁是未提交的，把它当契约前提等于在别人机器上关掉这条锁。
+- 行为档与交叉验证的回归锁 SHALL 由**自建夹具**驱动，在含 CI runner 的任何机器上都能跑完；
+  真 vendor 的存在与否只作为**打印的现场**，不作为断言成立的前提。
+
+#### Scenario: vendor 驱动末尾是裸 process.exit(main())
+- **WHEN** 夹具驱动的顶层写 `process.exit(main())`（不在守卫内），且其 `main()` 会落一个 marker 文件
+- **THEN** 探针**不得** require 它（marker 必须不存在），`behavioralSkip` 为 `executes-on-require`，
+  交叉文案带上该成因，退出码仍由 ladder 读数决定；同一夹具只把守卫加回来 ⇒ 行为档立刻落到定值
+
+#### Scenario: 顶层执行 main 的其它写法
+- **WHEN** 夹具驱动写成 `process.exit(main.apply(null, []))` / `process.exit(main.call(null))` /
+  `const c = main(); process.exit(c)` / 裸 `main();` / ``const b = `x ${main()}` ``（插值里调用）之一
+- **THEN** 五种 SHALL 全部判 `executes-on-require` 且探针不得 require（marker 必须不存在）；
+  同样几种写法整体放进守卫块内 SHALL 判 `ok` —— require 时守卫块根本不执行
+
+#### Scenario: 探测器读不懂，不得伪装成 vendor 有裸调用
+- **WHEN** 驱动带 shebang 首行、或含跨行未闭合的正则/串、或函数体花括号配不平
+- **THEN** `reason` SHALL 是 `unparsable-driver`（**不是** `executes-on-require`），⑤ 行与 `behavioralSkip`
+  都要能读出"要修的是探测器自己"；而带 shebang 的**正常守卫形态** SHALL 判 `ok` ——
+  真实 vendor 首行就是 `#!/usr/bin/env node`，若 shebang 走 bail，行为档会在任何装了引擎的机器上
+  永久只剩结构一路，而这正是本 Requirement 要消除的"只有一路"
+#### Scenario: marker 机制本身失效
+- **WHEN** 按 CLI 直接跑那份未守卫驱动也不写 marker
+- **THEN** 该负控红 —— 否则"探针没执行它"与"marker 从来写不出来"在断言里同形（本仓「探针失明」同型）
+
+#### Scenario: 另一个会话改写了本机 vendor
+- **WHEN** 本机那份未提交补丁被覆盖（2026-10-24 11:48 实际发生：`externalReviewSatisfied` 与整张导出面一起消失）
+- **THEN** ① 那格读数为 `unknown`（不是 `false`），结论句必须自带"读不出"；② 契约锁与探针锁**照旧全绿**，
+  因为它们的前提是仓库内的东西；③ 若某条锁在这里变红，红的是"锁绑在机器状态上"这件事，须改锁而不是改机器
+
 
 ## Requirement 5：本刀不得改任何一格守门语义
 

@@ -30,8 +30,8 @@ const WF = '.github/workflows/quality-gate.yml';
 const MUT = 'scripts/qm6-exit-capabilities.mutation.js';
 
 const SUITES = [
-  { file: LOCKS, minTests: 20 },
-  { file: PROBET, minTests: 11 },
+  { file: LOCKS, minTests: 25 },
+  { file: PROBET, minTests: 12 },
 ];
 
 const M = [
@@ -161,7 +161,7 @@ const M = [
   {
     id: 'n18', file: PROBE,
     note: '摘掉"vendor 在位但行为档取不到数"这道守卫 ⇒ 两路全瞎时探针仍报"两路一致：不在位"，与真跑确认过的结论逐字同形',
-    from: "  if (caps.upheldBehavioral === 'unavailable') problems.push(",
+    from: "  if (caps.upheldBehavioral === 'unavailable' && !capabilities.isBehavioralSkip(caps.behavioralSkip)) problems.push(",
     to: '  if (false) problems.push(',
     expect: ['P11'],
   },
@@ -233,6 +233,162 @@ const M = [
     expect: ['A19'],
   },
   {
+    id: "n28", file: CAPS,
+    note: "摘掉「顶层区出现 main 调用就禁止 require」那一格 ⇒ 2026-10-24 现场复发：--json 的 stdout 变成别人的输出",
+    from: "  if (findMainCall(region) >= 0) return { loadable: false, reason: 'executes-on-require' };",
+    to: "  // (摘掉这一格 ⇒ 顶层真会执行 main 的驱动也会被 require，探针变成别人流水线的宿主)",
+    expect: ["A21","P12"],
+  },
+  {
+    id: "n29", file: CAPS,
+    note: "声明避让摘掉 ⇒ `function main ()` 这串**声明自身**被当成一次顶层调用 ⇒ 唯一正常形态整个判死（判据必须盯「被调用」，不是「出现过」）",
+    from: "    if (/\\bfunction\\s+$/.test(head)) continue;",
+    to: "    if (false) continue;",
+    expect: ["A21"],
+  },
+  {
+    id: "n30", file: CAPS,
+    note: "把 no-exports 混进「按设计的跳过」表 ⇒ 真失明被读成「这台机器没装引擎」，P11 那条 rc=1 就此失效",
+    from: "const BEHAVIORAL_SKIP_REASONS = Object.freeze(['unreadable', 'executes-on-require', 'unparsable-driver']);",
+    to: "const BEHAVIORAL_SKIP_REASONS = Object.freeze(['unreadable', 'executes-on-require', 'unparsable-driver', 'no-exports']);",
+    expect: ["A21","P11"],
+  },
+  {
+    id: "n31", file: CAPS,
+    note: "交叉文案丢掉真实成因 ⇒「装了但不敢跑」与「没装」同形（合并成因是本仓点名的同型）",
+    from: "  if (behavioral === 'unavailable') return { ok: true, note: 'behavioral=skipped(' + (skipReason || 'no-vendor') + ')' };",
+    to: "  if (behavioral === 'unavailable') return { ok: true, note: 'behavioral=skipped(no-vendor)' };",
+    expect: ["A14","P12"],
+  },
+  {
+    id: "n32", file: PROBE,
+    note: "探针侧把可加载性早退改成不生效 ⇒ require 先跑起来；A21 那种「判据在模块里但没人用」必须靠这条才不是纸面的",
+    from: "  if (!load.loadable) {",
+    to: "  if (false) {",
+    expect: ["P12"],
+  },
+  {
+    id: "n33", file: PROBE,
+    note: "摘掉「按成因表决定是否出声」这条接线 ⇒ no-exports 那一档的 rc=1 退化成静默 0，同时 A15 的接线锁红",
+    from: "  if (caps.upheldBehavioral === 'unavailable' && !capabilities.isBehavioralSkip(caps.behavioralSkip)) problems.push(",
+    to: "  if (caps.upheldBehavioral === 'unavailable' && false) problems.push(",
+    expect: ["A15","P11"],
+  },
+  {
+    id: "n34", file: CAPS,
+    note: "未闭合的串不再走保守侧 ⇒ 「扫到文件尾都没收尾」被读成「后面没有真代码」，整段尾巴当已处理吃掉（保守兜底才是判据本体。n34 退过两次 MISSED：第一次摘的是跨行正则那条 bail 而夹具走的是串那条；第二次想整行删掉 closeQuote 的 bail，被「目标文本改前已存在」预检当场拒绝 ⇒ 改成把条件写坏。见执行记录）",
+    from: "      const end = closeQuote(a, i, to);\n      if (end < 0) return -1;",
+    to: "      let end = closeQuote(a, i, to);\n      if (end < 0) end = to;",
+    expect: ["A21"],
+  },
+  {
+    id: "n35", file: PROBE,
+    note: "探针侧把成因判定写成恒真 ⇒ 任何 unavailable 都算\"按设计的跳过\"，真失明的 rc=1 整条消失（A15 + P11 各指名一条红）",
+    from: "  if (caps.upheldBehavioral === 'unavailable' && !capabilities.isBehavioralSkip(caps.behavioralSkip)) problems.push(",
+    to: "  if (caps.upheldBehavioral === 'unavailable' && !true) problems.push(",
+    expect: ["A15","P11"],
+  },
+  {
+    id: "n36", file: PROBE,
+    note: "探针内联一份第二版成因表 ⇒ 行为一字不变但\"单一实现\"没了（A22 抓的就是这一格，A15/P 系列全都照样绿）",
+    from: "  if (caps.upheldBehavioral === 'unavailable' && !capabilities.isBehavioralSkip(caps.behavioralSkip)) problems.push(",
+    to: "  if (caps.upheldBehavioral === 'unavailable' && !['unreadable', 'executes-on-require'].includes(caps.behavioralSkip)) problems.push(",
+    expect: ["A22","A15"],
+    expectGreen: [PROBET],
+  },
+  {
+    id: "n37", file: MUT,
+    note: "差集恒空 ⇒ 副作用体检永远报\"现场干净\"，A23 的新增脏文件那一档当场红（n32 覆写 .ccg 的现场就是这么被吞掉的）",
+    from: "  return after.filter((p) => !befor" + "e.has(p) && !targets.includes(p));",
+    to: "  retu" + "rn [];",
+    expect: ["A23"],
+  },
+  {
+    id: "n38", file: MUT,
+    note: "git 取不到读数时 return null ⇒ 把工具的失明读成\"没有副作用\"（本仓点名的同型），A23 的失明档红",
+    from: "  } catch (e) {\n    return { id: 'side-effects', state: " + "'PROBLEM', why: `副作用无从判定（git 取不到读数）：${e.message}` };\n  }",
+    to: "  } catch (e) {\n  " + "  return null;\n  }",
+    expect: ["A23"],
+  },
+  {
+    id: "n39", file: MUT,
+    note: "套件不再在沙箱 env 里跑 ⇒ 反证拿本机 vendor 陪跑：n32 那一类靶子会真的跑起别人的评审流水线，且 MISSED/CAUGHT 集随本机状态漂移（A24 抓这一格）",
+    from: "spawnSync(process.execPath, ['--test', suite.file], " + "{ cwd: ROOT, encoding: 'utf8', env: sandboxEnv() })",
+    to: "spawnSync(process.execPath, ['--test', sui" + "te.file], { cwd: ROOT, encoding: 'utf8' })",
+    expect: ["A24"],
+  },
+  {
+    id: "n40", file: LOCKS,
+    note: "driverCodeRegion 找不到 M 表边界时退回\"整文件扫\" ⇒ 本函数存在的理由没了，n39 那一格原地复活（A24 的行为断言必须红）",
+    from: "  if (start < 0 || end < 0) throw new Error('找不到 M 表边界 ⇒ 不得退回整文件扫描');",
+    to: "  if (start < 0 || end < 0) return src;",
+    expect: ["A24"],
+  },
+
+  {
+    id: "n41", file: LOCKS,
+    note: "剔完不验规模 ⇒ 判据可以在接近空域上自证通过（\"零处违规\"读起来完全像通过，本仓「探针失明」同型）",
+    from: "  if (cut.length < 4000) throw new Error('剔除后代码区规模异常（' + cut.length + '）⇒ 判据可能在空域上自证通过');",
+    to: "  // (不检查规模)",
+    expect: ["A24"],
+  },
+  {
+    id: "n42", file: MUT,
+    note: "摘掉 expectGreen 的执行体 ⇒ 第 7 轮评审 i4 逼出的那一格：声明「某套件必须保持绿」却没人读它，读结果的人会以为绿档被守住了（A25 是直接调这个函数，不是读源码字符串）",
+    from: "  return (expectGreen || []).fil" + "ter((g) => runs.some((x) => x.suite === g && x.reds.length > 0));",
+    to: "  retu" + "rn [];",
+    expect: ["A25"],
+  },
+  {
+    id: "n43", file: CAPS,
+    note: "不剥函数体 ⇒ 函数体里的 main() 被当成顶层调用 ⇒ 「文件里出现过 main( 就禁」那种退化（A21 的 FN_BODY_CALL 夹具就是这一格）",
+    from: "  s = stripFunctionBodies(s);",
+    to: "  // (不剥函数体)",
+    expect: ["A21"],
+  },
+  {
+    id: "n44", file: CAPS,
+    note: "不剥注释与串 ⇒ 注释里的 main() 被当成执行路径 ⇒ 判退化成子串匹配（A21 的注释夹具现场）",
+    from: "  s = stripCommentsAndStrings(s);",
+    to: "  // (不剥注释与串)",
+    expect: ["A21"],
+  },
+  {
+    id: "n45", file: CAPS,
+    note: "不剥守卫段 ⇒ 带守卫的正常驱动被自己那行 process.exit(main()) 判死：结构一路还在，行为一路整格消失（第 4 轮 i3 成立的那一半）",
+    from: "  s = stripGuardRegions(s);",
+    to: "  s = src;",
+    expect: ["A21", "P10", "P11"],
+  },
+  {
+    id: "n46", file: CAPS,
+    note: "正则/除号判据退回「一律当除号」⇒ 正则字面量里的假 main() 被当真代码（A21 的正则夹具红）；反向那格由除号夹具守住：把 `a / b` 当正则会一路吃到行尾、把真代码吞掉",
+    from: "    if (ch === '/' && !/[)\\w\\]}]/.test(prev)) {",
+    to: "    if (ch === '/' && false) {",
+    expect: ["A21"],
+  },
+  {
+    id: "n47", file: CAPS,
+    note: "守卫块的配对出口退回「只认到行末」⇒ 花括号形态里 exit 那行没被剥掉，合法驱动判死（第 4 轮 i3 的花括号现场本身）",
+    from: "    if (src[i] === '{') {",
+    to: "    if (false) {",
+    expect: ["A21"],
+  },
+  {
+    id: "n48", file: CAPS,
+    note: "模板串的 `${}` 插值段被当正文一起剥掉 ⇒ 插值里真会执行的 main() 看不见 ⇒ 判成 ok（第 7 轮之后实测到的真实形态：vendor 全文都是插值模板，这一格反过来 bail 会让行为档永久只有一路）",
+    from: "    if (a[j] === '$' && a[j + 1] === '{') {",
+    to: "    if (false) {",
+    expect: ["A21"],
+  },
+  {
+    id: "n49", file: CAPS,
+    note: "shebang 不再按行注释处理 ⇒ 第一行的 `/` 被当正则起点、跨行不闭合即 bail ⇒ **所有**带 shebang 的驱动整体退化成 unparsable-driver（真实 vendor 就是这一形）",
+    from: "  let s = src.startsWith('#!') ? '//' + src.slice(2) : src; // shebang 不是代码，按行注释处理（长度不变）",
+    to: "  let s = src;",
+    expect: ["A21"],
+  },
+  {
     id: 'msanity', file: LOCKS,
     note: '驱动自己的体检：把一个期望值改成明显错的数；这条不红就是驱动没在读 TAP',
     from: "  assert.equal(C.toolSignatureCapable(WB_SINGLE), false, '今天只认 performedBy ⇒ 自扮演收口永拿不到 tier');",
@@ -249,8 +405,38 @@ const write = (rel, text) => fs.writeFileSync(path.join(ROOT, rel), text, 'utf8'
 const expand = (text, s) => (text.includes('\r\n') ? s.split('\n').join('\r\n') : s);
 const nameHit = (reds, want) => reds.some((r) => r === want || r.startsWith(want + ' '));
 
+/**
+ * 反证运行态的 vendor 沙箱：跑每一轮套件时把 `CCG_ARL_DIR` / `HOME` / `USERPROFILE` 指到一个空的临时目录，
+ * 于是 `locateVendor()` 一律返回 null —— **本机装的是什么 vendor 都不参与反证**。
+ *
+ * 为什么必须这样（design §1.4 的同一条教训，落在驱动这一侧）：
+ * ① 反证结果必须可复现。带着本机 vendor 跑，P1/P3 走"有引擎"那一档、P10-P12 走夹具那一档，
+ *    同一次运行里混着两种机器态，换台机器 MISSED/CAUGHT 集会变；
+ * ② 更要命的是 n32 那一类靶子：它摘掉的正是"不许 require 未守卫驱动"那道闸，
+ *    带着真 vendor 跑就等于**让反证驱动在本机真的跑一遍评审流水线**（实测覆写了 `.ccg` 判定产物）。
+ *    变异要测的是"探针会不会去 require 它"，那件事由 P12 的自建夹具证明就够了，不需要拿真引擎陪葬。
+ * ③ 因此 `expect` 里没有任何一条指望 P1/P3 的"有引擎"分支（当场核对：39 条靶子里 0 条引用 P1/P3）。
+ */
+function vendorSandbox () {
+  if (SANDBOX && fs.existsSync(SANDBOX)) return SANDBOX;
+  SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'qm6-mut-vendorless-'));
+  return SANDBOX;
+}
+
+/**
+ * ⚠ 这一层是 **env 级隔离，不是 fs 级**（第 7 轮评审 i5 的命名提醒）：它只让 `locateVendor()` 找不到本机引擎，
+ * 并不阻止一份被判 `ok` 的驱动往仓库任意可写路径落文件。fs 级那半边由 `checkSideEffects` 兜 ——
+ * 它不拦写（拦不住），它让"写了"之后不可能被读成通过。两者一前一后：能防的防，防不住的必须可见。
+ */
+function sandboxEnv () {
+  const dir = vendorSandbox();
+  const env = { ...process.env, CCG_ARL_DIR: dir, HOME: dir, USERPROFILE: dir };
+  for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR']) delete env[k];
+  return env;
+}
+
 function suiteRun (suite) {
-  const r = spawnSync(process.execPath, ['--test', suite.file], { cwd: ROOT, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, ['--test', suite.file], { cwd: ROOT, encoding: 'utf8', env: sandboxEnv() });
   const out = String(r.stdout || '');
   const m = out.match(/^# tests (\d+)$/m);
   const f = out.match(/^# fail (\d+)$/m);
@@ -275,6 +461,7 @@ function restoreAll (orig) {
 // 崩溃一次的驱动把污染态固化成 ORIG）。所以这里给两条机械出口，不写"请自行恢复"这种散文。
 const SIDECAR = path.join(os.tmpdir(), 'qm6-exit-capabilities-mutation-orig.json');
 const LOCK = SIDECAR + '.lock';
+let SANDBOX = '';
 
 /**
  * 单实例锁（QM-6 第三轮评审 i1 的可修那一半）：两个驱动同时跑会**同时改写同一批受 git 管理的源文件**，
@@ -322,6 +509,81 @@ function assertCleanBaseline (targets, cwd) {
       + '\n  ⇒ 驱动会把这份污染当成"原始内容"并在还原时写回它（本仓实测发生过一次）。'
       + '\n  正解：先提交，或 `git checkout HEAD -- <上面逐个精确路径>`（禁止宽目录），再重跑。');
   }
+}
+
+/**
+ * 整个工作树的脏路径快照（QM-6 第 4 轮 i1/i6 逼出来的那一半，不是散文）。
+ * 动因：n32 摘掉的正是"不许 require 未守卫驱动"那道闸 —— 那一轮变异在本机**真的**把 vendor 的
+ * 评审流水线跑了起来，覆写了 `.ccg/reviews/*.json` 判定产物并在 `.adversarial/` 落了目录。
+ * 驱动的还原范围只含靶子文件，对这类**外部副作用**完全失明：跑完照打 RESULT=OK，
+ * 而盘上留着一份被改坏的评审产物 —— 那是"还原干净了"这句自我声明的假绿。
+ * 现在跑前拍一张快照、跑完（还原之后）再拍一张，差集非空即 PROBLEM 并点名精确路径。
+ */
+function worktreeDirtyPaths (cwd) {
+  const env = { ...process.env };
+  for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR']) delete env[k];
+  const r = spawnSync('git', ['status', '--porcelain'], { cwd: cwd || ROOT, encoding: 'utf8', env });
+  if (r.status !== 0) throw new Error(`git status 取不到读数（rc=${r.status}）⇒ 副作用无从判定，不得当成"没有副作用"：${String(r.stderr).slice(0, 160)}`);
+  const out = [];
+  for (const line of String(r.stdout || '').split('\n')) {
+    if (!line.trim()) continue;
+    // porcelain 形状：`XY <path>`，重命名是 `R  old -> new` —— 取箭头右侧（工作树里真正被改动的那个名字）
+    const rest = line.slice(3);
+    const arrow = rest.indexOf(' -> ');
+    out.push((arrow >= 0 ? rest.slice(arrow + 4) : rest).replace(/^"|"$/g, ''));
+  }
+  return out;
+}
+
+
+/**
+ * 差集：跑后脏集 − 跑前脏集 − 靶子清单。唯一实现（A23 逐档测它）。
+ * 三个入参都必须给：`before` 缺失会把"跑前就脏"的别人的在飞改动算成我的副作用；
+ * `targets` 缺失会把还原失败的靶子重复报一遍（那是另一条断言的产物，不该混进来）。
+ */
+function sideEffectPaths (before, targets, after) {
+  if (!(before instanceof Set)) throw new Error('sideEffectPaths：before 必须是 Set（缺它就等于把别人的在飞改动认领成本轮的副作用）');
+  if (!Array.isArray(targets)) throw new Error('sideEffectPaths：targets 必须是数组');
+  if (!Array.isArray(after)) throw new Error('sideEffectPaths：after 必须是数组（取不到读数不得当成空集，那由调用方的抛错分支负责）');
+  return after.filter((p) => !before.has(p) && !targets.includes(p));
+}
+
+/**
+ * 跑完之后的副作用体检（第 4 轮 i1/i6 的落点）。**必须是一个可以被单独调用的函数**：
+ * 只把逻辑写在 `finally` 里，"返回恒空数组"这一格就永远测不到（本刀 n15 的同型教训 ——
+ * 调用在位但结果被常数覆盖，源码形状锁看不见）。
+ * 取不到读数（git 挂了）必须返回 PROBLEM 而不是 null —— 把失明读成"现场干净"是本仓点名的同型错误。
+ */
+function checkSideEffects (beforeSet, targets, cwd) {
+  let after;
+  try {
+    after = worktreeDirtyPaths(cwd);
+  } catch (e) {
+    return { id: 'side-effects', state: 'PROBLEM', why: `副作用无从判定（git 取不到读数）：${e.message}` };
+  }
+  let fresh;
+  try {
+    fresh = sideEffectPaths(beforeSet, targets, after);
+  } catch (e) {
+    return { id: 'side-effects', state: 'PROBLEM', why: `副作用无从判定（差集入参坏了）：${e.message}` };
+  }
+  if (!fresh.length) return null;
+  return {
+    id: 'side-effects', state: 'PROBLEM',
+    why: `变异在靶子之外留下了脏文件（驱动只还原靶子，这些还原不了）：${fresh.join(', ')}`
+      + '\n  ⇒ 已知成因：n32 摘掉"不许 require 未守卫驱动"那道闸，那一轮真的跑起了 vendor 的评审流水线，'
+      + '覆写了 .ccg/reviews/*.json 并写 .adversarial/。处置：`git checkout HEAD -- <上面逐个精确路径>`（禁宽目录），'
+      + '然后重跑本轮；不要删掉这条断言来让它过。',
+  };
+}
+
+/**
+ * `expectGreen` 的**执行体**（第 7 轮评审 i4 逼出来的形状）：声明「某套件必须保持绿」而驱动从不读它，
+ * 就是装饰品 —— 所以把它抽成一个可被直接调用的函数，由 A25 真跑一次、由 n42 摘掉一次。
+ * 不再靠「源码里出现过这行 filter」的记录性断言：那种锁只证明字串在，不证明它在判定路径上。
+ */
+function greenViolations (expectGreen, runs) {
+  return (expectGreen || []).filter((g) => runs.some((x) => x.suite === g && x.reds.length > 0));
 }
 
 function writeSidecar (orig) {
@@ -377,6 +639,23 @@ function runAll (onlyArg, allowDirty) {
     if (unknown.length) throw new Error(`未知变异 id：${unknown.join(',')}（参数不得被静默忽略）`);
   }
   const targets = [...new Set(M.map((m) => m.file))];
+  // 运行态自证（放在拿锁与任何写动作之前，失败就直接退出，不留还原负担）：
+  // 在沙箱 env 里跑一次探针本体，必须走"没有 vendor"那一档（rc=2 且点名失明）。
+  // 这不是装饰 —— 沙箱失效时反证会拿真 vendor 陪跑，n32 那一类靶子就会在本机真的跑起评审流水线
+  // （实测覆写过 `.ccg` 判定产物），而 MISSED/CAUGHT 集会随本机状态漂移。
+  const probePath = path.join(ROOT, 'scripts/ccg-convergence-probe.js');
+  const pv = spawnSync(process.execPath, [probePath], { cwd: ROOT, encoding: 'utf8', env: sandboxEnv() });
+  if (pv.status !== 2 || !/探针失明/.test(String(pv.stderr || ''))) {
+    process.stdout.write(`SANDBOX=FAIL rc=${pv.status} stderr=${String(pv.stderr).slice(0, 160)}\n`);
+    return {
+      results: [{
+        id: 'sandbox', state: 'PROBLEM',
+        why: 'vendor 沙箱失效：探针在沙箱 env 下必须 rc=2 且点名"探针失明"，反证不得拿本机 vendor 陪跑',
+      }],
+      attempted: 0,
+    };
+  }
+  process.stdout.write(`[mutation] 反证运行态 vendor=sandbox(${vendorSandbox()}) —— 本机 vendor 不参与反证（design §1.4）\n`);
   acquireLock();
   try {
   if (allowDirty) {
@@ -389,6 +668,9 @@ function runAll (onlyArg, allowDirty) {
   }
   const orig = Object.fromEntries(targets.map((f) => [f, read(f)]));
   writeSidecar(orig);
+  // 跑前拍一张"整棵工作树哪些文件是脏的"快照：靶子之外的新增脏文件就是变异的**外部副作用**
+  // （n32 那一轮的现场就是 `.ccg/reviews/*.json` 被覆写）。还原动作只管靶子，所以这里必须另拍一张。
+  const dirtyBefore = new Set(worktreeDirtyPaths());
   for (const m of M) {
     const from = expand(orig[m.file], m.from);
     const hits = orig[m.file].split(from).length - 1;
@@ -422,7 +704,7 @@ function runAll (onlyArg, allowDirty) {
       restoreAll(orig);
       const bad = runs.find((x) => !x.ok);
       if (bad) { results.push({ id: m.id, state: 'PROBLEM', why: bad.why }); continue }
-      const greenViolated = (m.expectGreen || []).filter((g) => runs.some((x) => x.suite === g && x.reds.length > 0));
+      const greenViolated = greenViolations(m.expectGreen, runs);
       if (greenViolated.length) { results.push({ id: m.id, state: 'PROBLEM', why: `声明保持绿的套件红了：${greenViolated.join(',')}（驱动当场否证这条声明）` }); continue }
       const reds = runs.flatMap((x) => x.reds);
       const wantAll = [...m.expect, ...(m.alsoExpect || [])];
@@ -438,6 +720,10 @@ function runAll (onlyArg, allowDirty) {
     }
   } finally {
     restoreAll(orig);
+    // 跑完（还原之后）再体检一次：靶子之外**新出现**的脏文件就是变体的外部副作用。
+    // 不认领成设计、不放宽、也不"顺手替人还原"——判据只负责让它可见并拒绝 RESULT=OK。
+    const se = checkSideEffects(dirtyBefore, targets);
+    if (se) results.push(se);
   }
     return { results, attempted };
   } finally {
@@ -466,7 +752,9 @@ if (require.main === module) {
   const ca = results.filter((x) => x.state === 'CAUGHT').length;
   const mi = results.filter((x) => x.state.startsWith('MISSED')).length;
   const pr = results.filter((x) => x.state === 'PROBLEM').length;
-  const total = results.filter((x) => !x.id.endsWith('-restore')).length;
+  // `side-effects` 不是"一条变异的结果"，是驱动对自身还原范围的体检 —— 与 `-restore` 同理不计进 TOTAL，
+  // 但它必须以 PROBLEM 把 RESULT 打成 FAIL（"跑完了但盘上留着被改坏的评审产物"不得读成通过）。
+  const total = results.filter((x) => !x.id.endsWith('-restore') && x.id !== 'side-effects').length;
   console.log(`SUMMARY CAUGHT=${ca} MISSED=${mi} PROBLEM=${pr} TOTAL=${total} ATTEMPTED=${attempted}`);
   const ok = pr === 0 && mi === ALLOWED_MISSED.size && total === attempted;
   console.log(ok ? 'RESULT=OK' : 'RESULT=FAIL');
@@ -474,6 +762,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  vendorSandbox, sandboxEnv,
   M, SUITES, runAll, restoreFromSidecar, assertCleanBaseline, gitCleanAgainstHead, parseCli,
-  acquireLock, releaseLock, SIDECAR, LOCK,
+  acquireLock, releaseLock, SIDECAR, LOCK, worktreeDirtyPaths, sideEffectPaths, checkSideEffects, greenViolations,
 };

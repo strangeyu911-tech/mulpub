@@ -17,12 +17,30 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const C = require('./qm6-exit-capabilities.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+/**
+ * 驱动的结构判据一律走这个域：剥注释 + **剔掉 M 表**。
+ * 为什么不剔不行：M 表逐字存着靶子的 from/to（有些还为一行两处命中刻意拆成两段拼接），
+ * 于是"代码里出现了 X"这类断言会被表自己的文本满足 —— n39 首跑就是这样 MISSED 的（变异生效、锁看不见）。
+ * 剔除失败或剔完不像代码区，一律抛错：宁可红在判据自己身上，也不要在空域上自证通过。
+ */
+function driverCodeRegion (src) {
+  const start = src.indexOf('const M = [');
+  const end = start < 0 ? -1 : src.indexOf('\n];', start);
+  if (start < 0 || end < 0) throw new Error('找不到 M 表边界 ⇒ 不得退回整文件扫描');
+  const cut = (src.slice(0, start) + src.slice(end + 3)).split('\n')
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  if (cut.includes('const M = [')) throw new Error('M 表没剔干净');
+  if (cut.length < 4000) throw new Error('剔除后代码区规模异常（' + cut.length + '）⇒ 判据可能在空域上自证通过');
+  return cut;
+}
+function driverCode (rel) { return driverCodeRegion(read(rel || 'scripts/qm6-exit-capabilities.mutation.js')); }
 
 /* ---------------- 夹具：两版实现，答案必须不同 ---------------- */
 
@@ -243,6 +261,122 @@ test('A14 两路比较：不一致必须不 ok，vendor 缺席必须算一致而
   assert.equal(C.crossCheckUpheld(true, false).ok, false, '反方向同样不得静默取其一');
   assert.equal(C.crossCheckUpheld(false, 'unavailable').ok, true, 'CI 上没有 vendor 是常态，不得因此判探针偏离');
   assert.equal(C.crossCheckUpheld('unknown', false).ok, true, '结构档失明时不参与比较（更不能被比较结果反推成结论）');
+  // 跳过成因不得合并（2026-10-24 现场：本机装了 vendor 但一 require 就会跑别人的流水线，
+  // 若文案统一成 no-vendor，读的人会以为"这台机器没装引擎"，而实情是"装了且不敢动" —— 两种修法完全不同）
+  assert.match(C.crossCheckUpheld(false, 'unavailable', 'executes-on-require').note, /executes-on-require/,
+    '真实成因必须出现在文案里');
+  assert.doesNotMatch(C.crossCheckUpheld(false, 'unavailable', 'executes-on-require').note, /no-vendor/,
+    '把"装了但不敢 require"写成 no-vendor 是合并成因');
+  assert.match(C.crossCheckUpheld(false, 'unavailable', 'unreadable').note, /unreadable/);
+  assert.match(C.crossCheckUpheld(false, 'unavailable').note, /no-vendor/, '没给成因时才回落 no-vendor（向后兼容的老形状）');
+});
+
+test('A21 驱动可加载性判据：四种成因各有夹具，且"顶层裸执行 main()"必须判禁止 require', () => {
+  // 这条是 2026-10-24 事故的直接回归锁：探针当时把一份顶层 `process.exit(main())` 的驱动 require 了进来，
+  // 于是 `--json` 的 stdout 变成别人流水线的输出，而报错读起来像"探针输出坏了"。
+  const GUARDED = 'function main () { return 0; }\nmodule.exports = { blockingFromAdjudication };\nif (require.main === module) process.exit(main());\n';
+  const BARE = 'function main () { return 0; }\nmodule.exports = { blockingFromAdjudication };\nprocess.exit(main());\n';
+  const NO_EXPORTS = 'function main () { return 0; }\nif (require.main === module) process.exit(main());\n';
+  const BARE_NO_EXPORTS = 'function main () { return 0; }\nprocess.exit(main());\n';
+  assert.deepEqual(C.driverLoadability(GUARDED), { loadable: true, reason: 'ok' });
+  assert.deepEqual(C.driverLoadability(BARE), { loadable: false, reason: 'executes-on-require' },
+    '顶层裸执行 ⇒ 禁止加载。判错了就是"探针替别人跑一遍评审"');
+  assert.deepEqual(C.driverLoadability(NO_EXPORTS), { loadable: true, reason: 'no-exports' },
+    '可加载但没导出面 = 真失明，必须与"不敢加载"分开报');
+  assert.deepEqual(C.driverLoadability(BARE_NO_EXPORTS), { loadable: false, reason: 'executes-on-require' },
+    '两种毛病同时存在时，先报"不敢执行"——那才是会炸探针的那一条');
+  assert.equal(C.driverLoadability('').reason, 'unreadable');
+  assert.equal(C.driverLoadability(undefined).reason, 'unreadable');
+  // 函数体内用 process.exit 早退是合法的（两份真实 vendor 都有那一处），不得据此判"不可加载"
+  const EXIT_INSIDE_FN = 'function guard () { if (!x) process.exit(2); }\nmodule.exports = { y: 1 };\n';
+  assert.equal(C.driverLoadability(EXIT_INSIDE_FN).reason, 'ok',
+    '把合法早退判成禁止执行，会把唯一正常的形态整个排除掉（判据必须只盯"调用 main() 那一句"）');
+  // 第 4 轮评审 i3（Warning，判成立）：带一层花括号的守卫写法曾被判成 executes-on-require，
+  // 于是行为档在一台完全正常的机器上永久只有一路。第 7 轮 i3 又否证了我自己的另一半说法
+  // （当时写的是「apply/call/两行式/裸调用只会落到保守侧，不存在误放行」）——实测四种**顶层真会执行**
+  // 的写法全被读成 ok。判据因此反转：先剥安全区（守卫整段、函数体、注释、串、正则字面量），
+  // 剩下的顶层区里只要出现 main 调用就判禁止加载。误判只允许落在保守侧。
+  const GUARDED_BRACED = 'function main () { return 0; }\nmodule.exports = { z: 1 };\nif (require.main === module) {\n  process.exit(main());\n}\n';
+  assert.deepEqual(C.driverLoadability(GUARDED_BRACED), { loadable: true, reason: 'ok' },
+    '花括号形态（i3 现场）必须算可加载，否则这一格在别人机器上静默退化成一路');
+  // require 时 `require.main === module` 为假 ⇒ 守卫块整段根本不会执行，块里先 setup 也一样安全。
+  // 旧判据把这一形态留在保守侧是「因为只有一条正则、认不出块边界」的副产品，不是权衡后的取舍。
+  const GUARDED_BLOCK_OTHERS_FIRST = 'function main () { return 0; }\nmodule.exports = { z: 1 };\nif (require.main === module) {\n  setup();\n  process.exit(main());\n}\n';
+  assert.deepEqual(C.driverLoadability(GUARDED_BLOCK_OTHERS_FIRST), { loadable: true, reason: 'ok' },
+    '守卫块里先干别的再 exit：require 时整块不执行 ⇒ 判 ok 才是对的（判成禁止加载就是把合法形态判死）');
+  const GUARD_NOWHERE_NEAR_EXIT = 'if (require.main === module) console.log("x");\nprocess.exit(main());\n';
+  assert.equal(C.driverLoadability(GUARD_NOWHERE_NEAR_EXIT).reason, 'executes-on-require',
+    '"文件里出现过守卫这句话"不等于"调用 main() 那一句被它管住" —— 这条负控就是防止我把上一条放宽成前者');
+  // 第 7 轮 i3 的另一半：黑名单必须覆盖 main 被调用的全部写法，否则误放行又回到事故本身。
+  for (const [name, src] of [
+    ['process.exit(main.apply(null, []))', 'function main () { return 0; }\nmodule.exports = { z: 1 };\nprocess.exit(main.apply(null, []));\n'],
+    ['process.exit(main.call(null))', 'function main () { return 0; }\nmodule.exports = { z: 1 };\nprocess.exit(main.call(null));\n'],
+    ['const c = main(); process.exit(c)', 'function main () { return 0; }\nmodule.exports = { z: 1 };\nconst c = main();\nprocess.exit(c);\n'],
+    ['裸 main();', 'function main () { return 0; }\nmodule.exports = { z: 1 };\nmain();\n'],
+    ['守卫块之外的 main()（守卫只包住 exit）', 'function main () { return 0; }\nmodule.exports = { z: 1 };\nmain();\nif (require.main === module) process.exit(0);\n'],
+  ]) {
+    assert.equal(C.driverLoadability(src).reason, 'executes-on-require',
+      '形态 ' + name + ' 顶层真会执行 main ⇒ 必须判禁止加载（判成 ok 就是探针替别人跑流水线的那次事故）');
+  }
+  // 同一批形态写进守卫块内 ⇒ 都不执行，必须回到 ok（防止我把判据写成"文件里出现过 main( 就禁"）
+  for (const [name, src] of [
+    ['守卫块里的 main.apply', 'function main () { return 0; }\nmodule.exports = { z: 1 };\nif (require.main === module) { process.exit(main.apply(null, [])); }\n'],
+    ['守卫块里的两行式', 'function main () { return 0; }\nmodule.exports = { z: 1 };\nif (require.main === module) {\n  const c = main();\n  process.exit(c);\n}\n'],
+  ]) {
+    assert.deepEqual(C.driverLoadability(src), { loadable: true, reason: 'ok' },
+      '形态 ' + name + ' 在 require 时不执行 ⇒ 判禁止加载是把合法形态判死');
+  }
+  // 剥注释/串/正则不能剥穿：main 只出现在注释或字符串里 ⇒ ok；出现在真代码里 ⇒ 禁
+  assert.deepEqual(C.driverLoadability('module.exports = { z: 1 };\n// 顶层不代跑 main()\n/* main() 也不 */\n'), { loadable: true, reason: 'ok' },
+    '注释里的 main() 不是执行路径 —— 这一条防的是"判据退化成子串匹配"');
+  assert.deepEqual(C.driverLoadability('module.exports = { z: 1 };\nconst RE = /main\\s*\\(/;\nconst half = total / count;\n'), { loadable: true, reason: 'ok' },
+    '正则字面量与除号都要认对：把 `a / b` 当正则起点会一路吃到行尾、把真代码吞掉，反过来漏判正则里的假 main 也不行');
+  assert.equal(C.driverLoadability('module.exports = { z: 1 };\nconst t = `跑 main() 之前先看一眼`;\nmain();\n').reason, 'executes-on-require',
+    '串里的 main() 被剥掉后，块外那一句真调用仍然必须被抓到（剥噪声不等于放过真代码）');
+  assert.equal(C.driverLoadability('module.exports = { z: 1 };\nconst bad = /未闭合的正则\nmain();\n').reason, 'unparsable-driver',
+    '跨行未闭合的正则 ⇒ 认不出形态 ⇒ 走保守侧。这一档的成因是「探测器读不懂这份形态」，不是「vendor 有裸调用」——要修的对象不同，不得合并');
+  assert.equal(C.driverLoadability('module.exports = { z: 1 };\nconst s = "引号没闭合 main();\nmain();\n').reason, 'unparsable-driver',
+    '未闭合的串 ⇒ 认不出形态 ⇒ 走保守侧。「扫到文件尾都没收尾」不等于「后面没有真代码」——把整段尾巴当已处理吃掉就是放行');
+  const FN_BODY_CALL = 'function main () { return 0; }\nfunction run () { main(); }\nmodule.exports = { z: 1 };\n';
+  assert.deepEqual(C.driverLoadability(FN_BODY_CALL), { loadable: true, reason: 'ok' },
+    'main 只出现在函数体里 ⇒ require 时不执行；判成禁止加载就是把判据退化成"文件里出现过 main( 就禁"');
+  assert.deepEqual(C.driverLoadability('module.exports = { z: 1 };\nconst RE = /main();/;\n'), { loadable: true, reason: 'ok' },
+    '正则字面量里的 main(); 不是执行路径（这一格与上一条除号夹具成对：分不清正则/除号，两头都会错）');
+  // shebang 不是代码。真 vendor 第一行就是 `#!/usr/bin/env node`，把它当正则起点会让**所有**带 shebang
+  // 的驱动一路 bail ⇒ 行为档在任何装了引擎的机器上永久只剩结构一路（本支实测到，见执行记录）
+  assert.deepEqual(C.driverLoadability('#!/usr/bin/env node\nfunction main () { return 0; }\nmodule.exports = { z: 1 };\nif (require.main === module) process.exit(main());\n'),
+    { loadable: true, reason: 'ok' }, '带 shebang 的守卫形态必须算可加载，否则这一格对真实驱动整体失效');
+  assert.equal(C.driverLoadability('#!/usr/bin/env node\nfunction main () { return 0; }\nmodule.exports = { z: 1 };\nprocess.exit(main());\n').reason,
+    'executes-on-require', 'shebang 不得把真裸调用一起放过（剥的是 shebang 那一行，不是判据）');
+  // 模板串两半必须分开：正文是文本，`${}` 里是**真会执行的代码**
+  assert.equal(C.driverLoadability('module.exports = { z: 1 };\nconst b = `启动 ${main()} 完成`;\n').reason,
+    'executes-on-require', '插值里的 main() 在 require 时真的会跑 ⇒ 整段当文本剥掉就是把真调用读成 ok');
+  assert.deepEqual(C.driverLoadability('function main () { return 0; }\nmodule.exports = { z: 1 };\nconst banner = `覆盖${label ? "（有）" : "（无）"}: ${name}`;\nif (require.main === module) process.exit(main());\n'),
+    { loadable: true, reason: 'ok' },
+    '真实 vendor 全文都是插值模板：整段 bail 会让行为档永久只有一路 ⇒ 插值段必须递归扫而不是放弃（这条同时是"插值里带引号与括号"的负控）');
+  // 成因表由本模块唯一持有：探针不得再抄第二份（抄了就会漂移）
+  assert.deepEqual([...C.BEHAVIORAL_SKIP_REASONS].sort(), ['executes-on-require', 'unparsable-driver', 'unreadable'],
+    '按设计的跳过只有这三档；no-exports/require-failed 属真失明，必须留在表外才会 rc=1');
+  assert.equal(C.isBehavioralSkip('no-exports'), false,
+    '把 no-exports 放进跳过表 = 把"引擎没导出函数"读成"这台机器没装引擎"，那条 rc=1 就此失效');
+  assert.equal(C.isBehavioralSkip('executes-on-require'), true);
+  assert.equal(C.isBehavioralSkip('unreadable'), true);
+  assert.equal(C.isBehavioralSkip('unparsable-driver'), true,
+    '「认不出形态」是按设计的跳过：它和「看见裸调用」一样不执行，但成因文案与修法不同（第 7 轮 i3 之后加的这一档）');
+  assert.equal(C.isBehavioralSkip(null), false, '没有成因（探针自己的 ok 档）不得被当成按设计的跳过');
+  // 第 4 轮评审 i2：这张表还要**运行时也改不动**。为什么用冻结数组而不是冻结 Set ——
+  // 现场实测 `Object.freeze(new Set())` 之后 `.add` 照旧生效（Set 改的是内部槽，不是属性），
+  // 那是假防线；冻结数组在严格模式下 push 直接抛。两条都要钉住，因为"换成 Set 更顺手"随时会发生。
+  assert.ok(Array.isArray(C.BEHAVIORAL_SKIP_REASONS), '成因表必须是数组（冻结的 Set 拦不住 add）');
+  assert.ok(Object.isFrozen(C.BEHAVIORAL_SKIP_REASONS), '成因表必须是冻结的');
+  assert.throws(() => { C.BEHAVIORAL_SKIP_REASONS.push('no-exports'); },
+    '冻结失效 ⇒ 消费方可以运行时扩一档，把真失明改成静默跳过，而 A21 上一条逐档断言就成了纸面的');
+  assert.equal(C.isBehavioralSkip('no-exports'), false, '上一条即使没抛，表也必须仍是三档');
+  const setProbe = Object.freeze(new Set(['a']));
+  setProbe.add('b');
+  assert.equal(setProbe.has('b'), true,
+    '实测记录：freeze 拦不住 Set.add —— 这条是"为什么不用 Set"的依据，不是可选注释');
+
 });
 
 test('A15 探针必须把行为档与交叉比较都接上（只有结构读法＝本刀只做了一半）', () => {
@@ -252,22 +386,46 @@ test('A15 探针必须把行为档与交叉比较都接上（只有结构读法�
   assert.match(src, /if\s*\(\s*!xcheck\.ok\s*\)\s*problems\.push\(/,
     '不一致必须写成「守卫紧跟 problems.push」——只打印不进 problems 的比较是装饰（判据只认这一种形状，'
     + '因为探针其余 problems 都是同一写法）');
+  // 2026-10-24 新增的那一半：require 之前必须先问"这份驱动能不能被安全加载"。
+  // 只断言"两个调用都在文件里"不够 —— 顺序反了（先 require 再判）与没判完全同形。
+  const at = (re) => { const i = src.search(re); assert.ok(i >= 0, '探针里找不到 ' + re + ' ⇒ 该接线被摘掉了'); return i; };
+  const gate = at(/driverLoadability\s*\(/);
+  const req = at(/require\(\s*driverFile\s*\)/);
+  assert.ok(gate < req, '可加载性判定必须**排在 require 之前**；写在后面就等于已经跑过别人的流水线才想起来拦');
+  at(/isBehavioralSkip\(/);
+  assert.ok(src.search(/isBehavioralSkip\(/) < src.search(/return problems\.length \? 1 : 0/),
+    '跳过成因表必须在"决定 rc"之前被读，否则真失明会被判成 0');
 });
 
-/* ---------------- A9-A12：真源码读数、结论生成与接线 ---------------- */test('A9 真源码档：三格都必须读得出（读不出=形状变了），并把当场读数打印出来', () => {
+/* ---------------- A9-A12：真源码读数、结论生成与接线 ---------------- */
+
+test('A9 真源码档：声明了就必须读得出、没声明就必须报"读不出"——不得把机器局部补丁钉成契约', () => {
+  const drv = vendorDriver();
   const caps = C.readCapabilities({
-    driverSrc: vendorDriver().src, writebackSrc: read('scripts/ccg-review-writeback.js'),
-    driverPath: vendorDriver().path, writebackPath: 'scripts/ccg-review-writeback.js',
+    driverSrc: drv.src, writebackSrc: read('scripts/ccg-review-writeback.js'),
+    driverPath: drv.path, writebackPath: 'scripts/ccg-review-writeback.js',
   });
-  console.log(`[qm6-exit-capabilities] 真源码读数 vendor=${vendorDriver().path || 'ABSENT'} `
+  console.log(`[qm6-exit-capabilities] 真源码读数 vendor=${drv.path || 'ABSENT'} `
     + `externalReview=${caps.externalReview} upheld=${caps.upheld} toolSignature=${caps.toolSignature} unknown=${caps.unknown}`);
   console.log(`[qm6-exit-capabilities] 结论 ${C.conclusionLine(caps)}`);
   assert.notEqual(caps.toolSignature, 'unknown', '仓内写回器读不出那条合取 ⇒ 它被改名或搬家了，本锁与 AGENTS 的结论都要同步');
-  if (vendorDriver().src) {
-    assert.notEqual(caps.externalReview, 'unknown', 'vendor 在位却读不出高危域出口 ⇒ 被声明物改名了');
-    assert.notEqual(caps.upheld, 'unknown', 'vendor 在位却读不出 upheld 出口 ⇒ blockingFromAdjudication 形状变了');
+  // vendor 侧两格一律写成**蕴含式**。原因是一条现场教训：本条原先写"vendor 文件在位 ⇒ 三格必须读得出"，
+  // 而 2026-10-24 11:48 另一个会话把本机那份**未提交的** vendor 补丁改写掉了（`externalReviewSatisfied`
+  // 整个名字没了），于是这条红的内容是"我的机器前提变了"，不是"判据量出了什么" ——
+  // 把机器局部状态当契约前提，等价于在别人机器上关掉这条锁（本仓「装饰性门禁」同型）。
+  if (/externalReviewSatisfied/.test(drv.src)) {
+    assert.notEqual(caps.externalReview, 'unknown', '驱动里出现了被声明物却读不出 ⇒ 是谓词的锚点坏了，不是引擎变了');
+  } else {
+    assert.equal(caps.externalReview, 'unknown',
+      '驱动里根本没有那个名字时必须报"读不出"。折叠成 false 就是把工具的失明读成"这条出口不存在"');
+    assert.match(C.conclusionLine(caps), /读不出/, '失明档的结论句必须自带"读不出"字样：' + C.conclusionLine(caps));
   }
-  // 刻意**不断言**今天那两格是 false：那是把一次观测钉成契约。
+  if (/function[ \t]+blockingFromAdjudication[ \t]*\(/.test(drv.src)) {
+    assert.notEqual(caps.upheld, 'unknown', 'blockingFromAdjudication 在位却读不出 ⇒ 切块判据与这一版形状不匹配');
+  } else {
+    assert.equal(caps.upheld, 'unknown', '同一个道理：函数不在，是读不出，不是"没有出口"');
+  }
+  // 刻意**不断言**这几格今天是 true 还是 false：那是把一次观测钉成契约，将来真加出口的 PR 会被自己的锁咬住。
 });
 
 test('A10 探针必须改用读数生成结论，且不得再出现被撤销回来的那句写死结论', () => {
@@ -289,9 +447,13 @@ test('A11 接线锁：新锁与探针都必须被 workflow 的**可执行正文*
 test('A12 导出面与追踪态：三个谓词与生成器都必须在模块导出上，且本体不被 .gitignore 吞掉', () => {
   // #4062 那次撤销的显形方式就是"导出面消失"。这里按名字逐个问，不接受"文件还在所以没事"。
   for (const name of ['externalReviewCapable', 'upheldExitCapable', 'toolSignatureCapable', 'upheldExitBehavioral',
-    'externalReviewReceiptLive', 'crossCheckUpheld', 'readCapabilities', 'conclusionLine']) {
+    'externalReviewReceiptLive', 'crossCheckUpheld', 'readCapabilities', 'conclusionLine', 'driverLoadability']) {
     assert.equal(typeof C[name], 'function', `导出面缺 ${name} ⇒ 消费方会静默退化，而本仓的锁看不见"没人调用"这件事`);
   }
+  // 跳过成因表由读数器一侧唯一持有：探针只准通过 `isBehavioralSkip` 问，不得再抄第二份
+  assert.ok(Array.isArray(C.BEHAVIORAL_SKIP_REASONS) && Object.isFrozen(C.BEHAVIORAL_SKIP_REASONS),
+    '跳过成因表必须是模块导出的那一份冻结表（探针侧的第二份由 A22 扫域抓）');
+  assert.equal(typeof C.isBehavioralSkip, 'function', '唯一消费入口必须在导出面上');
   const rel = ['scripts/qm6-exit-capabilities.js', 'scripts/qm6-exit-capabilities.test.js', 'scripts/qm6-exit-capabilities.mutation.js'];
   const env = { ...process.env };
   // GIT_DIR 等会静默压过 cwd（钩子窗口里实测踩过），先清掉再问 git。
@@ -312,6 +474,157 @@ test('A12 导出面与追踪态：三个谓词与生成器都必须在模块导�
 });
 
 /* ---------------- A17-A19：变异驱动的基线卫生（QM-6 第二轮评审 i2） ---------------- */
+
+test('A24 反证运行态必须与本机 vendor 无关（否则 n32 那一类靶子会在本机真的跑起别人的流水线）', () => {
+  const D = require('./qm6-exit-capabilities.mutation.js');
+  const env = D.sandboxEnv();
+  const dir = env.CCG_ARL_DIR;
+  assert.ok(typeof dir === 'string' && dir.length > 0, '沙箱目录必须存在且非空字符串');
+  assert.equal(dir, env.HOME, 'HOME 必须一起指过去，否则 ~/.claude/skills 那一路仍会命中本机引擎');
+  assert.equal(dir, env.USERPROFILE, 'USERPROFILE 同理（Windows 上 locateVendor 读的就是它）');
+  assert.ok(!fs.existsSync(path.join(dir, 'engine.js')) && !fs.existsSync(path.join(dir, 'ccg-deep-review.js')),
+    '沙箱目录里不得有引擎/驱动两件，否则 locateVendor 会命中');
+  for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR']) {
+    assert.ok(!(k in env), `沙箱 env 不得带 ${k}（它会静默压过 cwd，实测踩过）`);
+  }
+  // 行为：探针本体在沙箱 env 下必须走"没有 vendor"那一档 —— rc=2 且点名失明，
+  // 而不是 rc=0（把没测读成通过）也不是 rc=1（把没装读成读数矛盾）。
+  const probe = path.join(ROOT, 'scripts', 'ccg-convergence-probe.js');
+  const inSandbox = spawnSync(process.execPath, [probe], { cwd: ROOT, encoding: 'utf8', env });
+  assert.equal(inSandbox.status, 2, '沙箱里探针必须 rc=2，实际 ' + inSandbox.status + '：' + String(inSandbox.stderr).slice(0, 200));
+  assert.match(String(inSandbox.stderr), /探针失明/, '必须点名"探针失明"，不得让它读成"引擎没问题"');
+  // 反失明正控：把 env 换回真实的，若本机装了引擎，rc 就**不该**是 2 —— 否则上面那两句
+  // 可能只是因为探针本身坏了而恒成立。本机没装引擎时如实打日志（不 skip 整条锁）。
+  const realHome = process.env.USERPROFILE || process.env.HOME || '';
+  const realVendor = realHome && fs.existsSync(path.join(realHome, '.claude', 'skills', 'adversarial-review-loop', 'scripts', 'ccg-deep-review.js'));
+  if (realVendor) {
+    const out = spawnSync(process.execPath, [probe], { cwd: ROOT, encoding: 'utf8', env: { ...process.env } });
+    assert.notEqual(out.status, 2, '本机装了引擎却仍 rc=2 ⇒ 探针或定位逻辑坏了，A24 的上面两句就成了空断言');
+    console.log('[qm6-exit-capabilities] A24 正控：本机装了 vendor（rc=' + out.status + '），沙箱确实把它藏掉了');
+  } else {
+    console.log('[qm6-exit-capabilities] A24 正控：本机没有 vendor，正控无从执行（只打点，不据此判上面那两句已通过）');
+  }
+  // 结构锁：套件必须**在沙箱里跑**，且驱动开工前自证过沙箱生效。
+  // 取域走 driverCode()（剔掉 M 表）：n39 首跑就是被表里那条拆开的 from 字面量满足的，
+  // 判据域不等于风险的语法位置时，"锁在跑"与"锁有用"是两件事。
+  const drv = driverCode();
+  assert.match(drv, /'--test', suite\.file\][^\n]*env: sandboxEnv\(\)/,
+    'suiteRun 不再传沙箱 env ⇒ 反证拿本机 vendor 陪跑（变异 n39 就钉这一格）');
+  assert.match(drv, /id: 'sandbox', state: 'PROBLEM'/, '驱动必须自证沙箱生效，失效时打 PROBLEM 而不是继续跑');
+  // "收窄扫描域"这个动作自己也有两条退路要堵，且必须写成**行为断言**而不是"源码里出现过 throw"：
+  // 变异 n40（找不到边界就退回整文件扫）与 n41（剔完不验规模）各取一条被禁形态本身。
+  assert.throws(() => driverCodeRegion('function noTable () { return 1; }\n'),
+    /找不到 M 表边界/, '剔不掉就退回整文件扫 ⇒ 本函数存在的理由没了，n39 那一格原地复活');
+  assert.throws(() => driverCodeRegion('const M = [\n];\nfunction tiny () { return 1; }\n'),
+    /规模异常/, '剔完不验规模 ⇒ 域退化成接近空集，而"零处违规"读起来完全像通过（本仓「探针失明」同型）');
+  assert.ok(driverCode().includes('env: sandboxEnv()'),
+    '真实驱动必须能被本函数正常取出代码区 —— 否则上面两条红可能只是恒真而不是判据');
+});
+
+test('A22 「按设计的跳过」这张表只准有一份实现 —— 别处内联同一条枚举即红', () => {
+  // 这是"是否复用某实现"的锁。口径必须取**两版实现答案不同**的输入：
+  // 今天只有读数器里那一条数组字面量；若下一个会话在探针/驱动里内联一份"顺手判一下"，
+  // 两份表就会漂移，而漂移的方向恰好是把真失明写进跳过表（因为那样它自己就不红了）。
+  const ENUM = "'unreadable', 'executes-on-require', 'unparsable-driver'";
+  const files = ['scripts/qm6-exit-capabilities.js', 'scripts/ccg-convergence-probe.js',
+    'scripts/check-pr-exec-record.js', 'scripts/ccg-review-writeback.js'];
+  // ⚠ 变异驱动**必须在扫描域之外**：它的 M 表逐字引用了这条枚举当锚点，算进 owners 会让本锁恒红。
+  // 这与 n22/n26 那次"锚点自反"同型 —— 正解是按域排除并把理由写在这一行，不是放宽判据本身。
+  const owners = [];
+  for (const f of files) {
+    const src = read(f).split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    if (src.includes(ENUM)) owners.push(f);
+  }
+  assert.deepEqual(owners, ['scripts/qm6-exit-capabilities.js'],
+    '成因枚举只能出现在读数器那一条表定义里；多一个宿主就是第二份事实（实际命中：' + owners.join(', ') + '）');
+  // 正控：这张表确实能被内联（否则上一条是"永不命中"的假锁）
+  const fake = "const inlined = ['unreadable', 'executes-on-require', 'unparsable-driver'];";
+  assert.ok(fake.includes(ENUM), '夹具形状坏了 ⇒ 上面那条锁测不出任何东西');
+  // 消费入口也必须单一：探针只准调 isBehavioralSkip
+  const probeBody = read('scripts/ccg-convergence-probe.js').split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  assert.doesNotMatch(probeBody, /BEHAVIORAL_SKIP_REASONS\s*\./,
+    '探针直接摸表（.has/.includes）就是绕过唯一入口 ⇒ 加一档不需要改读数器，A21 逐档断言会漏');
+  assert.match(probeBody, /isBehavioralSkip\(/, '探针必须通过唯一入口问成因');
+});
+
+test('A23 驱动必须能列出"靶子之外被改脏的文件"（第 4 轮 i1/i6：还原得了靶子，还原不了副作用）', () => {
+  const D = require('./qm6-exit-capabilities.mutation.js');
+  assert.equal(typeof D.worktreeDirtyPaths, 'function', '导出面缺 worktreeDirtyPaths ⇒ 副作用体检没法被测、也没法被信');
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'qm6-side-effect-'));
+  const git = (args) => spawnSync('git', args, {
+    cwd: repo, encoding: 'utf8',
+    env: (() => { const e = { ...process.env }; for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR']) delete e[k]; return e; })(),
+  });
+  try {
+    git(['init', '-q']);
+    git(['config', 'user.email', 'test@example.invalid']);
+    git(['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'one\n', 'utf8');
+    git(['add', 'a.txt']);
+    git(['commit', '-q', '-m', 'init']);
+    assert.deepEqual(D.worktreeDirtyPaths(repo), [], '干净仓库必须读出空集，否则"差集非空即副作用"永远为真');
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'two\n', 'utf8');
+    assert.deepEqual(D.worktreeDirtyPaths(repo), ['a.txt'], '改一个受管文件必须被列出来');
+    fs.writeFileSync(path.join(repo, 'new.txt'), 'x\n', 'utf8');
+    assert.deepEqual(D.worktreeDirtyPaths(repo).sort(), ['a.txt', 'new.txt'], '未跟踪新文件也要列（.ccg 产物被覆写就是这一族）');
+    // 重命名那一格的形状是 `R  old -> new`：判据必须取**箭头右侧**，取左侧等于报一个盘上不存在的路径
+    fs.rmSync(path.join(repo, 'new.txt'), { force: true });
+    git(['add', 'a.txt']);
+    git(['commit', '-q', '-m', 'second']);
+    git(['mv', 'a.txt', 'b.txt']);
+    const renamed = D.worktreeDirtyPaths(repo);
+    assert.ok(renamed.includes('b.txt'), 'rename 必须取箭头右侧（实际：' + JSON.stringify(renamed) + '）');
+    assert.ok(!renamed.includes('a.txt'), '把左侧旧名报出来会让人去 checkout 一个不存在的路径（实际：' + JSON.stringify(renamed) + '）');
+    // 取不到读数 ⇒ 抛错，不得读成"没有副作用"
+    assert.throws(() => D.worktreeDirtyPaths(path.join(repo, 'no-such-dir')), /取不到读数|无从判定/,
+      'git 失败被读成空集 = 把工具的失明读成"现场干净"');
+    // 体检函数本身：它自己取"跑后快照"，所以入参是 (跑前集合, 靶子清单, cwd)。
+    // 三档结果各有断言，且**失明档必须返回 PROBLEM 而不是 null**。
+    const se = D.checkSideEffects;
+    assert.equal(typeof se, 'function', '导出面缺 checkSideEffects ⇒ 体检长在 finally 里，测不到也反证不了');
+    // 上面几格留下了一次未提交的 rename，先把夹具收干净再量"零副作用"——
+    // 否则这条断言量到的是自己的夹具，不是被测函数。
+    git(['add', '-A']);
+    git(['commit', '-q', '-m', 'third']);
+    assert.deepEqual(D.worktreeDirtyPaths(repo), [], '夹具没收干净，下面的"零副作用"断言就是空的');
+    assert.equal(se(new Set(), [], repo), null, '干净仓库不得虚报副作用');
+    fs.writeFileSync(path.join(repo, 'leak.txt'), 'x\n', 'utf8');
+    const hit = se(new Set(), [], repo);
+    assert.equal(hit.state, 'PROBLEM', '跑后新出现的未跟踪文件必须报（.ccg 产物被覆写就是这一族）');
+    assert.match(hit.why, /leak\.txt/, '文案必须点名精确路径，否则人没法还原');
+    assert.equal(se(new Set(['leak.txt']), [], repo), null, '跑前就脏的（别人的在飞改动）不得认领成本轮副作用');
+    const blind = se(new Set(), [], path.join(repo, 'no-such-dir'));
+    assert.equal(blind.state, 'PROBLEM', 'git 挂掉被读成 null = 把工具的失明读成"没有副作用"（变异 n38 就钉这一格）');
+    assert.match(blind.why, /无从判定/);
+    assert.equal(se(undefined, [], repo).state, 'PROBLEM', '入参坏了也要出声，不得静默判干净');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+  // 结构锁：runAll 必须拍跑前快照，并在**还原之后**调用这次体检
+  const drv = driverCode();
+  const snap = drv.indexOf('const dirtyBefore = new Set(worktreeDirtyPaths())');
+  const callAt = drv.indexOf('checkSideEffects(dirtyBefore, targets)');
+  assert.ok(snap >= 0, '没有跑前快照 ⇒ 会把别人在飞的改动认领成本轮的副作用，这条体检就是噪声生成器');
+  assert.ok(callAt >= 0, 'runAll 没调用这次体检 ⇒ 上面那组行为断言测的是没人用的函数');
+  assert.ok(drv.lastIndexOf('restoreAll(orig);') < callAt,
+    '体检必须排在还原**之后**：还原前量到的是变异本身，不是残留副作用');
+  assert.match(drv, /if \(se\) results\.push\(se\);/, '体检结果必须进 results（只打印一行警告等于没有闸）');
+  assert.match(drv, /x\.id !== 'side-effects'/,
+    'side-effects 不得计入 TOTAL（它是驱动体检不是变异结果），但必须仍能把 RESULT 打成 FAIL');
+  // 差集本体必须是**可单测的纯函数**：只锁"调用在位"锁不出"返回恒空数组"这一格
+  // （本刀 n15 的同型教训：调用在位但结果被常数覆盖，源码形状锁看不见）。
+  const sp = D.sideEffectPaths;
+  assert.equal(typeof sp, 'function', '导出面缺 sideEffectPaths ⇒ 差集逻辑长在循环里，测不到也反证不了');
+  assert.deepEqual(sp(new Set(), [], ['x.txt']), ['x.txt'], '跑后新出现的脏文件必须被列出来');
+  assert.deepEqual(sp(new Set(['x.txt']), [], ['x.txt']), [], '跑前就脏的（别人的在飞改动）不得认领成本轮的副作用');
+  assert.deepEqual(sp(new Set(), ['a.js'], ['a.js']), [], '靶子文件由靶子还原那条断言管，不重复报');
+  assert.deepEqual(sp(new Set(['p']), ['q'], ['q', 'r', 'p']), ['r'], '三档同时生效：只留下真正的新增外部脏文件');
+  assert.throws(() => sp(undefined, [], ['x']), /before 必须是 Set/, '缺跑前快照不得退化成"全部算副作用"或"全不算"');
+  assert.throws(() => sp(new Set(), undefined, ['x']), /targets 必须是数组/);
+  assert.throws(() => sp(new Set(), [], undefined), /after 必须是数组/,
+    '取不到读数被当成空集 = 把工具的失明读成"现场干净"（本仓点名的同型）');
+});
+
 
 test('A17 驱动开工前必须证明靶子与 HEAD 一致；脏基线一律拒绝，不得把污染当成"原始内容"', () => {
   const D = require('./qm6-exit-capabilities.mutation.js');
@@ -419,3 +732,16 @@ function vendorDriver () {
   }
   return { path: null, src: '' };
 }
+test('A25 expectGreen 的执行体必须真的读 runs（第 7 轮 i4：没被消费的声明就是装饰品）', () => {
+  const D = require('./qm6-exit-capabilities.mutation.js');
+  assert.equal(typeof D.greenViolations, 'function',
+    '执行体没导出 ⇒ 只能写「源码里出现过那行 filter」的记录性断言，正是本仓点名的装饰性锁形状');
+  const runs = [{ suite: 'locks.test.js', reds: ['A1 某条红'] }, { suite: 'probe.test.js', reds: [] }];
+  assert.deepEqual(D.greenViolations(['locks.test.js'], runs), ['locks.test.js'],
+    '声明保持绿的套件当场有指名红 ⇒ 必须点名（n42 摘掉的正是这一格 ⇒ 本条必须变红）');
+  assert.deepEqual(D.greenViolations(['probe.test.js'], runs), [],
+    '套件真绿时不得凭空造违规（否则每条变异都被读成 PROBLEM，这道闸变成噪声）');
+  assert.deepEqual(D.greenViolations(undefined, runs), [], '没声明 expectGreen 的变异不得被读成违规');
+  assert.deepEqual(D.greenViolations(['locks.test.js', 'absent.test.js'], runs), ['locks.test.js'],
+    '只报真的那一条 —— 把 runs 里根本不存在的套件也算进来，等于把判据退化成「声明即违规」');
+});

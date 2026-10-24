@@ -1,0 +1,115 @@
+{
+  "sha": "f10847fae45a9389a25c51bb7f9df41d105f83dc",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 800 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 800,
+    "fileCount": 10,
+    "codeFileCount": 5,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "b8b47012003b015898f9e3d456fe7ade486284d4bfc2ee1764d798bf57d24f77",
+  "decidedAt": "2026-10-24T18:55:17.390Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "behavioralUpheldExit returns {upheld:false} for load.loadable=true/reason='no-exports', but P11/mutation expect behavioral='unavailable' with skipReason='no-exports'. Design says 'no-exports' = unavailable/rc=1; code never sets unavailable when fn is missing.",
+        "highRiskDomains": [],
+        "prosecution": "若 loadable=true 而 reason=no-exports 时函数体仍往下走并把 missing fn 当成\"不阻断\"，行为档会给出 false 定值，P11 与 n30/n33 两条反证都会失去对象；设计文档明写这一档是**真失明**（要 rc=1）。",
+        "defense": "实测否证。把只含 `function blockingFromAdjudication` 但没有 `module.exports` 的合成驱动放进临时技能根，CCG_ARL_DIR 指过去跑 `node scripts/ccg-convergence-probe.js --json`，当场读数：`rc=1 / upheldBehavioral=\"unavailable\" / behavioralSkip=\"no-exports\" / note=\"behavioral=skipped(no-exports)\" / problems[0] 点名行为档`。机制在 `capabilities.upheldExitBehavioral(fn)` 里：`typeof fn !== \"function\"` 直接返回 unavailable，而 `no-exports` 不在 `BEHAVIORAL_SKIP_REASONS` 里 ⇒ 探针必然 push 一条 problem。且这一格已有回归锁 P11（含 A/B：只装回导出面即回 rc=0）与变异 n30/n33 各钉一次。",
+        "verdict": "dismissed",
+        "rationale": "主张的代码路径与实测结果相反，且它建议的修法（读到 !fn 就 return）正是现有实现的行为。这是同一条主张在第 4 轮 i1 之后的重复提出 —— 重复本身说明 critic 没读落地代码，但裁决只按事实判：`scripts/qm6-exit-capabilities.js:178-186`（upheldExitBehavioral 的 typeof 早退）+ `scripts/ccg-convergence-probe.js:259-280`（require 之前先过 loadability、之后如实带回 skipReason）。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "Mutation n32 removes the guard so require executes an unguarded vendor module. Even with driverLoadability, a passing 'ok' vendor runs arbitrary module-level code. Mutation framework only restores target files, so external writes (.ccg/*.json, .adversarial/) persist (legacy 9).",
+        "highRiskDomains": [],
+        "prosecution": "n32 把\"不许 require\"那道闸摘掉，反证运行就会在本机重演事故：真 vendor 被加载、外部产物被覆写，而驱动只还原靶子文件 ⇒ 脏现场留在盘上，且 RESULT 仍可报 OK。",
+        "defense": "该主张描述的是**修法落地之前**的现场，两条闸已在本支里落地：① `checkSideEffects`（`scripts/qm6-exit-capabilities.mutation.js` finally 段）跑前拍快照、还原后再拍一次，靶子之外新增脏文件一律 `PROBLEM id=side-effects` 且 git 取不到读数同样 PROBLEM；② `sandboxEnv()` 把 `CCG_ARL_DIR/HOME/USERPROFILE` 同指空临时目录 ⇒ `locateVendor()` 恒 null，真引擎在反证里根本见不到（开工自证：沙箱内探针必须 rc=2 且点名\"探针失明\"，否则拒绝开跑）。现场证据：本轮终跑 `CAUGHT=42 MISSED=0 PROBLEM=0` 里**不再出现 side-effects 那一条**，而它在前一次带真 vendor 的跑里确实报出来过（报的就是我自己并发改记录文件）。「ok」的 vendor 仍会在加载期跑模块级代码这一半属**已记录的边界**（执行记录遗留 10/11），不是本差量引入的缺陷：收紧只能走子进程隔离，而那等于以探测之名真跑别人的流水线。",
+        "verdict": "dismissed",
+        "rationale": "两条可执行闸门已在同一支里落地并被 A23/A24 + 变异 n37/n38/n39/n40/n41 各自钉住；剩余的真实边界已作为遗留显式登记（含\"为什么不做子进程隔离\"的理由），不在本差量范围内伪装成已修。"
+      },
+      {
+        "id": "i3",
+        "severity": "High",
+        "finding": "MAIN_GUARDED regex requires exact spacing/format: /require\\.main === module/ followed immediately by process.exit(main()). Different whitespace, extra braces with setup, or process.exit(main.apply(...)) misclassify legitimate shapes as executes-on-require.",
+        "highRiskDomains": [],
+        "prosecution": "判据是单条正则，形态稍有变化（额外空白、块里先 setup、`main.apply(...)`）就会被误判成 `executes-on-require` ⇒ 行为档在一台正常机器上静默退化成一路。",
+        "defense": "三分法。① \"额外空白 / 一层花括号\"已经被接受：`MAIN_GUARDED` 现为 `\\)\\s*\\{?\\s*process\\.exit\\(...`，A21 有 GUARDED / GUARDED_BRACED 两条正控；② \"块里先 setup 再 exit\"是**刻意留在保守侧**的那一格：判成不许加载的代价是这一格今天少一路读数**且会出声**（`behavioral=skipped(executes-on-require)`），而放行的代价是替别人跑守卫块里的前置副作用 —— 两边不对称，A21 已为该形态配夹具与两条反向对照（\"文件别处出现过守卫\"与\"函数体内 process.exit(2)\"都不得被误判）；③ `main.apply(...)` 属②的同类：落到保守侧 = 跳过并出声，不存在误放行。至于\"改用最小 AST/tokenize\"，已作为遗留 11 记录并给出理由（把探测器升级成解析器，引入的失败面大于消除的），真正的修法方向是 vendor 侧导出\"我可否被安全加载\"，属 #4304 的接口设计。",
+        "verdict": "dismissed",
+        "rationale": "被误判的形态全部落在\"不执行 + 出声\"一侧，不存在危险方向；允许形态的夹具已齐，未覆盖形态的取舍与理由写在函数头与执行记录遗留 11。本支补一条 `main.apply` 形态的夹具与断言（把这条边界从口头变成用例），作为对该观察的采纳——但它不改变裁决：观察成立而指控不成立。"
+      },
+      {
+        "id": "i4",
+        "severity": "High",
+        "finding": "Mutation n36 declares expectGreen: [PROBET], but mutation driver never reads expectGreen. Framework behavior for this mutation is undefined; it either always treats as caught or ignores the property, making expectations ambiguous.",
+        "highRiskDomains": [],
+        "prosecution": "若驱动从不读 `expectGreen`，那三条声明就是装饰品：变异把\"应当保持绿的套件\"改红也照样 CAUGHT，读结果的人会以为绿档被守住了。",
+        "defense": "事实主张不成立：`scripts/qm6-exit-capabilities.mutation.js:615` 在开工预检里逐个校验 `expectGreen` 指向的套件必须存在于 SUITES（否则抛错），`:637` 在每条变异后算 `greenViolated` 并推 PROBLEM；M 表里有 3 条在用（n3 / n13 / n36）。文件头还记着这条声明在上一刀**被打脸过一次**（m18），即它确实执行过并拦过东西。",
+        "verdict": "dismissed",
+        "rationale": "\"从不读\"可被两处行号直接否证。但它逼出一格真实的未覆盖：**没有变异证明 `expectGreen` 还能触发**（现在只有\"它曾经触发\"的历史陈述）。本支按\"被驳回但逼出欠账\"处理：新增 n42 摘掉 `:637` 那条过滤，并要求一条用例当场红 —— 见执行记录\"第 7 轮 i4：驳回 + 采纳观察\"。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "sandboxEnv deletes GIT_* keys but keeps HOME/USERPROFILE pointing to empty temp. A loadable vendor module can still access other env/file paths outside temp, and mutation execution is not sandboxed from real filesystem writes.",
+        "highRiskDomains": [],
+        "prosecution": "沙箱只覆写 env，不隔离文件系统；一个被判 ok 的 vendor 模块仍可以往仓库任意可写路径落文件，`HOME` 被换掉不等于它能少写东西。",
+        "defense": "描述属实，指控不成立：`sandboxEnv()` 的目的从来不是文件系统隔离，而是**把本机引擎从反证里拿掉**（它解决的是\"n32 会真跑别人流水线\"这一格），fs 级隔离不在其中；真正兜住\"外部写入不被察觉\"的是 `checkSideEffects` 那条差量体检 —— 它不阻止写，它让写了之后不可能被读成通过。两者一前一后，正是要的组合：能防的防（不见到真引擎），防不住的必须可见（差量报 PROBLEM）。",
+        "verdict": "dismissed",
+        "rationale": "本支在 `sandboxEnv()` 注释里补一句\"env 级，不是 fs 级\"（采纳其命名提醒），并把 fs 级隔离与子进程方案一并归到遗留 10 的同一决策里（理由：以探测之名真跑评审链的代价与副作用更大）。命名与文档可改进，缺陷不成立。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-24T19:11:40.917Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4413#issuecomment-6387934663",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@2497f62c6c49778e6f7c4175c459acab35b461a24fb3484f5c98e6a1ed622072"
+  }
+}

@@ -120,6 +120,8 @@ const LEDGER = [
     reason: "图库上传区点击即打开文件选择器，**区内有可见的「移除」按钮**（nestedVisible=1）⇒ 不能挂 role=\"button\"。键盘等价物缺位 ⇒ 正解是区内显式「选择文件」<button>，上传区保持非控件。本批未做结构改造，登记待办。" },
   { key: "/views/video-creation/ResultSegmentCard.vue|article|slot.path && $emit('select-material', se",
     reason: "素材槽位（article，带 aria-pressed）点击即选中，但**槽内有可见的预览 <button> 与单选 <input>**（实测 nestedVisible=4）⇒ 给它 role=\"button\" 会把它们呈现为 presentational；而且 aria-pressed 只有在 button 角色下才成立。正解是结构改造：槽位改用真 <button> 承载选中语义，预览与单选移出该按钮（或改用 role=\"group\" + 内部按钮）。" },
+  { key: "/views/member-center/Subscription.vue|li|canBuyPlan(plan.id) && openPay({ plan: p",
+    reason: "方案行的 role/tabindex 是**条件绑定**（`:role=\"canBuyPlan(plan.id) ? 'button' : undefined\"` 与同形 `:tabindex`），静态 role 判据按设计不认动态取值 ⇒ 运行期取值扫描器无从得知，与本仓 History 条目同形。本批已同时把键盘路径补齐：新增 `@keydown.space.prevent`，并给原有 `@keydown.enter` 补 `.prevent`（Space 不 preventDefault 会滚页），三者与 @click 表达式逐字相同；登记只为让静态判据不再把它读成缺口，等 role 改成静态绑定时销账。" },
 ]
 
 // ⛔ 「键盘处理不是 @click 的逐字镜像」的显式登记（可清账，名单只能缩小）

@@ -67,7 +67,8 @@
           :tabindex="canBuyPlan(plan.id) ? 0 : undefined"
           :aria-disabled="!canBuyPlan(plan.id)"
           @click="canBuyPlan(plan.id) && openPay({ plan: plan.id, period: 'month' })"
-          @keydown.enter="canBuyPlan(plan.id) && openPay({ plan: plan.id, period: 'month' })"
+          @keydown.enter.prevent="canBuyPlan(plan.id) && openPay({ plan: plan.id, period: 'month' })"
+          @keydown.space.prevent="canBuyPlan(plan.id) && openPay({ plan: plan.id, period: 'month' })"
         >
           <span class="member-center-plan-label">
             {{ isCurrentPlan(plan.id) ? t('memberCenter.planCurrentSuffix', { label: plan.label }) : plan.label }}

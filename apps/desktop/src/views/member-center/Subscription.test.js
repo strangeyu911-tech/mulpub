@@ -118,6 +118,22 @@ describe('member-center/Subscription', () => {
       expect(dialog.props('period')).toBe('month')
     })
 
+    // 键盘可达性的**行为锁**（2026-10-25）：套餐 li 带 role="button"（可购买时），
+    // Space 键是它唯一的键盘激活路径（#4416 补的 @keydown.space.prevent）。
+    // ⚠️ 为什么必须在这里单独锁：合同测试（clickable-roles.contract.test.js）的
+    // 「键盘处理必须逐字镜像鼠标处理」只遍历 **fixed**（静态 role="button"）的站点，
+    // 而这个站点的 role 是**条件绑定**（`:role="canBuyPlan(plan.id) ? 'button' : undefined"`）
+    // ⇒ 它在合同测试里算「缺口」⇒ 那条断言**遍历不到它** ⇒ 没有本用例的话，
+    // 谁把 @keydown.space.prevent 删掉，没有任何测试会红（#4416 合入后就是这种状态）。
+    it('键盘 Space 必须与点击同出口（可购买套餐卡）', async () => {
+      const { wrapper } = await mountSubscription()
+      await wrapper.get('[data-testid="plan-standard"]').trigger('keydown.space')
+      const dialog = wrapper.findComponent({ name: 'WeChatPayDialog' })
+      expect(dialog.props('open'), 'Space 必须与点击同出口（不得只认 Enter）').toBe(true)
+      expect(dialog.props('plan')).toBe('standard')
+      expect(dialog.props('period')).toBe('month')
+    })
+
     it('当前档（free）卡片不渲染购买入口', async () => {
       const { wrapper } = await mountSubscription()
       const freeCard = wrapper.get('[data-testid="plan-free"]')

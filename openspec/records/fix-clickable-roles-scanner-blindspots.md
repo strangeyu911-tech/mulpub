@@ -41,6 +41,9 @@ branch: fix-clickable-roles-scanner-blindspots
 ### 遗留（不假装已闭合）
 
 - ⛔ **QM-1 打包验证与 QM-6 外部双模型评审均未在本地执行**（环境不具备），依赖 CI 兜底。
+- ⚠️ **2026-10-25 后续（本 PR 合并后 main push 的 CI 回读引出的 follow-up）**：本 PR 修好扫描器 ⇒ 扫描域从 31 站点涨到 76 ⇒ 但**台账是在本 PR 自己的基线（`f10847f`）上清点的** ⇒ 合并到含 #4395（会员中心重构，新增 `Subscription.vue`，其中有一处条件 `:role` 的可点击 `<li>`）的 main 之后 ⇒ **缺口 31 > 台账 30** ⇒ main push 的合同测试红（`QG Coverage` / `QG Desktop Shards (2/2)` / `Gate Result`）。
+  ⇒ 已由 **#4416** 收口（merge SHA `3b90daa9c`）：登记该站点 + 补上该卡缺失的 `@keydown.space`（带 `role="button"` 却只认 Enter ⇒ 键盘用户按空格打不开）。执行记录见 `openspec/records/fix-clickable-roles-plan-space.md`。
+  ⇒ **本行的 Fresh 证据（未登记=0 / 陈旧=0）是本 PR 分支上的读数**；合并后的 main 读数以上述 follow-up 记录与 PR 评论为准。
 - ⛔ **9 项结构改造未做**（本次只做"看得见 + 有原因登记"，不做 DOM/CSS 改造）：
   ① 3 处 `role-leaf` 卡片（`ProjectCard` / `AccountManagementCard` / `CopyLibraryView`）
   ② 5 处上传区（`QuickRenderMaterials` 的"把「选择文件」提为区内真 `<button>`"）

@@ -44,8 +44,20 @@ MAX_PAGE_SIZE = 200
 REDEEM_STATUSES = ("active", "used", "disabled")
 
 #: 与 engine `REDEEM_CODE_PATTERN` 同源（4-4-4，排除 I/L/O/0/1）。
+#: ⚠️ 必须**大小写不敏感**：engine 的 redeem 侧会 trim + toUpperCase，
+#: 若本层用大写字面量匹配，运营从聊天记录里抄来的小写码会被**前置拒掉**（400）
+#: ⇒ **事故处置路径比暴露路径窄**（第 3 轮红队实测）。本层只做**前置校验**，
+#: engine 仍会独立校验一遍。
 REDEEM_CODE_RE = re.compile(
-    r"^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}$"
+    r"^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}$",
+    re.IGNORECASE,
+)
+
+#: 批次号上限：与 engine 的 BATCH_MAX_LENGTH 同源（批次号是索引列且一批码共用 ⇒ 放大写入）。
+BATCH_MAX_LENGTH = 64
+#: 与 engine 的 UNSAFE_LABEL_CHARS 同源：控制字符 / 零宽 / 双向覆盖 ⇒ 列表显示会被骗。
+UNSAFE_LABEL_CHARS_RE = re.compile(
+    r"[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]"
 )
 
 
@@ -99,14 +111,20 @@ async def _call_engine(method: str, path: str, **kwargs) -> dict:
             code = "ENGINE_ADMIN_ERROR"
         # 只有引擎明确带了业务载荷才原样带回，其余错误只透传 code——
         # 不把 engine 的原始响应体整包转发，避免泄露内部字段。
+        # ⚠️ batch 必须在白名单里：engine 已签发出去、**仍可兑**的那部分码
+        # 只在响应体里带 batch ⇒ 不透传它，运营既不知道这批码属于哪一批，
+        # 泄漏后也无从定位是哪一批（仓里只有单码吊销 ⇒ 按批次筛出后逐个吊销）。
         extra = {
             k: body[k]
-            for k in ("requested", "generated", "rounds", "codes")
+            for k in ("requested", "generated", "rounds", "codes", "batch")
             if k in body
         }
         raise EngineAdminError(
             resp.status_code,
             code,
+            # 失败原因用**本层固定文案**，不转发 engine 的原始 message：
+            # 转发整包响应体会泄露内部字段，而 message 是 engine 的自由文本。
+            detail="批量签发未补足，请按已签发码交付或重试" if code == "REDEEM_BATCH_INCOMPLETE" else "",
             payload=extra if code == "REDEEM_BATCH_INCOMPLETE" else None,
         )
 
@@ -135,13 +153,29 @@ def _validate(body: dict) -> dict:
 
     batch = body.get("batch")
     if isinstance(batch, str) and batch.strip():
-        payload["batch"] = batch.strip()
+        cleaned = batch.strip()
+        if len(cleaned) > BATCH_MAX_LENGTH:
+            raise EngineAdminError(
+                400, "BATCH_INVALID", f"批次号过长（上限 {BATCH_MAX_LENGTH} 字符）"
+            )
+        if UNSAFE_LABEL_CHARS_RE.search(cleaned):
+            raise EngineAdminError(400, "BATCH_INVALID", "批次号含不可见或方向控制字符")
+        payload["batch"] = cleaned
 
     # ops 旧字段名是 expires_at（ISO string）；engine 侧叫 expiresAt。
     # 旧值允许为空串，engine 语义是 null=永不过期。
     expires_at = body.get("expiresAt", body.get("expires_at"))
     if isinstance(expires_at, str) and expires_at.strip():
         payload["expiresAt"] = expires_at.strip()
+
+    # 发放对象（issuedTo）：这批码发给了谁。兑换码是 bearer token，一旦泄漏
+    # （例如渠道方二次转卖），靠它定位受影响批次（仓里只有单码吊销 ⇒ 按批次筛出后逐个吊销）。
+    # 空串/空白 ⇒ 视为未填（engine 侧同语义）；非字符串 ⇒ 前置拒绝，不静默吞。
+    issued_to = body.get("issuedTo", body.get("issued_to"))
+    if issued_to is not None and not isinstance(issued_to, str):
+        raise EngineAdminError(400, "ISSUED_TO_INVALID", "issuedTo 必须是字符串")
+    if isinstance(issued_to, str) and issued_to.strip():
+        payload["issuedTo"] = issued_to.strip()
 
     # ops 旧表单有 note 字段，engine 侧无对应概念——显式丢弃而不是透传，
     # 透传会让 engine 收到未声明字段，违反「不整包透传」的白名单原则。
@@ -223,6 +257,8 @@ async def disable_redeem_code(body: dict) -> dict:
     code = body.get("code")
     if not isinstance(code, str) or not REDEEM_CODE_RE.match(code.strip()):
         raise EngineAdminError(400, "REDEEM_CODE_FORMAT", "兑换码格式不合法")
+    # 归一化后转发：engine 侧也会归一化，这里先做是为了让**返回值**与库里存的一致。
+    code = code.strip().upper()
 
     return await _call_engine(
         "POST",

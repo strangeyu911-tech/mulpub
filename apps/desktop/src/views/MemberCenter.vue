@@ -179,6 +179,12 @@ function activate(key) {
   else if (key === 'account') memberStore.loadSessions()
 }
 
+// ⚠️ 激活码核销（redeemCode / redeemResult / canSubmitRedeem / REDEEM_ERROR_KEYS /
+// submitRedeem）**已随 #4395 的会员中心重构搬到 `member-center/Subscription.vue`**（订阅页）。
+// 本文件里保留的那份是重构前的旧副本：**模板已不再引用它**（eslint 会报未使用变量），
+// 留着只会让人以为改这里能改到兑换流程 ⇒ 删掉。
+// ⚠️ 兑换相关的改动（错误码映射、文案）现在要改 **Subscription.vue**。
+
 // 升级入口：路由跳订阅 tab（P0-6）。
 // 订阅页有真实价目（服务端 plans）+ 可购买卡片 + 兑换码，是「能做事的地方」。
 function goToSubscription () {

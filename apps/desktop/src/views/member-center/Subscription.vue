@@ -247,6 +247,13 @@ const canSubmitRedeem = computed(
 // 服务端错误码 → i18n key。message 放的是 error.code（见 ipc-handlers/identity.js 的 safeError）。
 // MEMBER_PERMISSION_REQUIRED 是前端 safeInvoke 规范化的权限错误码（§8 MAJOR-1）。
 const REDEEM_ERROR_KEYS = {
+  // 兑换限流（引擎 2026-10-24 新增）：不映射的话会落到 redeemErrNetwork，
+  // 用户看到「网络错误」而实际是「你试得太频繁」—— 属于误导。
+  REDEEM_RATE_LIMITED: 'redeemErrRateLimited',
+  // 全局粗桶的 429（引擎回 `error: "Too Many Requests"`，不是语义码 ⇒
+  // 由 member-api-service 按 HTTP 状态兜底成语义码）。生产上用户更常撞的是它：
+  // 粗桶按 socket 分桶 ⇒ 生产拓扑下全站共用一个桶。
+  RATE_LIMIT_EXCEEDED: 'redeemErrRateLimited',
   REDEEM_CODE_FORMAT: 'redeemErrFormat',
   REDEEM_CODE_NOT_FOUND: 'redeemErrNotFound',
   REDEEM_CODE_USED: 'redeemErrUsed',

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { ref } from 'vue'
 
@@ -232,6 +232,23 @@ describe('member-center/Subscription', () => {
       await wrapper.get('[data-testid="redeem-code-input"]').setValue('ABC-EFG')
       await wrapper.get('[data-testid="redeem-code-submit"]').trigger('click')
       expect(memberCtx.redeemCode).not.toHaveBeenCalled()
+    })
+
+    it('兑换被限流（两个 429 源）都显示「尝试过于频繁」，不落成「网络错误」', async () => {
+      // ⚠️ 锁的是**用户看到什么**，不是映射表里的键名：
+      // 第 3 轮实测：把映射键名打错一个字母，32 个桌面端测试 + locale 门禁**全绿**，
+      // 而用户看到的 429 文案静默退化成「网络错误」⇒ 当时**零测试覆盖**。
+      for (const code of ['REDEEM_RATE_LIMITED', 'RATE_LIMIT_EXCEEDED']) {
+        memberCtx.redeemCode.mockResolvedValueOnce(null)
+        memberCtx.error = code
+        const { wrapper } = await mountSubscription()
+        await wrapper.get('[data-testid="redeem-code-input"]').setValue('ABCD-EFGH-JKMN')
+        await wrapper.get('[data-testid="redeem-code-submit"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[data-testid="redeem-result-error"]').text()).toBe('memberCenter.redeemErrRateLimited')
+        wrapper.unmount()
+      }
+      memberCtx.error = null
     })
 
     it('输入自动转大写（服务端语义对齐）', async () => {

@@ -103,7 +103,16 @@ function createMemberApiService({ entitlementService, tokenProvider } = {}) {
         let detail = null
         try { detail = response && typeof response.json === 'function' ? await response.json() : null } catch { /* 忽略解析失败 */ }
         const upstream = detail && typeof detail.error === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/.test(detail.error) ? detail.error : null
-        throw new IdentityError(upstream || 'MEMBER_API_REQUEST_FAILED', '会员接口请求失败')
+        // ⚠️ 引擎有**两个** 429 源：① 兑换限流（error 是语义码 REDEEM_RATE_LIMITED）
+        // ② 全局粗桶（error 是 `"Too Many Requests"`，**不是**语义码 ⇒ 上面那条正则不匹配）。
+        // 而生产上用户**更常撞的是 ②**（粗桶按 socket 分桶 ⇒ 生产拓扑下全站共用一个桶）。
+        // ⇒ 不兜底的话，② 会退化成 MEMBER_API_REQUEST_FAILED ⇒ 界面显示「服务暂时不可用」，
+        // 而真实原因是「你试得太频繁」⇒ 按 HTTP 状态兜底成语义码，让界面能说人话。
+        const rateLimited = !upstream && response && response.status === 429
+        throw new IdentityError(
+          upstream || (rateLimited ? 'RATE_LIMIT_EXCEEDED' : 'MEMBER_API_REQUEST_FAILED'),
+          '会员接口请求失败',
+        )
       }
       return response.json()
     },

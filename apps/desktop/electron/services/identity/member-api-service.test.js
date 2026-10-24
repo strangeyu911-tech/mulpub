@@ -164,6 +164,20 @@ describe('createMemberApiService 激活码核销通道', () => {
     }
   })
 
+  it('全局粗桶的 429（error 是 "Too Many Requests"，非语义码）必须兜底成语义码', async () => {
+    // 引擎的全局粗桶回 { error: "Too Many Requests" } ⇒ 不匹配语义码正则
+    // ⇒ 不兜底的话桌面端拿不到语义码 ⇒ 界面显示「服务暂时不可用」，
+    // 而生产上用户更常撞的恰恰是这个 429（粗桶按 socket 分桶 ⇒ 全站共用一个桶）。
+    const { service } = createRedeemFixture({
+      ok: false,
+      status: 429,
+      json: async () => ({ error: 'Too Many Requests', message: 'Rate limit exceeded. Try again later.' }),
+    })
+    await expect(
+      service.request({ subject: 'sub-1', path: '/api/v1/redeem', method: 'POST', body: { code: 'X' } }),
+    ).rejects.toMatchObject({ code: 'RATE_LIMIT_EXCEEDED' })
+  })
+
   it('幂等重放时 subscription 为 null 必须原样透出，不得补成真值', async () => {
     // 服务端在「同码重放且订阅已过期」时返回 HTTP 200 + subscription: null。
     // 若这里把它抹成 {} 或丢弃，UI 会把过期重放误报成「兑换成功」。

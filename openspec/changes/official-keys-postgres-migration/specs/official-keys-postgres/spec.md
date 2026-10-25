@@ -73,6 +73,33 @@ ops-center SHALL NOT 直连 Postgres 执行扣减，SHALL NOT 引入 key-broker 
 - **AND** 重复请求 SHALL 返回 `duplicated: true` 且不产生新分录
 - **AND** 理由：幂等键为 `(ref_type, ref_id, entry_type='spend')` ⇒ 重试安全
 
+#### Scenario: 并发同 refId 的兜底语义是「幂等命中」而不是内部错误
+
+- **WHEN** 两道**同一 `refId`** 的扣分请求并发到达，且二者都穿过了仓储层的查重
+  （查重是 read-then-write、**非原子** ⇒ 该窗口必然存在）
+- **THEN** 至多 SHALL 扣减一次、至多 SHALL 留下一条分录
+- **AND** 冲突的一方 SHALL 被识别为**幂等命中**（返回 `duplicated: true`），SHALL NOT 以内部错误（5xx）暴露
+- **AND** 冲突方的余额扣减 SHALL 随事务回滚（原子性不破）
+- **AND** 放行 SHALL 以「错误码 + 约束名 + **回读确实存在那条 spend 分录**」三重合取为准；
+  SHALL NOT 仅凭错误码就返回幂等命中（否则别的唯一约束冲突会被伪装成幂等成功）
+
+#### Scenario: 跨库单位换算 SHALL 收在单一真源
+
+- **WHEN** ops-center 侧把供给侧的微元成本换算成账本侧的分
+- **THEN** 换算 SHALL 由**一个**函数收口（`micros_to_cents`），SHALL NOT 由各调用方各自实现
+- **AND** 理由：两个库单位不同而**公式本身不会算错**（比值对）⇒ 缺陷不会在测试里暴露；
+  只有**命名**会骗人 ⇒ 实现者会自作主张再换算一次 ⇒ 金额差 10000 倍，且两处都是正整数、都会入库
+  ⇒ **不报错、静默错账**；收进单一函数后调用方**无法**绕过
+- **AND** 换算 SHALL 为**向上取整**（记 0 等于「静默免费」、记低等于系统性偏低 ⇒ 宁可略高）
+
+#### Scenario: 扣分端点 SHALL NOT 挂 plan feature 门
+
+- **WHEN** 服务间（M2M）凭据调用扣分端点
+- **THEN** 服务端 SHALL NOT 以 plan feature 作为准入判据
+- **AND** 理由：调用方是**服务账号**、没有用户套餐 ⇒ 挂 feature 会去校验**服务账号**的权益（主体错了）⇒ 误授权
+- **AND** 准入 SHALL 由「服务间 scope（`admin:users`）＋ 身份类型（必须是 logto）＋ 幂等键/入参校验」承担；
+  「准不准用官方算力」的准入归 ops-center 侧的额度预检与算力端点，**不归扣分端点**
+
 #### Scenario: 扣分端点必须绑定服务身份
 
 - **WHEN** 任何请求调用扣分端点

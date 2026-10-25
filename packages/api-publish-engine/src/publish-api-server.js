@@ -26,6 +26,7 @@ const { applyRedeemRouteHelpers } = require("./auth/publish-api-redeem")
 const { applyPaymentHelpers } = require("./auth/publish-api-payment")
 const { applyCloudAccountHelpers, applyCloudAccountNoStore, mergeFaceHeaders } = require("./auth/publish-api-cloud-accounts")
 const { applyCapabilitiesHelpers, isCapabilitiesUrl } = require("./auth/publish-api-capabilities")
+const { applyCreditConsumeHelpers } = require("./auth/publish-api-credit-consume")
 const mediaResolver = require("./publish/resolve-request-media")
 
 /**
@@ -146,6 +147,7 @@ class PublishApiServer {
     this._entitlementProvider = this._opts.entitlementProvider || null
     this._entitlementSigner = this._opts.entitlementSigner || null
     this._subscriptionService = this._opts.subscriptionService || null
+    this._creditRepository = this._opts.creditRepository || null
     this._readinessProbe = this._opts.readinessProbe || null
     this._publishViaApi = typeof this._opts.publishViaApi === "function" ? this._opts.publishViaApi : publishViaApi
     this._log = this._opts.log || logger
@@ -469,6 +471,8 @@ class PublishApiServer {
       return req.method === "GET" || req.method === "HEAD" ? "profile:read" : "profile:write"
     }
     if (url.indexOf("/api/v1/admin/member/") === 0) return "admin:users"
+    // 扣分端点是**服务间**调用 ⇒ 复用 admin:users；⛔ 不得落到 POST 默认的 publish:submit（那样 api_key 就能扣任意用户积分）
+    if (url === "/api/v1/credit/consume") return "admin:users"
     if (url.startsWith("/api/v1/keys") || url.startsWith("/api/v1/plugins") || url.startsWith("/api/v1/logs")) return "admin:users"
     if (req.method === "POST" || url.startsWith("/api/v1/schedule") || url.startsWith("/api/v1/plan")) return "publish:submit"
     return "publish:read"
@@ -1026,6 +1030,7 @@ class PublishApiServer {
       }
 
           if (await this._handleAdminMemberRoute(req, res, method, url)) return;
+          if (await this._handleCreditConsume(req, res, method, url)) return;
 
       // --- Key Management ---
       if (url === "/api/v1/keys") {
@@ -1559,6 +1564,7 @@ applyRedeemRouteHelpers(PublishApiServer);
 applyPaymentHelpers(PublishApiServer);
 applyCloudAccountHelpers(PublishApiServer);
 applyCapabilitiesHelpers(PublishApiServer);
+applyCreditConsumeHelpers(PublishApiServer);
 
 PublishApiServer.registerShutdownSignals = function(server) {
   var sig = function() { server.stop(); };

@@ -17,6 +17,13 @@
 > （其中 8 条 CRITICAL）**；且第 1 轮发现的回归验收结果是「完全修好 17 / 部分修 24 / 未修 49」。
 > ⇒ **实施前必须先关闭 §13.2 的 12 条阻断项 + §11 的未决项。**
 > 详见文末 **§13「第 2 轮对抗复评结论与本设计的当前完成度」**。
+>
+> ✅ **实施已启动（2026-10-25）· 第 1 刀 = 扣分端点**：
+> `POST /api/v1/credit/consume` 已在 api-publish-engine 落地（独立模块 + mixin 挂载），
+> ops-center 侧转发客户端已就绪 ⇒ **本设计关闭了 U-1（复用既有 Logto M2M 通道）与 §13.2 的 B-8**。
+> 契约真源 = **`01-docs/PRD-CREDIT-CONSUME-API-2026-10-25.md`**；
+> 本刀**不含**读余额端点（B-1/U-13）、选 Key 与算成本（3.1–3.6）、发放链路（B-6）、补扣宿主（B-10/U-14）。
+> 逐条状态见 **§15「第 1 刀已落地（扣分端点）」**。
 
 ### 三个定案
 
@@ -663,8 +670,12 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 ### 10.2 实施（后续 change，本设计不含）
 
 - [ ] 官方算力端点在 ops-center 落地，**供给侧零迁表**（`official_keys` 仍在 SQLite）
-- [ ] `POST /api/v1/credit/consume` 在 api-publish-engine 落地，鉴权非桌面端凭据
-- [ ] 幂等：同 `refId` 重复扣分只成功一次
+- [x] `POST /api/v1/credit/consume` 在 api-publish-engine 落地，鉴权非桌面端凭据
+      （✅ 2026-10-25：独立模块 `publish-api-credit-consume.js` + mixin 挂载；鉴权 = **服务间** Logto M2M
+      ＋ `admin:users` scope ＋ 硬判 `authType === 'logto'` ⇒ **桌面端凭据与 api_key 都被拒**）
+- [x] 幂等：同 `refId` 重复扣分只成功一次
+      （✅ 2026-10-25：**并发**同 `refId` 也只成功一次 —— 仓储层把 DB 唯一索引的 23505 翻译成幂等命中；
+      ⚠️ 配套修了「幂等只定义了正常路径、没定义兜底路径语义」的缺陷，见 §15）
 - [ ] 扣分失败 ⇒ 不发货（发货前）/ 挂起补扣（发货后）
 - [ ] 降级 ⇒ **同向降扣费** + 正向话术
 - [ ] `usage-reporter` 带上 `user_id` 与真实 tokens/cost
@@ -677,7 +688,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 
 | # | 未决项 | 影响 | 建议 |
 |---|---|---|---|
-| **U-1** | ops-center → api-publish-engine 的**服务间鉴权机制** | 阻塞 D-② | 复用既有服务间凭据（若已有）；若无，需在 api-publish-engine 加**独立于用户 Bearer** 的服务凭据校验 ⇒ **属「谁来守门」级别的改动，须人工过目** |
+| **U-1** | ops-center → api-publish-engine 的**服务间鉴权机制** | 阻塞 D-② | 复用既有服务间凭据（若已有）；若无，需在 api-publish-engine 加**独立于用户 Bearer** 的服务凭据校验 ⇒ **属「谁来守门」级别的改动，须人工过目**<br>✅ **2026-10-25 关闭（走「复用既有」分支）**：仓内**已有**服务间通道 —— `ops-center/backend/services/member_grant_service.py` 用 Logto M2M token（`engine_admin_token`）调 `/api/v1/admin/member/grant`（engine 侧只认带 `admin:users` scope 的 logto 身份，静态主密钥被显式拒绝）⇒ 扣分端点**复用同一套** ⇒ **不新增独立服务凭据校验、不新增 scope、不新增部署配置面** ⇒ **不落入「谁来守门」级别**（无需人工过目即可实施）。落点：`publish-api-credit-consume.js` 的 handler 硬判 `req.auth.authType === 'logto'` ＋ `publish-api-server.js` 的 `_requiredScope` 对本 URL 返回 `admin:users` |
 | **U-2** | 官方算力端点的**路径与幂等键归属** | 影响桌面端接线 | 建议 `POST /api/v1/compute/execute` + `idempotencyKey` 由桌面端生成 |
 | **U-3** | `official_credit_monthly` **实测已在 plan-matrix 的 `quota` 下发** ⇒ 「扣分端点拿不到 feature 授权」**不成立** | 降级为普通条目 | **关闭**（若要为「扣分」单设 feature 才需人工过目） |
 | **U-4** | `get_active_keys_for_tier` **生产引用数为 0** | 选 Key 逻辑无现成调用点 | 实现时**必须接线**，不能只写函数 |
@@ -702,6 +713,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 |---|---|
 | 2026-10-25 | 初版。三个定案（D-①/D-②/D-③）落定；`official-keys-postgres-migration` 改向为「扣减接线」；`compute-key-envelope-migration` 前提失效。 |
 | 2026-10-25（**第 3 轮：第 2 轮对抗复评后**） | **新增 §13**：第 2 轮评审结论（**93** 条第 1 轮发现的回归验收 + 26 条实现符合性缺口 + 17 条新失效路径）⇒ **如实标注「本设计尚不可直接开工」**；**12 条阻断项**逐条列出并映射证据；跨轨分歧（调度器先例）裁决；单位口径全量改微元 + 新增 §3.3.1 跨库单位换算；身份链定为 `authSubject`；409 语义唯一化；幂等两处缺口；档位量纲 `modelTier + 1`；积分单价下限 10000；错误码补 3 个；引用断链修正；未决项新增 U-11…U-14（**四项须人工拍板**）。<br>⚠️ **第 1 轮发现的 93 条里真正修好的只有 17 条**（此前 PR 正文误写为「83 条逐条订正」—— **83 是算术错误，实为 93**）。 |
+| 2026-10-25（**第 1 刀落地：扣分端点**） | **关闭 U-1**（复用既有 Logto M2M 通道，不新增凭据/scope/配置面 ⇒ 不需人工过目）＋ **关闭 §13.2 B-8**（scope `admin:users` + 硬判 `authType === 'logto'` ⇒ api_key 一律 403）；**新增** `01-docs/PRD-CREDIT-CONSUME-API-2026-10-25.md`（契约真源）＋ `openspec/records/credit-phase2-wiring.md`（执行记录）＋ `openspec/changes/official-keys-postgres-migration/tasks.md` 勾选 1.1/1.2/2.1/2.2/2.3/2.4/2.5（3.7 部分）；spec 增补 3 条 Scenario（并发兜底语义 / 换算单一真源 / 不挂 plan feature）|
 | 2026-10-25（第二轮对抗评审后） | **修正 21 处事实性错误 + 6 处跨文档矛盾 + 30 处设计缺陷**：扣分时序改**两段式**（发货前只读预检 + 发货后实扣）；`refId` 空值硬拒 400；`userId` 统一为 `identity_users.id`；错误码与既有 `CreditError.status`（409）对齐；响应体字段名改 camelCase；`tier_access` 改为整数等级码；生效价判据改 `effective_to` 空串；`007` 号源澄清为**已释放**；未决项增至 U-10（U-3/U-5 修正）。 |
 
 ---
@@ -738,7 +750,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 | **B-5** | **409 有两种终态**：§3.3 写「不发货」，§3.4 写「挂起补扣」——而扣分发生在**发货后** | 一种终态直接**抹掉债务**（上游成本已发生，系统内不可见） | DESIGN §3.3 错误表 / §3.4 / §5.1 ⑨ ｜ `credit-repository.js:169-171`（409 不写分录 ⇒ 账本零痕迹） | ✅ **本轮已改**（§3.3 错误表 409 行写死为「挂起补扣」；「不发货」只归 §5.1 ⑤' 预检） |
 | **B-6** | **全仓 `grantCredit` 生产调用方 0** ⇒ 赠送量从未进入积分账户 ⇒ 余额恒 0 | 上线后**第一次扣分必然 409**；且「发放」在 PRD 前置 / tasks / spec 三处**都不是阻断项** | DESIGN §11 U-3 ｜ `credit-repository.js:73`；`usage-metering-spec.md:177` | ⛔ **阻断项本身已登记**，但**发放链路的落地不在本 change 范围** ⇒ 需决策 |
 | **B-7** | **身份链三处互斥**：「必须是 `identity_users.id`」／「ops-center 侧校验它存在于 identity_users」／「引擎侧解析」 | 三条实现路线各自失败（FK 500 / 破 §3.1 / 契约字段名与实现不符） | DESIGN §3.3 / §6.1 ｜ `credit-repository.js:130-141`（仓储层**不做**任何身份解析）；`002_logto_identity.sql:7/16`；`business-identity.js:26/38`；`postgres-identity-repository.js:242-248` | ✅ **本轮已改**（wire 字段定为 `authSubject`＝Logto `sub`，**端点内** `findBySubject` 解析成 `identity_users.id`） |
-| **B-8** | **扣分端点无身份绑定**：只禁了 `X-Catalog-Key` 与用户 Bearer 透传，**没禁 api_key**；且错误表无 401/403 | 任何持 `publish:submit` 的 api_key 可扣**任意** userId（越权扣分）；服务身份走 feature 门禁必然 403 ⇒ 落「挂起」⇒ 全量免费 | DESIGN §3.3 / §11 U-1 ｜ `publish-api-server.js:461-473`（POST 默认 scope）、`:475-483`、`:591-594`（注释原文：「未来 compute/官方算力路由是**新代码**，必须按评审 R7 显式 requireLogto」） | ⛔ **待拍板 U-1**（服务间鉴权 = 「谁来守门」级别） |
+| **B-8** | **扣分端点无身份绑定**：只禁了 `X-Catalog-Key` 与用户 Bearer 透传，**没禁 api_key**；且错误表无 401/403 | 任何持 `publish:submit` 的 api_key 可扣**任意** userId（越权扣分）；服务身份走 feature 门禁必然 403 ⇒ 落「挂起」⇒ 全量免费 | DESIGN §3.3 / §11 U-1 ｜ `publish-api-server.js:461-473`（POST 默认 scope）、`:475-483`、`:591-594`（注释原文：「未来 compute/官方算力路由是**新代码**，必须按评审 R7 显式 requireLogto」） | ✅ **2026-10-25 已关**（随 U-1 复用既有 M2M 通道而关闭）：`_requiredScope` 对本 URL 返回 `admin:users`（⛔ 不落到 POST 默认的 `publish:submit`）＋ handler 内**硬判 `authType === 'logto'`** ⇒ api_key 一律 403 `CREDIT_AUTH_INVALID`（且**不得触达仓储**）。⚠️ **有意偏离：端点不挂 plan feature** —— 调用方是**服务账号**、没有用户套餐 ⇒ 挂 feature 会去校验**服务账号**的权益（主体错了）⇒ 改由「scope + 身份类型 + 幂等键/入参校验」承担准入 |
 | **B-9** | **幂等键不含 `user_id`**；`refType` 可配 ⇒ DB 唯一索引（**部分索引**，只覆盖 `ref_type='usage_event'`）失效 | 显式传 `refType=''` ⇒ 并发重复扣分不再被 DB 拦；`refId` 串号 ⇒ 命中他人分录 | DESIGN §3.3 / §3.5 ｜ `credit-repository.js:145-149`（read-then-write，非原子）；`credit-schema.js:56-58` vs `:59-61` | ✅ **本轮已改**（`refType` 写死常量 + `refId` 必须全局唯一 + §3.5 补两道缺口） |
 | **B-10** | **`pending_charge` 无补扣入口、无宿主、无终态**；仓内「回算/对账」能力（`credit_cost_backfill_service.py`）只读日聚合表、只写 `daily.cost`，**不碰事件表/账本、不发 HTTP** | 挂起 = **永久白送**；跨周期补扣时账户周期与分录周期错位 | DESIGN §3.4 / §7.5 ｜ `credit_cost_backfill_service.py:87-192`；`models_credit.py:166-193`（无 `pending_charge_at`/`retry_count` 列） | ⛔ **待拍板 U-14**（ops-center 侧实测**无**定时宿主） |
 | **B-11** | **没有任何表/查询能回答「发了货有没有扣到钱」**：事件表**零生产写者**；`reconcileAccount` 只核余额↔账本；`client_reported_cost_micros` **全仓无写入方** | 资损**既不可发现也不可度量**；对拍恒空 ⇒ 恒真通过 | DESIGN §7.5 / §8.3 / §10.2 ｜ `models_credit.py:149`（仅类定义）；`credit-repository.js:222-253` | ✅ **本轮已改**（§6.3 / §7.5 / §13.2 如实标注「对拍列无写入方」「事件表有表无写方」） |
@@ -831,3 +843,34 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 - ⛔ **没有**新增**对外端点**（归 U-13）
 - ⛔ **没有**改**服务间鉴权**（归 U-1 = 「谁来守门」级别）
 - ⛔ **没有**自行**归档**或**改名** change 目录（归 U-8 / U-15）
+
+## 15. 第 1 刀已落地：扣分端点（2026-10-25）
+
+> 本节是**实施侧**的状态登记（文档层状态见 §0 / §11 / §13.2 / §14）。
+> 契约真源：**`01-docs/PRD-CREDIT-CONSUME-API-2026-10-25.md`**；执行记录：**`openspec/records/credit-phase2-wiring.md`**。
+
+### 15.1 交付内容
+
+| 项 | 落点 |
+|---|---|
+| 扣分端点（契约 + 实现） | `packages/api-publish-engine/src/auth/publish-api-credit-consume.js`（**独立模块** + mixin 挂载） |
+| 接线（只占 6 行） | `publish-api-server.js`（该文件有逐文件行数**点名目标** 1574、**容差 0** ⇒ 新逻辑一律不进主文件）＋ `bin/publish-api` 装配 `creditRepository`（复用 identity 仓储的 pg 连接池） |
+| 仓储并发幂等补齐 | `credit-repository.js`：`consumeCredit` 把 DB 唯一索引的 **23505 翻译成幂等命中**（放行条件 = 错误码 + 约束名 + **回读确实存在那条 spend 分录**） |
+| ops-center 转发客户端 | `ops-center/backend/services/credit_consume_service.py`（**单位换算收在单一真源** `micros_to_cents()`；`refType` 写死常量；空 `refId` 入口就拒） |
+| 测试 | `packages/api-publish-engine/test/credit-consume-api.test.js`（25 例）＋ `ops-center/backend/tests/test_credit_consume_service.py`（18 例） |
+| 变异验证 | **11 组全部 CAUGHT**（含 2 组首版 MISSED 的查清，见执行记录 §3） |
+
+### 15.2 本刀**没有**做的（并入 §13.2 / §11 的未决项，不假装已闭合）
+
+| # | 项 | 归属 |
+|---|---|---|
+| ① | **额度预检读端点**（B-1 / U-13） | 须人工过目（新增对外端点 = 改暴露面） |
+| ② | **预扣 / 竞态窗口**（B-2） | 需设计级决策 |
+| ③ | **视频/图像/TTS/ASR 成本恒为 0**（B-4 / U-12） | 须人工拍板（要定价数据） |
+| ④ | **积分发放链路**（B-6） | 赠送量口径**已定**（#4454 已合并：standard **1500** / pro **3000**）⇒ 剩「发放链路本身 + 会员周期发放策略」⇒ 本刀上线后余额恒 0 ⇒ 恒 409（**fail-closed，不白送**） |
+| ⑤ | **挂起补扣与调度宿主**（B-10 / U-14） | 须人工拍板 |
+| ⑥ | **用量事件表零生产写者**（B-11） | 归 ops-center 3.4 |
+| ⑦ | **降级到更贵却说省钱**（B-12） | 改契约 ⇒ 须人工过目 |
+| ⑧ | **D-③ 账户模型（双轨 + `expires_at`）**（U-6） | 独立 change + 独立评审（改主键 = 破坏性） |
+
+---

@@ -19,6 +19,26 @@
 
 const CREDIT_ENTRY_TYPES = Object.freeze(['grant', 'spend', 'refund', 'expire', 'adjust'])
 
+/**
+ * 并发同 `refId` 时 DB 唯一索引冲突的识别。
+ *
+ * 背景（定案 §3.5 / §13.2 B-9）：仓储层的查重是 **read-then-write、非原子**
+ * ⇒ 两道同 `refId` 的并发扣分可能双双穿过查重 ⇒ DB 部分唯一索引
+ * `uq_identity_credit_ledger_spend` 是**最后一道防线**。
+ *
+ * ⛔ 只认 spend 那一条索引：其它唯一冲突（如 grant 索引）**不得**被吞成「幂等命中」。
+ * `constraint` 缺失时（部分驱动/包装层可能不带）先按 23505 粗判，
+ * 但真正的放行条件是**回读确实存在这条 spend 分录**（见 `consumeCredit` 的 catch 分支）
+ * ⇒ 判错也只是「回读不到 ⇒ 原样抛出」，不会把别的错误伪装成幂等成功。
+ */
+function isSpendUniqueViolation(error) {
+  if (!error || error.code !== '23505') return false
+  if (typeof error.constraint === 'string' && error.constraint) {
+    return error.constraint === 'uq_identity_credit_ledger_spend'
+  }
+  return true
+}
+
 class CreditError extends Error {
   constructor(code, message) {
     super(message || code)
@@ -126,6 +146,13 @@ class PostgresCreditRepository {
    *
    * 幂等：同一 (ref_type='usage_event', ref_id=事件ID) 只扣一次，
    * 靠 `uq_identity_credit_ledger_spend` 部分唯一索引兜住。
+   *
+   * ⚠️ 并发同 `refId` 的处理（2026-10-25，Phase 2 第 1 刀补）：
+   * 上面那句「查重」是 read-then-write、**非原子** ⇒ 两道同 `refId` 的并发扣分
+   * 可能双双穿过 ⇒ 靠 DB 唯一索引兜住 ⇒ 冲突方会抛 23505。
+   * ⇒ 这里把它**翻译成幂等命中**（`duplicated: true`），否则调用方看到的是 500，
+   *    而事实是「这笔已经扣过了」。冲突方的余额扣减随事务回滚（原子性不破），
+   *    这里只回读**已入账**的那条分录。
    */
   async consumeCredit({
     userId,
@@ -140,50 +167,74 @@ class PostgresCreditRepository {
   } = {}) {
     this._assertGrant({ userId, amount, periodStart, periodEnd })
     if (costCents < 0 || !Number.isInteger(costCents)) throw new TypeError('costCents must be a non-negative integer')
-    return this._withTransaction(async (client) => {
-      // 先看这笔记不已经扣过——命中即幂等返回，不重复扣。
-      const existing = await client.query(
-        `SELECT id, amount, balance_after FROM identity_credit_ledger
-          WHERE ref_type = $1 AND ref_id = $2 AND entry_type = 'spend'`,
-        [refType, refId],
-      )
-      if (existing.rows && existing.rows[0]) {
-        const account = await this.getAccount(userId)
-        return {
-          account,
-          entry: {
-            id: existing.rows[0].id,
-            amount: Number(existing.rows[0].amount),
-            balanceAfter: Number(existing.rows[0].balance_after),
-          },
-          duplicated: true,
+    try {
+      return await this._withTransaction(async (client) => {
+        // 先看这笔记不已经扣过——命中即幂等返回，不重复扣。
+        const existing = await client.query(
+          `SELECT id, amount, balance_after FROM identity_credit_ledger
+            WHERE ref_type = $1 AND ref_id = $2 AND entry_type = 'spend'`,
+          [refType, refId],
+        )
+        if (existing.rows && existing.rows[0]) {
+          const account = await this.getAccount(userId)
+          return {
+            account,
+            entry: {
+              id: existing.rows[0].id,
+              amount: Number(existing.rows[0].amount),
+              balanceAfter: Number(existing.rows[0].balance_after),
+            },
+            duplicated: true,
+          }
+        }
+        const account = await this._applyBalance(client, {
+          userId,
+          amount,
+          direction: 'spend',
+          periodStart,
+          periodEnd,
+        })
+        if (!account) {
+          throw new CreditError('CREDIT_BALANCE_EXHAUSTED', '积分余额不足')
+        }
+        const entry = await this._insertEntry(client, {
+          userId,
+          entryType: 'spend',
+          amount,
+          balanceAfter: account.balance,
+          reason,
+          refType,
+          refId,
+          priceId,
+          costCents,
+          periodStart,
+          periodEnd,
+        })
+        return { account, entry, duplicated: false }
+      })
+    } catch (error) {
+      if (isSpendUniqueViolation(error)) {
+        const existing = await this.pool.query(
+          `SELECT id, amount, balance_after FROM identity_credit_ledger
+            WHERE ref_type = $1 AND ref_id = $2 AND entry_type = 'spend'`,
+          [refType, refId],
+        )
+        // 回读得到「确实已入账」才认幂等；回读不到 ⇒ 另有原因 ⇒ 原样抛出（不吞错）
+        if (existing.rows && existing.rows[0]) {
+          const account = await this.getAccount(userId)
+          return {
+            account,
+            entry: {
+              id: existing.rows[0].id,
+              amount: Number(existing.rows[0].amount),
+              balanceAfter: Number(existing.rows[0].balance_after),
+            },
+            duplicated: true,
+          }
         }
       }
-      const account = await this._applyBalance(client, {
-        userId,
-        amount,
-        direction: 'spend',
-        periodStart,
-        periodEnd,
-      })
-      if (!account) {
-        throw new CreditError('CREDIT_BALANCE_EXHAUSTED', '积分余额不足')
-      }
-      const entry = await this._insertEntry(client, {
-        userId,
-        entryType: 'spend',
-        amount,
-        balanceAfter: account.balance,
-        reason,
-        refType,
-        refId,
-        priceId,
-        costCents,
-        periodStart,
-        periodEnd,
-      })
-      return { account, entry, duplicated: false }
-    })
+      throw error
+    }
   }
 
   /** 账本明细（按时间倒序）。 */

@@ -25,10 +25,19 @@
 
 ## 1. 规格层（契约先落地，代码后动）
 
-- [ ] 1.1 **扣分端点契约**：`POST /api/v1/credit/consume` 的请求/响应/错误码表
+- [x] 1.1 **扣分端点契约**：`POST /api/v1/credit/consume` 的请求/响应/错误码表
       （见 `DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md` §3.3）写入 `specs/official-keys-postgres/spec.md`。
-- [ ] 1.2 **服务间鉴权方案定案（U-1）**：⚠️ **若需在 api-publish-engine 新增独立于用户 Bearer 的服务凭据校验** ⇒
+      → **✅ 2026-10-25 已落地**：`01-docs/PRD-CREDIT-CONSUME-API-2026-10-25.md`（**契约真源**：逐字段校验 + 错误码表 + 跨库单位换算 + 提示文字）
+      ＋ `specs/official-keys-postgres/spec.md` 的 Requirement 增补；实现 `packages/api-publish-engine/src/auth/publish-api-credit-consume.js`。
+- [x] 1.2 **服务间鉴权方案定案（U-1）**：⚠️ **若需在 api-publish-engine 新增独立于用户 Bearer 的服务凭据校验** ⇒
       属「**谁来守门**」级别 ⇒ **须人工过目，agent 不得自行改**。
+      → **✅ 2026-10-25 关闭（走「复用既有」分支，不需人工过目）**：仓内**已有**服务间通道 ——
+      `ops-center/backend/services/member_grant_service.py` 用 Logto M2M token（`engine_admin_token`）
+      调 `/api/v1/admin/member/grant`（engine 侧只认带 `admin:users` scope 的 logto 身份，静态主密钥被显式拒绝）
+      ⇒ 扣分端点**复用同一套**：`engine_admin_token` + `admin:users` scope + handler 内硬判 `authType === 'logto'`
+      ⇒ **不新增独立服务凭据校验、不新增 scope、不新增部署配置面** ⇒ 不落入「谁来守门」级别。
+      ⚠️ 连带关掉定案 §13.2 **B-8**（越权扣任意用户积分）：api_key 分支**不校验 `requiredScope`**
+      ⇒ 端点必须**硬拒非 logto 身份**（已由 `credit-consume-api.test.js` 的「api_key 被拒 ⇒ 403 且不得触达仓储」锁住）。
 - [x] 1.3 ~~**`official_credit` feature 补登（U-3）**~~ → **✅ 前提已失效，动作取消**：
       Phase 1 记录说 `official_credit` 不在 features 数组，但 **`plan-matrix.js:223` 现在会 push 它**
       （`if (matrix.officialCreditMonthly !== 0) features.push('official_credit')`；免费 30 / standard 1600 / pro 3330 三档都 > 0）
@@ -40,16 +49,35 @@
 
 ## 2. api-publish-engine 侧：扣分端点
 
-- [ ] 2.1 新增 `POST /api/v1/credit/consume` 路由（`publish-api-server.js`），**复用** `credit-repository.js` 的 `consumeCredit`。
-- [ ] 2.2 `_requiredFeature(req)`（**单参**，`publish-api-server.js:475`；调用点 `:808`）为该端点返回正确 feature。
+- [x] 2.1 新增 `POST /api/v1/credit/consume` 路由（`publish-api-server.js`），**复用** `credit-repository.js` 的 `consumeCredit`。
+      → **✅ 2026-10-25 已落地**：`src/auth/publish-api-credit-consume.js`（**独立模块** + mixin 挂载）
+      ＋ `publish-api-server.js` **只占 6 行**（该文件有逐文件行数**点名目标** 1574、**容差 0** ⇒ 新逻辑一律不进主文件）
+      ＋ `bin/publish-api` 装配 `creditRepository`（**复用 identity 仓储的 pg 连接池**，不另开池）。
+- [x] 2.2 `_requiredFeature(req)`（**单参**，`publish-api-server.js:475`；调用点 `:808`）为该端点返回正确 feature。
       ⚠️ **不再依赖 1.3**（该任务前提已失效）。
+      → **✅ 2026-10-25 已落地（**有意偏离**：不挂 plan feature）**：扣分端点是**服务间**调用，
+      调用方是 M2M、**没有用户套餐** ⇒ 挂 feature 会去校验**服务账号**的权益（主体错了）⇒ 误授权。
+      ⇒ 改用**正确的两把锁**：`_requiredScope` 对本 URL 返回 `admin:users`（⛔ 不落到 POST 默认的 `publish:submit`）
+      ＋ handler 内硬判 `req.auth.authType === 'logto'`（⛔ api_key 一律拒）。
+      ⇒ 「准不准用官方算力」的准入归 ops-center 侧（额度预检 / 算力端点），**不归扣分端点**。
 - [ ] 2.3 **错误码映射**：`CREDIT_BALANCE_EXHAUSTED`（**409**，`CreditError.status` 硬编码，`credit-repository.js:26`）/
       `CREDIT_AMOUNT_INVALID`（400，端点入口自校验）/ `CREDIT_PERIOD_INVALID`（400）/
       `CREDIT_SERVICE_UNAVAILABLE`（503）/ `CREDIT_REF_INVALID`（400）/ `CREDIT_AUTH_INVALID`（401|403）。
       ⚠️ **后四个码仓内均不存在 ⇒ 需新增**（见 U-9）。
       ⚠️ 409 的语义**唯一**：扣分在**发货后** ⇒ 409 ⇒ **挂起补扣**（不是「不发货」）。
-- [ ] 2.4 **幂等回归测试**：同 `refId` 重复调用只扣一次、第二次 `duplicated: true`、不新增分录。
-- [ ] 2.5 **并发回归测试**：并发同用户扣减，余额不负、只允许一个成功（`balance >= amount` 的 CAS）。
+      → **✅ 2026-10-25 已落地**：错误码集合**与定案 §3.3 完全一致**（**不新增第 8 个码**；body 不是对象归 `CREDIT_USER_INVALID`）。
+      实现见 `publish-api-credit-consume.js` 的 `CREDIT_ERROR_STATUS`；逐码有测试。
+      ⚠️ **U-9 仍需人工过目**（新增对外错误码属「改契约」）：本片按定案把 5 个新码**实现**了，
+      但**是否对外正式公布**要人点头。
+- [x] 2.4 **幂等回归测试**：同 `refId` 重复调用只扣一次、第二次 `duplicated: true`、不新增分录。
+      → **✅ 2026-10-25 已落地**：`credit-consume-api.test.js` 的「幂等命中 ⇒ 200 且 `duplicated: true`」
+      ＋「并发同 `refId` ⇒ 唯一索引冲突被翻译成幂等命中，**余额只扣一次、只留一条分录**」
+      （假 pool 显式建模「查重强制未命中」的竞态窗口 + 23505 + 按事务 undo 链回滚）。
+- [x] 2.5 **并发回归测试**：并发同用户扣减，余额不负、只允许一个成功（`balance >= amount` 的 CAS）。
+      → **✅ 2026-10-25 已落地**：`credit-consume-api.test.js` 的「并发同用户、不同 `refId` ⇒ 只允许一个成功
+      （另一个 409 `CREDIT_BALANCE_EXHAUSTED`）、余额不负、只留一条分录」。
+      ⚠️ 顺带修掉**假 pool 自身的回滚模型错误**：原先按「BEGIN 时的快照」回滚 ⇒ 会把**别的**并发事务已提交的扣减也还原
+      ⇒ 余额读数偏大 ⇒ 假红 ⇒ 改成**按事务记录自己的 undo 链**（真库 READ COMMITTED 的语义）。
 
 ---
 
@@ -66,6 +94,11 @@
       ⚠️ **只读**：上游 `credit_price_service.compute_cost_micros` **只遍历 token 五类**（`TOKEN_FIELD_TO_UNIT`）⇒
       **视频/图像/TTS/ASR 算不出成本 ⇒ `amount=0` ⇒ 每次白送**（阻断项 B-4 / U-12 待拍板）。
 - [ ] 3.7 **调扣分端点**：失败 ⇒ 发货前不发货 / 发货后置 `pending_charge` + 告警。
+      → **◐ 部分落地（2026-10-25）**：**客户端**已就绪 —— `ops-center/backend/services/credit_consume_service.py`
+      （复用既有 M2M 凭据；**单位换算收在单一真源** `micros_to_cents()`；`refType` 写死常量；空 `refId` 入口就拒）
+      ＋ 18 例 pytest。
+      ⛔ **未落地**：「发货前不发货 / 发货后置 `pending_charge` + 告警」——它依赖 3.1–3.6（选 Key / 算成本 / **事件落库**）
+      与 5.x（状态机 + 补扣宿主，U-14 待拍板）⇒ 归后续片。
 
 ---
 

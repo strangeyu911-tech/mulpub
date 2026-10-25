@@ -15,6 +15,7 @@
 const { PublishApiServer } = require("../src/publish-api-server");
 const { loadConfig, parseCLI } = require("../src/config-loader");
 const { createLogtoRuntime } = require("../src/auth/logto-runtime");
+const { PostgresCreditRepository } = require("../src/auth/credit-repository");
 const path = require("path");
 
 const HELP_TEXT = [
@@ -82,6 +83,11 @@ async function main() {
   });
 
   var identityRuntime = await createLogtoRuntime({ env: process.env });
+  // 积分仓储：复用 identity 仓储的 pg 连接池（不另开池 ⇒ 不新增连接面）。
+  // 未接 Postgres 时留 null ⇒ 扣分端点按 503 fail-closed（不"先扣了再说"）。
+  var creditRepository = identityRuntime && identityRuntime.repository && identityRuntime.repository.pool
+    ? new PostgresCreditRepository({ pool: identityRuntime.repository.pool })
+    : null;
   var server = new PublishApiServer({
     host: config.host,
     dryRun: config.dryRun,
@@ -100,6 +106,7 @@ async function main() {
     entitlementProvider: identityRuntime && identityRuntime.entitlementProvider,
     entitlementSigner: identityRuntime && identityRuntime.entitlementSigner,
     subscriptionService: identityRuntime && identityRuntime.subscriptionService,
+    creditRepository: creditRepository,
     logtoWebhookConsumer: identityRuntime && identityRuntime.webhookConsumer,
     readinessProbe: identityRuntime && identityRuntime.readinessProbe
   });

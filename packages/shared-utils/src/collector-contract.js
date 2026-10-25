@@ -79,6 +79,16 @@ function evaluateCollectorObservation (raw) {
         field: typeof raw.field === 'string' ? raw.field : undefined,
       }
     }
+    // 采集脚本自报「值不可解析」（reason: 'invalid'）⇒ 同样点名字段，
+    // 否则界面只能显示「值无效」，用户不知道是哪个指标出的问题。
+    if (raw.reason === 'invalid') {
+      return {
+        ok: false,
+        reason: 'invalid',
+        retryable: false,
+        field: typeof raw.field === 'string' ? raw.field : undefined,
+      }
+    }
     return { ok: false, reason: 'invalid', retryable: false }
   }
   // ⛔ raw.ok !== true（含**旧式裸对象** `{ views, followers }`）⇒ 不合契约 ⇒ invalid

@@ -4,10 +4,13 @@
  *
  * P2-B: Generic publish engine with config-driven platform support.
  *
- * 架构重构（2026-07-16）：按职责拆分为 3 个 mixin，通过 Object.assign 注入 prototype。
+ * 架构重构（2026-07-16）：按职责拆分为 mixin，通过 Object.assign 注入 prototype。
  *   - rpa-view-helpers.js   — DOM 操作与等待工具（14 个 helper + _guessMimeType）
  *   - rpa-view-session.js   — 窗口/会话管理（_createWindow / _windowKey / cookies / localStorage）
  *   - rpa-view-platforms.js — 平台发布逻辑（_publish_* / _getPlatformConfig / _execHook / _verifyPublishSuccess）
+ *   - rpa-overseas.js       — 海外平台发布链（#4392：YouTube/TikTok/X/IG/FB）
+ *   - rpa-view-collector.js — 账号级数据采集（2026-10-25 新增：collect / _pollCollectorObservation）
+ *     ⚠️ 独立成文件的理由：platforms mixin 在门禁的「点名还账」清单里（容差 0）⇒ 一行不能碰。
  *
  * 主文件保留 6 个核心方法：constructor / setMainWindow / onProgress / _emitProgress / publish / cleanup
  *
@@ -30,6 +33,9 @@ const platformsMixin = require('./rpa-view-platforms')
 // 海外平台（YouTube/TikTok/X/IG/FB）专属发布链放独立目录：
 // rpa-view-platforms.js 在本仓「点名还账」清单内（零增长容差），往里加行会顶穿熔断门禁。
 const overseasMixin = require('./rpa-overseas')
+// 账号级数据采集（粉丝等）—— 独立成文件：
+// `rpa-view-platforms.js` 在门禁的**点名还账清单**里（容差 0）⇒ 一行都不能碰。
+const collectorMixin = require('./rpa-view-collector')
 
 class RpaViewManager {
   // C 方案：池参数解析静态暴露（测试断言默认值/覆盖行为）
@@ -299,9 +305,10 @@ class RpaViewManager {
   }
 }
 
-// 把 4 个 mixin 方法注入 RpaViewManager.prototype
+// 把 5 个 mixin 方法注入 RpaViewManager.prototype
 // ⚠️ overseasMixin 必须排在 platformsMixin **之后**：同名方法（如 _publish_youtube）由海外实现覆盖。
-Object.assign(RpaViewManager.prototype, helpersMixin, sessionMixin, platformsMixin, overseasMixin)
+// ⚠️ collectorMixin 排在最后：它只提供 collect / _pollCollectorObservation，与其它 mixin 无同名方法。
+Object.assign(RpaViewManager.prototype, helpersMixin, sessionMixin, platformsMixin, overseasMixin, collectorMixin)
 
 module.exports = RpaViewManager
 module.exports.ProgressThrottle = ProgressThrottle

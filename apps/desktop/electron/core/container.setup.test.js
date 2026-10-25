@@ -113,6 +113,26 @@ describe('Container setup', () => {
     expect(track).toBeDefined();
   });
 
+  // ── 采集通道装配锁（2026-10-25，账号粉丝采集 PR-1 第 2 刀）──────────────
+  // 事故形态：`DataSyncService` 注册在**主进程**，而旧的取数通路
+  // （window.electronAPI / ipcRenderer）只存在于渲染进程 ⇒ 主进程必然落空
+  // ⇒ 落到「返回一组 0」的兜底 ⇒ 界面显示「0粉丝 · 更新于 10:51」（假 0）。
+  // ⇒ 这条锁证明：**生产装配路径上**执行体与账号解析器真的接上了
+  //    （而不是「模块里有，容器里没接」）。
+  test('⛔ dataSync 装配了采集执行体（与容器里的 rpaViewManager 是同一个实例）', () => {
+    var c = createContainer();
+    var dataSync = c.get('dataSync');
+    expect(dataSync).toBeDefined();
+    expect(dataSync._rpaViewManager).toBe(c.get('rpaViewManager'));
+    expect(typeof dataSync._rpaViewManager.collect).toBe('function');
+  });
+
+  test('⛔ dataSync 装配了账号解析器（无它 ⇒ 每个平台都会被判「无账号」而零请求）', () => {
+    var c = createContainer();
+    var dataSync = c.get('dataSync');
+    expect(typeof dataSync._resolveAccountFn).toBe('function');
+  });
+
   // ── 发布频率控制装配锁（openspec/changes/publish-frequency-control）──────────
   // 事故形态：PublishIntervalGuard 注册在容器里、TaskQueue 支持注入、两侧 60+ 条单测全绿，
   // 但生产装配漏了注入 ⇒ _publishIntervalGuard 恒 null ⇒ 发布频率控制在运行时完全不存在

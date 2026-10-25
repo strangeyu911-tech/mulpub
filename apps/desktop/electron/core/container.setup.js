@@ -77,6 +77,7 @@ const AiWriter = require('../services/ai-writer');
 const { PublisherRouter } = require('../services/publisher-router');
 const UsageTracker = require('../services/usage-tracker');
 const DataSyncService = require("@multi-publish/shared-utils/src/data-sync");
+const { createCollectAccountResolver } = require('../services/collect-account');
 // Backlot 项目库服务
 const { ProjectService } = require('../services/project-service');
 const { BoardService } = require('../services/board-service');
@@ -346,7 +347,11 @@ function createContainer(options) {
   container.register("keywordMonitor", function(c) { return new KeywordMonitor(c.get("contentIntelligence"), c.get("store")); });
   container.register("oauthManager", function(c) { return new OAuthManager(c.get("store")); });
   container.register("batchManager", function(c) { return new BatchManager(c.get("store")); });
-  container.register("dataSync", function(c) { return new DataSyncService(c.get("store")); });
+  // 采集通道注入（2026-10-25）：rpaViewManager = 执行体；resolveAccount = 已登录账号解析（零请求保护）。
+  container.register("dataSync", function(c) { return new DataSyncService(c.get("store"), {
+    rpaViewManager: c.get("rpaViewManager"),
+    resolveAccount: createCollectAccountResolver(c.get("store")),
+  }); });
   // B 方案（publish-throughput-optimization）：并发上限经 MP_QUEUE_MAX_CONCURRENT 覆盖（[1,10]，默认 3），
   // 非法值回落默认并出声告警。
   // 频率守卫必须在此装配路径上注入 TaskQueue（#2773 publish-frequency-control）。

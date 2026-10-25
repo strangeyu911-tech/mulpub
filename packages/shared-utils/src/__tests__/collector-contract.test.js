@@ -55,6 +55,20 @@ describe('采集契约 / 单次观测的判读', () => {
     expect(r.field).toBe('followers')
   })
 
+  test('脚本自报 invalid ⇒ 同样点名字段（界面要知道是哪个指标坏了）', () => {
+    const r = evaluateCollectorObservation({ ok: false, reason: 'invalid', field: 'followers' })
+    expect(r.ok).toBe(false)
+    expect(r.reason).toBe('invalid')
+    expect(r.field).toBe('followers')
+  })
+
+  test('⛔ 自报 invalid 但没给字段 ⇒ 仍是 invalid（不猜字段名）', () => {
+    const r = evaluateCollectorObservation({ ok: false, reason: 'invalid' })
+    expect(r.ok).toBe(false)
+    expect(r.reason).toBe('invalid')
+    expect(r.field).toBeUndefined()
+  })
+
   test('⛔ 旧式裸对象（无 ok 字段）⇒ invalid（不得收下这组数）', () => {
     const r = evaluateCollectorObservation({ views: 100, followers: 200 })
     expect(r.ok).toBe(false)

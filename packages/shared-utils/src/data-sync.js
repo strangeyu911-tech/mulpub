@@ -4,10 +4,6 @@
  * 从各平台拉取发布数据（阅读/粉丝/评论等），
  * 缓存到 SQLite，供 Dashboard 展示。
  *
- * 同步方式：
- *   - API 模式：直接调平台内部 API（抖音/B站）
- *   - Playwright 模式：登录后抓取数据页（微信/小红书/视频号）
- *
  * 文件位置: packages/shared-utils/src/data-sync.js
  */
 const TTL_DEFAULT = 60 * 60 * 1000  // 1 小时
@@ -19,16 +15,26 @@ const {
   evaluateCollectorObservation,
   classifyCollectorTimeout,
   assertCollectorPlatform,
+  isCollectDue,
 } = require('./collector-contract')
+
+// 抽取脚本（页面内执行）的单一真源：5 个平台的 url + 选择器 + fail-loud 判定。
+// 独立成文件是为了让脚本**能被单测真跑**（假 DOM），从而对「假 0」有机械锁。
+const { COLLECTOR_SCRIPTS } = require('./collector-scripts')
 
 // 支持数据同步的平台
 const SYNC_PLATFORMS = ['douyin', 'bilibili', 'xiaohongshu', 'tencent_video', 'wechat_mp']
 
-/** @typedef {{getSetting(key: string): unknown, setSetting(key: string, value: string): unknown}} SettingsStore */
+/** 同平台最小采集间隔（默认 30 分钟）—— 平台风控要求「不能太频繁查询」 */
+const DEFAULT_MIN_COLLECT_INTERVAL_MS = 30 * 60 * 1000
+/** 最小间隔的可配置项（走仓内既有 settings 机制） */
+const COLLECT_INTERVAL_SETTING_KEY = 'sync_collect_min_interval_ms'
+
+/** @typedef {{getSetting(key: string): unknown, setSetting(key: string, value: string): unknown, getDefaultAccount?: (platform: string) => object|null}} SettingsStore */
 /** @typedef {Record<string, unknown>} SyncData */
-/** @typedef {{platform: string, syncedAt: string, error?: string} & SyncData} SyncResult */
+/** @typedef {{platform: string, syncedAt?: string, error?: string, skipped?: string, accountId?: string} & SyncData} SyncResult */
 /** @typedef {() => Promise<SyncData>} Syncer */
-/** @typedef {{rpaFetchData?: (platform: string, url: string, script: string) => Promise<unknown>}} RendererElectronApi */
+/** @typedef {{collect?: (platform: string, accountId: string, payload: {url: string, script: string, authData?: object}) => Promise<unknown>}} CollectorExecutor */
 
 /**
  * @param {unknown} value
@@ -46,28 +52,65 @@ function errorMessage (value) {
   return value instanceof Error ? value.message : String(value)
 }
 
+/**
+ * 「有限数」解析：**空 / null / undefined 一律不算数**。
+ * ⚠️ 不能用 `Number(raw)`：`Number(null) === 0`、`Number('') === 0`
+ *    ⇒ 配置项缺失会被折成 0（= 关闭节流），恰好把「没配」读成「不限制」。
+ *
+ * @param {unknown} raw
+ * @returns {number|null}
+ */
+function toFiniteNumber (raw) {
+  if (raw === null || raw === undefined || raw === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * 记录里的 `syncedAt` ⇒ 毫秒时间戳；**时间戳坏了 ⇒ null**（当作「从未采集」）。
+ * （与契约层 `isCollectDue` 的纪律一致：非法时间戳不得被读成「不需要采」。）
+ *
+ * @param {unknown} row
+ * @returns {number|null}
+ */
+function syncedAtMs (row) {
+  if (!isRecord(row) || typeof row.syncedAt !== 'string') return null
+  const t = Date.parse(row.syncedAt)
+  return Number.isFinite(t) ? t : null
+}
+
 class DataSyncService {
   /**
    * @param {SettingsStore | null} store - Store 实例（需有 getSetting/setSetting）
    * @param {object} [options]
    * @param {number} [options.cacheTTL] - 缓存有效期 (ms)
-   * @param {{collect?: (platform: string, payload: {url: string, script: string}) => Promise<unknown>}} [options.rpaViewManager]
+   * @param {number} [options.minCollectIntervalMs] - 同平台最小采集间隔 (ms)，缺省 30 分钟
+   * @param {() => number} [options.now] - 时钟（可注入，便于确定性测试）
+   * @param {CollectorExecutor} [options.rpaViewManager]
    *   - 主进程可达的采集执行体（由 `container.setup.js` 注入 `rpaViewManager`）。
    *   - 不注入 ⇒ 采集一律 fail-loud 抛错（绝不产出看起来像真数据的 0）。
+   * @param {(platform: string) => Promise<{accountId: string, authData?: object}|null>} [options.resolveAccount]
+   *   - 已登录账号解析（主进程注入；仓内约定 = `store.getDefaultAccount(platform)`）。
+   *   - 返回 null ⇒ 该平台**无已登录账号** ⇒ 记 `skipped(no-account)` 且**零请求**。
    */
   constructor (store, options = {}) {
     this._store = store
     this._cacheTTL = options.cacheTTL || TTL_DEFAULT
     this._rpaViewManager = options.rpaViewManager || null
+    this._resolveAccountFn = typeof options.resolveAccount === 'function' ? options.resolveAccount : null
+    this._minCollectIntervalMs = options.minCollectIntervalMs
+    this._now = typeof options.now === 'function' ? options.now : () => Date.now()
+    // 全局采集并发闸：同一时刻至多 1 个采集在途（平台风控；PRD §5.2）。
+    this._collectChain = Promise.resolve()
 
     // 注册同步器。显式映射让平台与实现的合同可被 TypeScript 校验。
     /** @type {Record<string, Syncer>} */
     this._syncers = {
-      douyin: this._sync_douyin.bind(this),
-      bilibili: this._sync_bilibili.bind(this),
-      xiaohongshu: this._sync_xiaohongshu.bind(this),
-      tencent_video: this._sync_tencent_video.bind(this),
-      wechat_mp: this._sync_wechat_mp.bind(this),
+      douyin: () => this._collectFor('douyin'),
+      bilibili: () => this._collectFor('bilibili'),
+      xiaohongshu: () => this._collectFor('xiaohongshu'),
+      tencent_video: () => this._collectFor('tencent_video'),
+      wechat_mp: () => this._collectFor('wechat_mp'),
     }
   }
 
@@ -113,7 +156,7 @@ class DataSyncService {
         return null
       }
       // 检查是否过期
-      if (Date.now() - new Date(parsed.syncedAt).getTime() > this._cacheTTL) {
+      if (this._now() - new Date(parsed.syncedAt).getTime() > this._cacheTTL) {
         return null
       }
       return /** @type {SyncResult} */ (parsed)
@@ -151,59 +194,105 @@ class DataSyncService {
     if (!syncer) {
       return this._makeErrorResult(platform, `不支持的平台: ${platform}`)
     }
+    // ── 节流（三层之一：同平台最小采集间隔）────────────────────────────
+    // 距上次采集 < 最小间隔 ⇒ **零请求**（返回缓存记录）。
+    // 依据是缓存记录里的 syncedAt（= 采集完成时刻）；**失败记录也算一次尝试**
+    // ⇒ 平台风控侧不会因为采集失败而被反复轰炸。
+    const cached = this.getCachedData(platform)
+    if (cached && !isCollectDue(syncedAtMs(cached), this._now(), this._minIntervalMs())) {
+      return cached
+    }
     try {
       const data = await syncer()
+      if (isRecord(data) && typeof data.skipped === 'string') {
+        // 跳过（无已登录账号）：**不落缓存** ——
+        // 它不是数据，也不该把后续尝试节流住（用户刚登录完就该能采到）。
+        return { platform, skipped: data.skipped }
+      }
       const result = this._makeSyncResult(platform, data)
       this._cacheData(platform, result)
       return result
     } catch (e) {
       const result = this._makeErrorResult(platform, errorMessage(e))
+      // 失败也落缓存：**只有 error，没有任何数值字段** ⇒
+      //   ① 渲染端能读到失败态（trustedSyncRows 会把它判为不可信 ⇒ 显示「—」+ 原因）；
+      //   ② 最小间隔能覆盖失败，避免「采集失败反复轰炸平台」。
+      this._cacheData(platform, result)
       return result
     }
   }
 
   /**
-   * @param {string} platform
-   * @param {SyncData} data
-   * @returns {SyncResult}
+   * 最小采集间隔：构造器参数 > 仓内 settings > 默认 30 分钟。
+   * @returns {number}
    */
-  _makeSyncResult (platform, data) {
-    return {
-      platform,
-      syncedAt: new Date().toISOString(),
-      ...data,
+  _minIntervalMs () {
+    const explicit = toFiniteNumber(this._minCollectIntervalMs)
+    if (explicit !== null && explicit >= 0) return explicit
+    if (this._store && typeof this._store.getSetting === 'function') {
+      const configured = toFiniteNumber(this._store.getSetting(COLLECT_INTERVAL_SETTING_KEY))
+      if (configured !== null && configured >= 0) return configured
     }
+    return DEFAULT_MIN_COLLECT_INTERVAL_MS
   }
 
   /**
+   * 解析该平台的已登录账号。
+   *
+   * 口径（PRD §四 判据 5 / §六）：账号级登录态 ⇒ 一平台多账号时只采一个，
+   * 取仓内既有「默认账号」约定（`store.getDefaultAccount(platform)`）——
+   * 由主进程注入（`options.resolveAccount`），**不在本包复制第二份账号解析**。
+   *
    * @param {string} platform
-   * @param {string} error
-   * @returns {SyncResult}
+   * @returns {Promise<{ok: true, account: {accountId: string, authData?: object}|null} | {ok: false, error: string}>}
    */
-  _makeErrorResult (platform, error) {
-    return {
-      platform,
-      syncedAt: new Date().toISOString(),
-      error,
+  async _resolveAccount (platform) {
+    if (!this._resolveAccountFn) {
+      return {
+        ok: false,
+        error: `平台数据采集通道未接入（${platform}）：未注入账号解析器，取不到已登录账号`,
+      }
     }
+    let account = null
+    try {
+      account = await this._resolveAccountFn(platform)
+    } catch (e) {
+      return { ok: false, error: `账号解析失败（${platform}）：${errorMessage(e)}` }
+    }
+    if (!account || typeof account.accountId !== 'string' || !account.accountId) {
+      return { ok: true, account: null }
+    }
+    return { ok: true, account }
   }
 
   /**
+   * 采集一个平台（统一流程）。
    * @param {string} platform
-   * @param {SyncResult} data
-   * @returns {void}
+   * @returns {Promise<SyncData>}
    */
-  _cacheData (platform, data) {
-    if (this._store) {
-      this._store.setSetting(`sync_data_${platform}`, JSON.stringify(data))
+  async _collectFor (platform) {
+    const spec = COLLECTOR_SCRIPTS[platform]
+    if (!spec) {
+      throw new Error(`平台数据采集通道未接入（${platform}）：没有该平台的采集规格，取不到真值`)
     }
+    const accountResult = await this._resolveAccount(platform)
+    if (!accountResult.ok) throw new Error(accountResult.error)
+    // ⛔ 无已登录账号 ⇒ **零请求**（连窗口都不开），只记 skipped。
+    if (!accountResult.account) {
+      return { skipped: 'no-account' }
+    }
+    const account = accountResult.account
+    const data = await this._rpaFetchStats(platform, account, {
+      url: spec.url,
+      script: spec.script,
+      authData: account.authData,
+    })
+    // 账号归属写进记录（PRD §六：供 UI 标注「这条是哪个账号采的」）
+    return Object.assign({}, data, { accountId: account.accountId })
   }
 
-  // ─── 各平台同步器 ─────────────────────────
-  // 内部辅助：通过 RPA 提取平台统计数据
-  // 向主进程发送 IPC 请求，由 RpaViewManager 在隐藏 BrowserWindow 中执行
   /**
-   * 采集平台统计数据。
+   * 采集平台统计数据（主进程可达的执行体 + 契约判读）。
    *
    * ⚠️ 本服务跑在**主进程**（`core/container.setup.js` 注册 `dataSync`），
    *    而旧实现走的两条通路（`window.electronAPI` / `ipcRenderer`）**只存在于渲染进程**
@@ -216,11 +305,11 @@ class DataSyncService {
    *    因此只能注入，不能自己去找。
    *
    * @param {string} platform
-   * @param {string} url
-   * @param {string} extractScript
+   * @param {{accountId: string, authData?: object}} account
+   * @param {{url: string, script: string, authData?: object}} payload
    * @returns {Promise<SyncData>}
    */
-  async _rpaFetchStats (platform, url, extractScript) {
+  async _rpaFetchStats (platform, account, payload) {
     const collector = this._rpaViewManager
     if (!collector || typeof collector.collect !== 'function') {
       // ⛔ 取不到真值 ⇒ 抛错，绝不返回一组 0（PR #4435 已确立的 fail-loud 纪律）。
@@ -228,7 +317,9 @@ class DataSyncService {
         `平台数据采集通道未接入（${platform}）：本版本未实现创作者后台数据采集，取不到真值`
       )
     }
-    const raw = await collector.collect(platform, { url, script: extractScript })
+    const raw = await this._withCollectLock(() =>
+      collector.collect(platform, account.accountId, payload)
+    )
     const judged = evaluateCollectorObservation(raw)
     if (!judged.ok) {
       // 单次观测即终态（执行体内部已做轮询与就绪等待）⇒ 按契约分型抛错，
@@ -247,67 +338,72 @@ class DataSyncService {
     return judged.data
   }
 
-  async _sync_douyin () {
-    // 抖音创作者后台 API (已登录 Cookie)
-    const script = `() => {
-      const stats = document.querySelector('.creator-data-panel');
-      if (!stats) return null;
-      return {
-        views: parseInt(stats.querySelector('[data-key=total_play]')?.textContent || '0'),
-        followers: parseInt(stats.querySelector('[data-key=fans]')?.textContent || '0'),
-      };
-    }`
-    return this._rpaFetchStats('douyin', 'https://creator.douyin.com/', script)
+  /**
+   * 全局采集并发闸：**同一时刻至多 1 个采集在途**。
+   * （平台风控；PRD §5.2。`syncAll` 是 5 个平台并发发起 ⇒ 没有这道闸就是并发 5。）
+   *
+   * @template T
+   * @param {() => Promise<T>} fn
+   * @returns {Promise<T>}
+   */
+  async _withCollectLock (fn) {
+    const previous = this._collectChain
+    let release = null
+    this._collectChain = new Promise((resolve) => { release = resolve })
+    await previous
+    try {
+      return await fn()
+    } finally {
+      if (release) release()
+    }
   }
 
-  async _sync_bilibili () {
-    // B站 UP 主数据页
-    const script = `() => {
-      const el = document.querySelector('.num-section');
-      if (!el) return null;
-      const nums = [...el.querySelectorAll('.num-item')];
-      return {
-        views: parseInt(nums[0]?.textContent?.replace(/[^0-9]/g,'') || '0'),
-        followers: parseInt(nums[1]?.textContent?.replace(/[^0-9]/g,'') || '0'),
-      };
-    }`
-    return this._rpaFetchStats('bilibili', 'https://member.bilibili.com/platform/home', script)
+  /**
+   * 当前时刻的 ISO 字符串（`syncedAt` = 采集**完成**时刻，不是请求发起时刻）。
+   * 时钟异常（非法值）⇒ 回落到系统时钟，绝不产出 `Invalid Date`。
+   * @returns {string}
+   */
+  _nowIso () {
+    const raw = this._now()
+    const n = Number(raw)
+    return new Date(Number.isFinite(n) ? n : Date.now()).toISOString()
   }
 
-  async _sync_xiaohongshu () {
-    // 小红书创作者数据页
-    const script = `() => {
-      const el = document.querySelector('.creator-data');
-      if (!el) return null;
-      return {
-        views: parseInt(el.querySelector('[class*=read]')?.textContent?.replace(/[^0-9]/g,'') || '0'),
-        followers: parseInt(el.querySelector('[class*=fans]')?.textContent?.replace(/[^0-9]/g,'') || '0'),
-      };
-    }`
-    return this._rpaFetchStats('xiaohongshu', 'https://creator.xiaohongshu.com/', script)
+  /**
+   * @param {string} platform
+   * @param {SyncData} data
+   * @returns {SyncResult}
+   */
+  _makeSyncResult (platform, data) {
+    return {
+      platform,
+      syncedAt: this._nowIso(),
+      ...data,
+    }
   }
 
-  async _sync_tencent_video () {
-    // 视频号创作者后台
-    const script = `() => {
-      return {
-        views: parseInt(document.querySelector('[data-role=totalViews]')?.textContent?.replace(/[^0-9]/g,'') || '0'),
-        followers: parseInt(document.querySelector('[data-role=fans]')?.textContent?.replace(/[^0-9]/g,'') || '0'),
-      };
-    }`
-    return this._rpaFetchStats('tencent_video', 'https://channels.weixin.qq.com/', script)
+  /**
+   * @param {string} platform
+   * @param {string} error
+   * @returns {SyncResult}
+   */
+  _makeErrorResult (platform, error) {
+    return {
+      platform,
+      syncedAt: this._nowIso(),
+      error,
+    }
   }
 
-  async _sync_wechat_mp () {
-    // 公众号后台统计页
-    const script = `() => {
-      return {
-        articles: parseInt(document.querySelector('#articleCount')?.textContent || '0'),
-        views: parseInt(document.querySelector('#totalViews')?.textContent?.replace(/[^0-9]/g,'') || '0'),
-        followers: parseInt(document.querySelector('#totalFans')?.textContent?.replace(/[^0-9]/g,'') || '0'),
-      };
-    }`
-    return this._rpaFetchStats('wechat_mp', 'https://mp.weixin.qq.com/', script)
+  /**
+   * @param {string} platform
+   * @param {SyncResult} data
+   * @returns {void}
+   */
+  _cacheData (platform, data) {
+    if (this._store) {
+      this._store.setSetting(`sync_data_${platform}`, JSON.stringify(data))
+    }
   }
 }
 

@@ -100,6 +100,7 @@ export default {
       autoClearHint: 'Cleaning only removes temporary cache; it will not affect finished videos or the media library saved in history.',
       clearedToast: 'Freed {size} of cache',
       clearFailedToast: 'Failed to clear cache, please try again later',
+      clearedToastClose: 'Dismiss cache cleanup result',
       itemStory2Video: 'Video composition cache',
       itemFilmEngineering: 'Film engineering cache',
     },
@@ -116,6 +117,7 @@ export default {
       tooLong: 'Feedback cannot exceed 10000 characters.',
       submitted: 'Feedback submitted. Thank you for helping us improve.',
       submitFailed: 'Could not submit feedback. Please try again later.',
+      successClose: 'Dismiss feedback result',
     },
     hotkeys: {
       title: 'Keyboard shortcuts',

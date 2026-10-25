@@ -56,24 +56,27 @@ describe('CacheCleanupSection（自 LogsSettings.vue 抽离的缓存清理卡片
     expect(wrapper.text()).toContain(i18n.global.t('settings.cache.empty'))
   })
 
-  it('清理成功：重算统计并播报释放量（toast 走 {size} 插值）', async () => {
+  it('清理成功：重算统计并播报释放量（绿色内联提示条，{size} 插值）', async () => {
     api.cacheClear.mockResolvedValue({ code: 0, data: { freedBytes: 1024 } })
     const wrapper = await flush(mountSection())
     await wrapper.get('[data-testid="cache-clear-btn"]').trigger('click')
     await flush(wrapper)
     expect(api.cacheClear).toHaveBeenCalledTimes(1)
     expect(api.cacheGetStats).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('[role="status"]').text())
+    expect(wrapper.get('[data-testid="cache-cleanup-result"]').text())
       .toBe(i18n.global.t('settings.cache.clearedToast', { size: '1.00 KB' }))
+    // 成功态不得复用失败提示节点
+    expect(wrapper.find('[data-testid="cache-cleanup-error"]').exists()).toBe(false)
   })
 
-  it('清理失败（code != 0）：给出失败提示而非静默', async () => {
+  it('清理失败（code != 0）：给出失败提示而非静默，且不得借用成功绿', async () => {
     api.cacheClear.mockResolvedValue({ code: -1 })
     const wrapper = await flush(mountSection())
     await wrapper.get('[data-testid="cache-clear-btn"]').trigger('click')
     await flush(wrapper)
-    expect(wrapper.get('[role="status"]').text())
+    expect(wrapper.get('[data-testid="cache-cleanup-error"]').text())
       .toBe(i18n.global.t('settings.cache.clearFailedToast'))
+    expect(wrapper.find('[data-testid="cache-cleanup-result"]').exists()).toBe(false)
   })
 
   it('IPC 不可用（降级 code:-1）时不抛异常', () => {

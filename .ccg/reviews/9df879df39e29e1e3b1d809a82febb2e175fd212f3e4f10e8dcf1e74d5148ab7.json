@@ -1,0 +1,97 @@
+{
+  "sha": "fafb766633033fa36ca8ac601289f7aa297623b3",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 32 行（≤ 200）但命中 auth/数据库/加密：敏感内容 8 处",
+  "stats": {
+    "changedLines": 32,
+    "fileCount": 5,
+    "codeFileCount": 2,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 8,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "9df879df39e29e1e3b1d809a82febb2e175fd212f3e4f10e8dcf1e74d5148ab7",
+  "decidedAt": "2026-10-25T21:04:24.328Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 1,
+    "requiresExternalReview": [],
+    "closureNote": "轮4 裁决 5 条：i2（:empty 被 Vue v-if 留下的注释占位节点永久挡死，空盒持续占位）upheld，已改为 visible 驱动 is-empty-slot 类并配两个变异反证（改回 display:contents → 1 红；改回 :empty → 1 红）；i3（token 拆分缺域依据）upheld，已在 inline-notice-tokens.css 头注补门禁层 + 域层两层理由；i1/i4/i5 dismissed，i1 与 i4 为前两轮同条指控重复（依据：.gitignore 明文判定记录才是留痕、主干 2255 个同族文件、deep-review.sh 自陈父 sha 是预期行为、readFileSync 契约断言是仓库 5+ 处既有范式），i5 指的是已双重防线的已知脆弱点而非未处置缺陷。全部 upheld 项均已闭环。",
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": ".ccg/reviews/*.json 带父提交 sha 与 pending 状态入库。",
+        "verdict": "dismissed",
+        "rationale": "与轮2/轮3 同条指控重复。.gitignore 明文「判定记录才是留痕」，主干现存 2255 个同族文件；deep-review.sh 自陈 pre-commit 阶段写在父 sha 上是预期行为。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": ":empty 要求零子节点，Vue v-if 为 false 时留下注释占位节点，:empty 永不命中，空盒持续占位。",
+        "verdict": "upheld",
+        "rationale": "已用 childNodes 探针实证（关闭后 slot 内是 1 个 #comment）。改为 visible 驱动 is-empty-slot 类 + display:none，新增契约测试锁三件事，两个变异反证均验过。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "token 拆分为绕过 500 行门禁，缺乏域层面理由。",
+        "verdict": "upheld",
+        "rationale": "「缺域依据」这半句成立，已在文件头注补两层理由：门禁层（处方原文要求拆、挂账通道被禁、注释压到 1 行仍超限）+ 域层（单一消费方，与 video-creation-tokens.css / skeleton.css 同族粒度）。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "测试用 readFileSync 读源码做契约断言，路径变更即断。",
+        "verdict": "dismissed",
+        "rationale": "仓库既有范式（RiskSuspendedBanner.source.test.js / nav-icons.test.js / check-color-literals.js 等同模式）；CSS 变量最终值只能在样式文本里验证。本次 token 拆分恰恰证明其价值。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "token 文件注释含字面量，会被正则契约测试误判。",
+        "verdict": "dismissed",
+        "rationale": "该脆弱点已识别并双重防线：注释侧不写被禁字面量 + 判据侧先剥块注释再扫声明。两处自咬场景均已实测并修好。"
+      }
+    ],
+    "blocking": [],
+    "note": "5 条均已裁决：2 upheld（已修复 + 域依据已补）、3 dismissed（均有可核实依据）",
+    "at": "2026-10-25T21:25:00.000Z"
+  }
+}

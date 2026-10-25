@@ -100,7 +100,14 @@
         </label>
         <div class="feedback-log-hint">{{ t('settings.feedback.attachLogsHint') }}</div>
         <div v-if="feedbackError" class="feedback-message feedback-error" role="alert">{{ feedbackError }}</div>
-        <div v-if="feedbackSuccess" class="feedback-message feedback-success" role="status">{{ feedbackSuccess }}</div>
+        <!-- 反馈提交成功：走绿色内联提示条（UiInlineNotice，inline-notice-green 2026-10-26） -->
+        <UiInlineNotice
+          v-if="feedbackSuccess"
+          :text="feedbackSuccess"
+          :close-label="t('settings.feedback.successClose')"
+          test-id="feedback-success"
+          data-testid="feedback-success"
+        />
         <div class="feedback-actions">
           <button class="cohere-btn-primary" type="submit" :disabled="submittingFeedback">
             {{ submittingFeedback ? t('settings.feedback.submitting') : t('settings.feedback.submit') }}
@@ -118,6 +125,7 @@ import { logsGetInfo, logsClear, submitFeedback as submitFeedbackRequest } from 
 import { getAppLocale, setAppLocale } from '@/i18n'
 import NetSchedDiagnose from './NetSchedDiagnose.vue'
 import CacheCleanupSection from './CacheCleanupSection.vue'
+import UiInlineNotice from './UiInlineNotice.vue'
 import { formatBytes } from '@/utils/bytes'
 
 const { t } = useI18n()
@@ -454,10 +462,8 @@ onMounted(() => {
   background: var(--color-bg-card)1f0;
 }
 
-.feedback-success {
-  color: #067647;
-  background: #ecfdf3;
-}
+/* 成功态已于 inline-notice-green（2026-10-26）迁移到 UiInlineNotice 组件，
+   .feedback-success 随之删除 —— 保留无消费方的样式副本会制造第二套真相。 */
 
 .feedback-actions {
   display: flex;

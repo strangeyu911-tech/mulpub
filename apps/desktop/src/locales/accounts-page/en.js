@@ -185,6 +185,9 @@ export default {
     proxyLoading: 'Loading current proxy settings...',
     proxyLoadFailed: 'Failed to load current proxy settings',
     proxyRetry: 'Retry',
+    // Inline notice for the configured proxy (moved to UiInlineNotice by inline-notice-green, 2026-10-26).
+    // {description} is the masked proxy description (type + host + port) from proxyDescription.
+    proxyConfigured: (ctx) => 'Current: ' + ctx.named('description'),
     verifyingLogin: (ctx) => 'Verifying ' + ctx.named('platform') + ' login status...',
     loginValid: 'Login status is normal',
     loginExpired: 'Session expired',

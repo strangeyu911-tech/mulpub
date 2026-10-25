@@ -185,6 +185,9 @@ export default {
     proxyLoading: '正在读取当前代理配置...',
     proxyLoadFailed: '读取当前代理配置失败',
     proxyRetry: '重试',
+    // 「当前代理」内联提示条（inline-notice-green 2026-10-26 迁到 UiInlineNotice）。
+    // {description} 是脱敏后的代理描述（类型 + 主机 + 端口），由 proxyDescription 计算。
+    proxyConfigured: (ctx) => '当前 ' + ctx.named('description'),
     verifyingLogin: (ctx) => '正在验证 ' + ctx.named('platform') + ' 登录状态...',
     loginValid: '登录状态正常',
     loginExpired: '登录已失效',

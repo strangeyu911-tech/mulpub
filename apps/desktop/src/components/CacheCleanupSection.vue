@@ -36,7 +36,16 @@
           <div v-else-if="!cacheInfo.items.length" class="log-empty">{{ t('settings.cache.empty') }}</div>
         </div>
       </div>
-      <div v-if="cacheToast" class="cache-toast" role="status">{{ cacheToast }}</div>
+      <!-- 清理结果提示：成功走绿色内联提示条（UiInlineNotice，inline-notice-green 2026-10-26）；
+           失败保持红字浅底（同一槽位两种语义，失败不得借用成功绿误导用户）。 -->
+      <UiInlineNotice
+        v-if="cacheClearedText"
+        :text="cacheClearedText"
+        :close-label="t('settings.cache.clearedToastClose')"
+        test-id="cache-cleanup-result"
+        data-testid="cache-cleanup-result"
+      />
+      <div v-else-if="cacheToast" class="cache-toast" role="status" data-testid="cache-cleanup-error">{{ cacheToast }}</div>
     </div>
 </template>
 
@@ -45,11 +54,15 @@ import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { cacheGetStats, cacheClear } from '@/api/publisher'
 import { formatBytes } from '@/utils/bytes'
+import UiInlineNotice from './UiInlineNotice.vue'
 
 const { t } = useI18n()
 
 const cacheLoading = ref(false)
 const cacheClearing = ref(false)
+// 清理结果拆成两个槽：成功文案走绿色内联提示条，失败文案走红字提示。
+// 拆开的理由：绿色是「已成功」的语义色，失败复用绿色会误导用户（inline-notice-green 决策记录）。
+const cacheClearedText = ref('')
 const cacheToast = ref('')
 const cacheInfo = reactive({ totalBytes: 0, fileCount: 0, items: [] })
 
@@ -76,12 +89,13 @@ async function loadCache () {
 async function clearCache () {
   if (cacheClearing.value) return
   cacheClearing.value = true
+  cacheClearedText.value = ''
   cacheToast.value = ''
   try {
     const result = await cacheClear()
     if (result && result.code === 0 && result.data) {
       await loadCache()
-      cacheToast.value = t('settings.cache.clearedToast', { size: formatBytes(result.data.freedBytes || 0) })
+      cacheClearedText.value = t('settings.cache.clearedToast', { size: formatBytes(result.data.freedBytes || 0) })
     } else {
       cacheToast.value = t('settings.cache.clearFailedToast')
     }
@@ -218,12 +232,15 @@ onMounted(() => {
   border-top: 1px dashed var(--border-light, #e2e8f0);
 }
 
+/* 失败态提示条：与成功态（UiInlineNotice 绿色）语义分离，用 danger 语义槽。
+   原 #067647/#ecfdf3 是成功绿，被失败提示复用属配色错误（inline-notice-green 修正）。 */
 .cache-toast {
   margin-top: 10px;
+  border: 1px solid var(--color-danger);
   border-radius: 6px;
   padding: 8px 10px;
   font-size: var(--font-size-xs);
-  color: #067647;
-  background: #ecfdf3;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
 }
 </style>

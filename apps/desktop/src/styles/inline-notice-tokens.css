@@ -1,0 +1,54 @@
+/**
+ * inline-notice-tokens.css — 内联文字提示条 token（inline-notice-green，2026-10-26）
+ *
+ * 为什么单独成文件（两层理由，缺一不可）：
+ *
+ * ① 门禁层：tokens.css 是桌面端设计 token 的单一真源，但已被
+ *    .github/scripts/check-max-lines.js 盯在 500 行线上。新增的 5 个槽写在里面
+ *    使文件从 498 行涨到 507 行，触发 NEW_OVER_LIMIT。门禁处方原文是
+ *    「按既有 mixin/composable 范式拆分」——拆是要求的动作，不是绕过：
+ *    不拆即阻断，而挂账要 --update 整份重写（会把他人存量漂移登记成新基线，
+ *    门禁注释明确禁止）。也试过把说明注释压到 1 行，仍 505 行，照样超限。
+ *
+ * ② 域层：这 5 个槽服务**一个且只有一个**组件（UiInlineNotice.vue），
+ *    与同族的 video-creation-tokens.css（视频创作域）/ skeleton.css（骨架屏域）
+ *    拆分粒度一致——按消费域拆，不是「一超限就掰一块」。先试过把它们写进
+ *    video-creation-tokens.css，那会破坏该文件的域专属语义，已否。
+ *
+ * 引入规则：由 main.js 在 tokens.css 之后 import。CSS 自定义属性不参与层叠竞争，
+ * 后定义者胜，所以拆走后覆盖关系与写在 tokens.css 内完全一致。
+ * 契约测试 src/components/UiInlineNotice.test.js 同时读本文件与 tokens.css，
+ * 并额外锁两条：tokens.css 内不得再出现这些槽位（双持必然漂移）、
+ * main.js 必须引入本文件（否则整组槽位不生效）。
+ *
+ * 形态取自用户指定参考截图（逐像素取样，非目测）：
+ *   底 #D9F4E4 / 边框与对勾 #04B54B / 高约 46px / 圆角约 8px / 左右内边距约 12px。
+ *
+ * 文字档为什么不用主色 #04B54B：它在 #D9F4E4 上对比仅约 2.0:1，
+ * 低于 WCAG AA 正文 4.5:1；取加深的 #076B33（约 5.6:1）。
+ * 边框与图标沿用主色 —— 非文本 UI 分量阈值为 3:1，实测约 3.3:1。
+ */
+
+:root {
+  --color-inline-notice-bg: #d9f4e4;
+  --color-inline-notice-border: #04b54b;
+  --color-inline-notice-text: #076b33;
+  --color-inline-notice-ink: #04b54b;
+  /* 关闭钮 hover 底：主色 12% 透明叠层。必须走槽位而不是就地 rgba ——
+     就地写等于制造第二套品牌绿派生色（deep-review i3，曾因此返工一轮）。 */
+  --color-inline-notice-hover: rgba(4, 181, 75, 0.12);
+}
+
+/* 暗色档：与亮色区同槽成对，遵循 spec「主题令牌必须自带暗色覆盖」。
+ * 同构原则：底色换深绿表面、描边与图标换亮绿、文字用最亮一档。
+ * 对比度：#86efac 文字在 #052e16 底上约 9.1:1；
+ *          #4ade80 描边在 #052e16 上约 6.4:1（非文本 ≥3:1）。
+ * ⚠ 本注释内不得出现暗色选择器的字面量原串 —— 契约测试用 indexOf 定位暗色块，
+ *   注释命中会让解析从注释行开始（= 亮色区），暗色档全读不到（tokens.css 实测踩过）。 */
+[data-theme='dark'] {
+  --color-inline-notice-bg: #052e16;
+  --color-inline-notice-border: #4ade80;
+  --color-inline-notice-text: #86efac;
+  --color-inline-notice-ink: #4ade80;
+  --color-inline-notice-hover: rgba(74, 222, 128, 0.16);
+}

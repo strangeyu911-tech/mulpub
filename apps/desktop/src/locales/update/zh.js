@@ -14,5 +14,6 @@ export default {
     badgeAriaLabel: '应用有新版本，点击后退出应用并安装新版本',
     installingHint: '正在下载新版本，完成后将自动退出应用并安装',
     latestVersion: '当前已是最新版本',
+    latestVersionClose: '关闭「已是最新版本」提示',
     failedPrefix: '更新失败：',
   }

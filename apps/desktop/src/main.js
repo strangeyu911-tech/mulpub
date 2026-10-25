@@ -2,6 +2,9 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import elementPlusOnDemand from './plugins/element-plus'
 import './styles/tokens.css'
+// 内联提示条 token（inline-notice-green）：从 tokens.css 拆出以满足 500 行门禁，
+// 必须排在 tokens.css 之后 —— 同特异性下后定义者胜，拆走不改变覆盖关系。
+import './styles/inline-notice-tokens.css'
 import './styles/float-zone.css'
 import './styles/cohere-design-system.css'
 import './styles/ep-theme.css'

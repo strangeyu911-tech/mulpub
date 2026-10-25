@@ -14,7 +14,12 @@
         </button>
       </div>
       <div v-else-if="account?.proxy?.configured" class="proxy-status" role="status">
-        <span>当前 {{ proxyDescription }}</span>
+        <UiInlineNotice
+          :text="proxyConfiguredText"
+          :closable="false"
+          test-id="proxy-configured"
+          data-testid="proxy-configured"
+        />
       </div>
       <UiSelect
         v-model="type"
@@ -74,6 +79,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import UiButton from '@/components/UiButton.vue'
 import UiInput from '@/components/UiInput.vue'
+import UiInlineNotice from '@/components/UiInlineNotice.vue'
 import UiModal from '@/components/UiModal.vue'
 import UiSelect from '@/components/UiSelect.vue'
 
@@ -110,6 +116,10 @@ const proxyDescription = computed(() => {
   if (!proxy?.configured) return ''
   return `${String(proxy.type || 'http').toUpperCase()} ${proxy.hostMasked || ''}${proxy.port ? `:${proxy.port}` : ''}`
 })
+
+// 「当前代理」提示条文案：前缀「当前」走 locale（含脱敏描述插值），
+// 不在模板里拼中文字面量（i18n-user-facing-messages 规则）。
+const proxyConfiguredText = computed(() => t('accountsPage.proxyConfigured', { description: proxyDescription.value }))
 
 const hostPlaceholder = computed(() => {
   const maskedHost = props.account?.proxy?.hostMasked
@@ -171,7 +181,9 @@ function save () {
 
 <style scoped>
 .proxy-form { display: flex; flex-direction: column; gap: 2px; }
-.proxy-status { padding: 8px 10px; border: 1px solid #d9e8e0; border-radius: 5px; background: #f3faf6; color: #287154; font-size: var(--font-size-xs); }
+/* .proxy-status 的自绘边框/底色已随 inline-notice-green（2026-10-26）迁入 UiInlineNotice，
+   此处只保留容器职责（间距由 .proxy-form 的 gap 提供），不再重复第二套配色。 */
+.proxy-status { display: flex; }
 .proxy-loading { padding: 8px 10px; border: 1px solid #e3e6ef; border-radius: 5px; background: #f7f8fb; color: var(--text-secondary, #5b6172); font-size: var(--font-size-xs); }
 .proxy-load-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid #f0d4d8; border-radius: 5px; background: #fdf5f6; color: #c43d4d; font-size: var(--font-size-xs); }
 .proxy-load-error-text { flex: 1 1 auto; min-width: 0; }

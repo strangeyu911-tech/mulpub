@@ -1,0 +1,105 @@
+{
+  "sha": "431420db8b2f0dbe4931e43ec43343959fcfd316",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 332 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 332,
+    "fileCount": 16,
+    "codeFileCount": 14,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 6,
+    "docSensitiveContentHits": 1,
+    "docSensitiveContentSample": [
+      "  `settings.feedback.successClose`、`update.latestVersionClose`、`accountsPage.proxyConfigured`。"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "0b505ead86481abf9221da975ac340bb816a47ad47d0346b89a8bf48966ab7c5",
+  "decidedAt": "2026-10-25T20:24:01.806Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 1,
+    "requiresExternalReview": [],
+    "closureNote": "轮1 裁决 3 条：i1（v-if 挂在 live region 根节点，关闭即丢失播报）upheld，已修复并配变异反证（v-if 移回根节点 → 2 条测试红）；i3（hover 就地 rgba 绕过 token）upheld，已修复并配变异反证（改回 rgba → 1 条测试红）；i2（.ccg/reviews 元数据入库 + sha 指父提交）dismissed，依据是主干 2255 个同族文件且 deep-review.sh 自陈 pre-commit 阶段写在父 sha 上是预期行为。轮2 补修 i1 的复发形态（改用 display:contents 后元素被移出可访问性树）upheld，改 :empty + display:none 并配变异反证（改回 contents → 1 条测试红）。全部 upheld 项均已在代码中闭环，无遗留。",
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "UiInlineNotice.vue 把 v-if=\"visible\" 直接挂在带 role=status/aria-live=polite 的根节点上，关闭时整个 live region 被从 DOM 移除，与组件自身注释“常驻、不随 v-if 迁移”及 OfflineIndicator 教训直接矛盾，无障碍播报会丢失。",
+        "highRiskDomains": [],
+        "prosecution": "组件注释与 OfflineIndicator 的 QM-6 i2 都明确要求 live region 常驻；v-if 挂在根节点时，关闭会把 role=status/aria-live=polite 的容器整体移出 DOM，之后同一挂载点上的任何播报都不再被辅助技术接收。原实现正是这个形态，指控成立。",
+        "defense": "无有效辩护。组件自身注释已写下正确约束而实现违背了它，属实现与契约不一致。",
+        "verdict": "upheld",
+        "rationale": "已修复：v-if 从根节点下移到内层 .ui-inline-notice，外层改为常驻 .ui-inline-notice-slot。新增 2 条回归测试（关闭后 slot 仍在 DOM、点击关闭后 live region 保留）。变异反证：把 v-if 移回根节点，2 条测试当场变红（实测 Tests 2 failed | 10 passed）。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "新增 .ccg/reviews/0b505ead...json 为审阅元数据残留，其 sha 字段指向 431420db8（旧提交），与本次 head 39104c9 不符，且不应随运行时变更入库。",
+        "highRiskDomains": [],
+        "prosecution": "sha 与 head 不一致，看起来像把过期元数据误提交。",
+        "defense": "①入库本身是主干惯例而非残留：git ls-tree origin/main 显示 .ccg/reviews/*.json 共 2255 个，且 .gitignore 注释明确「判定记录 .ccg/reviews/*.json 才是留痕」；pre-commit 钩子本次也主动把它纳入暂存。②sha 指向父提交是 pre-commit 阶段的预期行为，deep-review.sh 自己会打印说明：「pre-commit 时新 commit 尚未生成，判定记录写在父 sha 上——这是预期行为」。实测父提交 431420db8 正是本次分支的 merge-base。",
+        "verdict": "dismissed",
+        "rationale": "两条指控点经核实均不成立：文件是门禁留痕的既定载体（主干 2255 个同族文件），sha 写父提交是 pre-commit 时序的必然结果而非数据错误。无需改动。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "UiInlineNotice.vue 的 .ui-inline-notice-close:hover 使用硬编码 rgba(4,181,75,0.12)，虽无 # 字面量但引入第二套品牌绿派生色，违背“颜色一律来自 tokens.css 语义槽”的契约。",
+        "highRiskDomains": [],
+        "prosecution": "就地 rgba 是从品牌主色派生的第二套色值，绕过了 token 单一来源；且既有契约测试只禁 hex 不禁 rgba，说明这个漏洞当时没被覆盖到。指控成立。",
+        "defense": "部分成立但不足以免责：该值仅用于 hover 底色、不影响文字可读性，风险等级低于 i1；但「契约有洞」本身就是要修的部分。",
+        "verdict": "upheld",
+        "rationale": "已修复：新增 --color-inline-notice-hover 语义槽（亮 rgba(4,181,75,.12) / 暗 rgba(74,222,128,.16) 成对），组件改引用该槽；同时把样式契约测试的判据从「只禁 hex」扩为「hex 与就地 rgba 都禁」，堵住这个洞。变异反证：把 background 改回 rgba(4,181,75,0.12)，契约测试当场变红（实测 Tests 1 failed | 11 passed）。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      }
+    ],
+    "note": "自扮演裁决：2 条指控成立或需外部复核",
+    "at": "2026-10-25T20:31:58.260Z"
+  }
+}

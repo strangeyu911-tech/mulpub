@@ -5,7 +5,11 @@
     - 本组件只保留「结果提示」：当前已最新 / 更新失败，并负责启动更新监听（start/cleanup）
   -->
   <div v-if="showNotAvailable" class="update-notice" data-testid="update-not-available">
-    <div class="ui-toast ui-toast-success">{{ t('update.latestVersion') }}</div>
+    <UiInlineNotice
+      :text="t('update.latestVersion')"
+      :close-label="t('update.latestVersionClose')"
+      test-id="update-not-available-toast"
+    />
   </div>
   <div v-if="showError" class="update-notice" data-testid="update-error">
     <el-alert
@@ -28,6 +32,7 @@
 import { onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAutoUpdate } from '@/composables/useAutoUpdate'
+import UiInlineNotice from './UiInlineNotice.vue'
 
 const { t } = useI18n()
 const {
@@ -48,20 +53,13 @@ onBeforeUnmount(() => {
 </script>
 
 <style>
-/* 右下角提示条：right 88px 避让「回到顶部」浮标占位（BackToTop 44px + 间距） */
+/* 右下角提示条宿主：right 88px 避让「回到顶部」浮标占位（BackToTop 44px + 间距）。
+   提示条本体样式在 UiInlineNotice.vue（inline-notice-green 2026-10-26 统一收编），
+   此处只留定位。 */
 .update-notice {
   position: fixed;
   bottom: 16px;
   right: 88px;
   z-index: 2000;
 }
-
-.ui-toast {
-  padding: 12px 16px;
-  border-radius: var(--r-sm, 8px);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-}
-.ui-toast-success { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
-.ui-toast-warning { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 </style>

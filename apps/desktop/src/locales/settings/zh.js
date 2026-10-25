@@ -102,6 +102,7 @@ export default {
       autoClearHint: '清理仅删除临时缓存，不会影响历史记录中已保存的成品视频与素材库。',
       clearedToast: '已释放 {size} 缓存',
       clearFailedToast: '清理缓存失败，请稍后重试',
+      clearedToastClose: '关闭缓存清理结果提示',
       itemStory2Video: '视频合成缓存',
       itemFilmEngineering: '影视工程缓存',
     },
@@ -118,6 +119,7 @@ export default {
       tooLong: '反馈内容不能超过 10000 个字符。',
       submitted: '反馈已提交，感谢你的帮助。',
       submitFailed: '反馈提交失败，请稍后重试。',
+      successClose: '关闭反馈提交结果提示',
     },
     hotkeys: {
       title: '键盘快捷键',

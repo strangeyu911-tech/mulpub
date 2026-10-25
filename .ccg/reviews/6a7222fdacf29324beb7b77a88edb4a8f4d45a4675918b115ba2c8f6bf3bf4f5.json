@@ -1,0 +1,108 @@
+{
+  "sha": "39104c9b3818e77ecd9f084ddf7d2b91ff7aebd2",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 108 行（≤ 200）但命中 auth/数据库/加密：敏感内容 1 处",
+  "stats": {
+    "changedLines": 108,
+    "fileCount": 4,
+    "codeFileCount": 2,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 1,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "6a7222fdacf29324beb7b77a88edb4a8f4d45a4675918b115ba2c8f6bf3bf4f5",
+  "decidedAt": "2026-10-25T20:33:49.217Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 1,
+    "requiresExternalReview": [],
+    "closureNote": "轮2 裁决 4 条：i1（display:contents 使 live region 失效）upheld，已改 :empty + display:none 并配变异反证（改回 contents → 1 条测试红）；i2（sha 指旧提交）dismissed，依据是 pre-commit 时序必然结果且父提交即 merge-base；i3（元数据入库属残留）dismissed，依据是 .gitignore 明确判定记录才是留痕载体、.adversarial/ 才被排除，且入库由 pre-commit 钩子自动完成；i4（父级未绑 @close 可能空播报）dismissed，依据是 mount 实测关闭后 slot 无子节点、:empty 命中、残留文本无从播报，该事实已固化为契约测试。轮3 另修 5 条元数据/文档类争议（i1 findings 与 rationale 不一致、i2 本条记录停留在 pending 态）均 upheld 并已回写闭环。全部 upheld 项均已在代码或记录中闭环，无遗留。",
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": ".ui-inline-notice-slot 用 display:contents 承载 role=status + aria-live=polite；display:contents 在多数屏幕阅读器中移除元素可访问性树，使 live region 无效，直接违背“常驻播报”约束。",
+        "highRiskDomains": [],
+        "prosecution": "上一轮（commit 095e9fd6）为满足「空态不占位 + live region 常驻」两个约束，用了 display:contents。该值在 Chromium/Firefox 中长期把宿主元素从可访问性树移除（accessibility tree pruning），导致 role=status/aria-live=polite 对辅助技术不可见，播报彻底失效。这是上一轮修复引入的新缺陷，指控成立。",
+        "defense": "无有效辩护。上一轮的意图（空态不占位）是对的，但选错了实现手段。",
+        "verdict": "upheld",
+        "rationale": "已修复：改用 .ui-inline-notice-slot:empty { display: none }。元素始终留在 DOM 与可访问性树中，仅在没有子节点时不产生布局盒，两个约束同时满足。新增 1 条契约测试禁止该 display 值（判据只扫声明、先剥块注释，避免注释里的禁用说明自咬）。变异反证：把值改回 display:contents，测试当场变红（实测 Tests 1 failed | 13 passed）。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": ".ccg/reviews/*.json 审计元文件的 sha 字段指向旧提交（431420db8、39104c9），与本次 head 095e9fd 不符，提交到代码库后会制造错误审计链。",
+        "highRiskDomains": [],
+        "prosecution": "sha 与 head 不一致，看起来像把过期元数据误提交。",
+        "defense": "入库本身是主干惯例而非残留：git ls-tree origin/main 显示 .ccg/reviews/*.json 共 2255 个，且 .gitignore 注释明确「判定记录 .ccg/reviews/*.json 才是留痕」；pre-commit 钩子本次也主动把它纳入暂存。sha 指向父提交是 pre-commit 阶段的预期行为，deep-review.sh 自己会打印说明：「pre-commit 时新 commit 尚未生成，判定记录写在父 sha 上——这是预期行为」。实测父提交正是本次分支的 merge-base。",
+        "verdict": "dismissed",
+        "rationale": "两条指控点经核实均不成立：文件是门禁留痕的既定载体（主干 2255 个同族文件），sha 写父提交是 pre-commit 时序的必然结果而非数据错误。无需改动。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": ".ccg/reviews/*.json 随功能变更入库，属运行时审阅残留，与“判定记录不随运行时代码入库”原则冲突，增加仓库噪音。",
+        "highRiskDomains": [],
+        "prosecution": "审阅元数据与功能代码混在同一 PR 的 diff 里，噪音与耦合。",
+        "defense": "「不随运行时代码入库」这条原则在本仓不存在成文依据：相反，.gitignore 注释写明「CCG 深度审查的工作产物（提案/评审/裁决），不进主干；判定记录 .ccg/reviews/*.json 才是留痕」——即判定记录应当留痕，只是工作产物（.adversarial/）不入库。入库动作由 pre-commit 钩子自动完成，不是手工选择。主干现存 2255 个同族文件，说明这是既定工作流。",
+        "verdict": "dismissed",
+        "rationale": "指控引用的原则与仓库实际约定相反：判定记录入库是 .gitignore 明确允许并要求的留痕通道，工作产物（.adversarial/）才被排除。本次 diff 中 .adversarial/ 内容确实未入库（git status 无该路径）。无需改动。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "UiInlineNotice 父级（CacheCleanupSection、LogsSettings 等）未绑定 @close 事件；visible 关闭后组件仍挂载，外层常驻容器为空时可能触发无内容播报。",
+        "highRiskDomains": [],
+        "prosecution": "父级不监听 @close，组件内部 visible 状态与父级不同步；若外层容器空置时 aria-live 仍活跃，可能播报空内容。",
+        "defense": "「无内容播报」的成立前提是 slot 里有残留文本；实测 visible 为假时内层提示条（含文本节点）被 v-if 整体摘掉，slot 无任何子节点，:empty 命中并隐藏，无内容可播。aria-live 播报的是「内容变化」，不是「容器空置」；从有到无的变化不会产生朗读。父级不绑 @close 是有意的 API 设计：提示为一次性消费，父级无需感知关闭；需要感知的场景用 v-if/key 重新挂载即可（组件注释已写明）。",
+        "verdict": "dismissed",
+        "rationale": "经 mount + trigger('click') 实测：关闭后 slot 的 text() 为 ''，无残留内容；父级状态同步由 v-if 重新挂载承担，不属缺陷。已把这个实测固化为契约测试「关闭后 live region 内不残留旧文案」——任何把 text 移到 v-if 之外的改动都会让它变红。无需改动代码。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "reason": "self_play_upheld"
+      }
+    ],
+    "note": "自扮演裁决：1 条指控成立或需外部复核（i1 已修复并配变异反证）",
+    "at": "2026-10-25T20:40:00.000Z"
+  }
+}

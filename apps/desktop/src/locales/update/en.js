@@ -14,5 +14,6 @@ export default {
     badgeAriaLabel: 'A new version is available. Click to quit the app and install it.',
     installingHint: 'Downloading the new version; the app will quit and install automatically when done.',
     latestVersion: 'You are on the latest version',
+    latestVersionClose: 'Dismiss the latest-version notice',
     failedPrefix: 'Update failed: ',
   }

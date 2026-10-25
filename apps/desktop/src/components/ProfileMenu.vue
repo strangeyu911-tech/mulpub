@@ -140,6 +140,10 @@ import {
   resolveIdentityErrorMessageKey,
   resolveIdentityStatusNoteKey,
 } from '@/utils/identity-error-messages'
+// Phase 2 状态文案单一真源：菜单内状态文案与会员中心/AccountSecurity 同源。
+// 传 hasSessionIdentity 以保留 error 态二分语义（C1-08 裁决：网络抖动但
+// 会话有效时显示「已连接」，不误导用户去重登）。
+import { statusLabelOf } from '@/views/member-center/labels'
 
 const emit = defineEmits(['open-settings', 'upgrade', 'navigate'])
 
@@ -190,17 +194,10 @@ const clientStatusLabel = computed(() => {
 
 const clientStatusTitle = computed(() => clientStatusLabel.value)
 
-const statusLabel = computed(() => {
-  if (status.value === 'authenticated') return t('memberCenter.statusConnected')
-  if (status.value === 'offline_authenticated') return t('memberCenter.statusOffline')
-  if (status.value === 'refreshing') return t('memberCenter.statusRefreshing')
-  if (status.value === 'signing_in') return t('memberCenter.statusSigningIn')
-  if (status.value === 'expired') return t('memberCenter.statusExpired')
-  if (status.value === 'error') return hasSessionIdentity.value ? t('memberCenter.statusConnected') : t('memberCenter.statusError')
-  if (isSigningOut.value) return t('memberCenter.statusSigningOut')
-  if (status.value === 'disabled') return t('memberCenter.identityDisabled')
-  return t('memberCenter.notLoggedIn')
-})
+// 状态文案单一真源（Phase 2）：复用 member-center/labels 的 statusLabelOf，
+// 传 hasSessionIdentity 保留 error 二分（会话仍有效 → 「已连接」）。
+// 原先是本文件内自有一份 8 分支映射，与 labels.js 版本在 error 态口径不一（P1-3）。
+const statusLabel = computed(() => statusLabelOf(t, status.value, hasSessionIdentity.value))
 
 const statusNote = computed(() => t(resolveIdentityStatusNoteKey(status.value)))
 

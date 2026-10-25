@@ -96,9 +96,16 @@ export default {
     identityDisabled: '身份服务未启用',
     identityDisabledHint: '当前运行环境未连接身份服务，仅可查看本地版本与许可证信息。',
     accountCardTitle: '账号信息',
-    accountCardEmpty: '暂无账号信息',
-    accountCardEmptyHint: '登录后这里会展示你的昵称、用户名与登录状态。',
-    viewMemberCenter: '查看会员中心',
+    // 2026-10-25 Phase 2 死键清理（zh/en 成对）：accountCardEmpty /
+    // accountCardEmptyHint / viewMemberCenter / checkUpdates / featureCount /
+    // statusUnknown / entitlementEmpty / licenseProExpired 共 8 键，
+    // 全仓 grep 零消费方（判定脚本：grep -rn "memberCenter.<key>" apps/desktop/src
+    // 排除 locales 后零命中）。
+    // ——— Phase 2 真概览：快捷入口（Overview 导流卡） ———
+    shortcutsTitle: '快捷入口',
+    shortcutSubscriptionDesc: '查看方案、购买会员、使用激活码',
+    shortcutOrdersDesc: '查看订单状态，继续未完成的支付',
+    shortcutMessagesDesc: '查看通知与会员动态',
     switchAccount: '切换账号',
     switchingAccount: '正在切换...',
     signOut: '退出登录',
@@ -125,7 +132,6 @@ export default {
     licenseFree: '免费版',
     licensePro: '专业版',
     licenseTrial: '试用版',
-    licenseProExpired: '专业版（已过期）',
     daysRemaining: '剩余 {days} 天',
     licenseUnlimited: '永久有效',
     upgradePro: '升级 Pro',
@@ -134,7 +140,6 @@ export default {
     // activationCodeMigrated / trialUnavailable 三键随 UpgradeModal 退役删除
     // ——「筹备中」语境已消失（支付通道真实开通），留着就是假陈述死键。
     entitlementCardTitle: '会员权益',
-    entitlementEmpty: '暂无权益数据',
     entitlementEmptyHint: '登录且身份服务可用时，这里会展示你的会员方案与权益清单。',
     planFree: '免费版',
     planPro: '专业版',
@@ -144,12 +149,10 @@ export default {
     sourceOffline: '离线',
     expiresAt: '权益到期：{date}',
     noExpiry: '长期有效',
-    featureCount: '{count} 项权益',
     quotaCardTitle: '资源配额',
     quotaEmpty: '暂无配额数据',
     aboutCardTitle: '关于',
     versionLabel: '版本',
-    checkUpdates: '检查更新',
     statusConnected: '已连接',
     statusOffline: '离线模式',
     statusRefreshing: '刷新中',
@@ -157,7 +160,6 @@ export default {
     statusExpired: '会话已过期',
     statusError: '需要重试',
     statusSigningOut: '退出中',
-    statusUnknown: '状态未知',
     signingIn: '正在打开登录...',
     navOverview: '概览',
     navAccount: '账号与安全',

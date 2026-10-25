@@ -6,6 +6,7 @@ import {
   quotaValueText,
   graceState,
   resolveMemberErrorKey,
+  statusLabelOf,
 } from './labels'
 
 // t 的测试替身：直接回传 key，便于断言「走到了哪个键」。
@@ -119,6 +120,26 @@ describe('member-center/labels 纯函数', () => {
     it('空值 → memberRequestFailed', () => {
       expect(resolveMemberErrorKey(null)).toBe('memberCenter.memberRequestFailed')
       expect(resolveMemberErrorKey(undefined)).toBe('memberCenter.memberRequestFailed')
+    })
+  })
+
+  // ── statusLabelOf：C1-08 裁决的 error 二分 ────────────────────────
+  describe('statusLabelOf（含 hasSessionIdentity 二分）', () => {
+    it('不传 hasSessionIdentity 时保持原语义（error → statusError）', () => {
+      expect(statusLabelOf(t, 'error')).toBe('memberCenter.statusError')
+    })
+    it('error + 有会话身份 → statusConnected（网络抖动但会话有效，不误导）', () => {
+      expect(statusLabelOf(t, 'error', true)).toBe('memberCenter.statusConnected')
+    })
+    it('error + 无会话身份 → statusError', () => {
+      expect(statusLabelOf(t, 'error', false)).toBe('memberCenter.statusError')
+    })
+    it('其余状态不受第二参影响', () => {
+      expect(statusLabelOf(t, 'authenticated', true)).toBe('memberCenter.statusConnected')
+      expect(statusLabelOf(t, 'authenticated', false)).toBe('memberCenter.statusConnected')
+      expect(statusLabelOf(t, 'offline_authenticated', false)).toBe('memberCenter.statusOffline')
+      expect(statusLabelOf(t, 'signed_out', false)).toBe('memberCenter.notLoggedIn')
+      expect(statusLabelOf(t, 'disabled', false)).toBe('memberCenter.identityDisabled')
     })
   })
 })

@@ -94,9 +94,10 @@
  * 「继续支付」用的是**同一 orderId**：服务端 `_reusePendingOrder` 六条前置校验后
  * 返回该订单的新 codeUrl，不新建订单行（否则点 N 次就多 N 条 pending）。
  */
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { invoke } from '@/api/electron-bridge'
+import { onIdentityStateChanged } from '@/api/identity'
 import { useIdentityStore } from '@/stores/identity'
 import { planLabelOf, formatTimestamp } from './labels'
 
@@ -166,11 +167,29 @@ function continuePay (order) {
   payOpen.value = true
 }
 
-function onPaid () {
+function onPaid() {
   // 支付成功后：关弹窗 + 重拉列表（状态由服务端 webhook 推进，本地不自行改状态）
   payOpen.value = false
   void load()
+  // 权益刷新兜底（Phase 2 链路加固）：identity store 的 runExclusive 被占用时
+  // load() 静默返回 false ⇒ 支付成功但权益不刷新。挂单次 state-changed 监听兜底。
+  const ok = typeof identityStore.load === 'function' ? identityStore.load() : false
+  if (ok === false) waitForStateSnapshot()
 }
+
+// 单次兜底：等一个快照推送即注销，30s 超时（不永久挂监听）
+let fallbackCancel = null
+let fallbackTimer = null
+function waitForStateSnapshot() {
+  releaseFallback()
+  fallbackCancel = onIdentityStateChanged(() => { releaseFallback() })
+  fallbackTimer = setTimeout(releaseFallback, 30000)
+}
+function releaseFallback() {
+  if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null }
+  if (fallbackCancel) { fallbackCancel(); fallbackCancel = null }
+}
+onBeforeUnmount(releaseFallback)
 
 onMounted(load)
 watch(() => identityStore.isAuthenticated, (authed) => {

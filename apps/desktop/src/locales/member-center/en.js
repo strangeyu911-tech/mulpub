@@ -96,9 +96,16 @@ export default {
     identityDisabled: 'Identity service disabled',
     identityDisabledHint: 'The current environment is not connected to the identity service. Only local version and license info is available.',
     accountCardTitle: 'Account',
-    accountCardEmpty: 'No account info',
-    accountCardEmptyHint: 'Your name, username and sign-in status will appear here after you sign in.',
-    viewMemberCenter: 'Open Member Center',
+    // 2026-10-25 Phase 2 dead-key cleanup (zh/en pair): accountCardEmpty /
+    // accountCardEmptyHint / viewMemberCenter / checkUpdates / featureCount /
+    // statusUnknown / entitlementEmpty / licenseProExpired (8 keys) — zero
+    // consumers repo-wide (grep -rn "memberCenter.<key>" apps/desktop/src
+    // excluding locales returns zero hits).
+    // ——— Phase 2 true overview: shortcut entries (Overview guide card) ———
+    shortcutsTitle: 'Shortcuts',
+    shortcutSubscriptionDesc: 'View plans, buy a membership, redeem a code',
+    shortcutOrdersDesc: 'Check order status and resume unfinished payments',
+    shortcutMessagesDesc: 'Check notifications and membership updates',
     switchAccount: 'Switch account',
     switchingAccount: 'Switching...',
     signOut: 'Sign out',
@@ -125,7 +132,6 @@ export default {
     licenseFree: 'Free',
     licensePro: 'Pro',
     licenseTrial: 'Trial',
-    licenseProExpired: 'Pro (expired)',
     daysRemaining: '{days} day(s) left',
     licenseUnlimited: 'Lifetime',
     upgradePro: 'Upgrade to Pro',
@@ -135,7 +141,6 @@ export default {
     // retirement (P0-6) — the "coming soon" context is gone now that payment
     // is live; keeping them would be false-statement dead keys.
     entitlementCardTitle: 'Membership',
-    entitlementEmpty: 'No membership data',
     entitlementEmptyHint: 'Your plan and feature list will appear here after signing in.',
     planFree: 'Free',
     planPro: 'Pro',
@@ -145,12 +150,10 @@ export default {
     sourceOffline: 'Offline',
     expiresAt: 'Expires: {date}',
     noExpiry: 'Lifetime',
-    featureCount: '{count} features',
     quotaCardTitle: 'Quota',
     quotaEmpty: 'No quota data',
     aboutCardTitle: 'About',
     versionLabel: 'Version',
-    checkUpdates: 'Check for updates',
     statusConnected: 'Connected',
     statusOffline: 'Offline mode',
     statusRefreshing: 'Refreshing',
@@ -158,7 +161,6 @@ export default {
     statusExpired: 'Session expired',
     statusError: 'Retry needed',
     statusSigningOut: 'Signing out',
-    statusUnknown: 'Unknown',
     signingIn: 'Opening sign-in...',
     navOverview: 'Overview',
     navAccount: 'Account & Security',

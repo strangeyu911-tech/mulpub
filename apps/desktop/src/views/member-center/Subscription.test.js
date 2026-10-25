@@ -23,6 +23,7 @@ const identityCtx = {
   isAuthenticated: true,
   entitlement: null,
   plans: null,
+  loadResult: true,
 }
 vi.mock('@/composables/useIdentity', () => ({
   useIdentity: () => ({
@@ -42,6 +43,19 @@ vi.mock('@/stores/member', () => ({
   useMemberStore: () => memberCtx,
 }))
 
+// Phase 2 链路加固：onPaid 在 load() 被占用（返回 false）时要挂
+// state-changed 单次兜底。mock 掉 onIdentityStateChanged 以断言挂载/注销行为。
+const stateChangedHandlers = []
+vi.mock('@/api/identity', () => ({
+  onIdentityStateChanged: (cb) => {
+    stateChangedHandlers.push(cb)
+    return () => {
+      const i = stateChangedHandlers.indexOf(cb)
+      if (i >= 0) stateChangedHandlers.splice(i, 1)
+    }
+  },
+}))
+
 async function mountSubscription() {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -51,6 +65,7 @@ async function mountSubscription() {
   identityStore.user = identityCtx.user
   identityStore.entitlement = identityCtx.entitlement
   identityStore.plans = identityCtx.plans
+  identityStore.load = vi.fn(() => identityCtx.loadResult)
   const Subscription = (await import('./Subscription.vue')).default
   return {
     pinia,
@@ -68,7 +83,9 @@ describe('member-center/Subscription', () => {
   beforeEach(() => {
     identityCtx.entitlement = null
     identityCtx.plans = null
+    identityCtx.loadResult = true
     memberCtx.error = null
+    stateChangedHandlers.length = 0
   })
 
   // ── 价目三态（从壳层迁入后的落点）────────────────────────────────
@@ -256,6 +273,46 @@ describe('member-center/Subscription', () => {
       const input = wrapper.get('[data-testid="redeem-code-input"]')
       await input.setValue('abcd-efgh-jkmn')
       expect(input.element.value).toBe('ABCD-EFGH-JKMN')
+    })
+  })
+
+  // ── 支付成功后的权益刷新兜底（Phase 2 链路加固）───────────────────
+  describe('onPaid 权益刷新兜底', () => {
+    it('load() 成功（返回 true）→ 不挂兜底监听', async () => {
+      identityCtx.loadResult = true
+      const { wrapper } = await mountSubscription()
+      wrapper.findComponent({ name: 'WeChatPayDialog' }).vm.$emit('paid')
+      await flushPromises()
+      expect(stateChangedHandlers).toHaveLength(0)
+    })
+
+    it('load() 被占用（返回 false）→ 挂单次 state-changed 兜底', async () => {
+      identityCtx.loadResult = false
+      const { wrapper } = await mountSubscription()
+      wrapper.findComponent({ name: 'WeChatPayDialog' }).vm.$emit('paid')
+      await flushPromises()
+      expect(stateChangedHandlers.length).toBeGreaterThan(0)
+    })
+
+    it('兜底监听收到快照推送后自行注销（不永久挂）', async () => {
+      identityCtx.loadResult = false
+      const { wrapper } = await mountSubscription()
+      wrapper.findComponent({ name: 'WeChatPayDialog' }).vm.$emit('paid')
+      await flushPromises()
+      expect(stateChangedHandlers).toHaveLength(1)
+      // 模拟服务端推送快照 → 监听应自行注销
+      stateChangedHandlers[0]()
+      expect(stateChangedHandlers).toHaveLength(0)
+    })
+
+    it('组件卸载时兜底监听被清理（无泄漏）', async () => {
+      identityCtx.loadResult = false
+      const { wrapper } = await mountSubscription()
+      wrapper.findComponent({ name: 'WeChatPayDialog' }).vm.$emit('paid')
+      await flushPromises()
+      expect(stateChangedHandlers).toHaveLength(1)
+      wrapper.unmount()
+      expect(stateChangedHandlers).toHaveLength(0)
     })
   })
 })

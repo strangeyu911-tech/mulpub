@@ -142,10 +142,11 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useIdentityStore } from '@/stores/identity'
 import { useMemberStore } from '@/stores/member'
+import { onIdentityStateChanged } from '@/api/identity'
 import { featureLabelOf, formatExpiresAt, graceState, planLabelOf } from './labels'
 import { REDEEM_CODE_MAX_LENGTH, REDEEM_CODE_PATTERN, REDEEM_ERR_FORMAT_LOCAL } from './constants'
 
@@ -224,12 +225,31 @@ function closePay() {
 
 function onPaid() {
   // 权益刷新以服务端为准：重取 /me 快照，客户端**不自算**到期时间。
-  // runExclusive 被占用时 load() 会静默返回 false——服务端落账后
-  // state-changed 仍会推快照，UI 最终一致；这里不做重试（避免放大写）。
-  if (typeof identityStore.load === 'function') {
-    void identityStore.load()
+  // 兜底（Phase 2 链路加固）：identity store 的 runExclusive 被占用时
+  // load() 会静默返回 false——支付成功但权益不刷新，用户停在
+  // 「支付成功但显示免费版」。此时挂一个**单次** state-changed 监听：
+  // 服务端落账后主进程会推快照，UI 最终一致。
+  const ok = typeof identityStore.load === 'function' ? identityStore.load() : false
+  if (ok === false) {
+    waitForStateSnapshot()
   }
 }
+
+// 单次兜底监听：等一个快照推送就注销，带超时（服务端迟迟不推也不永久挂）
+let fallbackCancel = null
+let fallbackTimer = null
+function waitForStateSnapshot() {
+  releaseFallback()
+  fallbackCancel = onIdentityStateChanged(() => {
+    releaseFallback()
+  })
+  fallbackTimer = setTimeout(releaseFallback, 30000)
+}
+function releaseFallback() {
+  if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null }
+  if (fallbackCancel) { fallbackCancel(); fallbackCancel = null }
+}
+onBeforeUnmount(releaseFallback)
 
 // ── 激活码核销（2026-10-24 从壳层迁入）────────────────────────────
 // 本地 license:activate 已在正式构建禁用（任意非空串都能换永久 Pro），兑换码

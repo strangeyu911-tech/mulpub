@@ -116,14 +116,24 @@ export function resolveMemberErrorKey(code) {
   return MEMBER_ERROR_KEYS[code] || 'memberCenter.memberRequestFailed'
 }
 
-export function statusLabelOf(t, status) {
+/**
+ * 登录状态文案（单一真源，Phase 2 起 ProfileMenu 也复用本函数）。
+ *
+ * `hasSessionIdentity` 可选参（C1-08 裁决）：error 态按「会话是否仍有效」二分——
+ *   true  → 会话未销毁、只是瞬时网络错，显示「已连接」（操作可重试）
+ *   false → 会话也没了，显示「需要重试」
+ * 不传时保持原语义（无条件 statusError），既有调用方不受影响。
+ */
+export function statusLabelOf(t, status, hasSessionIdentity = false) {
   if (status === 'authenticated') return t('memberCenter.statusConnected')
   if (status === 'offline_authenticated') return t('memberCenter.statusOffline')
   if (status === 'refreshing') return t('memberCenter.statusRefreshing')
   if (status === 'signing_in') return t('memberCenter.statusSigningIn')
   if (status === 'signing_out') return t('memberCenter.statusSigningOut')
   if (status === 'expired') return t('memberCenter.statusExpired')
-  if (status === 'error') return t('memberCenter.statusError')
+  if (status === 'error') {
+    return hasSessionIdentity ? t('memberCenter.statusConnected') : t('memberCenter.statusError')
+  }
   if (status === 'disabled') return t('memberCenter.identityDisabled')
   return t('memberCenter.notLoggedIn')
 }

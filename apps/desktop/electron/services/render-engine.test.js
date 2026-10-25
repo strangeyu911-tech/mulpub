@@ -65,6 +65,24 @@ describe('RenderEngine', () => {
     })
   })
 
+  describe('buildRemotionSpawnEnv — CLI 必须以纯 Node 语义运行', () => {
+    it('★ 必须带 ELECTRON_RUN_AS_NODE=1（Electron 主进程里 process.execPath 是 Electron 可执行文件）', () => {
+      const env = RenderEngine.buildRemotionSpawnEnv({ PATH: '/usr/bin' })
+      expect(env.ELECTRON_RUN_AS_NODE).toBe('1')
+    })
+
+    it('★ 不覆盖基础环境里的其它变量（PATH 等必须保留）', () => {
+      const env = RenderEngine.buildRemotionSpawnEnv({ PATH: '/usr/bin', FOO: 'bar' })
+      expect(env.PATH).toBe('/usr/bin')
+      expect(env.FOO).toBe('bar')
+    })
+
+    it('★ 原环境里已有的 ELECTRON_RUN_AS_NODE 也要被强制成 1', () => {
+      const env = RenderEngine.buildRemotionSpawnEnv({ ELECTRON_RUN_AS_NODE: '0' })
+      expect(env.ELECTRON_RUN_AS_NODE).toBe('1')
+    })
+  })
+
   describe('parseRenderProgress — Remotion CLI 进度解析', () => {
     it('解析 Remotion 实际输出 "Rendered 45/900"（无 frame 字样）', () => {
       expect(RenderEngine.parseRenderProgress('Rendered 45/900')).toEqual({ percent: 5, stage: '渲染中' })

@@ -167,6 +167,27 @@ class CompositionManager {
       }
     }
 
+    // ⚠ 字幕条目必须是**词级** `{word, startMs, endMs}`（`components/CaptionOverlay.tsx` 的 WordCaption 契约）。
+    //   形状错了不会报错，而是算出 `fromFrame = Math.round(undefined/1000*fps)` = NaN
+    //   ⇒ `<Sequence from={NaN}>` ⇒ **渲染期崩在 bundle 里**（错误信息是 React 栈，极难定位）。
+    if (props.captions !== undefined) {
+      if (!Array.isArray(props.captions)) {
+        errors.push('props.captions must be an array');
+      } else {
+        props.captions.forEach((caption, i) => {
+          const c = caption && typeof caption === 'object' ? caption : {};
+          if (typeof c.word !== 'string' || !c.word) {
+            errors.push(`props.captions[${i}].word must be a non-empty string`);
+          }
+          if (!Number.isFinite(Number(c.startMs)) || !Number.isFinite(Number(c.endMs))) {
+            errors.push(`props.captions[${i}] must have numeric startMs/endMs`);
+          } else if (Number(c.endMs) <= Number(c.startMs)) {
+            errors.push(`props.captions[${i}].endMs must be > startMs`);
+          }
+        });
+      }
+    }
+
     // 视频模式需要 videoSrc
     if (comp.requiresVideo) {
       if (!props.videoSrc && !props.backgroundSrc) {

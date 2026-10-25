@@ -85,6 +85,25 @@ const MEDIA_PROFILES = {
   'generic-hd': { width: 1920, height: 1080, fps: 30 },
 };
 
+/**
+ * 构造 Remotion CLI 子进程的环境变量。
+ *
+ * ⚠ **必须让 CLI 以纯 Node 语义运行**：Electron 主进程里 `process.execPath` 是 **Electron 可执行文件**
+ *   （不是 node）⇒ 直接 spawn 它，Electron 会把 Remotion CLI 当成**自己的应用**启动
+ *   ⇒ 触发 Electron 的主委派检查 ⇒ 在 root 环境下直接 FATAL：
+ *   `Running as root without --no-sandbox is not supported`（exitCode=133）
+ *   ⇒ **打包版用户机器上 Remotion 渲染会 100% 失败**（本轮 E2E 实测抓到的真缺陷）。
+ *
+ * ⇒ `ELECTRON_RUN_AS_NODE=1` 让**同一个可执行文件**以纯 Node 语义运行
+ *   （Electron 自带 Node 运行时 ⇒ 不需要外部装 node，也不需要 npx）。
+ *
+ * @param {object} [baseEnv] 基础环境（默认 process.env）
+ * @returns {object} 传给 spawn 的 env
+ */
+function buildRemotionSpawnEnv (baseEnv = process.env) {
+  return { ...baseEnv, ELECTRON_RUN_AS_NODE: '1' };
+}
+
 class RenderEngine {
   constructor() {
     this._currentProcess = null;
@@ -138,7 +157,7 @@ class RenderEngine {
 
   render(props, options = {}) {
     return new Promise((resolve) => {
-      const { composition = 'Explainer', outputPath = getDefaultOutputPath(), onProgress = () => {}, profile } = options;
+      const { composition = 'Explainer', outputPath = getDefaultOutputPath(), onProgress = () => {}, profile, publicDir } = options;
 
       if (!props || !Array.isArray(props.cuts) || props.cuts.length === 0) { resolve({ success: false, error: 'Props must contain cuts array' }); return; }
       for (const [i, cut] of props.cuts.entries()) {
@@ -170,12 +189,18 @@ class RenderEngine {
       }
       const cmd = [command.cliPath, 'render', 'src/index.tsx', composition, outputPath, `--props=${propsPath}`];
       if (profile && MEDIA_PROFILES[profile]) { const p = MEDIA_PROFILES[profile]; cmd.push('--width', String(p.width), '--height', String(p.height), '--fps', String(p.fps)); }
+      // ⚠ `--public-dir`：Remotion 的图片/视频组件**只认 public 目录里的相对文件名**
+      //   （绝对路径 / file:// 会被 staticFile() 拒绝 ⇒ 渲染期抛 TypeError）
+      //   ⇒ 本地媒体必须先 staging 进该目录（见 explainer-remotion-media.js）。
+      if (publicDir) cmd.push(`--public-dir=${publicDir}`);
 
       const child = spawn(process.execPath, cmd, {
         cwd: COMPOSER_DIR,
         shell: true,
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
+        // ⚠ 见 buildRemotionSpawnEnv 的注释：不加这个，Electron 会把 CLI 当应用启动 ⇒ root 下 FATAL
+        env: buildRemotionSpawnEnv(),
       });
 
       this._currentProcess = child;
@@ -270,5 +295,6 @@ RenderEngine.getDefaultOutputPath = getDefaultOutputPath;
 RenderEngine.QUICK_RENDER_DIR = QUICK_RENDER_DIR;
 RenderEngine.resolveRemotionCli = resolveRemotionCli;
 RenderEngine.parseRenderProgress = parseRenderProgress;
+RenderEngine.buildRemotionSpawnEnv = buildRemotionSpawnEnv;
 
 module.exports = RenderEngine

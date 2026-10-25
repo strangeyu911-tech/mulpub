@@ -19,5 +19,23 @@ export function validateProps(props: Record<string, unknown>): ValidationResult 
     if (cut.type === 'line_chart' && cut.chartSeries && !Array.isArray(cut.chartSeries)) errors.push(`${p}.chartSeries must be array`);
   });
   if (props.theme && typeof props.theme === 'string' && !VALID_THEME_NAMES.includes(props.theme as string)) warnings.push(`theme "${props.theme}" unknown`);
+  // ⚠ 字幕条目必须是**词级** `{word, startMs, endMs}`（`components/CaptionOverlay.tsx` 的 WordCaption 契约）。
+  //   形状错了 ⇒ `fromFrame = Math.round(undefined/1000*fps)` = NaN ⇒ `<Sequence from={NaN}>`
+  //   ⇒ 渲染期崩在 bundle 里 ⇒ 在这里拦住。
+  if (props.captions !== undefined) {
+    if (!Array.isArray(props.captions)) {
+      errors.push('props.captions must be an array');
+    } else {
+      (props.captions as unknown[]).forEach((caption, i) => {
+        const c = (caption && typeof caption === 'object' ? caption : {}) as Record<string, unknown>;
+        if (typeof c.word !== 'string' || !c.word) errors.push(`props.captions[${i}].word must be a non-empty string`);
+        if (!Number.isFinite(Number(c.startMs)) || !Number.isFinite(Number(c.endMs))) {
+          errors.push(`props.captions[${i}] must have numeric startMs/endMs`);
+        } else if (Number(c.endMs) <= Number(c.startMs)) {
+          errors.push(`props.captions[${i}].endMs must be > startMs`);
+        }
+      });
+    }
+  }
   return { valid: errors.length === 0, errors, warnings };
 }

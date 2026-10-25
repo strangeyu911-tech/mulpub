@@ -5017,3 +5017,276 @@ publish  → 先调内置 publish → 组装 publish_log
 12. **E2E 文案基准（fixture）必须与上游契约同步**：P2a 之后 `research`/`proposal`/`script`
     必须是**JSON 形态**（散文会被归一化成空 artifact ⇒ 计数自检必红）；
     `scenes` 必须带结构化镜头语言字段，且**与 `script.sections` 一一对应**（否则末几段旁白会丢）。
+
+---
+
+## 18. 「AI 生成」模式对齐上游 animated-explainer：画面从「图片轮播」改为「程序化动画」（explainer-remotion-animation，2026-10-25）
+
+### 18.1 目标与范围
+
+P1（§15）落地了上游 14 个 schema；P2a（§16）把前生产三阶段改为上游 artifact 契约；P2b（§17）把**生产五阶段**也改为上游 artifact 契约。
+
+但**画面本身**仍与上游不一致：
+
+| | 上游 OpenMontainer | 本片之前 |
+|---|---|---|
+| 画面主体 | **Remotion 程序化动画**（标题卡/数据卡/图表/对比卡/动画场景…） | **AI 生图 + ffmpeg 图片轮播 + zoom-in** |
+| 剪辑决策 | `edit_decisions.cuts` **直接当渲染指令** | `cuts` 只是元数据，合成层不读 |
+| AI 生图的定位 | assets 阶段的 `image_selector` 之一，**可作背景层** | 画面**唯一**来源 |
+| 程序化素材工具 | `math_animate` / `diagram_gen` / `code_snippet` / `music_gen` | 无 |
+
+本节（P5a）把「AI 生成」模式的画面改为**与上游一致**：主体是程序化动画，AI 生图降为可选背景层。
+
+**本节范围**：合成层（叙事分镜 + 剪辑决策 → Remotion 渲染指令）+ compose 阶段接线（Remotion 优先，失败回落 ffmpeg 轮播）。
+**不在本节范围**：P5b（程序化素材工具）、P3（五个审批门）、P5c（动态尺寸/竖屏）、P4（EP 编排）、P6（工具扩展）。
+
+### 18.2 上游依据（权威事实）
+
+| 事实 | 出处 |
+|---|---|
+| `composition_data = inputs.get("edit_decisions") or inputs.get("composition_data")` ⇒ **上游原生支持「直接传一份渲染指令」** | `tools/video/video_compose.py:1954` |
+| 渲染吃 `cut.get("type")` + 该 type 的专属字段 | `tools/video/video_compose.py:790`、`:772` |
+| **两段式**：`scene_plan` 用叙事 type 表达意图 → **Edit 阶段转成 `cut.type`** | `skills/pipelines/explainer/scene-director.md:71-74` |
+| 12 种渲染型 cut type 与各自必填 props | `skills/core/remotion.md:47-63`、`remotion-composer/SCENE_TYPES.md`、`AGENT_GUIDE.md:419` |
+| 「Remotion 可用时就是它」（治理默认） | `tools/video/video_compose.py`（`_needs_remotion` 注释：Remotion-first） |
+| 上游在 **proposal 阶段**就建议 Remotion | `skills/pipelines/explainer/proposal-director.md:27` |
+| Remotion 渲染 **rc≠0 但 mp4 有效** | 上游实测：CLI 抛 `TimeoutError`，产物 1920×1080/30fps/h264+aac 完全有效 |
+
+⚠ **上游自己的 `edit_decisions.schema.json` 与其运行路径不一致**：cut 是 `additionalProperties:false` 且**没有 `type`**，但运行路径真读 `cut.get("type")` ⇒ **照抄 schema 也会抄错** ⇒ 必须同时看 schema 与**真正被执行的读取点**。
+
+### 18.3 架构决策：不动任何 1:1 schema，走上游第二个入参
+
+⚠ **约束**：`edit_decisions.schema.json` / `scene_plan.schema.json` 是 P1 **1:1 落地**的上游 schema，`scripts/sync-openmontage-schemas.js` 按 sha256 锁 14/14 一致 ⇒ 改任一字段都会让那条门禁红。
+⚠ **决策**：**不改任何 1:1 schema**，而是在 compose 阶段合成一份 **composition_data**（带 `cut.type` + 渲染字段），喂给 `RenderEngine.render(props)`。
+⇒ 走的是**上游原生支持的第二个入参** ⇒ 机制与上游一致，契约仍 1:1，P1 门禁不受影响。
+
+**新增文件**：`apps/desktop/electron/services/explainer/explainer-remotion-props.js`（合成层，纯函数）+ `explainer-remotion-props.test.js`（21 例）。
+
+**本轮追加的两个模块**（都是读代码时抓到的真缺陷的修复，见 §18.10）：
+- `explainer-remotion-render.js`：**产物有效性**判定（成败判据落在产物上，不在退出码上）。
+- `explainer-narration-track.js`：**按上游分段语义合成旁白轨**（`edit_decisions.audio.narration.segments` → 时间轴对齐的音频轨）+ mux。
+
+### 18.4 功能逻辑：合成层的判定与字段
+
+#### 18.4.1 cut type 判定（三级优先，顺序不可换）
+
+| 优先级 | 输入 | 依据 |
+|---|---|---|
+| ① 素材声明 | `scene.required_assets[].type`（schema 里是自由 string） | 上游 assets 工具集（`diagram_gen`/`code_snippet`/`math_animate`）把「这一镜要什么素材」写在这里 ⇒ **直接决定渲染类型** |
+| ② 文本线索 | 旁白 → description → information_role → shot_intent | 讲稿里的「85%」「对比 A 和 B」「柱状图」是渲染意图的第一手来源 |
+| ③ 叙事兜底 | `scene.type`（9 种叙事型） | `text_card→text_card` / `diagram→text_card` / `animation·talking_head·character_scene·broll·generated→anime_scene` / `screen_recording→screenshot_scene` / `transition→text_card` |
+
+⚠ **显式图表名必须排在泛化词之前**：说「柱状图」就该出 `bar_chart`，不能被「占比/分布」抢成 `pie_chart`。
+⚠ **素材声明压过文本线索**（上游把意图写在素材声明里）。
+
+#### 18.4.2 画面文字（`cut.text`）的取法
+
+`cut.text` 是**画面上要显示的字**（上游 demo：`hero_title` 的 `text` 是标题本身），**不是** `scene.description`（那是给生图用的**画面描述**）。
+
+优先级：**旁白首句**（截断到 28 字）→ 画面描述 → `information_role`（元信息，最不该当画面文字）。
+
+#### 18.4.3 各 cut type 的专属字段（照上游字段表）
+
+`text_card`(text)｜`stat_card`(stat+subtitle+accentColor)｜`hero_title`(text+heroSubtitle)｜`callout`(text+title+callout_type∈info/quote/warning/tip)｜`comparison`(leftLabel/rightLabel/leftValue/rightValue)｜`bar_chart`/`pie_chart`/`kpi_grid`(chartData[{label,value}] + title；pie 另带 donut/centerLabel)｜`line_chart`(chartSeries[{label,data:[{x,y}]}])｜`progress_bar`(progress 0-100)｜`anime_scene`(images 1–4 + animation + particles + particleColor/Count/Intensity + vignette)｜`terminal_scene`｜`screenshot_scene`。
+⚠ **数据不足要降级为文字卡**（如图表只有 1 个数据点 ⇒ 不给半截图表，改出文字卡）。
+⚠ **开场第一镜若是纯文字卡 ⇒ 提升为 `hero_title`**（对齐上游 demo：第 0 镜就是 `hero_title`）。
+
+#### 18.4.4 props 顶层结构（与上游 demo 样本同形）
+
+`{ version, theme{backgroundColor,surfaceColor,textColor,accentColor}, cuts[], overlays[], captions[], audio{narration.segments[], music{...ducking}} }`。
+
+- **时间轴以 `edit_decisions.cuts` 为权威**（上游 edit 阶段定时间轴，compose 只消费）；缺失才回落 `scene_plan`。
+- **转场**沿用 `edit_decisions` 的 `transition_in/out/transition_duration`（上游 edit-director 负责转场多样性）。
+- **captions** 由各 cut 的旁白文本 + 时间轴生成。
+- **overlays**：开场补一个 `hero_title`（上游的 `section_title`/`stat_reveal`/`provider_chip` 属 P5b 的素材工具范畴）。
+
+#### 18.4.5 compose 阶段接线（Remotion 优先 + 如实回落）
+
+```
+compose 阶段
+  ├─ tryRenderWithRemotion()
+  │    ├─ 合成 props（校验不过 ⇒ 直接回落）
+  │    ├─ new RenderEngine().render(props, { profile })
+  │    ├─ 成功 ⇒ output = { videoPath, renderRuntime: 'remotion' }
+  │    └─ 抛错 ⇒ 看 engine.getStatus() 里有没有已落盘的产物（上游实测 rc≠0 但 mp4 有效）
+  │              有 ⇒ 当成功；没有 ⇒ 回落
+  └─ 回落 ffmpeg 轮播（内置 compose，**带 inputFrom: 'assets'**）
+       ⇒ output = { ...原输出, renderRuntime: 'ffmpeg' }
+       ⇒ 输出里带 render_runtime_requested='remotion' + render_fallback_reason ⇒ **回落可见，不静默**
+```
+
+⚠ `final_review.checks.promise_preservation.render_runtime_used` **如实上报实际 runtime**（Remotion 或 ffmpeg）⇒ 与上游的 runtime 漂移检测一致。
+
+### 18.5 数据校验（合成层必须自证）
+
+| 检查 | 不通过时 |
+|---|---|
+| `scene_plan.scenes` 非空 | 报 `NO_SCENES`，**不产出 props** |
+| 每个 cut 的 `type` ∈ 上游 12 种白名单 | 报 `UNKNOWN_CUT_TYPE` |
+| 每个 cut 的时间轴是有限数 | 报 `CUT_TIME_INVALID` |
+| 每个 cut 的 `out_seconds > in_seconds` | 报 `CUT_TIME_NON_POSITIVE` |
+| 合成后 cuts 非空 | 报 `NO_CUTS` |
+
+⚠ 任一检查不过 ⇒ **不产出 props**（宁可不渲染，也不拿半成品去渲染）⇒ compose 阶段回落 ffmpeg 轮播。
+
+### 18.6 交互逻辑 / 显示项 / 提示文字
+
+**本节不新增任何用户可见界面**：
+- 画面形态的变化是**自动**的（同一个「AI 生成」入口，产物从图片轮播变成程序化动画）。
+- 阶段进度沿用现有 `emitStageStart` / `emitStageComplete` 的 `messageKey` 机制。
+- ⚠ **回落必须可见**：若 Remotion 不可用而回落 ffmpeg，成片仍可交付，但 `render_fallback_reason` 会随阶段产物带出 ⇒ 供后续在 UI/记录里说明「为什么没走动画」。
+- ⚠ 后续若要在 UI 上呈现「本次用了程序化动画 / 回退了图片轮播」，文案**必须走 i18n**（`locales/create/zh.js` + `en.js` 成对）；`.vue` template 里的中文会被 `check-locale-sync --cjk` 扫。
+
+### 18.7 流程（一次 explainer 运行的生产段）
+
+```
+scenes    → scene_plan（叙事意图 + 结构化镜头语言）      ← P2b
+assets    → asset_manifest（图片/旁白/音效）             ← P2b
+editing   → edit_decisions（权威时间轴 + 转场 + 字幕 + 音频层）  ← P2b
+compose   → ① 合成 composition_data（叙事 + 剪辑 → 渲染指令）  ← 本节新增
+             ② Remotion 渲染（程序化动画）→ mp4
+             ③ **按 segments 的 start_seconds 合成旁白轨 + mux 到画面上**  ← 本节新增
+             ④ 失败 ⇒ 回落 ffmpeg 轮播（如实记录 render_fallback_reason）
+             ⑤ 探测产物（ffprobe/抽帧/响度）→ render_report + final_review
+publish   → publish_log                                  ← P2b
+```
+
+⚠ **② 与 ③ 是一对，缺一不可**：Remotion 只负责**画面**；旁白是**另混一条轨再 mux** 的
+（这正是上游的架构：`video_compose.py` 的 `_remotion_render` 出画面、`_mux_external_audio` 挂音频）。
+只做 ② ⇒ 交付的是一条**静音片**（比不做更糟）⇒ 故 ③ 失败时**回落 ffmpeg 轮播**（那条路本来就带旁白），
+并如实登记 `render_fallback_reason`。
+
+### 18.8 测试与验收矩阵
+
+**单测**（`explainer-remotion-props.test.js`，21 例）：
+① cut type 判定三级优先（素材声明 > 文本线索 > 叙事兜底）；② 显式图表名压过泛化词；③ 各 cut type 的专属字段（11 种）；④ 图表数据不足降级为文字卡；⑤ 时间轴以 `edit_decisions` 为权威；⑥ props 顶层结构与上游 demo 同形；⑦ 旁白按 `script_section_id` 关联（一 section 多镜）；⑧ 五项数据校验各自报出；⑨ 抽取器（stat / chartData）。
+
+**回归**：本片涉及的全部 explainer 测试 **165/165 全绿**（7 个文件；含 `explainer-stage-type-isolation` 共 8 文件 167 例）。
+
+**本轮追加的三份测试**：
+- `explainer-remotion-render.test.js`（13 例）：产物有效性判据（CLI 报失败但产物有效 ⇒ 判成功；产物无效 ⇒ 判失败且**保留原始错误**）；runId 消毒；产物路径稳定等待。
+- `explainer-narration-track.test.js`（9 例）：`asset_id → 路径` 解析（**纯逻辑，任何环境都跑**）+ 真 ffmpeg 合成（缺 ffmpeg 时**如实 skip**）。
+- `explainer-remotion-compose-wiring.test.js`（6 例）：compose → Remotion 的**接线**（`context.scenes` 形态、缺场景 fail-closed、props 结构契约、首镜升级 `hero_title`、素材声明优先）。
+
+**变异验证**（证明上述锁有牙齿，逐条打回原形后必红）：
+① 把「CLI 报失败但产物有效 ⇒ 成功」改回失败 ⇒ ★ 那条红；
+② 去掉 runId 消毒 ⇒ 消毒那条红；
+③ 产物无效也判成功 ⇒ 3 条红；
+④ 把 `resolveSceneSource(context).plan` 改回 `asObject(context.scene_plan)` ⇒ **4 条红**（接线锁）。
+
+**端到端验收**（**已真跑，两条路径都跑了**）：
+
+| 判据 | Remotion 主路径 | 回落路径（人为让 Remotion 不可用） |
+|---|---|---|
+| 流水线 | 8 阶段全 `completed` | 8 阶段全 `completed`（**仍出片**） |
+| `render_runtime_used` | **`remotion`** | **`ffmpeg`** |
+| `render_runtime_requested` | `null` | **`remotion`** |
+| `render_fallback_reason` | `null` | **非空**（「Remotion 渲染引擎未就绪: …」） |
+| 成片 | **1920×1080 / h264+aac / 87.3 秒 / 23,158,829 B** | 1280×720 / h264+aac / 73.93 秒 / 6,717,060 B |
+| 响度 | **mean_volume −23.2 dB**（真人旁白；数字静音约 −91 dB） | 旁白正常 |
+| 抽帧 | **程序化动画**（大标题卡 + `section_title` overlay + 粒子层 + **词级高亮字幕**），**AI 生图在背景层** | ffmpeg 轮播 |
+| 耗时 | **31 分钟**（3 GB / 无 GPU 沙箱） | 9 分钟 |
+
+### 18.9 已知限制与未闭合项
+
+1. **动态尺寸未做**：`Explainer` 的 `Root.tsx` 硬编码 1920×1080 ⇒ 竖屏要 P5c。
+2. **程序化素材工具未做**：`math_animate`/`diagram_gen`/`code_snippet`/`music_gen` 属 P5b ⇒ 当前 cut.type 的判定依据是**场景里声明了什么素材**，而不是「真的用工具生成了动画素材」。
+3. **图表数据靠文本抽取**：`chartData` 从旁白/描述里正则抽 `label: value` ⇒ 讲稿没写成数据形式时会降级为文字卡（不硬造图表）。
+4. **Remotion 依赖 Chrome Headless Shell** ⇒ 未装时回落 ffmpeg 轮播（可见但不静默）。
+5. **审批门未做**：runtime 的**人工确认**在 P3 的 G1 门（上游 HARD RULE：同时呈现 remotion/ffmpeg，remotion 预选但禁止静默默认）⇒ 本节的 Remotion-first 是**技术默认**，不是**用户已确认**⇒ `final_review` 仍会把「锁定值 vs 实际值」记为待办。
+6. **成本口径未变**：无单价表 ⇒ 金额仍记 0。
+7. **音乐层未接**：`edit_decisions.audio.music`（含 ducking）在本片**不参与混音** ⇒ 成片只有旁白没有 BGM。
+   原因：本仓 assets 阶段不产音乐资产（上游的 `music_gen` 属 P5b）⇒ 该字段恒为空。
+   ⇒ 等 P5b 落地后按同一套「先混轨再 mux」的路子补。
+8. **⚠ 渲染耗时显著高于 ffmpeg 轮播（本轮 E2E 实测）**：
+   74 秒成片在 3 GB / 无 GPU 的沙箱上，Remotion 1080p 渲染**约 29 分钟**
+   （ffprobe：`explainer_output.mp4` 26 MB / 1080p），而 ffmpeg 轮播那条路约 7 分钟。
+   ⇒ **Remotion-first 的代价是时延**（帧精确 React 渲染的本质开销，与上游同）。
+   ⇒ 缓解路径（均未做）：① **P5c 动态尺寸**（`Explainer` 硬编码 1920×1080 ⇒ 降到 720p 可显著提速）；
+   ② 素材/分辨率档位与耗时的联动（属 P5c / P3 的呈现范围）。
+   ⇒ **本片不做「Remotion 更快」的承诺**；回落 ffmpeg 轮播的那条路才是快路径。
+
+### 18.10 本轮修复的三个真缺陷（读代码时抓到，非 E2E 才发现）
+
+⚠ 三个都**不会报错**，只会**静默降级** ⇒ 「测试全绿 / CI 全绿」与「功能真的生效」是两件事。
+
+> ⚠ **实际是五个**：后两个（第 ④⑤）是**真实 E2E 复跑**才暴露的（见 §18.11）。
+
+#### ① 场景来源形态读错 ⇒ **Remotion 路径永远走不通**
+
+- **现象**：本仓 scenes 阶段的产物落在 `context[stage.name]` = **`context.scenes`**，
+  而上游的名字是 `context.scene_plan` ⇒ 原实现直接读 `context.scene_plan` **恒为 undefined**
+  ⇒ 分镜拿不到 ⇒ props 合成必然 `NO_SCENES` ⇒ **每次都回落 ffmpeg 轮播**（功能等于没做）。
+- **修复**：改走 `resolveSceneSource(context).plan`（与 P2b 的 legacy 适配**同一个真源**）。
+- **锁**：`explainer-remotion-compose-wiring.test.js` 的 ★ 那条（变异④ 打回原形必红）。
+
+#### ② 「CLI 报失败但 mp4 有效」的恢复路径是**死代码**
+
+- **现象**：`RenderEngine.render()` **从不 reject**，CLI 非零退出时 resolve `{success:false}`
+  且**不带 outputPath**；`getStatus()` 又**永远不含 outputPath** ⇒ 「从 status 里捞路径」这条路不存在
+  ⇒ 上游实测的「CLI TimeoutError 但 mp4 完全有效」**一律判成失败** ⇒ 静默回落。
+- **修复**：compose 阶段**显式指定 outputPath** ⇒ 渲染返回后**以产物有效性判定成败**
+  （ffprobe：有视频流 + 时长 > 0）⇒ 失败后**有界等待**产物落盘（CLI 超时退出后渲染子进程可能仍在写盘）。
+- **锁**：`explainer-remotion-render.test.js`（变异①②③ 逐条打回原形必红）。
+
+#### ③ 成片**没有旁白**（最严重）
+
+- **现象**：上游 `edit_decisions.audio.narration` 只有 `segments`（`{asset_id, start_seconds}`），
+  而 Remotion 合成器只认 `audio.narration.src`（一个具体文件）⇒ 只把 props 交给合成器 ⇒ **静音片**。
+  上游自己也不这么干：它是「视觉渲染 + 单独混轨 + 事后 mux」。
+- **修复**：新增 `explainer-narration-track.js` ⇒ 按 segments 的 `start_seconds` 合成一条旁白轨
+  （间隙用 `anullsrc` 补静音，与仓内既有 ffmpeg 口径一致）⇒ mux 到画面上
+  （`-map 0:v:0` ⇒ 丢掉 Remotion 自带的静音轨）。
+  **混音失败 ⇒ 不交付静音片 ⇒ 回落 ffmpeg 轮播并如实登记 `render_fallback_reason`。**
+- **锁**：`explainer-narration-track.test.js`（真 ffmpeg 造两段音 ⇒ 验时间轴对齐、验非静音、验 mux 后有音频流）。
+
+### 18.11 E2E 真实复跑才暴露的两个缺陷（**读代码看不出来，只有真跑才会崩**）
+
+⚠ 这两个的共同形态：**错误发生在另一个进程里**，本仓的报错只是一行「退出码 N」或一段 React 栈。
+
+#### ④ 字幕形状与合成器契约不符 ⇒ **渲染期崩在 bundle 里**
+
+- **现象**：合成器的 `CaptionOverlay` 吃的是**词级** `{word, startMs, endMs}`
+  （`packages/remotion-composer/src/components/CaptionOverlay.tsx:11`），
+  而合成层给的是**句级** `{text, start_seconds, end_seconds}`。
+  ⇒ 合成器算出 `fromFrame = Math.round(undefined / 1000 * fps)` = **NaN**
+  ⇒ `<Sequence from={NaN}>` ⇒ **渲染期抛错** ⇒ 主进程只看到 `exitCode=1` + 一段被截断的 React 栈。
+- **修复**：
+  ① 字幕条目改为**词级** `{word, startMs, endMs}`，切分**复用仓内单源**
+  （`story2video-segmentation` 的离线分句，规则读 `subtitle-rules.json`）⇒ 不另造分句规则；
+  ② 合成层新增数据校验 `CAPTION_SHAPE_INVALID` ⇒ 形状错**在合成层**就 fail-closed；
+  ③ 渲染前再过一遍仓内合成器校验器（`composition-manager.validateProps`）；
+  ④ 两处共享校验器（`composition-manager.js` 与 `props-validator.ts`）补字幕形状断言 ⇒ 同类错误不再溜过去。
+- **锁**：`explainer-remotion-props.test.js` 的「★ 字幕必须是词级」与 `buildCaptionWords` 三例。
+
+#### ⑤ Electron 主进程里 `process.execPath` 是 **Electron 可执行文件** ⇒ **打包版渲染 100% 失败**
+
+- **现象**：Remotion CLI 用 `spawn(process.execPath, cmd)` 启动 ⇒ 在 Electron 主进程里
+  `process.execPath` 是 **Electron 自己**（不是 node）⇒ Electron 把 CLI 当成**自己的应用**启动
+  ⇒ 触发 Electron 的主委派检查 ⇒ root 环境下直接 FATAL：
+  `Running as root without --no-sandbox is not supported`（exitCode=133）。
+  ⇒ **这不是沙箱专属**：用户机器上的打包版走同一条路 ⇒ **Remotion 渲染会 100% 失败**。
+- **修复**：`ELECTRON_RUN_AS_NODE=1` ⇒ 让**同一个可执行文件**以纯 Node 语义运行
+  （Electron 自带 Node ⇒ 不需要外部装 node，也不需要 npx）。
+- **锁**：`render-engine.test.js` 的 `buildRemotionSpawnEnv` 三例（必须带 / 不覆盖其它变量 / 强制覆盖已有的 0）。
+
+#### ⑥ 本地媒体**绝对路径**在 Remotion 里不可用 ⇒ 渲染期崩（需先 staging 进 public 目录）
+
+- **现象**：合成器的图片/视频组件只认 **public 目录里的相对文件名**；
+  传绝对路径（或 `file://`）⇒ 渲染期抛
+  `TypeError: staticFile() does not support absolute paths - got "/tmp/…/img_0000.png"`
+  ⇒ 主进程只看到「退出码 1 + 一段被截断的 React 栈」。
+- **上游早就有这个机制**：`tools/video/video_compose.py` 的 `_stage_remotion_media()`
+  （上游原文：「Rewriting staged files to relative `staticFile()` paths works for video and
+  image components on every platform」）⇒ 本片照做。
+- **修复**：
+  ① 新增 `explainer-remotion-media.js`：把 props 里的本地媒体**复制**进本次渲染专属的 public 目录，
+  文件名带内容摘要前缀，引用改成**纯文件名**；
+  ② `render-engine.js` 支持 `publicDir` 选项 ⇒ 渲染时下发 `--public-dir=<该目录>`；
+  ③ 合成器自带的 `public/` 内容**镜像**进该目录（`--public-dir` 会**替换**默认 public 目录 ⇒
+  不镜像就会 404，与上游 `_mirror_public_dir` 同款）；
+  ④ `file:` URI 的还原按**上游 `urlsplit` 语义**（POSIX 前导斜杠必须保留；Windows 三种写法都覆盖）。
+- **锁**：`explainer-remotion-media.test.js`（8 例：绝对路径 / file URI / 远程内联放行 / 数组逐项 /
+  非媒体字段不动 / 缺失如实登记 / 不改入参 / 媒体键清单与上游一致）。
+
+

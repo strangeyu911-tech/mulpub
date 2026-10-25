@@ -350,6 +350,20 @@ class ExplainerCdpRunner {
       contextKeys: Object.keys(snapshot.context || {}),
       videoPath: null,
       probe: null,
+      // ⚠ **运行时证据**（compose 阶段如实上报的实际 runtime / 请求的 runtime / 回落原因）
+      //   ⇒ 没有这三项，报告只能证明「出了片」，证明不了「走的是 Remotion 还是回落 ffmpeg」。
+      renderRuntimeUsed: null,
+      renderRuntimeRequested: null,
+      renderFallbackReason: null,
+    }
+    {
+      const composeContext = (snapshot.context || {}).compose || {}
+      const promisePreservation = composeContext.final_review &&
+        composeContext.final_review.checks &&
+        composeContext.final_review.checks.promise_preservation
+      result.renderRuntimeUsed = (promisePreservation && promisePreservation.render_runtime_used) || null
+      result.renderRuntimeRequested = composeContext.render_runtime_requested || null
+      result.renderFallbackReason = composeContext.render_fallback_reason || null
     }
     if (status === 'completed') {
       const videoPath = findVideoPath(snapshot.context || {})

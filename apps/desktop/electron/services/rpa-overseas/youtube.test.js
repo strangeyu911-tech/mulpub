@@ -106,6 +106,23 @@ const ARTICLE = {
   accountId: 'acc-1',
 }
 
+/**
+ * 从**真实 mixin 源码**推导「有哪些平台拥有专属链」。
+ * ⚠️ 正则只匹配**方法定义行**（行首 `async _publish_xxx (`）——
+ *    若只按 `_publish_xxx(` 匹配，index.js 注释里的 `this._publish_generic(...)` 会被误抓成
+ *    一个叫 `generic` 的平台。
+ * @returns {string[]}
+ */
+function platformsWithDedicatedChain () {
+  const fs = require('fs')
+  const src = fs.readFileSync(require.resolve('./index'), 'utf-8')
+  const re = /^\s*async _publish_([a-z0-9_]+)\s*\(/gm
+  const out = []
+  let m
+  while ((m = re.exec(src)) !== null) out.push(m[1])
+  return out.sort()
+}
+
 // ============================================================
 // 一、YouTube fail-closed 判据
 // ============================================================
@@ -413,10 +430,12 @@ describe('解析器：Instagram 作品标识', () => {
 // ============================================================
 
 describe('海外选择器表（增量）', () => {
-  it('增量表只登记本 PR 有专属链的平台（不登记没人消费的选择器）', () => {
-    // tiktok / twitter / instagram / facebook 的**步骤**选择器随各自专属链同批落地；
-    // 通用字段已在真源表 packages/rpa-engine/src/platform-selectors.js 里。
-    expect(Object.keys(OVERSEAS_STEP_SELECTORS)).toEqual(['youtube'])
+  it('增量表只登记**有专属链**的平台（不登记没人消费的选择器）', () => {
+    // 2026-10-25（TikTok 刀）：本断言原为硬编码 `toEqual(['youtube'])` ——
+    //   每加一个平台就要改两处硬编码列表（ youtube 侧 + 新平台侧）⇒ 必然漂移。
+    //   ⇒ 改为**从真实 mixin 源码推导**：增量表的键 ⟺ mixin 实际提供的 `_publish_*` 平台集合。
+    //   意图不变（不登记没人消费的选择器），但不再需要手工维护列表。
+    expect(Object.keys(OVERSEAS_STEP_SELECTORS).sort()).toEqual(platformsWithDedicatedChain())
   })
 
   it('YouTube 增量键齐全（缺一个就是漏功能）', () => {

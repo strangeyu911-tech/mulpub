@@ -102,9 +102,70 @@ const OVERSEAS_STEP_SELECTORS = {
     },
   },
 
-  // tiktok / twitter / instagram / facebook 的**步骤**选择器（上传 iframe / contenteditable /
-  // 登录态判据 / 主体分流等）随各自的专属链**同批落地** ——
-  // 通用字段已在真源表里，步骤字段没有对应实现时先不登记，避免「定义了不消费」。
+  // ============================================================
+  // TikTok —— 专属链是「TikTok Studio 单页 + 上传区可能是 iframe」
+  // 来源：dreammis/social-auto-upload uploader/tk_uploader/main_chrome.py（[参考]）
+  //        + tk_config.py（[参考]，定位器真源）
+  // ⚠️ **全部未在本仓真机验证**（与 youtube 段同级的诚实边界）。
+  // ============================================================
+  tiktok: {
+    // 上传区有**两种形态**（参考实现用 `choose_base_locator` 二选一）：
+    //   ① iframe 形态：整个上传界面在一个 iframe 里
+    //   ② div 形态：直接渲染在主文档
+    // ⇒ 实现必须两套都支持（否则改版即必败）。
+    upload_frame: [
+      'iframe[data-tt="Upload_index_iframe"]',
+    ],
+    upload_container: [
+      'div.upload-container',
+    ],
+    // 文件输入：真源表是裸 `input[type="file"]`。
+    // ⚠️ 参考实现**不直接找 input**，而是点「Select video」按钮后等 file chooser
+    //    ⇒ 说明 TikTok 的 input 可能是「点按钮才动态创建」的。
+    //    ⇒ 这里保留「优先带 video accept 的」作为第一候选，但**不覆盖**真源表的裸选择器
+    //    （找不到就 fail，不猜）。
+    file_input: [
+      'input[type="file"][accept*="video"]',
+      'input[type="file"]',
+    ],
+    // 描述编辑器：参考实现用 `div.public-DraftEditor-content`（**Draft.js**）。
+    // ⚠️ Draft.js / ProseMirror 类编辑器**不接受 innerHTML 直写**
+    //    （helpers.js:218 附近有 2026-09-29 知乎写页的同型实测记录：
+    //    框架状态为空、发布空文；唯一可信通道是 CDP Input.insertText）
+    // ⇒ 候选顺序 = 「精确的 DraftEditor 容器」优先，通用 contenteditable 兜底。
+    caption_editor: [
+      'div.public-DraftEditor-content',
+      'div[data-testid="captionTextArea"]',
+      '[contenteditable="true"]',
+    ],
+    // 「Post」按钮（上传完成的判据 + 发布动作都用它）。
+    // 参考实现取 `div.button-group button` 的**第 0 个**，并读它的 `disabled` 属性。
+    post_btn: [
+      'div.button-group > button',
+      'button:has-text("Post")',
+    ],
+    // 登录过期标记：页面结构特征（参考实现遍历所有 select，class 匹配
+    // `tiktok-.*-SelectFormContainer.*`）⇒ 出现即 cookie 过期。
+    // ⚠️ 这里的候选**比参考实现宽**（只按 class 子串匹配，不锚 `tiktok-` 前缀与 `-` 分隔），
+    //    因为 CSS 选择器无法直接表达那条正则；实现侧会**在 JS 里用完整正则复核**，
+    //    避免把无关 select 误判成过期。
+    login_expired_select: [
+      'select[class*="SelectFormContainer"]',
+    ],
+    // 上传出错（参考实现在轮询里发现这个按钮 ⇒ 上传失败需要重试）。
+    upload_error_btn: [
+      'button[aria-label="Select file"]',
+    ],
+    // 发布后回读：作品列表里第一行的作品链接（href 里含 `video/<数字ID>`）。
+    published_video_link: [
+      'div[data-tt="components_PostTable_Container"] div[data-tt="components_PostInfoCell_Container"] a',
+      'a[href*="/video/"]',
+    ],
+  },
+
+  // twitter / instagram / facebook 的**步骤**选择器（登录态判据 / 主体分流等）
+  // 随各自的专属链**同批落地** —— 通用字段已在真源表里，
+  // 步骤字段没有对应实现时先不登记，避免「定义了不消费」。
 }
 
 /**

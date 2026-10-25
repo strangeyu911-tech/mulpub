@@ -30,6 +30,17 @@
 
 const { publishYoutube, dismissAutocomplete, waitForPublishedLink, UPLOAD_DONE_FN } = require('./youtube')
 const {
+  publishTiktok,
+  fillCaption,
+  buildCaption,
+  parseTikTokVideoId,
+  waitForVideoId,
+  waitForContentPage,
+  TIKTOK_LOGIN_EXPIRED_FN,
+  TIKTOK_UPLOAD_DONE_FN,
+  TIKTOK_UPLOAD_ERROR_FN,
+} = require('./tiktok')
+const {
   readMetaContent,
   readFirstText,
   readFirstHref,
@@ -54,6 +65,15 @@ const overseasMixin = {
   async _publish_youtube (win, article) {
     return publishYoutube.call(this, win, article)
   },
+
+  /**
+   * TikTok 发布（fail-closed）
+   * @param {any} win
+   * @param {any} article
+   */
+  async _publish_tiktok (win, article) {
+    return publishTiktok.call(this, win, article)
+  },
 }
 
 module.exports = {
@@ -63,6 +83,15 @@ module.exports = {
   dismissAutocomplete,
   waitForPublishedLink,
   UPLOAD_DONE_FN,
+  publishTiktok,
+  fillCaption,
+  buildCaption,
+  parseTikTokVideoId,
+  waitForVideoId,
+  waitForContentPage,
+  TIKTOK_LOGIN_EXPIRED_FN,
+  TIKTOK_UPLOAD_DONE_FN,
+  TIKTOK_UPLOAD_ERROR_FN,
   readMetaContent,
   readFirstText,
   readFirstHref,

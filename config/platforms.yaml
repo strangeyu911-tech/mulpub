@@ -190,6 +190,12 @@ platforms:
     icon: 🎤
     category: 海外
     content_category: VIDEO
+    # 2026-10-25（海外平台发布链第二刀）：此前本段**缺 publish_url**。
+    # TikTok 走专属链 `rpa-overseas/tiktok.js`（`_publish_tiktok`），
+    # 该实现以本字段为导航地址的单一真源（缺省才回落到代码内的 TIKTOK_UPLOAD_URL 常量）。
+    # 取值：TikTok Studio 上传页（`lang=en` 固定英文界面 ⇒ 文案判据才稳定）。
+    # ⚠️ 不是 `tiktok.com/upload`（那是普通账号的上传页，没有 Studio 的发布按钮与作品列表）。
+    publish_url: https://www.tiktok.com/tiktokstudio/upload?lang=en
     max_title: 150
     max_content: 2200
     enabled: true

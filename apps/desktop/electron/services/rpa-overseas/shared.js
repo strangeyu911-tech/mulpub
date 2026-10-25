@@ -25,8 +25,9 @@
  *
  * ## 诚实边界
  *
- * ① **本 PR 只有 youtube 分支在生产路径可达**（tiktok / instagram / twitter / facebook
- *    的核验分支是**真实实现但未接线** —— 各自的专属发布链尚未落地）。
+ * ① **本 PR 有 youtube 与 tiktok 两个分支在生产路径可达**
+ *    （tiktok / instagram / twitter / facebook 的核验分支是**真实实现但未接线** ——
+ *    各自的专属发布链尚未落地）。
  *    这与本仓既有惯例同型：真源选择器表覆盖 17 个平台，专属实现只覆盖 6 个。
  * ② 本模块**只产出证据，不做「期望值比对」**。「当前登录的是不是这个账号」需要
  *    账号元数据里存了平台身份锚点（IG 的 `ds_user_id`、YouTube 的 `/channel/<id>`…），
@@ -123,6 +124,24 @@ function parseInstagramShortcode (url) {
 }
 
 /**
+ * 解析 TikTok 作品链接里的数字作品 ID。
+ * 形态：`https://www.tiktok.com/@user/video/7123456789` ⇒ `7123456789`
+ *
+ * ⚠️ **本函数放在核验层（shared）而不是 tiktok.js** ——
+ *    `tiktok.js` 要 `require` 本模块（verifyPublished），
+ *    若解析器留在 tiktok.js，本模块再 `require` tiktok.js ⇒ **循环依赖**，
+ *    Node 的部分初始化会让 tiktok.js 拿到**未定义**的 `verifyPublished`。
+ *    （与 `parseInstagramDeepLink` 同层同型。）
+ * @param {string} href
+ * @returns {string} 取不到返回空串
+ */
+function parseTikTokVideoId (href) {
+  const s = String(href || '')
+  const m = /\/video\/(\d+)/.exec(s)
+  return m ? m[1] : ''
+}
+
+/**
  * 按平台回读核验「内容是否真的发出去了」。
  * @param {any} win
  * @param {string} platform
@@ -143,11 +162,18 @@ async function verifyPublished (win, platform, opts) {
     }
 
     if (platform === 'tiktok') {
-      const marker = await readFirstText(win, sel.published_marker || [])
-      if (!marker) {
-        return { verified: false, reason: 'tiktok 未回读到发布完成标记' }
+      // 正证据 = 作品列表里第一行的作品链接 ⇒ 解析出数字作品 ID。
+      // ⚠️ 只回读到 href 但解析不出 ID ⇒ 不算已核验（页面结构变了 / 链接不是作品链接）。
+      const href = await readFirstHref(win, sel.published_video_link || [])
+      const videoId = parseTikTokVideoId(href)
+      if (!videoId) {
+        return {
+          verified: false,
+          reason: 'tiktok 未回读到作品 ID（可能未发布成功，也可能作品列表尚未刷新）',
+          evidence: { href: String(href || '').slice(0, 160) },
+        }
       }
-      return { verified: true, evidence: { marker } }
+      return { verified: true, evidence: { videoId, href } }
     }
 
     if (platform === 'twitter') {
@@ -218,5 +244,6 @@ module.exports = {
   readFirstHref,
   parseInstagramDeepLink,
   parseInstagramShortcode,
+  parseTikTokVideoId,
   verifyPublished,
 }

@@ -138,6 +138,24 @@ const LOGTO_ONLY_FEATURES = new Set(["cloud_publish"]);
 >
 > 本节将该需求展开为可评审的产品/技术方案骨架，作为第二阶段（官方算力供给链路）的 PRD 输入。**本 PR 不实现本节功能。**
 
+### 4.0 落地形态定案（2026-10-25，运营方已拍板）
+
+> ✅ **本节三个定案已由运营方于 2026-10-25 明确「都按推荐定案」。**
+> **详细落地形态见 `01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（本节的唯一展开处）。**
+
+| # | 定案 | 结论 | 对本节的影响 |
+|---|---|---|---|
+| **D-①** | 官方算力代理放在哪 | **ops-center**（Key 池 / 价格卡 / 用量事件表 / Fernet 解密 / httpx 全在这儿） | §4.3 的「服务端」**明确拆成两个服务**；§4.2 F1/F2 的表**留在 ops-center 的 SQLite**，**不迁 Postgres** |
+| **D-②** | 扣分通道 | **ops-center → api-publish-engine 一次 HTTP**（`POST /api/v1/credit/consume`） | §4.3 流程图重画；**不直连 Postgres**、**不建 key-broker** |
+| **D-③** | 账户模型缺口 | **立项**（双轨 + `expires_at`），**独立 change** | §4.4 新增第 8 条；**不阻塞** D-①/D-② 接线 |
+
+**⚠️ 本节两处内容随定案失效（属「决策随前提失效」，不是论证被推翻）：**
+
+| 条目 | 原内容（2026-10-11 拍板） | 现状 | 理由 |
+|---|---|---|---|
+| §4.4-1 | 官方 Key 迁进 AES-256-GCM 信封体系（复用 `cloud-accounts/envelope-crypto.js`，**Node 侧** + KMS），待办「Node 必须能解开 Python 写的密文」 | **随 D-① 失效** | 该待办的前提是「Node 侧要自己解官方 Key」；D-① 下**解密留在 Python 侧** ⇒ 不需要跨语言对拍，**官方 Key 也不需要 KMS**（KMS 是给用户云账号凭证用的） |
+| §4.4-3 | `migrations/postgresql/` 现占用 002-005，新表迁移从 006 起 | **订正为**：`006` 已占（`006_payment_orders.sql`）、`007` 已被 `compute-key-envelope-migration` 预定、`008_credit_ledger.sql`/`009_redeem_code_issued_to.sql` 已占 ⇒ **新迁移从 `010` 起** | 编号实测（2026-10-25）；且真实约束是 **FK 建表顺序 = 文件名 `localeCompare` 序**，不是「撞号」 |
+
 ### 4.1 角色与核心概念
 
 | 概念 | 定义 | 存储 |
@@ -176,17 +194,41 @@ const LOGTO_ONLY_FEATURES = new Set(["cloud_publish"]);
 
 ### 4.3 调度与扣费逻辑（桌面端 ↔ 服务端分工）
 
+**（2026-10-25 按 D-①/D-② 重画 —— 原图把「服务端」当成一个整体，与定案不符）**
+
 ```
 用户在桌面端选质量档 + 规格
   → 桌面端展示「本次预计消耗 N 积分」（按档位等效单价 × 规格，研究报告 §9.2）
-  → 服务端接收（必须 Logto 身份，S2 门禁已就位）
-  → 服务端按质量档查供给池 → 按策略选套餐 → 检查套餐剩余额度
-      ├─ 足够：按研究报告 §3.4 摊销口径预扣（reserve）
-      ├─ 不足：池内下一成员；全部不足 → 聚合 API 按 §3.4「耗尽」段实时价
-      └─ 熔断成员直接跳过
-  → 调上游 → 成功：按实际用量结算（settle）；失败：全额退（refund）
-  → 写 generation_requests 台账（研究报告 §4.2），expected vs actual 差异 >15% 进对账报表
+  → 桌面端 POST {opsCenterUrl}/api/v1/compute/execute
+        body: { userId, tier, spec, prompt, ..., idempotencyKey }
+        ⚠️ 幂等键由桌面端生成；同键重复 ⇒ 返回上次结果，不重复扣费、不重复调上游
+
+  ── 以下全部在 ops-center（同一个进程、同一个 SQLite）──
+  → ① 选 Key：tier_access 过滤 → priority **ASC** 排序 → 检查 rate_per_minute / daily_limit
+        ├─ 无可用 Key ⇒ 熔断降级：切 fallback（聚合 API）或拒绝
+        └─ 密文解不开 ⇒ 跳过该 Key + **告警**（不许静默跳过）
+  → ② 算预估成本：model_price_cards 取当前生效价
+        └─ 缺价格卡 ⇒ **拒绝服务 + 告警**（Phase 1 取舍 6：不许静默按 0）
+  → ③ **先落 model_usage_events（status=pending）** ⇒ 拿到 events.id
+        ⚠️ 必须在调上游之前落库（events.id 是扣分的幂等键来源）
+  → ④ 调上游（httpx + 官方 Key）
+  → ⑤ 算实际成本：cost_cents = f(实际 tokens, 生效价)
+        credit_cost = ceil(cost_cents / credit_unit_price_cents × multiplier)
+  → ⑥ 调 api-publish-engine POST {businessApiUrl}/api/v1/credit/consume
+        body: { userId, amount: credit_cost, costCents, priceId, refId: events.id, periodStart, periodEnd }
+        ├─ 成功 ⇒ events.status=charged
+        ├─ 余额不足 ⇒ events.status=charge_rejected → **不向用户发货**
+        └─ 服务不可用 ⇒ events.status=pending_charge + 告警（**不丢账**）
+  → ⑦ 写 generation_requests 台账（研究报告 §4.2），expected vs actual 差异 >15% 进对账报表
 ```
+
+**⚠️ 与原图的三处差异（都是定案带来的实质变化）**：
+
+| # | 原图 | 现图 | 原因 |
+|---|---|---|---|
+| 1 | 「服务端接收」= 一个服务 | **拆成 ops-center（供给+算成本+记用量）与 api-publish-engine（扣分）两个服务** | D-① / D-② |
+| 2 | 「按摊销口径预扣（reserve）→ 结算（settle）→ 失败退（refund）」 | **发货前扣分（fail-closed）；发货后扣分失败 ⇒ 挂起补扣，不是退款** | 上游已计费 ⇒ 成本真实发生 ⇒ **退款是错的，补扣才对** |
+| 3 | 台账写 `generation_requests` | **先落 `model_usage_events`（带 `user_id`）再调上游** | ① `events.id` 是幂等键来源；② 桌面端上报目前**只带 `client_id`、无 `user_id`**（§7.4 必修项） |
 
 **扣费与展示原则**（全部沿用研究报告既有决策，此处汇总为第二阶段约束）：
 
@@ -201,12 +243,40 @@ const LOGTO_ONLY_FEATURES = new Set(["cloud_publish"]);
 ### 4.4 第二阶段前置条件（开工前必须全部满足）
 
 1. ~~S3 加密拍板~~ → **✅ 已拍板（2026-10-11）：走选项 2**。迁移重加密进已有的 AES-256-GCM 信封体系（复用 `cloud-accounts/envelope-crypto.js`，不引新依赖）。**剩余待办**：`OPS_ENCRYPTION_KEY` → 信封主密钥的迁移脚本 + 存量 Key 重加密 + 两端互操作测试（Node 必须能解开 Python 写的密文）。
+   - ⚠️ **2026-10-25 订正：本条随 D-① 失效。** 「Node 必须能解开 Python 写的密文」这个待办的**前提**是「Node 侧要自己解官方 Key」；D-①（代理落 ops-center）下**解密留在 Python 侧** ⇒
+     - **不需要**跨语言互操作测试；
+     - **不需要**把官方 Key 迁到 AES-256-GCM；
+     - **不需要**为官方 Key 引入 KMS 依赖（`cloud-accounts/envelope-crypto.js` 的 `requireKms` 是为**用户云账号凭证**设计的，官方 Key 不属该范畴）；
+     - 官方 Key **保持 Fernet 不变**（`ops-center/backend/services/key_service.py:15-48`，主密钥 `OPS_ENCRYPTION_KEY`）；
+     - ⇒ **官方 Key 的加密形态改动量归零。**
+   - ⚠️ 保留的硬前置（与路线无关，**仍然有效**）：`OPS_ENCRYPTION_KEY` 必须**能解出现存至少一条 Fernet 密文**
+     （`key_service.py:45-48` 在密钥不合法时会**静默 sha256 派生并改写** `settings.encryption_key` ⇒ 存量密文全部解不开、且无显式报错）。
 2. ~~近 30 天上游账单~~ → **🔄 进行中（2026-10-11：运营方确认可导出）**。上游为**多供应商 + 混合计费**（订阅套餐 + 按量付费中转站），数据将全量提供或提供只读接口由接手方自行拉取；交接口径见 `01-docs/HANDOFF-UPSTREAM-BILLING-INTAKE-2026-10-11.md`。
 3. **迁移编号核对**：`migrations/postgresql/` 现占用 002-005，新表迁移从 006 起必须先查台账锁 checksum（交接文档 K4）。
+   - ⚠️ **2026-10-25 实测订正**：占用已变为 `002/003/004/005/006_payment_orders/008_credit_ledger/009_redeem_code_issued_to`
+     ⇒ `006` 已占、`007` 已被 `compute-key-envelope-migration` 预定、`008`/`009` 已占 ⇒ **新迁移从 `010` 起**。
+   - ⚠️ 且真实约束**不是「撞号」**，而是 **FK 建表顺序 = 文件名 `localeCompare` 序**
+     （`postgres-migrations.js:6` 的 `MIGRATION_PATTERN`、`:28` 的 `.sort((l,r)=>l.name.localeCompare(r.name))`、`:102` 按序执行）
+     ⇒ 被 FK 引用方的**文件名必须小于**引用方；同前缀不同名**可共存**（台账锁的是全文件名 + checksum）。
+   - ⚠️ **加文件与执行必须同批部署**（`postgres-identity-repository.js:293` 的 `assertReady` 用 `allowPending:false`
+     ⇒ 「文件已入库未执行」会让 identity 仓储**启动期硬失败**，表现为会员中心整体降级）。
 4. **任务宿主**：全仓无 cron/APScheduler；套餐用量日聚合、对账、超时回收都需要先解决任务宿主（交接文档 K7）。
 5. **退款路径**：`identity_entitlement_usage.used` 只增不减（K6），预扣-结算-退款模型必须先建出减回通道且不撞 `CHECK (used >= 0)`。
 6. **计费口径归一化**（2026-10-11 新增，因上游为混合计费；**同日晚增补第三类形状，故本条已由第 7 条扩展**）：订阅套餐是「总额度 + 有效期」，按量中转站是「余额 + 单价表（常含倍率）」，窗口配额型是「窗口结构 + 每窗口限额」——`provider_plans` 必须同时容纳**三种**形状，或按形状拆表（如「套餐台账」+「按量价目表」）；等效单价算法也各不相同（A＝实付 ÷ 总额度；B＝周期实付 ÷ 周期实际用量；C＝已付 ÷ 实测用量，估算）。**这一条在做表结构设计前必须先定**否则迁移返工。
 7. **三种形状与未知值表达方式必须定案**（2026-10-11 补，含运营方当晚答复）：`provider_plans` 须容纳**三种**计费形状（A 有总额度套餐 / B 按量付费 / **C 窗口配额型**——MiniMax 这类只有 5 小时与周窗口限制、**不承诺总额度**）；同时须先定「未知值」的落库表达（`UNKNOWN` / `source=ASSUMED`），否则未查明的速率与计量口径会被当已知值参与定价。分层设计与判别规则见 `01-docs/DESIGN-COMPUTE-BILLING-MODEL-2026-10-11.md`（三层分离；**形状数量有界为 3 类**，新增形状的唯一理由是「约束性质不同」而非「供应商不同」；**用户侧永远只有单一积分模型**）。
+
+8. **账户模型缺口立项**（2026-10-25 新增，**D-③**）：`identity_credit_accounts` 是**单周期**账户
+   （`migrations/postgresql/008_credit_ledger.sql:28-38`：`user_id` 是**主键**、`balance` / `granted_total` / `spent_total` /
+   `period_start` / `period_end` / `updated_at`）⇒ **装不下**定案要求的**双轨**（会员额度日释放+月清零 / 充值积分永久有效），
+   且**无 `expires_at` 字段** ⇒ **「FIFO 按过期时间扣减」目前无字段支撑**。
+   - **处置**：**独立 change + 独立评审**（改 `user_id` 主键 = **破坏性 schema 变更**）。
+   - **不阻塞** D-①/D-② 的接线（当前单周期模型能跑通），但**阻塞**双轨能力上线。
+   - 接线阶段跑通后需做一次**账目迁移**（单周期余额 → 双轨余额），配合 Phase 1 已有的 `reconcileAccount(userId)` 对账能力。
+   - 详见 `01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md` §4。
+
+9. **服务间鉴权未定**（2026-10-25 新增，**U-1**）：ops-center → api-publish-engine 的扣分调用**用哪套凭据**尚未定。
+   - ⚠️ **不得**用桌面端的 `X-Catalog-Key`（那是 ops-center 自己的目录密钥，口径不同）；**不得**把用户 Bearer 透传给服务间调用。
+   - 若需在 api-publish-engine 新增**独立于用户 Bearer 的服务凭据校验** ⇒ 属「**谁来守门**」级别的改动 ⇒ **须人工过目，agent 不得自行改**。
 
 ### 4.5 用户可见行为（第二阶段 UI 契约，供后续设计评审）
 
@@ -214,6 +284,18 @@ const LOGTO_ONLY_FEATURES = new Set(["cloud_publish"]);
 - 生成前确认弹窗：质量档下拉（standard/hd/cinema，pro 档位对 standard 用户禁用并显示升级引导）、「背后模型：运营方配置中（不展示具体模型名）」、本次消耗、剩余额度、自动切换勾选框（研究报告 §9.2）。
 - 三段式预警：80% 站内提示 / 50% 弹窗+加购 / 10% 强提示+加购+BYOK 入口；耗尽不阻断平台能力。
 - 全部新增用户可见文案进 `apps/desktop/src/locales/zh.js` 与 `en.js` 成对（CI Gate 7 强制）。
+
+**2026-10-25 按 D-①/D-② 补充（详细版见 `01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md` §8）：**
+
+| # | 补充项 | 规则 |
+|---|---|---|
+| 1 | **扣分未成功时不得显示「已扣除」** | 扣分失败 ⇒ 事件状态 `pending_charge` ⇒ 界面显示「**积分结算中**」，**不谎报已扣** |
+| 2 | **失败文案必须明示「本次未扣除积分」** | 例：`生成失败：{reason}。本次未扣除积分。` ⇒ 降低客诉成本 |
+| 3 | **降级一律正向表述** | 用「**省钱模式**」/「备用通道」，**不用**「降级」「降质」等负面词 |
+| 4 | **「约可生成」必须带浮动说明** | 不得承诺精确值（Phase 1 口径：宣传值 ≤ 实际值，按 p75 成本场景 + 20% 安全垫算） |
+| 5 | 运营后台「官方 Key 列表」须有「**能否解密**」健康列 | 解密失败 ⇒ **红标 + 告警**，不静默跳过 |
+| 6 | 运营后台成本台账须有「**缺价**」标记列 | 缺价事件必须**显式列出**（不许静默按 0，Phase 1 取舍 6） |
+| 7 | 运营后台须有「**挂起队列**」 | 列出 `pending_charge` 事件，可人工补扣 |
 
 ---
 

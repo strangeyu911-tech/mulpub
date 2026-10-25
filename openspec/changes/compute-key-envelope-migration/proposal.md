@@ -1,5 +1,31 @@
 # Proposal: 官方 Key 迁移进 AES-256-GCM 信封体系（compute-key-envelope-migration）
 
+> ## ⛔ 前提失效声明（2026-10-25）—— 本 change 的存在前提已不成立
+>
+> **本 change 尚未动手实施。其唯一存在理由已随新定案失效。**
+>
+> | 维度 | 本 change 的前提 | 2026-10-25 定案后 | 结论 |
+> |---|---|---|---|
+> | 谁解官方 Key | **Node 侧**（`api-publish-engine`）要解开 Python 写的 Fernet 密文 | **解密留在 Python 侧**（代理落 ops-center） | **前提不成立** |
+> | F3 死结 | 存在（「服务端代调 + Node」组合缺一环） | **不存在**（服务端代调 = ops-center 侧代调，Fernet 原生可用） | **死结消失** |
+> | 跨语言对拍 | 必须（Node ↔ Python 密文互通测试） | **不需要** | 归零 |
+> | KMS 依赖 | 需要（复用 `envelope-crypto.js` 的 KMS 抽象） | **不需要**（KMS 是为用户云账号凭证设计的） | 归零 |
+> | `official_key_envelopes` 表 | 需要（tasks 3.1） | **不需要** | 归零 |
+> | 存量重加密 | 需要（Fernet → 信封） | **不需要**（Fernet 保持不变） | 归零 |
+>
+> **依据**：`01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md` 定案 **D-①**（代理落 ops-center）、
+> `openspec/changes/official-keys-postgres-migration/design.md` **D19**（前提级订正）、
+> `01-docs/PRD-OFFICIAL-COMPUTE-STOPGAP-2026-10-09.md` §4.0 / §4.4-1 订正。
+>
+> **⚠️ 重要区分**：这**不是**「本 change 的论证被推翻」——
+> 2026-10-11 运营方拍板走 AES-256-GCM + KMS 时，在**「Node 侧要解官方 Key」这个前提下是正确的**。
+> 它随前提一起失效，**不因论证有错**。
+>
+> **处置建议（待人工确认）**：**归档本 change**（移入 `openspec/changes/archive/`），
+> 或改向为「**未来若官方算力代理迁回 api-publish-engine**时的预案」。
+> ⚠️ 归档会变更 `openspec/changes/` 的目录结构 ⇒ **须人工过目，agent 不得自行归档**。
+>
+
 ## Why
 
 官方算力供给侧要求**服务端代调模型**（客户端不能持有官方 Key，否则可被逆向提取、无限白嫖）。但官方 Key 存在 `ops-center.official_keys.api_key`，由 **Python Fernet**（`cryptography.fernet`，密钥 `OPS_ENCRYPTION_KEY`）加密，而要去解开它的是 **Node 侧** `packages/api-publish-engine`——Node 没有 Fernet 等价实现。这就是交接文档 `HANDOFF-OFFICIAL-COMPUTE-2026-10-09.md` §3 的 **F3 死结**：两条路（下发客户端 / 服务端代调）都走不通，说明「服务端代调 + Node」这个组合缺一环。

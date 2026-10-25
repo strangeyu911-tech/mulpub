@@ -431,3 +431,64 @@ resp = await client.post(url, json=payload, headers=headers)
 ⚠️ **但改向后 `compute-key-envelope-migration`（信封 change）整条线的价值归零**
 （它的存在前提是「Node 侧要自己解官方 Key」，而新形态里解密留在 Python）⇒ **需要一并处置**，
 否则仓里会留一个前提已不成立的 change。
+
+---
+
+## D20 · **落地形态定案（D-①/D-②/D-③）—— 供给侧留 ops-center，扣分走一次 HTTP**（2026-10-25）
+
+> D19 是「前提被推翻」的**诊断**；D20 是**定案**。
+> **运营方 2026-10-25 明确「都按推荐定案」。**
+> **完整展开见 `01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（落地形态唯一展开处）。**
+
+### 三个定案
+
+| # | 定案 | 内容 |
+|---|---|---|
+| **D-①** | **代理落 ops-center** | Key 池 / 价格卡 / 事件表 / Fernet 解密 / httpx 全在 ops-center ⇒ **供给侧零迁表** |
+| **D-②** | **扣分通道** | ops-center → api-publish-engine **一次 HTTP**（`POST /api/v1/credit/consume`）⇒ **不直连 Postgres、不建 key-broker** |
+| **D-③** | **账户模型缺口立项** | `identity_credit_accounts` 是**单周期**账户、无 `expires_at` ⇒ 双轨 + FIFO 过期扣减由**独立 change** 承载 |
+
+### D-① 为什么供给侧不迁表
+
+| 资产 | 进程 | 库 |
+|---|---|---|
+| `official_keys` | ops-center | SQLite |
+| `model_price_cards` / `credit_price_config` / `model_usage_events` | ops-center | SQLite（**Phase 1 新建**） |
+| `identity_credit_accounts` / `identity_credit_ledger` | api-publish-engine | Postgres（**Phase 1 新建**） |
+
+代理在 ops-center ⇒ **供给侧全部同进程同库** ⇒ 零跨库读点、零双写、零切读期、零回滚复杂度。
+⇒ D13（双库）、D14（拆跨库读点）、D16（`database_pg.py`）、D18（跨库表示等价校验）**全部不再适用**。
+
+### D-② 扣分通道的契约要点
+
+- **端点**：`POST {businessApiUrl}/api/v1/credit/consume`
+- **仓储层复用**：`credit-repository.js` 的 `consumeCredit({userId, amount, costCents, priceId, reason, refType, refId, periodStart, periodEnd})`
+  —— **已实现**（含事务、`balance >= amount` 的原子 CAS、`CHECK (balance >= 0)` 兜底），**本 change 不新建扣减逻辑**
+- **幂等键**：`(ref_type, ref_id, entry_type='spend')`；`ref_id` = `model_usage_events.id`
+  ⇒ ⚠️ **事件必须在调上游之前落库**，否则重试会生成新 id ⇒ 重复扣分
+- **失败语义**：发货前 **fail-closed**（不调上游）；发货后 ⇒ **`pending_charge` 挂起补扣**（**不是退款** —— 上游已计费，成本真实发生）
+- **鉴权（U-1）**：⚠️ 不得用桌面端 `X-Catalog-Key`、不得透传用户 Bearer；
+  若需在 api-publish-engine 新增**独立于用户 Bearer 的服务凭据校验** ⇒ **属「谁来守门」级别 ⇒ 须人工过目，agent 不得自行改**
+
+### D-③ 账户模型的边界
+
+`identity_credit_accounts` 现状（`migrations/postgresql/008_credit_ledger.sql:28-38`）：
+`user_id` 是**主键**、`balance` / `granted_total` / `spent_total` / `period_start` / `period_end` / `updated_at`
+⇒ **单周期**、**无 `expires_at`** ⇒ 装不下双轨、FIFO 过期扣减**无字段支撑**。
+
+**处置**：**独立 change + 独立评审**（改主键 = 破坏性 schema 变更）。
+**不阻塞** D-①/D-② 的接线（当前单周期模型能跑），但**阻塞**双轨能力上线。
+
+### 本设计对既有决策的处置
+
+| 既有决策 | 处置 | 理由 |
+|---|---|---|
+| D13（落地对象 = monorepo） | ✅ **保留**（仍成立） | ops-center 仍是 monorepo 内 |
+| D14（拆两个跨库读点） | ⛔ **不适用** | 供给侧不跨库 ⇒ 无跨库读点 |
+| D15（迁移编号 = FK 顺序） | ✅ **保留**（D-③ 落地时需要） | 但本 change **不新增迁移** ⇒ 编号问题归零 |
+| D16（`create_all` 归属 / `database_pg.py`） | ⛔ **不适用** | 不引入第二个库连接 |
+| D17（有效密钥前置） | ✅ **保留**（形态变简） | `OPS_ENCRYPTION_KEY` 仍须能解出现存 Fernet 密文；`key_service.py:45-48` 的静默 sha256 派生仍是要防的坑 |
+| D18（四层校验） | 🔁 **改写** | 从「跨库表示等价」改为「扣减接线对账」：成片 + 账本分录 + 用量事件三方一致 |
+| D19（前提被推翻） | ✅ **保留**（诊断留档） | D20 是它的结论 |
+| `compute-key-envelope-migration` | ⛔ **前提失效** | 其存在理由是「Node 侧要解官方 Key」；已在该 change 的 proposal 顶部声明；**归档与否须人工确认** |
+

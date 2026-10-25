@@ -1,213 +1,111 @@
-# Tasks: 官方 Key 池迁入 Postgres
+# Tasks：official-compute-credit-wiring（官方算力扣减接线）
 
-> 实现进度以本文件 checkbox 为**唯一来源**（`openspec status --change official-keys-postgres-migration`）。
-> 依赖关系：1 → 2 → 3 → 4 → 5 → 6 → 7；第 8 组随各步同步。
-> 配套 change：`compute-key-envelope-migration`（本 change 是其第 3 组的硬前置）。
-
-## 1. 前置固化（本 change 的规格层）
-
-- [x] 1.1 **编号规则定死（评审 C4 订正）**：真正的硬约束不是「撞号」，而是
-      **「被 FK 引用方的文件名字典序必须小于引用方」**（`postgres-migrations.js:28` 的 `localeCompare` 排序
-      + `:102` 按序执行）。同前缀不同名**共存不报错**（台账锁的是全文件名 + checksum）。
-      **本 change 用 `006_official_keys.sql`**（与 `006_payment_orders.sql` 同前缀不同名，
-      且 `'o'(official) < 'p'(payment)` ⇒ 先执行 ✅）；信封表用 `007_official_key_envelopes.sql`。
-      ⚠️ **我写进 AGENTS.md 的那条纪律（PR #4315「撞号 ⇒ 启动期硬失败」）是误诊，需另开 PR 订正。**
-- [ ] 1.2 写明「**加文件与执行必须同批部署**」：`assertReady` 用 `allowPending:false`，
-      拆成两个 PR 中间每次启动都硬失败（design.md D8）。
-- [x] 1.3 **OQ3 已定案（2026-10-24）**：SQLite 侧 `ensure_official_key_columns` **保留函数但不再调用**
-      （design.md D7）。保留一个不调用的函数零成本；删掉后想恢复只能改代码发版。
-- [x] 1.4 **OQ2 已定案（2026-10-24）**：第二个连接用 **`psycopg[binary]`**（PostgreSQL 官方维护，
-      **无需编译工具链** —— `binary` extra 即为此准备）。⚠️ 原提案「psycopg 需编译工具链」的表述**有误，已更正**。
-- [x] 1.5 **OQ1 已定案（2026-10-24）**（design.md D9）：
-      ① **数据导出必须剔除 `official_keys` 表**（导出无细粒度权限管控，最易外流）；
-      ② **表级读权限沿用现有 Postgres 权限模型**，不新建高权限账号；
-      ③ **备份与只读副本按现有库的统一策略走**，但**必须在部署文档登记**「本库含密钥材料密文」。
-      注：这不是新增攻击面（密文 + 主密钥 = 明文，SQLite 与 Postgres 同理），差别只在数据流向变多。
-- [x] 1.7 **落地对象确认（评审 C5，P1 阻断项）**：`docs/ops-center-ecs-deployment.md:35` 明写 ECS
-      克隆自**独立仓 `Colinchiu007/ops-center.git`**，monorepo 的 `ops-center/` 只是镜像。
-      **动手前必须确认**：① monorepo ↔ 独立仓 单向还是双向同步？② 谁负责同步、什么节奏？
-      ③ 两边的迁移台账 `identity_schema_migrations` 是不是同一个 Postgres 库？
-      **未确认前，本 change 的任何实现都是空转。**
-- [ ] 1.6 迁移前置（**阻断项**）：**确认生产 `OPS_ENCRYPTION_KEY` 已固定**。
-      `key_service.py:22-36` 有一条 `OPS_ALLOW_EPHEMERAL_KEY` 分支会在 key 缺失时
-      **每次重启 generate 新密钥** ⇒ 已加密的 Key 永久不可解（design.md D10 第 2 层）。
-      **未确认前不得开始迁移。**
-      ⚠️ **判据升级（评审 C6）**：`key_service.py:41-48` 的 `except (ValueError, Exception)` 会**静默 sha256 派生**
-      一个新 key 并**改写** `settings.encryption_key` ⇒ 「key 存在」**不等于**「key 正确」。
-      **必须核对：用这个 key 能解出现存至少一条 Fernet 密文**（round-trip），而不是只看它配没配。
-
-## 2. 迁移文件与建表
-
-- [ ] 2.1 新增 `migrations/postgresql/006_official_keys.sql`：建表 `official_keys`，
-      **共 17 列**（`ops-center/backend/models.py:116-136`；原提案写 15 列是错的——
-      `rate_per_minute` / `daily_limit` / `alert_threshold_cost` / `note` 是运行时补的），
-      **必须给出完整 PG DDL：每列的类型 + DEFAULT + NOT NULL**（评审 C8）。
-      ⚠️ **`models` 列必须用 `TEXT`（存 JSON 字符串），不得用 `jsonb`** —— `key_service.py` 走
-      `json.loads(key.models)`，传 dict 会 TypeError ⇒ 列表页 100% 500。
-      ⚠️ **`expires_at` 必须用 `TEXT`**（现状是字符串字典序比较），不得用 `date`/`timestamp`。
-      ⚠️ **`created_at` / `updated_at` 必须用 `TEXT`**（现状是 naive ISO 字符串），
-      不得用 `timestamptz`（naive 值按会话 TimeZone 静默偏移 ⇒ 漂移巡检永红）。
-      ⚠️ **所有 `default=` 是应用层默认值，DB 侧没有 DEFAULT 且列 nullable** ⇒
-      迁移时若不显式给值，这些列会变 NULL，而选 Key 的谓词
-      `is_active == 1` / `tier_access <= tier_access` 在 NULL 下是 NULL ⇒ **一行都选不中且不报错**。
-      **⇒ 迁移文件必须为这 10 列显式写 DEFAULT + NOT NULL。**
-      原始 15 列表述：
-      含 `provider` / `name` / `api_key` / `base_url` / `models` / `priority` / `is_active` /
-      `tier_access` / `cost_per_1k_tokens` / `expires_at` / `rate_per_minute` / `daily_limit` /
-      `alert_threshold_cost` / `note` / `created_at` / `updated_at`。
-- [ ] 2.2 **补齐 SQLite 侧运行时 ALTER 补过的那 4 列**：`rate_per_minute` / `daily_limit` /
-      `alert_threshold_cost` / `note`（`key_service.py:140-166`）——
-      新表必须直接含这 4 列，**不得依赖运行时 ALTER**。
-- [ ] 2.3 选 Key 索引：`CREATE INDEX ON official_keys (is_active, tier_access, priority)`。
-      ⚠️ **`priority` 现状排序是 ASC**（`key_service.py:306` 与 `:373`）⇒ 索引按现状来，
-      **不要**写成 DESC（原提案写 DESC 且未说明理由，评审 X3 判定与现状相反）。
-      ⚠️ **不得**以 `get_active_keys_for_tier`（`key_service.py:360`）作索引依据——
-      该函数**生产引用数为 0**（只有测试引用），评审 X2 已复核。
-      （`tier_access` 语义见 `models.py:127`：1=all tiers / 2=standard+ / 3=pro only）
-- [ ] 2.4 **表结构与 SQLite 侧逐列对照**：列名、默认值、空值性、CHECK 约束逐列核对，
-      写一份对照表进执行记录。**不允许「大体一样」**——列名大小写/默认值差异会在
-      Python 侧 `KeyRow` 映射时静默变成 `None`。
-- [ ] 2.5 迁移单测：`discoverMigrations` 能识别该文件名（匹配 `MIGRATION_PATTERN`）；
-      对已应用台账做一次 checksum 校验通过。
-- [ ] 2.6 迁移幂等：`CREATE TABLE IF NOT EXISTS` + `INSERT ... ON CONFLICT DO NOTHING`，
-      重复执行零副作用（data 段必须幂等，否则重跑会炸）。
-
-## 3. ops-center 双库连接
-
-- [ ] 3.1 `requirements.txt` 加 **`psycopg[binary]`**（OQ2 定案）。
-- [ ] 3.2 **新增 `database_pg.py`**（专管 Postgres）：`create_async_engine` + `async_sessionmaker` + `get_pg_db()`，
-      **与现有 SQLite engine 并列，不替换**。**不在一个文件里塞两个 engine**（`create_all` 的归属会含混，见 3.3）。
-- [ ] 3.3 **两个 `Base` 必须分开，且 `database.py` 拆成两个模块**（评审 C3）：
-      一个 ORM 类不能绑两个库 ⇒ Postgres 侧建独立 `DeclarativeBase` / `metadata`。
-      **`database.py` 保持只管 SQLite**（它有 `PRAGMA journal_mode=WAL` 等 SQLite 专属语句，
-      `database.py:24-26`），**新增 `database_pg.py`** 专管 Postgres —— 不在一个文件里塞两个 engine。
-      ⚠️ **Postgres 侧不得跑 `create_all`**：那会让表被建出来却**没有迁移台账记录** ⇒
-      `assertReady`（`allowPending:false`）看到「有表无台账」⇒ `MIGRATION_PENDING` 行为诡异。
-      **Postgres 侧只认迁移文件。**
-- [ ] 3.4 新增 `get_pg_db()`（FastAPI `Depends`），与 `get_db()` 并列。
-- [ ] 3.5 启动顺序：两个 engine 都在 startup 建好；
-      **Postgres 连接失败时的行为依 design.md D6 定义（fail-closed）**，并出声。
-- [ ] 3.6 **连接池参数显式化**：SQLite 侧是默认 `pool_size=5 / max_overflow=10`；
-      Postgres 侧 SHALL 显式给 `pool_size` / `max_overflow` / `pool_pre_ping` / `pool_recycle`，
-      **不得**沿用默认值（默认值是给 SQLite 那种轻量场景调的）。
-- [ ] 3.7 **关停清理**：`main.py:66-67` 现在只有一行日志、**无 `engine.dispose()`** ⇒
-      两个 engine 都要在 shutdown 时 dispose，否则连接池泄漏（长跑进程才显形）。
-- [ ] 3.8 **`/health` 必须加 PG 探针**（评审 MAJOR）：`main.py:150-152` 的 `/health` 是**静态**
-      `{"status":"ok"}`，`health_service.py:200` 的 `check_db(db)` 只探 SQLite ⇒
-      **Postgres 挂了两个健康面都绿**；而 `docs/ops-center-ecs-deployment.md:110` 的部署自检
-      就是 `curl /health` ⇒ **「连不上库」会被判成「部署成功」**。
-- [ ] 3.9 **SQLite 侧权限基线补测**：`ops-center.service` **无 `UMask=`、无 chmod 600** ⇒
-      `stat -c %a data/config.db` 取当前实际权限并登记进部署文档（OQ1⑤）。
-- [ ] 3.10 **删除 `ensure_official_key_columns` 的调用点**（OQ3 的落地动作，评审指出缺失）：
-      `main.py:15`（import）+ `main.py:45`（启动调用）是**唯二**调用点 ⇒
-      删掉这两处，**函数本身保留**（存量 SQLite 库缺列时运维仍可手工调用）。
-
-## 4. ORM 与 CRUD 切库
-
-- [ ] 4.1 `models.py`：`OfficialKey` 换绑 Postgres Base（**不删 SQLite 侧声明**——
-      存档期还要读它做回滚核对）。
-- [ ] 4.2 `services/key_service.py`：CRUD（`create_key` / `update_key` / `delete_key` /
-      `get_key` / `list_keys`）改走 Postgres session。
-      ⚠️ **无 `rotate` 方法**（原提案写错，`key_service.py` 里不存在该函数）。
-      ⚠️ **`pool_summary` 单独处理**（评审 C1）：它查 `OfficialKey`(PG) + `ModelUsageDaily`
-      同一 session ⇒ 拆两段读（PG 段 + SQLite 段），**不要求跨库事务**。
-- [ ] 4.3 **加密写入路径唯一性维持**：全仓对 `api_key` 的 `encrypt_key(...)` 写入
-      **仍只允许出现在 `key_service.py` 一处**（结构锁 `official-key-envelope.test.js`
-      的「结构锁 2.4」会扫描全仓并判红——**本改动不得破坏它**）。
-- [ ] 4.4 `services/model_preset_service.py:1112-1122` 的 Key 回退查询改走 **Postgres session**，
-      而同函数 `:1097` 读 `ModelPreset` 仍走 **SQLite session** ⇒ **两段独立 session**（评审 C2）。
-      **禁止**试图用一个 session 跨两个库。
-      **注意**：该回退当前是**死代码**（用 `preset_id` 匹配 `OfficialKey.provider`，
-      而 `ModelPreset` 没有 `provider` 列，`models.py:68-87` 逐列确认）⇒
-      **本次只改 session 来源，不修这个逻辑缺陷**（属另一条线），但要如实记录。
-- [ ] 4.5 `routers/secrets.py` 的 7 处注入点改用 `get_pg_db()`。
-- [ ] 4.6 **Fernet 解密能力留在 Python 侧**（design.md D4）：`decrypt_key()` 不动，
-      `key_service.py` 读 Postgres 里的 Fernet 密文照常解密。
-      ⚠️ **session 绑错库必须显式失败**（评审 MAJOR）：`key_service.py:286,345` 的 `db.refresh()`
-      在库绑错时**不报错，只静默返回全 None 字段** ⇒ 补断言：写后回读若关键字段为 None 即失败。
-      ⚠️ **可写字段须为显式清单**：`key_service.py:341` 的 `setattr(item, field, value)` 由 HTTP body
-      的字段名驱动（`routers/secrets.py:108`）⇒ 任意 body 字段会被静默丢弃。
-      **必须有一份「允许写入的字段」白名单**（tasks 2.4）。
-- [ ] 4.7 **认领既有测试文件**（评审 C7）：`tests/test_key_service.py:19-27` 等 **6 个** fixture
-      用 `Base.metadata.create_all` + `from models import OfficialKey` ⇒ 换 Base 后必红。
-      **本 change 必须同时改这些 fixture**（拆双 Base / 显式建表），不得留红。
-
-## 5. 双写 → 切读 → 停写
-
-- [ ] 5.1 **S1**：Postgres 建表 + 数据 COPY（Fernet 密文**原样**）。
-- [ ] 5.2 **S2 双写**：写 Postgres 主 + SQLite 镜像写。
-      **写 Postgres 失败 ⇒ 整笔写失败**，不静默只写 SQLite（design.md D6）。
-      **SQLite 镜像写失败 ⇒ 主写已成功 ⇒ 记 warn + 计数，不回滚主写**（回滚会丢真实更新，
-      且 SQLite 存档是**回滚退路**，不能被主写的失败反向污染）——评审 C10 要求补这一方向。
-      「两库一致」纳入 6.5 的漂移巡检。
-- [ ] 5.3 **S3 切读**：读 Postgres；SQLite 只写不读。
-      **读 Postgres 失败 ⇒ 明确报错，不回落 SQLite**（回落会让已熔断的 Key 被重新选中）。
-- [ ] 5.4 **S4 停写**：SQLite 侧 `official_keys` 停写、标记只读存档，**表不删**。
-- [ ] 5.5 切换窗口：S2/S3 各留 ≥1 个完整业务周期，**期间不得合并任何改动这两条写路径的 PR**。
-
-## 6. 数据校验与巡检
-
-- [ ] 6.1 **行数校验**：`count(Postgres) == count(SQLite)`，不一致即停。
-- [ ] 6.2 **逐行可解密**：用当前 `OPS_ENCRYPTION_KEY` 对每行 `decrypt` 成功；
-      任一行失败即停，**不得跳过**（"跳过失败行"就是数据丢失）。
-- [ ] 6.3 **抽样明文比对**：抽样行解密后逐字节比对（**明文不落盘**）。
-- [ ] 6.4 **跨库表示等价校验（第四层，评审 C8）**：除 `api_key` 外**全部 17 列**
-      在两库间做**原始值逐列比对**（不是语义比对）⇒ 类型选错（`jsonb` / `date` / `timestamptz`）
-      会在这一步被抓住，而不是等到运行时 500。
-- [ ] 6.5 **漂移巡检**：每日比对两库的 `id` 集合与 `updated_at`；
-      差异列表可点名行 id。S4 之后改为「Postgres 单源 + SQLite 只读存档」的自洽检查。
-- [ ] 6.6 **访问控制清单落地验证**（OQ1 定案）：
-      ① 验证**数据导出链路**确实剔除了 `official_keys` 表（**要有可复现的验证命令，不接受「已配置」这种描述**）；
-      ② 确认部署文档已登记「本库含密钥材料密文」；
-      ③ 表级读权限沿用现有模型，**只做核对不新建权限**。
-
-## 7. 部署文档与访问控制
-
-- [ ] 7.1 更新部署文档：双库连接的环境变量（Postgres DSN）、`OPS_ENCRYPTION_KEY` 的托管与轮转、
-      **Postgres 侧 `official_keys` 的访问控制清单**、备份与只读副本策略、
-      9 步部署顺序、回滚步骤（含「S4 之后回滚 = 数据从 SQLite 存档恢复」）。
-- [ ] 7.2 更新 `ops-center/docs/PRD.md` 与 `01-docs/PRD-OFFICIAL-COMPUTE-STOPGAP-2026-10-09.md`
-      §4.4-1 的「剩余待办」，指向本 change。
-- [ ] 7.3 `.quality-gates.md` 执行记录 + `openspec/records/<分支名>.md`
-      （**按 2026-10-17 起的现行形态**：状态列写「由门禁推导」、不带 `sync_*` 三字段、不开回填 PR）。
-- [ ] 7.4 归档三同步：`openspec archive` + CCG task 归档 + 质量节拍复盘/learnings。
-
-## 8. 明确不做（Non-Goals，防止顺手扩大）
-
-- [ ] 8.1 **不做重加密**（Fernet → AES-256-GCM）：属 `compute-key-envelope-migration` 第 4/5 组。
-      两处都改同一批数据，混在一起出问题无法归因。
-- [ ] 8.2 **不删 SQLite 侧 `official_keys` 表**：它是 S4 之后的回滚退路。
-- [ ] 8.3 **不迁 ops-center 其余表**：它们不需要跨库事务，整体迁会放大爆炸半径。
-- [ ] 8.4 **不建 key-broker HTTP 服务**：那会把原子性永久降级为最终一致（design.md D1③）。
-- [ ] 8.5 **不改对外密钥 API 契约**：仍只返回掩码。
-- [ ] 8.6 **不改客户端**：客户端始终拿不到官方 Key。
-- [ ] 8.7 **不修 `model_preset_service.py` 的 Key 回退死代码**（见 4.4）：属另一条线，
-      本次只改 session 来源。
-- [ ] 8.8 **不在本 change 里做 reserve / settle**：那是 `compute-key-envelope-migration` 的范围，
-      且依赖本 change 完成。
+> **范围改向**：2026-10-25 由「官方 Key 池迁入 Postgres」改向为「官方算力扣减接线」。
+> **定案**：`design.md` **D20**；落地形态唯一展开处：`01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`。
+> ⚠️ **原 1–8 组按「迁表」写，全部作废**，改向后的任务组见下。
 
 ---
 
-## 0. 前提重核（**阻塞 1–8 全部**，2026-10-25 新增）
+## 0. 前提重核（✅ **已闭合 2026-10-25**）
 
-> Phase 1（`credit-cost-accounting-phase1`，2026-10-23 合入）已重铺算力计费域的地基，
-> **本 change 的「迁表」前提被推翻**（详见 design.md **D19**、review-responses「第三次订正」）。
-> **⇒ 1–8 组在 0 组全绿前一律不得开工。**
+- [x] 0.1 **决定代理放在哪个进程** → **✅ ops-center（D-①）**。
+      理由：Key 池 / 价格卡 / 事件表 / Fernet 解密 / httpx 全在 ops-center ⇒ 不迁表、不建信封、不碰 F3。
+- [x] 0.2 **重写范围** → **✅ 本文件 + `proposal.md` + `design.md` D20 + `specs/official-keys-postgres/spec.md` 已全部改向**；
+      `compute-key-envelope-migration` 已在其 `proposal.md` 顶部加**前提失效声明**。
+      ⚠️ **该 change 的归档与否待人工确认**（改目录结构 = 须人工过目）。
+- [x] 0.3 **账户模型缺口立项** → **✅ D-③**：独立 change + 独立评审（改 `user_id` 主键 = 破坏性变更）；
+      不阻塞接线，阻塞双轨能力上线。**新迁移从 `010` 起**。
+- [x] 0.4 **订正迁移编号** → **✅ 已订正**：`007` 被 `compute-key-envelope-migration` 预定；
+      实测占用 `002/003/004/005/006_payment_orders/008_credit_ledger/009_redeem_code_issued_to` ⇒ **新迁移从 `010` 起**。
+      ⚠️ **本 change 不新增迁移**（供给侧零迁表）⇒ 编号问题归零。
+- [x] 0.5 **确认编号现状** → **✅ 已实测**（见 0.4）；且真实约束是 **FK 建表顺序 = 文件名 `localeCompare` 序**，不是「撞号」。
 
-- [ ] 0.1 **决定代理放在哪个进程**（**推荐 ops-center**）：
-      Key 池 / 价格卡 / 事件表 / Fernet 解密 / httpx 全在 ops-center ⇒ 不迁表、不建信封、不碰 F3；
-      放 api-publish-engine ⇒ 才是本 change 现有形态。
-- [ ] 0.2 若采纳 ops-center 路线：**重写 proposal / design / tasks 的 Why 与范围**
-      （从「迁表」改向为「扣减接线」），并**同步处置 `compute-key-envelope-migration`**
-      （其前提「Node 侧要解官方 Key」在改向后不成立 ⇒ 需归档或改向）。
-- [ ] 0.3 **账户模型缺口立项**：`identity_credit_accounts` 是单周期账户
-      （`migrations/postgresql/008_credit_ledger.sql:28-38`），
-      **无 `expires_at`**、装不下**双轨**（会员额度日释放+月清零 / 充值积分永久有效）
-      ⇒ 「FIFO 按过期时间扣减」**无字段支撑** ⇒ 加列/加表（进本 change 或独立 change，须拍板）。
-- [ ] 0.4 **订正迁移编号**：`compute-key-envelope-migration/tasks.md` 里仍写
-      `006_official_key_envelopes.sql` ⇒ 按 Phase 1 记录，「`007` 已被该 change 预定」
-      ⇒ 订正为 `007_official_key_envelopes.sql`（**编号纪律要求规格文档本身也要更新**）。
-- [ ] 0.5 **确认 006 号现状**：`ls migrations/postgresql/` 实测为
-      `002/003/004/005/006_payment_orders/008_credit_ledger/009_redeem_code_issued_to`
-      ⇒ `006` 已被占、`007` 已被预定、`008`/`009` 已被占 ⇒ 新迁移只能从 **010** 起
-      （**FK 建表顺序 = 文件名 localeCompare 序**，D15）。
+---
+
+## 1. 规格层（契约先落地，代码后动）
+
+- [ ] 1.1 **扣分端点契约**：`POST /api/v1/credit/consume` 的请求/响应/错误码表
+      （见 `DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md` §3.3）写入 `specs/official-keys-postgres/spec.md`。
+- [ ] 1.2 **服务间鉴权方案定案（U-1）**：⚠️ **若需在 api-publish-engine 新增独立于用户 Bearer 的服务凭据校验** ⇒
+      属「**谁来守门**」级别 ⇒ **须人工过目，agent 不得自行改**。
+- [ ] 1.3 **`official_credit` feature 补登（U-3）**：Phase 1 记录明说 `official_credit` **不在 features 数组**
+      ⇒ 扣分端点拿不到 feature 授权 ⇒ 补进 plan-matrix 的 features + 档位映射
+      （属定价/权益变更 ⇒ **须人工过目**）。
+- [ ] 1.4 **官方算力端点契约**：`POST /api/v1/compute/execute` 的入参、`idempotencyKey` 归属、返回形状。
+
+---
+
+## 2. api-publish-engine 侧：扣分端点
+
+- [ ] 2.1 新增 `POST /api/v1/credit/consume` 路由（`publish-api-server.js`），**复用** `credit-repository.js` 的 `consumeCredit`。
+- [ ] 2.2 `_requiredFeature(url, method)` 为该端点返回正确 feature（依赖 1.3）。
+- [ ] 2.3 **错误码映射**：`CREDIT_BALANCE_EXHAUSTED`（402）/ `CREDIT_AMOUNT_INVALID`（400）/
+      `CREDIT_PERIOD_INVALID`（400）/ `CREDIT_SERVICE_UNAVAILABLE`（503）。
+- [ ] 2.4 **幂等回归测试**：同 `refId` 重复调用只扣一次、第二次 `duplicated: true`、不新增分录。
+- [ ] 2.5 **并发回归测试**：并发同用户扣减，余额不负、只允许一个成功（`balance >= amount` 的 CAS）。
+
+---
+
+## 3. ops-center 侧：官方算力端点
+
+- [ ] 3.1 **选 Key**：按 `tier_access` 过滤 → **`priority` ASC**（⚠️ 不是 DESC）→ 检查 `rate_per_minute` / `daily_limit`。
+      ⚠️ `get_active_keys_for_tier` **生产引用数为 0** ⇒ **必须真正接线**，不能只写函数。
+- [ ] 3.2 **解密失败处置**：跳过该 Key + **告警**（不许静默跳过）。
+- [ ] 3.3 **算成本**：`model_price_cards` 取当前生效价；**缺价 ⇒ 拒绝服务 + 告警**（不许静默按 0）。
+- [ ] 3.4 **先落 `model_usage_events`（`status=pending`）再调上游** ⇒ 取得 `events.id`（幂等键来源）。
+- [ ] 3.5 **调上游**：复用 `prompt_eval_generation_service.py` 的 httpx 模式（`Bearer` 头 + 超时）。
+- [ ] 3.6 **算实际成本**：`cost_cents` + `credit_cost = ceil(cost_cents / credit_unit_price_cents × multiplier)`。
+- [ ] 3.7 **调扣分端点**：失败 ⇒ 发货前不发货 / 发货后置 `pending_charge` + 告警。
+
+---
+
+## 4. 桌面端接线
+
+- [ ] 4.1 **`usage-reporter.js` 补 `user_id`**（Logto `sub`）+ 真实 `tokens_in` / `tokens_out` / `cost`（现状三者恒 0）。
+- [ ] 4.2 官方算力模式的调用路径（质量档 + 规格 → `/api/v1/compute/execute`）。
+- [ ] 4.3 **`idempotencyKey` 由桌面端生成**；用户点「重试」时**复用同一个键**。
+- [ ] 4.4 **显示项**（见设计文档 §8.1）：剩余积分、本月剩余天数、约可生成、本次预计消耗、剩余额度。
+- [ ] 4.5 **提示文字**（zh / en **成对**，CI Gate 7 强制）：见设计文档 §8.2 的 9 条文案。
+
+---
+
+## 5. 用量事件状态机与挂起对账
+
+- [ ] 5.1 事件状态机：`pending` → `charged` / `failed` / `pending_charge` / `charge_rejected`。
+- [ ] 5.2 `pending_charge` 的**补扣入口**（人工可触发）。
+- [ ] 5.3 **定时对账任务宿主（U-5）**：⚠️ 全仓无 cron/APScheduler ⇒ **与 Phase 1 同源问题，须一并立项**
+      （否则 `pending_charge` 只能人工补）。
+- [ ] 5.4 `client_reported_cost_cents` 与服务端值比对 ⇒ 差异进对账报表（阈值 15%）。
+
+---
+
+## 6. 运营后台可观测
+
+- [ ] 6.1 官方 Key 列表加「**能否解密**」健康列（失败 ⇒ 红标 + 告警）。
+- [ ] 6.2 成本台账加「**缺价**」标记列（缺价事件显式列出）。
+- [ ] 6.3 「**挂起队列**」页面（列出 `pending_charge`，可人工补扣）。
+- [ ] 6.4 对账报表：expected vs actual 差异。
+
+---
+
+## 7. 部署与文档
+
+- [ ] 7.1 **部署文档**登记 `OPS_ENCRYPTION_KEY` 前置：**必须能解出现存至少一条 Fernet 密文**
+      （`key_service.py:45-48` 在密钥不合法时会**静默 sha256 派生并改写** `settings.encryption_key`）。
+- [ ] 7.2 ⚠️ **不需要**扩充 Postgres 访问控制清单（无新增库内表）⇒
+      **原 OQ1 的五条判据随 D-① 失效**，但「本库不含密钥材料密文」这一条**仍然成立**
+      （`identity_credit_ledger` 只存 `cost_cents` 整数，不存密文）。
+- [ ] 7.3 端到端真跑：成片 + 账本分录 + 用量事件**三方对账一致**。
+
+---
+
+## 8. 明确不做（Non-Goals，防止顺手扩大）
+
+- [ ] 8.1 **不迁 `official_keys` 到 Postgres**（D-①）。
+- [ ] 8.2 **不建 `official_key_envelopes` 表**、**不做存量重加密**、**不做跨语言对拍**、**不为官方 Key 引入 KMS**。
+- [ ] 8.3 **不直连 Postgres 扣分**、**不建 key-broker**（D-②）。
+- [ ] 8.4 **不改账户主键与轨道模型**（D-③ 属独立 change）。
+- [ ] 8.5 **不改对外密钥 API 契约**（仍只返回掩码）。
+- [ ] 8.6 **不实现套餐池 / 熔断 / fallback 的完整运营后台**（属另一条线；本 change 只做接线必需的最小面）。
+- [ ] 8.7 **不做 reserve / settle 预扣模型**（改向后是「发货前扣分」）。
+- [ ] 8.8 **不改桌面端既有 BYOK 路径**。

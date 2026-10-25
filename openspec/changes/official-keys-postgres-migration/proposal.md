@@ -9,7 +9,7 @@
 
 ## Why
 
-> 🚨 **2026-10-25 前提级订正 —— 本 change 的范围本身待拍板（详见 design.md D19）**
+> ✅ **2026-10-25 前提级订正已闭环 —— 运营方拍板：代理放 ops-center（D-①）、扣分走一次 HTTP（D-②）、账户模型缺口立项（D-③）。**
 >
 > **Phase 1（`credit-cost-accounting-phase1`，2026-10-23 合入）已重铺算力计费域的地基**：
 > 价格卡 / 积分单价配置 / 事件级用量（**带 user_id**）建在 **ops-center 的 SQLite**，
@@ -17,12 +17,15 @@
 > 且取舍 8 明写「**事件表为下一期扣减接线预留**」、取舍 9 明写「**接线留给下一期**」。
 > 而 ops-center **早就在代调上游模型**（`prompt_eval_generation_service.py:140-159`）。
 >
-> ⇒ **「把 `official_keys` 搬到 Postgres」这个前提可能是错的**：
-> 若**官方算力代理放 ops-center**，则 Key 池 / 价格卡 / 事件表 / Fernet 解密全在**同一进程同一库**
+> ⇒ **「把 `official_keys` 搬到 Postgres」这个前提是错的**：
+> 代理放 ops-center ⇒ Key 池 / 价格卡 / 事件表 / Fernet 解密全在**同一进程同一库**
 > ⇒ **不需迁任何表、不需建信封表、不碰 F3 死结**，工作量小一个数量级；
-> 且 **`compute-key-envelope-migration` 整条 change 的存在前提随之不成立**。
+> 且 **`compute-key-envelope-migration` 整条 change 的存在前提随之不成立**（已在其 proposal 顶部声明）。
 >
-> ⚠️ **本 change 的 Why 与 tasks 1–8 在「0 组」拍板前均属待复核状态**（见 tasks.md 第 0 组）。
+> **⇒ 本 change 改向为「扣减接线」**：实现官方算力端点（ops-center）+ 扣分端点（api-publish-engine）+ 一次跨服务调用。
+> **详细落地形态见 `01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（D-①/D-②/D-③）。**
+
+**（以下为改向前的历史论据，保留供追溯）——**
 
 `compute-key-envelope-migration` 的第 3 组（表结构与迁移文件）**卡在一个硬前提上**：
 
@@ -62,27 +65,25 @@
 
 ## What Changes
 
-- **新增**：Postgres 侧的 `official_keys` 表（15 列，与 SQLite 侧同构）+ 迁移文件。
-- **新增**：ops-center 的**双库连接**（SQLite 保留给其余配置表，Postgres 承载 `official_keys`）。
-- **修改**：ops-center 的 `OfficialKey` ORM 类改绑 Postgres 的 `DeclarativeBase`；CRUD 与
-  `/model-presets/{id}/test` 的 Key 回退路径改走 Postgres session。
-- **修改**：api-publish-engine 的 `SCHEMA` 数组与 `REQUIRED_SCHEMA_RELATIONS` 增列，
-  使本地开发环境与启动门禁都能看见这张表。
-- **删除**：SQLite 侧 `official_keys` 的**写入路径**（表保留为只读存档，不删）。
-- **不改变**：对外 API 契约（`GET /api/v1/secrets/*` 仍只返回掩码，客户端依旧拿不到官方 Key）。
-- **不改变**：**加密形态**。Fernet 密文**原样 COPY**，本 change 不做任何重加密。
+- **新增**：ops-center 的**官方算力执行端点** `POST /api/v1/compute/execute`
+  （选 Key → 调上游 → 算成本 → 记用量 → 扣分，全部在 ops-center 进程内完成）。
+- **新增**：api-publish-engine 的**扣分端点** `POST /api/v1/credit/consume`
+  （复用 Phase 1 已有的 `credit-repository.js` 的 `consumeCredit`，**不新建扣减逻辑**）。
+- **修改**：桌面端 `usage-reporter.js` —— 载荷**补 `user_id`**（Logto `sub`），
+  `tokens_in` / `tokens_out` / `cost` **填真实值**（现状三者恒为 0 ⇒ 成本无法归到用户）。
+- **修改**：`model_usage_events` 引入**状态机**（`pending` / `charged` / `failed` / `pending_charge` / `charge_rejected`）
+  与**先落库再调上游**的时序（`events.id` 是扣分的幂等键来源）。
+- **不改变**：`official_keys` 的**物理归属**（仍在 ops-center 的 SQLite）、**加密形态**（Fernet 不变）、
+  **对外密钥 API 契约**（`GET /api/v1/secrets/*` 仍只返回掩码，客户端依旧拿不到官方 Key）。
+- **不改变**：客户端**零改动**（官方算力模式是新增的供给选项，不改既有 BYOK 路径）。
 
----
+## 为什么是「接线」而不是「搬家」
 
-## 为什么「只搬表、不重加密」
-
-重加密是 `compute-key-envelope-migration` 的职责（它的第 4/5 组）。
-
-**把两件事解耦，各自可独立验证**：
+改向前，本 change 与 `compute-key-envelope-migration` 是这样解耦的：
 
 ```
-① official-keys-postgres-migration（本 change）
-   纯搬家：表 + 数据 + 连接管理 + 双写切读。Fernet 密文不动 ⇒ ops-center 解密能力不变。
+① official-keys-postgres-migration（改向前）
+   纯搬家：表 + 数据 + 连接管理 + 双写切读。
         ↓
 ② compute-key-envelope-migration 的第 3/4/5 组
    建信封表 + 存量重加密 Fernet → AES-256-GCM + 跨语言对拍。
@@ -90,47 +91,54 @@
 ③ 服务端代理用 Node 侧信封模块解开 Key（F3 死结闭合）
 ```
 
-**顺序不能反**：信封表带 FK ⇒ `official_keys` 必须先在 Postgres。
+**改向后，这条链整体消失**：
 
----
+```
+① 官方算力端点（ops-center）—— Key 池 / 价格卡 / 事件表 / Fernet 解密 / httpx 全在本地
+        ↓  一次 HTTP
+② 扣分端点（api-publish-engine）—— 复用 consumeCredit（账户 + 不可变账本）
+```
+
+**⇒ 少掉的东西**：迁表、第二个库连接、双写/切读/回滚、信封表、存量重加密、跨语言对拍、KMS 依赖、F3 死结。
+**⇒ 这不是「少做一点」，是换一个数量级。**
+
+**顺序不再有约束**：改向后**不存在**「信封表带 FK ⇒ `official_keys` 必须先在 Postgres」这条依赖。
 
 ## 影响面
 
 | 层 | 影响 |
 |---|---|
-| **api-publish-engine** | `postgres-identity-repository.js`：`SCHEMA` 数组 + `REQUIRED_SCHEMA_RELATIONS` 增 `official_keys`；新增迁移文件 |
-| **ops-center** | `models.py`（`OfficialKey` 换 Base）、`database.py`（第二个 engine + session 工厂 + `get_pg_db()`）、`services/key_service.py`（CRUD 换 session）、`services/model_preset_service.py`（Key 回退换 session）、`routers/secrets.py`（7 处注入点）、`requirements.txt`（加驱动） |
-| **迁移** | 新增 `migrations/postgresql/00X_official_keys.sql`（编号见 tasks 1.1） |
-| **部署** | 主密钥 `OPS_ENCRYPTION_KEY` 位置不变；**Postgres 的访问控制清单需扩充**（见 D9） |
-| **客户端** | 零改动 |
+| **ops-center** | 新增官方算力端点（router / service）；`models_credit.py` 的 `ModelUsageEvent` 加状态列；`key_service.py` 复用既有 Fernet 解密（**不改**）；**不引入 Postgres 驱动**（`requirements.txt` 不变） |
+| **api-publish-engine** | 新增扣分路由（`publish-api-server.js`）+ `_requiredFeature` 的新 feature；`credit-repository.js` 的 `consumeCredit` **复用不改** |
+| **桌面端** | `usage-reporter.js` 补 `user_id` 与真实 tokens/cost；新增官方算力模式的调用路径 |
+| **迁移** | **本 change 不新增迁移文件**（供给侧零迁表）⇒ 编号问题归零 |
+| **部署** | `OPS_ENCRYPTION_KEY` 位置不变；**不需要**扩充 Postgres 访问控制清单（无新增库内表） |
 | **落地对象** | **monorepo 的 `ops-center/`**（唯一开发源；`deploy.sh` 从 `mulpub.git` sparse-checkout 部署，design.md D13） |
-| **跨库边界** | `official_keys` / `model_usage_daily` 从 **ops-center 的 SQLite** 迁到 **api-publish-engine 的 Postgres** ⇒ 需跨服务搬运通道 + ops-center 引入第二个库连接（D16 的 `database_pg.py`） |
+| **跨服务边界** | ops-center → api-publish-engine **一次 HTTP**（扣分）⇒ 需服务间鉴权（**U-1，須人工过目**） |
+| **不在范围** | 账户双轨模型（`identity_credit_accounts`）—— 独立 change（D-③） |
 
----
+## 迁移编号
 
-## 与 compute-key-envelope-migration 的编号协调
+**改向后本 change 不新增迁移文件 ⇒ 编号协调问题归零。**
 
-**本 change 与它都要在 `migrations/postgresql/` 里加文件，编号会撞。**
+（历史记录：改向前本 change 与 `compute-key-envelope-migration` 都要在 `migrations/postgresql/` 加文件、编号会撞。
+2026-10-25 实测占用为 `002/003/004/005/006_payment_orders/008_credit_ledger/009_redeem_code_issued_to`
+⇒ `006` 已占、`007` 已被信封 change 预定、`008`/`009` 已占 ⇒ **新迁移从 `010` 起**。）
 
-- 本 change 需要一个号给 `official_keys` 建表；
-- `compute-key-envelope-migration` 需要一个号给 `official_key_envelopes` 建表。
-
-**本 change 优先**（它是前置），信封表顺延。**具体编号不得凭规格写下时的印象决定** ——
-按 2026-10-23 起生效的 AGENTS.md「迁移编号的唯一性纪律」，
-**落库前必须 `ls migrations/postgresql/` 现查**，且**加文件与执行必须同批部署**。
-
----
+⚠️ **D-③（账户双轨）落地时需要新迁移**，届时 SHALL 现查 `migrations/postgresql/` 并遵守：
+真实约束是 **FK 建表顺序 = 文件名 `localeCompare` 序**（不是「撞号」），
+且**加文件与执行必须同批部署**（`assertReady` 用 `allowPending:false`）。
 
 ## 明确不做（Non-Goals）
 
-- **不做重加密**（Fernet → AES-256-GCM）：属 `compute-key-envelope-migration`。
+- **不迁 `official_keys` 到 Postgres**（D-①）—— 代理在 ops-center，供给侧零迁表。
+- **不建 `official_key_envelopes` 表**、**不做存量重加密**、**不做跨语言对拍**、**不为官方 Key 引入 KMS**。
+- **不直连 Postgres 扣分**、**不建 key-broker**（D-②）—— 扣减必须走仓储层的原子 CAS。
+- **不改账户主键与轨道模型**（D-③ 属独立 change）。
 - **不改对外密钥 API 契约**：仍只返回掩码。
-- **不删 SQLite 侧的 `official_keys` 表**：保留为只读存档，是回滚的唯一退路。
-- **不把 ops-center 整体迁到 Postgres**：其余配置表不需要跨库事务。
-- **不做 Key 轮换 / 池化调度**：属供给链路另一条线。
-- **不改桌面端**：客户端始终拿不到官方 Key。
-
----
+- **不实现套餐池 / 熔断 / fallback 的完整运营后台**（属供给链路的另一条线；本 change 只做接线必需的最小面）。
+- **不做 reserve / settle 预扣模型**：改向后是「发货前扣分」，不是「预扣-结算-退款」。
+- **不改桌面端既有 BYOK 路径**。
 
 ## 原未决问题（2026-10-24 已定案）
 
@@ -138,21 +146,24 @@
 
 | # | 问题 | **定案** | 理由 |
 |---|---|---|---|
-| **OQ1** | **Postgres 的访问控制清单**：Fernet 密文迁进 Postgres ⇒ 密钥材料的暴露面从「一个 SQLite 文件」扩大到「一个库 + 其备份 / 只读副本 / 导出」 | ① **数据导出必须剔除 `official_keys` 表**（导出通常无权限管控，最易外流）<br>② **表级读权限**：只允许 ops-center 的 Key 管理面账号 SELECT；**禁止**新建 superuser 或超出表 owner 的宽权限账号<br>③ **属主**：与 ops-center 服务账号同权限级，不额外提权<br>④ **备份链路**：按现有 Postgres 库策略走，但**部署文档必须登记**「本库含密钥材料密文」<br>⑤ **SQLite 侧现状补测**：`stat -c %a data/config.db` 取实际权限并登记（`ops-center.service` 无 `UMask=`、无 chmod 600） | 密文从 SQLite 挪到 Postgres **不是新增攻击面**（两者都是「密文 + 主密钥 = 明文」）。差别只在**数据流向变多**。<br>⚠️ **评审指出「沿用现有权限模型」无可沿用之物** —— 全仓 `.sql` **零条 GRANT / CREATE ROLE** ⇒ 判据已从「沿用」改为**五条可核对的判据**。 |
-| **OQ2** | **ops-center 的第二个连接用 `asyncpg` 还是 `psycopg[binary]`**？ | **`psycopg[binary]`**（PostgreSQL 官方维护） | ⚠️ **原提案写「`asyncpg` 无 C 扩展依赖、psycopg 需编译工具链」是错的** —— `psycopg[binary]` 那个 extra **正是为「不想编译」准备的**，两者都无需编译工具链。<br>且「与 Node 侧生态一致」也错（Node 侧用的是 `pg`，不是 asyncpg）。<br>**真实理由**：① 官方维护，长期无兼容风险；② SQLAlchemy 文档默认推荐；③ `binary` extra 带预编译 wheel，ECS 上 `pip install` 免编译；④ 补版本上下界 + 确认 `check-dep-audit.js` 门禁兼容；⑤ `psycopg` 与 `psycopg-binary` 两个包都要写入。 |
-| **OQ3** | **SQLite 侧 `ensure_official_key_columns` 运行时 ALTER 的处置** | **保留函数，但迁移完成后不再调用** | 保留一个**不调用的**函数零成本；删掉后想恢复只能改代码发版。<br>Postgres 侧的表由**迁移文件**建，4 个补列直接含在表定义里（tasks 2.2），**不依赖运行时 ALTER**。 |
+| ~~OQ1~~ | **Postgres 的访问控制清单**：Fernet 密文迁进 Postgres ⇒ 密钥材料的暴露面从「一个 SQLite 文件」扩大到「一个库 + 其备份 / 只读副本 / 导出」 | ① **数据导出必须剔除 `official_keys` 表**（导出通常无权限管控，最易外流）<br>② **表级读权限**：只允许 ops-center 的 Key 管理面账号 SELECT；**禁止**新建 superuser 或超出表 owner 的宽权限账号<br>③ **属主**：与 ops-center 服务账号同权限级，不额外提权<br>④ **备份链路**：按现有 Postgres 库策略走，但**部署文档必须登记**「本库含密钥材料密文」<br>⑤ **SQLite 侧现状补测**：`stat -c %a data/config.db` 取实际权限并登记（`ops-center.service` 无 `UMask=`、无 chmod 600） | 密文从 SQLite 挪到 Postgres **不是新增攻击面**（两者都是「密文 + 主密钥 = 明文」）。差别只在**数据流向变多**。<br>⚠️ **评审指出「沿用现有权限模型」无可沿用之物** —— 全仓 `.sql` **零条 GRANT / CREATE ROLE** ⇒ 判据已从「沿用」改为**五条可核对的判据**。 |
+| ~~OQ2~~ | **ops-center 的第二个连接用 `asyncpg` 还是 `psycopg[binary]`**？ | ~~**`psycopg[binary]`**~~ → **随 D-① 失效：不需要第二个连接** | ⚠️ **原提案写「`asyncpg` 无 C 扩展依赖、psycopg 需编译工具链」是错的** —— `psycopg[binary]` 那个 extra **正是为「不想编译」准备的**，两者都无需编译工具链。<br>且「与 Node 侧生态一致」也错（Node 侧用的是 `pg`，不是 asyncpg）。<br>**真实理由**：① 官方维护，长期无兼容风险；② SQLAlchemy 文档默认推荐；③ `binary` extra 带预编译 wheel，ECS 上 `pip install` 免编译；④ 补版本上下界 + 确认 `check-dep-audit.js` 门禁兼容；⑤ `psycopg` 与 `psycopg-binary` 两个包都要写入。 |
+| ~~OQ3~~ | **SQLite 侧 `ensure_official_key_columns` 运行时 ALTER 的处置** | ~~**保留函数，但迁移完成后不再调用**~~ → **随 D-① 失效：无迁移 ⇒ 维持现状（保留并继续调用）** | 保留一个**不调用的**函数零成本；删掉后想恢复只能改代码发版。<br>Postgres 侧的表由**迁移文件**建，4 个补列直接含在表定义里（tasks 2.2），**不依赖运行时 ALTER**。 |
 
 ## 验收
 
-1. `ls migrations/postgresql/` 确认目标编号未被占，且与 `compute-key-envelope-migration` 的编号分配不冲突；
-2. 迁移执行后：Postgres 行数 = SQLite 行数，**逐行 Fernet 解密成功**（用当前 `OPS_ENCRYPTION_KEY`）；
-3. ops-center 的 `/api/v1/secrets/*` 全量 CRUD 功能不变（前端零改动即证明）；
-4. `/api/v1/model-presets/{id}/test` 的 Key 回退路径功能不变；
-5. SQLite 侧 `official_keys` 只读存档完好，**回滚路径可用**；
-6. **跨库表示等价**：除 `api_key` 外 17 列在两库间原始值逐列一致（design.md D18 第四层）；
-7. **熔断信息确实随表迁移**：`is_active` 在 Postgres 侧可读到且与迁移前一致（这是「不回落 SQLite」这条防线成立的前提）。
+> ⚠️ 改向后本 change 的验收**不再是「迁表正确性」**，而是「**扣减接线真的能扣、能对、能不重复扣**」。
 
-> ⚠️ **原验收 5/6（`reserve` 选到 Key / 熔断 ≤1s 生效）已移出本 change**（评审 C9）：
-> `reserve` 属信封 change 的第 3 组及之后，本 change 落地时它**还不存在**，
-> 把「验收必须包含一个尚不存在的功能」写进本 change 是自相矛盾。
-> 这两条验收归到 `compute-key-envelope-migration`。
+1. **供给侧零迁表**：`ls migrations/postgresql/` 无本 change 的迁移文件；`official_keys` 仍在 ops-center 的 SQLite。
+2. **官方 Key 的加密形态不变**：存量 Fernet 密文**原样可用**，未产生任何重加密记录。
+3. **扣分端点可达**：`POST /api/v1/credit/consume` 返回 `account` / `entry` / `duplicated` 三字段。
+4. **幂等**：同一 `refId` 重复调用**只扣一次**，第二次返回 `duplicated: true` 且不新增分录。
+5. **fail-closed**：扣分失败时**上游未被调用**、无用量事件产生、用户收到明确提示。
+6. **发货后扣分失败 ⇒ 挂起补扣**（不是退款）：事件状态为 `pending_charge` + 产生告警 + 出现在运营侧挂起队列。
+7. **降级同向降扣费**：切到成本更低的备用通道时，本次扣费**同步下调**，且用户可见话术为正向表述。
+8. **`user_id` 归属**：桌面端上报带 `user_id`；`model_usage_events` 的行可归到具体用户。
+9. **先落库再调上游**：事件 id 在上游调用**之前**已存在（可由日志/时序证明）。
+10. **缺价不许静默按 0**：目标模型无生效价 ⇒ 请求被拒绝 + 告警 + 进入运营侧「缺价」列表。
+11. **端到端三方对账**：成片 + 账本分录 + 用量事件三者对账一致（金额、user_id、price_id）。
+12. **失败文案**：用户可见文案明示「本次未扣除积分」；扣分未成功时**不显示「已扣除」**。
+

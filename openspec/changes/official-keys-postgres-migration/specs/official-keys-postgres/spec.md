@@ -1,55 +1,140 @@
 ## ADDED Requirements
 
-### Requirement: 官方 Key 池的物理归属
+### Requirement: 官方算力代理的物理归属
 
-官方 Key 池 SHALL 存放在 api-publish-engine 的 Postgres 业务库中，
-成为该数据的**单一真源**；ops-center 的 SQLite 侧同名表 SHALL 降级为只读存档。
+官方算力供给侧的**执行体 SHALL 部署在 ops-center 进程内**：
+Key 池（`official_keys`）、价格卡（`model_price_cards`）、积分单价配置（`credit_price_config`）、
+事件级用量（`model_usage_events`）、Fernet 解密能力与上游 HTTP 客户端
+SHALL 全部留在 ops-center 的 SQLite 与 Python 运行时内。
 
-ops-center SHALL 同时持有两个数据库连接（SQLite 承载其余配置表，Postgres 承载官方 Key 池），
-两个连接 SHALL 各自独立管理连接池与会话工厂。
+供给侧 SHALL NOT 把 `official_keys` 迁入 Postgres、SHALL NOT 建立 `official_key_envelopes` 表、
+SHALL NOT 把官方 Key 重加密为 AES-256-GCM、SHALL NOT 为官方 Key 引入 KMS 依赖。
 
-#### Scenario: ops-center 的官方 Key CRUD 走 Postgres
+#### Scenario: 供给侧零迁表
 
-- **WHEN** 运营方通过 `/api/v1/secrets/*` 新增 / 修改 / 删除一条官方 Key
-- **THEN** 该变更写入 Postgres 的 `official_keys` 表
-- **AND** 对外 API 响应形状不变（仍只返回掩码，客户端拿不到明文）
+- **WHEN** 官方算力链路被实现
+- **THEN** `official_keys` SHALL 仍存放在 ops-center 的 SQLite
+- **AND** SHALL NOT 出现指向该表的 Postgres 迁移文件
+- **AND** 理由：代理在 ops-center ⇒ Key 池与价格卡与事件表同进程同库 ⇒ 迁表只会制造跨库读点与双写/切读/回滚复杂度，而收益为零
 
-#### Scenario: Fernet 密文在迁移中保持不变
+#### Scenario: 官方 Key 的加密形态不变
 
-- **WHEN** 迁移把存量行从 SQLite 搬到 Postgres
-- **THEN** `api_key` 列**原样 COPY**，不做任何重加密
-- **AND** ops-center（Python 侧）在迁移全程保持能解开 Fernet 密文
+- **WHEN** 官方算力链路被实现
+- **THEN** `official_keys.api_key` SHALL 保持 **Fernet** 密文不变
+- **AND** SHALL NOT 出现官方 Key 的第二处 `encrypt_key(...)` 写入点
+- **AND** 理由：解密留在 Python 侧 ⇒ 不存在跨语言互通问题 ⇒ 重加密与 KMS 均无必要
 
-#### Scenario: 迁移期不做重加密
+#### Scenario: Fernet 主密钥仍须能解出现存密文
 
-- **WHEN** 本 change 的任一步骤被实现
-- **THEN** 不得修改 `api_key` 的加密形态
-- **AND** 不得出现第二处 `encrypt_key(...)` 写入点（全仓加密写入唯一性由结构锁守护）
+- **WHEN** 官方算力链路在生产部署
+- **THEN** `OPS_ENCRYPTION_KEY` SHALL 被确认能解出现存至少一条 Fernet 密文
+- **AND** 若该 key 缺失或非 Fernet 合法格式，部署 SHALL 失败并出声
+- **AND** 理由：`key_service.py:45-48` 在密钥不合法时会**静默 sha256 派生并改写** `settings.encryption_key` ⇒ 存量密文全部解不开且无显式报错
 
-### Requirement: 切换期的失败语义
+### Requirement: 扣分通道的契约
 
-切换期的读与写 SHALL **fail-closed**：Postgres 不可用时，操作失败并出声，
-**不得静默回落到 SQLite**。
+ops-center SHALL 通过**一次 HTTP 调用**向 api-publish-engine 请求扣分，
+端点为 `POST {businessApiUrl}/api/v1/credit/consume`。
 
-#### Scenario: 切读后 Postgres 不可用
+ops-center SHALL NOT 直连 Postgres 执行扣减，SHALL NOT 引入 key-broker 服务。
 
-- **WHEN** ops-center 处于「读 Postgres」阶段，且 Postgres 连接不可用
-- **THEN** 官方 Key 的读取 SHALL 返回明确错误
-- **AND** SHALL NOT 回落到 SQLite 读取
-- **AND** 理由：回落会让已被 `is_active=0` 熔断的 Key 重新被选中，
-  后果是真实的上游调用与真实支出
+#### Scenario: 扣分请求的字段契约
 
-#### Scenario: 双写阶段 Postgres 写失败
+- **WHEN** ops-center 发起扣分调用
+- **THEN** 请求体 SHALL 携带 `userId`、`amount`（正整数）、`costCents`（非负整数）、`priceId`、`reason`、`refType`、`refId`、`periodStart`、`periodEnd`
+- **AND** `refId` SHALL 等于本次用量事件的 id
+- **AND** 响应 SHALL 返回 `account`（扣后账户快照）、`entry`（账本分录）、`duplicated`（幂等命中标志）
 
-- **WHEN** ops-center 处于「双写」阶段，且写入 Postgres 失败
-- **THEN** 该次写入 SHALL 整体失败
-- **AND** SHALL NOT 仅写入 SQLite
+#### Scenario: 幂等键保证重复调用不重复扣费
+
+- **WHEN** 同一 `refId` 的扣分请求被重复发起
+- **THEN** 服务端 SHALL 至多扣减一次
+- **AND** 重复请求 SHALL 返回 `duplicated: true` 且不产生新分录
+- **AND** 理由：幂等键为 `(ref_type, ref_id, entry_type='spend')` ⇒ 重试安全
+
+#### Scenario: 服务间凭据不得与用户凭据混用
+
+- **WHEN** ops-center 调用扣分端点
+- **THEN** SHALL NOT 使用桌面端的 `X-Catalog-Key`（那是 ops-center 自身的目录密钥）
+- **AND** SHALL NOT 把用户 Bearer 透传为服务间凭据
+- **AND** 若需在 api-publish-engine 新增服务凭据校验，该改动 SHALL 经人工过目后方可实施
+
+### Requirement: 扣分失败的语义
+
+扣分 SHALL 遵循 **fail-closed**：**宁可少赚，不可白送算力**。
+
+#### Scenario: 发货前扣分失败
+
+- **WHEN** 扣分在调用上游之前失败（余额不足或扣分服务不可用）
+- **THEN** SHALL NOT 调用上游
+- **AND** SHALL NOT 产生上游成本
+- **AND** SHALL 向用户返回明确提示
+
+#### Scenario: 已产出后扣分失败
+
+- **WHEN** 上游已返回有效产出、但扣分调用失败
+- **THEN** 该用量事件 SHALL 被置为 `pending_charge` 并产生告警
+- **AND** SHALL NOT 执行「退款」语义
+- **AND** 理由：上游已计费 ⇒ 成本真实发生 ⇒ 正确处置是**补扣**而非退款
+- **AND** 补扣 SHALL 具备定时对账入口（任务宿主待定，见 design.md U-5）
+
+### Requirement: 降级与扣费同向
+
+当官方算力链路发生上游降级时，扣费 SHALL **同向调整**。
+
+#### Scenario: 降级到更便宜的上游
+
+- **WHEN** 池内成员耗尽、切换到成本更低的备用通道
+- **THEN** 本次扣费 SHALL 同步下调
+- **AND** 用户可见话术 SHALL 为正向表述（如「省钱模式」），SHALL NOT 使用「降级」「降质」等负面词
+
+#### Scenario: 用户未勾选自动切换
+
+- **WHEN** 用户未勾选「自动切换」且池内成员耗尽
+- **THEN** SHALL 拒绝本次请求并返回提示
+- **AND** SHALL NOT 擅自降级
+
+### Requirement: 用量事件的用户级归属与写入时序
+
+官方算力链路产生的事件级用量 SHALL 携带 `user_id`，且 SHALL 在**调用上游之前**落库。
+
+#### Scenario: 桌面端上报必须带 user_id
+
+- **WHEN** 桌面端上报用量
+- **THEN** 载荷 SHALL 包含 `user_id`（Logto `sub`）与 `client_id`
+- **AND** `tokens_in` / `tokens_out` / `cost` SHALL 填真实值
+- **AND** 理由：现状只带 `client_id` 且三项恒为 0 ⇒ 成本无法归到用户 ⇒ 账本无法核对
+
+#### Scenario: 事件先落库再调上游
+
+- **WHEN** ops-center 准备调用上游
+- **THEN** SHALL 先落 `model_usage_events`（`status=pending`）并取得事件 id
+- **AND** 该 id SHALL 作为后续扣分的 `refId`
+- **AND** 理由：若上游已计费而事件未落库，重试会生成新 id ⇒ 重复扣分
+
+### Requirement: 价格卡缺失的处理
+
+成本核算 SHALL 以**服务端按版本化价格卡算出的值**为准；缺价 SHALL NOT 静默按 0。
+
+#### Scenario: 当前生效价缺失
+
+- **WHEN** 目标模型没有生效中的价格卡
+- **THEN** 该次请求 SHALL 被拒绝
+- **AND** SHALL 产生告警并进入运营侧的「缺价」列表
+- **AND** 理由：静默按 0 会让成本统计失真 ⇒ 亏了都不知道
+
+#### Scenario: 客户端成本仅作对拍
+
+- **WHEN** 客户端上报了成本值
+- **THEN** 服务端算出的值 SHALL 为准
+- **AND** 客户端值 SHALL 仅作对拍样本，SHALL NOT 直接入账
+- **AND** 差异超阈值 SHALL 进对账报表
 
 ### Requirement: 迁移编号的唯一性
 
 Postgres 迁移文件的编号 SHALL 是跨 change 共享的单调序列。
 任何迁移 change 在落库前 SHALL 现查 `migrations/postgresql/` 确认目标编号未被占，
-且 SHALL 与并行中的其他迁移 change 对齐编号分配。
+并 SHALL 与并行中的其他迁移 change 对齐编号分配。
 
 #### Scenario: 目标编号已被占用
 
@@ -57,36 +142,26 @@ Postgres 迁移文件的编号 SHALL 是跨 change 共享的单调序列。
 - **THEN** SHALL 改用下一个可用编号，SHALL NOT 复用或覆盖既有编号
 - **AND** 规格文档中写下的旧编号 SHALL 一并更正
 
+#### Scenario: 编号约束是 FK 建表顺序而非撞号
+
+- **WHEN** 一个迁移文件被 FK 引用、且其文件名在字典序上大于引用方
+- **THEN** 执行 SHALL 因「被引用方尚未建表」而失败
+- **AND** 因此被引用方的文件名 SHALL 小于引用方
+- **AND** 同前缀不同名 SHALL 可共存（迁移台账锁的是全文件名 + checksum）
+
 #### Scenario: 加文件与执行不同批部署
 
 - **WHEN** 一个 PR 只新增迁移文件而不执行它
 - **THEN** 业务库启动 SHALL 失败（`assertReady` 用 `allowPending:false`）
 - **AND** 因此「加文件」与「执行」SHALL 同批部署
 
-### Requirement: 数据校验
+### Requirement: 账户模型的边界
 
-迁移 SHALL 提供三层可独立失败的校验：行数一致、逐行可解密、抽样明文一致。
+本 change SHALL NOT 修改 `identity_credit_accounts` 的主键与轨道模型。
 
-#### Scenario: 任一行无法解密
+#### Scenario: 双轨账户模型不在本 change 范围内
 
-- **WHEN** 存量行中有任意一行在当前 `OPS_ENCRYPTION_KEY` 下解密失败
-- **THEN** 迁移 SHALL 停止并报告该行 id
-- **AND** SHALL NOT 跳过该行继续
-
-#### Scenario: 迁移前置未确认
-
-- **WHEN** 生产环境的 `OPS_ENCRYPTION_KEY` 尚未确认固定
-- **THEN** 迁移 SHALL NOT 开始
-- **AND** 理由：该 key 缺失且开启 `OPS_ALLOW_EPHEMERAL_KEY` 时，每次重启都会生成新密钥，
-  已加密的 Key 将永久不可解
-
-### Requirement: 回滚路径
-
-SQLite 侧的 `official_keys` 表 SHALL 在迁移完成后**保留为只读存档，不得删除**，
-作为「读 Postgres」阶段之后的回滚退路。
-
-#### Scenario: 切换后需要回滚
-
-- **WHEN** 切读阶段发现数据不一致，需要回退到 SQLite 读取
-- **THEN** 运维方 SHALL 能通过代码回滚恢复读 SQLite
-- **AND** SQLite 侧的表 SHALL 仍保有完整数据
+- **WHEN** 官方算力链路被实现
+- **THEN** 积分账户 SHALL 继续使用当前单周期模型
+- **AND** 「会员额度日释放+月清零 / 充值积分永久有效」与「FIFO 按过期时间扣减」SHALL 由**独立 change** 承载
+- **AND** 该独立 change SHALL 单独评审（改主键属破坏性 schema 变更）

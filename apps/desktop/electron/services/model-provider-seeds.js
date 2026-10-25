@@ -322,7 +322,8 @@ const PRESET_PROVIDERS = [
   {
     id: 'minimax', name: 'MiniMax', category: 'video',
     base_url: 'https://api.minimaxi.com/v1',
-    models: ['MiniMax-Hailuo-2.3', 'MiniMax-Hailuo-02', 'T2V-01', 'I2V-01'],
+    // H3 族走 v2 端点（适配器按 model 前缀自动选路；baseUrl 同域换版本推导 ⇒ 不必另配端点）
+    models: ['MiniMax-Hailuo-2.3', 'MiniMax-Hailuo-02', 'T2V-01', 'I2V-01', 'MiniMax-H3', 'MiniMax-H3-Max'],
     is_preset: 1,
   },
   {

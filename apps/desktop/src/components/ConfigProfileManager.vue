@@ -148,6 +148,7 @@
 </template>
 
 <script setup>
+import { codePointLength } from '@multi-publish/shared-utils/src/text-length'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import UiModal from './UiModal.vue'
@@ -192,7 +193,7 @@ let requestGeneration = 0
 
 const normalizedName = computed(() => {
   const value = String(nameDraft.value || '').trim()
-  return Array.from(value).length <= 60 ? value : ''
+  return codePointLength(value) <= 60 ? value : ''
 })
 
 function cloneJson (value) {
@@ -267,7 +268,7 @@ function closeSave () {
 
 async function save () {
   const name = normalizedName.value
-  if (!name || Array.from(name).length > 60 || !props.onSave) {
+  if (!name || codePointLength(name) > 60 || !props.onSave) {
     if (!name) errorMessage.value = t('create.story2video.configProfile.nameRequired')
     return
   }
@@ -392,7 +393,7 @@ function cancelRename () {
 async function rename () {
   const id = renamingId.value
   const name = String(renameDraft.value || '').trim()
-  if (!id || !name || Array.from(name).length > 60 || !props.onRename) {
+  if (!id || !name || codePointLength(name) > 60 || !props.onRename) {
     errorMessage.value = t('create.story2video.configProfile.nameRequired')
     return
   }

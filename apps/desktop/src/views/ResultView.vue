@@ -302,6 +302,7 @@
 </template>
 
 <script>
+import { truncateWithin } from '@multi-publish/shared-utils/src/text-length'
 import UiButton from '../components/UiButton.vue'
 import UiModal from '../components/UiModal.vue'
 import PodcastEpisodeEntry from '../components/PodcastEpisodeEntry.vue'
@@ -493,7 +494,7 @@ export default {
       const firstText = (Array.isArray(this.segments) ? this.segments : []).find(segment => segment && segment.text)?.text
       if (firstText) {
         const text = String(firstText)
-        return text.length > 60 ? text.slice(0, 59) + '…' : text
+        return truncateWithin(text, 60, '…')
       }
       return this.projectId || ''
     },

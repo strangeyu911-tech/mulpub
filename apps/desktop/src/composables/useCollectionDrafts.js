@@ -1,4 +1,5 @@
 // @ts-check
+import { truncate } from '@multi-publish/shared-utils/src/text-length'
 import { computed, ref } from 'vue'
 import { draftDelete, draftList, draftSave } from '@/api/publisher'
 import { formatUserError } from '@/utils/user-facing-error'
@@ -46,7 +47,7 @@ export function useCollectionDrafts () {
   function resolveSummary (draft, max = 60) {
     const text = String((draft && draft.content) || '').replace(/\s+/g, ' ').trim()
     if (!text) return ''
-    return text.length > max ? text.slice(0, max) + '…' : text
+    return truncate(text, max, '…')
   }
 
   function resolveWordCount (draft) {

@@ -46,6 +46,12 @@ export default defineConfig({
       // CJS/ESM 判据由 shared-utils 的 parity 回归锁同源。
       '@multi-publish/shared-utils/src/safe-http-url':
         path.resolve(__dirname, '..', '..', 'packages/shared-utils/src/safe-http-url.browser.js'),
+      // 字数与截断的唯一实现（UX 审计阶段 4.7 ①，按码点计、截断不得切半代理对）：
+      // 渲染进程消费 ESM 孪生版，CJS/ESM 由 shared-utils 的 text-length-parity.test.js 逐向量对账。
+      // 未登记此 alias 的后果与 publish-gate-help 同型：Vite 拉到 CJS 版 → 具名导入拿不到 →
+      // 挂载期报错，而单测域解析到 CJS 所以本地全绿。
+      '@multi-publish/shared-utils/src/text-length':
+        path.resolve(__dirname, '..', '..', 'packages/shared-utils/src/text-length.browser.js'),
       // 发布前闸门「解法入口」表（2026-10-19 publish-gate-help-ui）：渲染进程消费 ESM 孪生版，
       // CJS/ESM 与引擎常量三方由 shared-utils 的 parity 回归锁同源。
       // 未登记此 alias 时 Vite 会拉到 CJS 版 → `does not provide an export named 'helpForCode'`

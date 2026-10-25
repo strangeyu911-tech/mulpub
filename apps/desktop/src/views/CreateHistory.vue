@@ -109,6 +109,7 @@ import '@/styles/history-page.css'
 import { pipelineHistory } from '@/api/publisher'
 import UiButton from '../components/UiButton.vue'
 import { formatUserError } from '../utils/user-facing-error'
+import { truncate } from '@multi-publish/shared-utils/src/text-length'
 
 const HISTORY_LOAD_TIMEOUT_MS = 5000
 
@@ -282,7 +283,7 @@ export default {
     },
     shortName(name) {
       if (!name) return ''
-      return name.length > 10 ? name.substring(0, 10) + '...' : name
+      return truncate(name, 10, '...')
     },
     humanName(name) {
       if (!name) return ''

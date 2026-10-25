@@ -326,6 +326,7 @@
 </template>
 
 <script setup>
+import { truncate } from '@multi-publish/shared-utils/src/text-length'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -521,7 +522,7 @@ function formatTime(ts) {
 }
 
 function displayTopic(topic) {
-  return topic.length > 60 ? topic.slice(0, 60) + '…' : topic
+  return truncate(topic, 60, '…')
 }
 
 function toggleSelect(id) {

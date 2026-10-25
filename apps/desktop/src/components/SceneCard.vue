@@ -30,6 +30,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { truncate } from '@multi-publish/shared-utils/src/text-length'
 
 const props = defineProps({
   scene: { type: Object, required: true },
@@ -66,7 +67,7 @@ const displayedTakes = computed(() => {
 
 const truncatedPrompt = computed(() => {
   const p = props.scene.prompt || ''
-  return p.length > 80 ? p.substring(0, 80) + '...' : p
+  return truncate(p, 80, '...')
 })
 </script>
 

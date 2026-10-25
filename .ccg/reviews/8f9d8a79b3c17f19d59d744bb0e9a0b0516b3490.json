@@ -1,0 +1,121 @@
+{
+  "sha": "8f9d8a79b3c17f19d59d744bb0e9a0b0516b3490",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 422 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 422,
+    "fileCount": 22,
+    "codeFileCount": 19,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-24T21:39:21.307Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_blocked",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "finding": "12 个生产文件各自整行复制 `import { truncate, truncateWithin, codePointLength }`，而本次改动在每处实际只用其中一个：ConfigProfileManager / useCopyLibrary / useCopyLibrarySources 只用 codePointLength；PublishProgressTaskRow / ShotNode / useCollectionDrafts / QuickCollectPanel / gen-video-view-model / HotTopics 只用 truncate；usePipelineHistory / ResultView / StageProgress 只用 truncateWithin（useFeatureFlag 只导 truncate，唯一干净）。按 diff 核对，12 文件 × 2 = 24 个具名导入在改动后未使用。若 CI 的 eslint 开启 no-unused-vars（QG Desktop Shards 含 lint），本 PR 会直接红，与 AC5 声称的门禁绿冲突；即便不报错，这恰是 PRD 自己反对的「批量复制同形 import」式散漫，且收敛锁的「≥9 个生产文件必须真的 import」判据只数文件里出现 import 字样，死导入照样凑数。",
+        "highRiskDomains": [],
+        "prosecution": "成立且比指控更重：按「导入名在本文件内是否有调用点」实测，改动集 13 个生产文件里共 25 个具名导入无调用点（ConfigProfileManager 2、PublishProgressTaskRow 2、ShotNode 2、useCollectionDrafts 2、useCopyLibrary 1、useCopyLibrarySources 2、usePipelineHistory 2、QuickCollectPanel 2、gen-video-view-model 2、HotTopics 2、ResultView 2、StageProgress 2，useFeatureFlag 0）。更关键的是同一根因还造成了第二个后果：useCopyLibrary.js 里原本就有 `function truncate (value, limit)`，我又把 `truncate` 导进去 ⇒ `pnpm --filter @multi-publish/desktop build:vue` 当场红：`src/composables/useCopyLibrary.js (71:9): Identifier \"truncate\" has already been declared`（CI 的 build 作业与 QG Changes 同步红）。这证明\"单测全绿\"对这一类完全免疫，而 PRD 里\"批量复制同形 import\"的散漫只是它较轻的那一半。",
+        "defense": "可辩护处仅两点：① 死导入不影响运行行为（tree-shaking 后产物无差），② 本仓 eslint 配置未把未使用导入列为 CI 阻断面。但第②点已被现场否证 —— 挡住它的不是 eslint 而是 rollup 的重复声明，而且死导入确实让\"≥9 个生产文件真的 import\"这条锁凑了数（锁只数 import 字样出现与否）。",
+        "verdict": "upheld",
+        "rationale": "证据：(a) 逐文件调用点清点 = 25 个死导入（脚本口径：整行排除 import 行后按 `\\bname\\s*\\(` 匹配，对象键 `truncate:` 不计为使用）；(b) `build:vue` 修复前 rc=1 且报错指到 71:9，修复后 rc=0、`✓ built in 16.10s`；(c) 处置=修剪 25 个死导入 + 删除本地同名 `truncate` 并把 4 处落库钳制改为显式第三参 `''`（`truncate(v, N, '')` = 按码点钳制且不追加省略号，保持原落库语义），并新增\"导入接线锁\"：每个导入名必须有调用点、本地不得有同名声明，`importers >= 15`。该锁对本案两种形态（死导入 / 重复声明）各红一次。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "防回退锁只对 `.slice(0, X) + 字符串字面量` 这一个形态变红。本批修掉的三种形态里，另两种（`wordCount: it.content.length`、`Array.from(name).length`）完全不在 FORBIDDEN 覆盖内：任何未来把 `wordCount` 改回 `x.length`、或把计数改回 `Array.from(x).length` 的回归都会 hits=0、零报错通过，而这两处正是本批真实修过的缺陷形态。AC4 声称「新增同类写法时必须变红」超出锁的实际能力。且即便 slice 形态也极易变形绕过：`slice(0, max - 1)`（右参带空格/运算符时不匹配）、`.substring(0, N)`、`.slice(0, N).concat('…')`、模板字符串 `${x.slice(0,60)}…`、省略号改用变量 —— 全部逃逸。",
+        "highRiskDomains": [],
+        "prosecution": "成立：原 `FORBIDDEN` 只认 `.slice(0, 标识符) + 字面量`，把本批真实修过的另两族（`.length` 当字数、`Array.from(x).length`）完全放在判据之外，且对 `substring(0,N)+'...'`、`.concat(...)`、`slice(0, max - 1)` 三种同族写法一律放过。AC4「新增同类写法必须变红」因此是过度声明。",
+        "defense": "可辩护处：全域 `.length` 在本仓命中数以千计且绝大多数是数组长度/对象键数等合法用途，\"按形态全域禁 `.length`\"技术上不可实现；把它写成禁令只会造一条恒红的锁。指控里\"极易绕过\"若指\"任何字符串处理都能绕过\"则过宽 —— 判据本来就是按风险语法位置切，不是按语义切。",
+        "verdict": "upheld",
+        "rationale": "证据与处置分两段，且把没做到的写清：① 形态集当场扩宽为 `.slice|.substring(0, [\\w.$[\\]()\\s+\\-*]+)` 后接 `+ 字面量` 或 `.concat(字面量)`；先用同一判据对全域跑一次计数（OLD=2、NEW=5），新增的 3 条逐条核对为同一缺陷并已迁移（SceneCard `p.substring(0,80)+'...'`、CreateHistory `name.substring(0,10)+'...'`、CreateViewHistory `text.slice(0,max-1)+'…'`）⇒ 例外清单没有变大，仍是 2 条。② `.length`/`Array.from` 两族**刻意不声称已覆盖**（理由如上），改由新增的 MIGRATED_SITES 站点台账 19 条逐条回查代偿：站点退回码元写法 ⇒ 锚点找不到 ⇒ 红。③ AC4 文案已按实际能力改写，文件头注释把\"不覆盖的两族 + 代偿机制\"写死，防止下一个会话把台账当全域禁令。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "PRD §3.2 与 openspec 记录对迁移处数自相矛盾且与 diff 不符。diff 实际迁移 11 处 slice 截断（PublishProgressTaskRow ×2、ShotNode、useCollectionDrafts、useFeatureFlag、usePipelineHistory、QuickCollectPanel、gen-video-view-model、HotTopics、ResultView、StageProgress）+ 2 处 wordCount + 3 处 Array.from = 16 处站点改动。PRD §3.2 写「9 处 .slice+省略号 → truncate」；openspec 记录写「迁移 11 处（9 处截断 + 2 处 wordCount 计数 + 3 处 Array.from 收编）」，9+2+3=14 不等于 11，且「9 处截断」与 diff 的 11 处（13 处 slice 站点 − 2 处登记例外）不符。openspec 记录是门禁产物，数字错误直接削弱记录的凭证效力。",
+        "highRiskDomains": [],
+        "prosecution": "成立：PRD §3.2 写「13 处中收敛 11 处」、openspec 记录写「迁移 11 处 = 9 截断 + 2 wordCount + 3 Array.from」，9+2+3=14≠11，两处互不自洽，且与 diff 的 `+` 行逐条清点不符。执行记录是门禁产物，数字错就削弱凭证效力。",
+        "defense": "无实质辩护空间：这纯属写作时未回读实测。",
+        "verdict": "upheld",
+        "rationale": "证据：用 `git diff -U0 origin/main...HEAD` 对每个改动文件取 `+` 行、按共享实现的调用串清点，得 **19 个站点 / 16 个文件** = 14 截断类 + 2 `wordCount` 计数 + 3 `Array.from` 名称长度校验（其中截断类的 14 = 原批 11 + 判据扩宽后新抓 3）。PRD §3.2 标题、迁移条、AC3 与执行记录的同一段均已改为这一口径，并把\"原数字自相矛盾、由评审 i3 打回\"写在原位而不是偷偷替换。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "收敛锁的「违规只允许出现在例外清单里」断言 `expect(offenders.length).toBeGreaterThan(0)` 与「例外清单只能缩小」在收尾时互相矛盾：当两条例外（Collection.vue、FilmEngineeringView.vue）都被修掉、ALLOWED 清空后，offenders=0，该断言必然红 —— 完成收尾必须手工改掉这条断言（代码注释未记载这一步骤），中途还可能出现「为了保住 >0 而保留一条不必要例外/塞进一条假登记」的逆向激励。例外清单的唯一合法终点是空集，而锁在该终点是红的。",
+        "highRiskDomains": [],
+        "prosecution": "成立：`expect(offenders.length).toBeGreaterThan(0)` 使锁的合法终点（例外清单清空）变成红态，于是收尾必须手改断言，且中途存在\"为保 >0 而保留一条不必要例外 / 塞一条假登记\"的逆向激励 —— 这是判据把自己钉在\"必须一直有欠账\"上。",
+        "defense": "可辩护处：该断言当时的动机是反失明（判据退化成恒不匹配时也报\"零违规=通过\"），删掉它而不换东西确实会打开一个洞。",
+        "verdict": "upheld",
+        "rationale": "证据：断言已删除，反失明职责交给\"对判据本体喂 4 条合成被禁样本必须为 true（slice+单字符、substring+三点、右参带 `max - 1`、concat 形态）+ 4 条合法写法必须为 false（数组 slice、纯 slice 不接字面量、`.join('-')`、`.map(render)`）\"的成对正/负控；负控那半同时挡住\"把判据写宽到误伤合法写法\"。每次新建 RegExp 实例（不用带 g 的共享实例调 `.test()` —— 有状态 lastIndex 会让第二次调用假阴，这是本仓既有教训）。实跑 `8 passed`，且清空台账/把正则改宽两条退化路径各由一条断言点名。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      }
+    ],
+    "note": "自扮演裁决：4 条指控成立或需外部复核",
+    "at": "2026-10-24T22:08:16.486Z"
+  }
+}

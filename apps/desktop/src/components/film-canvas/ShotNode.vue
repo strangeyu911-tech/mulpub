@@ -1,5 +1,6 @@
 <script setup>
 // 影视工程画布 - 分镜节点（左端 target 把手接收参考图连线；状态徽标回显出片进度；失败态就地重试）
+import { truncate } from '@multi-publish/shared-utils/src/text-length'
 import { Handle, Position } from '@vue-flow/core'
 import { useI18n } from 'vue-i18n'
 
@@ -27,7 +28,7 @@ function shotId () {
 }
 function promptPreview (p) {
   const text = typeof p === 'string' ? p : ''
-  return text.length > 90 ? text.slice(0, 90) + '...' : text
+  return truncate(text, 90, '...')
 }
 </script>
 

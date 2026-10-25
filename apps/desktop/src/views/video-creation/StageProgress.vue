@@ -75,6 +75,7 @@
 </template>
 
 <script>
+import { truncateWithin } from '@multi-publish/shared-utils/src/text-length'
 import { buildQueueHint, QUEUE_HINT_KIND } from '@/domain/queue-hint'
 import '@/styles/stage-progress.css'
 import { getPipelineStage } from '@/i18n/pipeline-labels'
@@ -164,7 +165,7 @@ export default {
         return this.$t('stageProgress.startedAt', { time: new Date(stage.startedAt).toLocaleTimeString(locale) })
       }
       if (status === 'failed' && stage.error) {
-        return stage.error.length > 50 ? stage.error.slice(0, 47) + '...' : stage.error
+        return truncateWithin(stage.error, 50, '...')
       }
       return ''
     },

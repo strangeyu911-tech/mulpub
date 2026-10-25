@@ -313,6 +313,7 @@ import enLocale from '@/locales/en'
 import { getPipelineMode, getPipelineName, getPipelineStage } from '@/i18n/pipeline-labels'
 import { CONTENT_POLICY_ERROR_PATTERN, HISTORY_STATUSES, RESUME_BLOCKING_ERROR_PATTERN, SORT_MODES, SORT_OPTIONS, collectDuplicateTitleIdentities, COMPOSE_ERROR_KEY_MAP, contentPolicyScenes, filterHistoryByStatus, historyDisplayTime, historyStatusCounts } from './history-utils'
 import { formatPipelineError } from '@/utils/pipeline-error-formatter'
+import { truncate } from '@multi-publish/shared-utils/src/text-length'
 
 // HISTORY_STATUSES 由 ./history-utils 统一导出（含 interrupted），单一来源，避免与测试合同漂移
 
@@ -586,7 +587,7 @@ selectFilter (status) {
     },
     truncate (value, max) {
       const text = String(value || '')
-      return text.length > max ? text.slice(0, max - 1) + '…' : text
+      return truncate(text, max - 1, '…')
     },
     onThumbnailError (item) {
       if (!item || typeof item !== 'object') return

@@ -8,6 +8,7 @@
  *   - 运行中任务轮询刷新
  *   - 历史记录辅助方法（状态标签、阶段状态、时间格式化等）
  */
+import { truncateWithin } from '@multi-publish/shared-utils/src/text-length'
 import { ref, computed } from 'vue'
 import { pipelineHistory, story2videoListProjects } from '@/api/publisher'
 import { formatStory2VideoNotification, historyLoadFailureDetail, STORY2VIDEO_NOTIFICATION_KEYS } from '@/story2video/story2video-notifications'
@@ -239,7 +240,7 @@ export function usePipelineHistory(options = {}) {
   function truncateError(error) {
     if (!error) return ''
     const msg = String(error)
-    return msg.length > 60 ? msg.slice(0, 57) + '...' : msg
+    return truncateWithin(msg, 60, '...')
   }
 
   return {

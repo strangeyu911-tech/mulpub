@@ -5,12 +5,13 @@
  * 从 `useHotTopicsGenVideo.js` 抽出，避免 composable 越过 check-max-lines 的 500 行红线；
  * 这些都是「输入状态 → 展示值/按钮可用性」的纯函数，可脱离 Vue 穷举测试。
  */
+import { truncate } from '@multi-publish/shared-utils/src/text-length'
 import { getPipelineName } from '@/i18n/pipeline-labels'
 
 /** 弹窗标题：选题名截断 30 字，避免标题过长。 */
 export function buildGenVideoModalTitle(t, topicText) {
   const topic = typeof topicText === 'string' ? topicText : ''
-  const short = topic.length > 30 ? topic.slice(0, 30) + '…' : topic
+  const short = truncate(topic, 30, '…')
   return t('hotTopics.genVideoTitle', { topic: short })
 }
 

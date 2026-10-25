@@ -115,6 +115,7 @@
  * - cancelled 中性态（非失败红态）；failed 行内联「重试此任务」「复制错误信息」（emit 上抛，
  *   本组件保持纯展示：props 单向 + 事件，不 import store、无剪贴板副作用）。
  */
+import { truncate } from '@multi-publish/shared-utils/src/text-length'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { helpForCode } from '@multi-publish/shared-utils/src/publish-gate-help'
@@ -243,12 +244,12 @@ function isPastStep(current, step) {
 
 function truncateError(error) {
   const text = String(error || '')
-  return text.length > 120 ? text.slice(0, 120) + '…' : text
+  return truncate(text, 120, '…')
 }
 
 function truncateStage(stage) {
   const text = String(stage || '')
-  return text.length > 16 ? text.slice(0, 16) + '…' : text
+  return truncate(text, 16, '…')
 }
 </script>
 

@@ -150,6 +150,7 @@
  * 由 `Collection.vue` 走既有出口入列表并切到「采集」页签复用同一张结果卡 ——
  * 结果卡（改写策略 / 字数区间 / 爆款库 / 草稿 / 发布）不在这里复制第二份。
  */
+import { truncate } from '@multi-publish/shared-utils/src/text-length'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useNotify } from '@/composables/useNotify'
@@ -196,7 +197,7 @@ function windowText (h) {
 
 function truncatePrompt (prompt) {
   const text = String(prompt || '')
-  return text.length > 70 ? text.slice(0, 70) + '…' : text
+  return truncate(text, 70, '…')
 }
 
 function togglePrompt (id) {

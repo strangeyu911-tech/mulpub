@@ -14,6 +14,7 @@
  */
 import { readonly, ref } from 'vue'
 import { opsCenterSyncRuntime } from '@/api/ops-center-sync'
+import { truncate } from '@multi-publish/shared-utils/src/text-length'
 
 /** 账号管理页【同步云端】入口开关键（PRD §3 前置条件表） */
 export const FEATURE_FLAG_ACCOUNT_CLOUD_SYNC = 'account_cloud_sync'
@@ -110,7 +111,7 @@ export function devFlagChannelEnabled () {
 
 function warnIgnoredDevFlag (flagKey, rawValue) {
   if (!devFlagChannelEnabled()) return
-  const shown = /^.{0,24}$/.test(rawValue) ? rawValue : rawValue.slice(0, 24) + '…'
+  const shown = truncate(rawValue, 24, '…')
   console.warn(`[useFeatureFlag] ignored invalid dev flag override ${DEV_FLAG_QUERY_KEY}=${flagKey}=${shown}; accepted: 1|0|true|false`)
 }
 

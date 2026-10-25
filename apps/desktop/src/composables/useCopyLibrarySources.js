@@ -16,6 +16,7 @@
  * - 单源加载失败不阻塞其余来源（Promise.allSettled 语义）
  * - 不做内容级去重：同正文跨阶段（采集→草稿→发布）是不同业务实体，按来源独立展示
  */
+import { codePointLength } from '@multi-publish/shared-utils/src/text-length'
 import { ref } from 'vue'
 import { storeGetSetting } from '@/api/publisher'
 import { draftList, story2videoListProjects } from '@/api/publisher'
@@ -80,7 +81,7 @@ export function buildUnifiedCopyLibraryItems (sources = {}) {
       origin: ORIGIN_REWRITE,
       title: truncateText(it.title, 200),
       content: it.content,
-      wordCount: Number(it.wordCount) || it.content.length,
+      wordCount: Number(it.wordCount) || codePointLength(it.content),
       platform: truncateText(it.platform, 50),
       sourceUrl: truncateText(it.sourceUrl, 2048),
       createdAt: it.createdAt || '',

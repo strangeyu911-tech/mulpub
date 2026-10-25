@@ -16,6 +16,7 @@
  *
  * 改写记录字段：{ id, fromKey, fromTitle, title, content, wordCount, platform, sourceUrl, createdAt }
  */
+import { truncate, codePointLength } from '@multi-publish/shared-utils/src/text-length'
 import { ref } from 'vue'
 import { storeGetSetting, storeSetSetting } from '@/api/publisher'
 import { countRewriteChars } from '@/utils/rewrite-engine-limits'
@@ -67,10 +68,6 @@ function genId () {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 }
 
-function truncate (value, limit) {
-  return String(value == null ? '' : value).slice(0, limit)
-}
-
 /**
  * 合并采集正文与改写文案为统一的文案库列表。
  * 排序：有 createdAt 的按时间倒序在前；无时间的保持原相对顺序排在末尾（同 key 相对顺序稳定）。
@@ -101,7 +98,7 @@ export function buildCopyLibraryItems (collectedItems, rewrites) {
       origin: ORIGIN_REWRITE,
       title: it.title || '',
       content: it.content,
-      wordCount: Number(it.wordCount) || it.content.length,
+      wordCount: Number(it.wordCount) || codePointLength(it.content),
       platform: it.platform || '',
       sourceUrl: it.sourceUrl || '',
       createdAt: it.createdAt || '',
@@ -161,14 +158,14 @@ export function useCopyLibrary () {
         const record = {
           id: (existing && existing.id) || (entry && entry.id) || genId(),
           fromKey,
-          fromTitle: truncate(entry && entry.fromTitle !== undefined && entry.fromTitle !== null && entry.fromTitle !== "" ? entry.fromTitle : (existing && existing.fromTitle) || "", TITLE_LIMIT),
-          title: truncate(entry && entry.title, TITLE_LIMIT),
+          fromTitle: truncate(entry && entry.fromTitle !== undefined && entry.fromTitle !== null && entry.fromTitle !== "" ? entry.fromTitle : (existing && existing.fromTitle) || "", TITLE_LIMIT, ''),
+          title: truncate(entry && entry.title, TITLE_LIMIT, ''),
           content,
           // 字数按**码点**计（feat-zhihu-fav-batch-wordcount，外部评审 i4）：与引擎/Python 口径一致，
           // 否则同一段带 emoji 的改写稿在文案库卡片与采集结果卡片上会显示不同数字。
           wordCount: countRewriteChars(content),
-          platform: truncate(entry && entry.platform, 50),
-          sourceUrl: truncate(entry && entry.sourceUrl, 2048),
+          platform: truncate(entry && entry.platform, 50, ''),
+          sourceUrl: truncate(entry && entry.sourceUrl, 2048, ''),
           createdAt: new Date().toISOString(),
         }
         const kept = fromKey ? current.filter((it) => it && it.fromKey !== fromKey) : current.slice()

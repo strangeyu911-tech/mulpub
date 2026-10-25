@@ -362,3 +362,84 @@ test('册子里更新的一档要么已被扶正、要么样本量确实更小�
 });
 
 
+
+// 2026-10-25：整步预算的 deadline 定时器从不清除 ⇒ 进程在测试跑完后仍挂到预算到期。
+//
+// 实测（main push，tip 6e2b89c3 的 electron-tests 作业日志，逐段按输出行时间戳量）：
+//   桌面 vitest 步 21:22:18 → 下一个 step 22:07:18 = **45.0 分钟**（与 2700000ms 预算分秒不差），
+//   而脚本自己打印的逐片 elapsed = `1180237ms` = **19.7 分钟**（两片 verdict=ok / rc=0 / summary=2）。
+//   ⇒ 每次 push 白等 **25.3 分钟**，那段窗口里什么都没在跑。
+//   对照：同一批主干的 `QG Desktop Shards (1/2)` 同样跑桌面全量，只用 21.4 分钟且**无空档**
+//   （它走 PowerShell，没有 Node 定时器）⇒ 差异只可能来自本脚本。
+//
+// 三条判据各管一件：unref 真的生效 / 收敛后真的取消 / **端到端**进程真的立刻退出。
+// 第三条是行为锁：撤掉前两条 ⇒ 子进程会挂满 budget 才退出 ⇒ 它变红。
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('整步预算的定时器不得阻止进程退出（Node 事件循环只要有 pending timer 就不退出）', () => {
+  const p = mod.sleepDefault(60000);
+  assert.ok(p && p.timer, 'sleepDefault 必须把 timer 句柄暴露出来，否则这条修法无法被机械验证');
+  assert.equal(typeof p.timer.hasRef, 'function', '必须拿到 Node 的 Timeout 对象（hasRef 是它的标准 API）');
+  assert.equal(p.timer.hasRef(), false,
+    '预算定时器仍在引用事件循环 ⇒ 整步跑完后进程会挂到预算到期才退出（实测白等 25.3 分钟）');
+  if (typeof p.cancel === 'function') p.cancel();
+});
+
+test('整步收敛后必须取消预算定时器（否则 unref 只是兜底，主修法没落地）', async () => {
+  let cancelCalls = 0;
+  const spawnImpl = (argv) => ({
+    shard: argv.find((a) => /^--shard=/.test(a)),
+    done: Promise.resolve({ rc: 0, stdout: 'Tests 1 passed\n', stderr: '' }),
+  });
+  // 注入一个带 cancel 计数的 sleep：既不真实计时，又能观测「预算定时器有没有被取消」。
+  const fakeSleep = () => {
+    const p = new Promise(() => {});   // 永不 resolve：allSettled 必然先赢（与真实语义一致）
+    p.cancel = () => { cancelCalls++; };
+    return p;
+  };
+  const res = await mod.runStep({ spawnImpl, budgetMs: 60000, now: () => 0, sleep: fakeSleep });
+  assert.equal(res.rc, 0);
+  assert.equal(cancelCalls, 1,
+    '整步收敛后没有取消预算定时器 ⇒ 那个 45 分钟的 timer 会一直挂在事件循环上把进程吊住');
+});
+
+test('端到端：整步跑完后进程必须立刻退出，不得挂到预算到期（撤掉 unref+取消 ⇒ 本条变红）', () => {
+  // 局部 require（不污染文件头）：这个用例要**起子进程**测「进程何时真的退出」，
+  // 文件头没有这两样；放在用例内 ⇒ 上游的 require 区一字不动（冲突面最小）。
+  const { spawnSync } = require('node:child_process');
+  const os = require('node:os');
+  const scriptPath = path.join(__dirname, 'electron-ci-desktop-step.js');
+  const budgetMs = 4000;
+  // 探针跑在**子进程**里：只有子进程才能回答「这个 Node 进程什么时候真的退出」。
+  // 探针用真实的 sleepDefault（不注入）—— 注入了就测不到 unref/cancel 的真实效果。
+  const probe = `
+    const mod = require(${JSON.stringify(scriptPath)});
+    const spawnImpl = (argv) => ({
+      shard: argv.find((a) => /^--shard=/.test(a)),
+      // 50ms 后收敛：这 50ms 内事件循环是活的（setTimeout 撑着），
+      // 不会因为 unref 后的预算 timer 而提前退出 ⇒ 探针测的确实是「收敛之后」的退出行为。
+      done: new Promise((resolve) => setTimeout(
+        () => resolve({ rc: 0, stdout: 'Tests 1 passed\\n', stderr: '' }), 50)),
+    });
+    mod.runStep({ spawnImpl, budgetMs: ${budgetMs} }).then(() => {
+      process.stdout.write('STEP_DONE\\n');
+      // 刻意**不** process.exit：让 Node 自己决定何时退出 —— 退出时刻就是被测行为。
+    });
+  `;
+  const tmp = path.join(os.tmpdir(), 'electron-ci-exit-probe-' + process.pid + '.js');
+  fs.writeFileSync(tmp, probe, 'utf8');
+  try {
+    const t0 = Date.now();
+    const r = spawnSync(process.execPath, [tmp], { encoding: 'utf8', timeout: budgetMs * 4 });
+    const elapsed = Date.now() - t0;
+    const out = String(r.stdout || '');
+    assert.ok(out.includes('STEP_DONE'),
+      '整步没跑完（子进程提前退出或报错）：stdout=' + JSON.stringify(out.slice(0, 200))
+      + ' stderr=' + JSON.stringify(String(r.stderr || '').slice(0, 200)));
+    assert.ok(elapsed < budgetMs / 2,
+      '整步跑完后进程又挂了 ' + elapsed + 'ms 才退出（预算 ' + budgetMs
+      + 'ms）⇒ 预算定时器没有被取消/未 unref ⇒ 会像实测那样白等 25.3 分钟');
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+});

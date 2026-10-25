@@ -1638,7 +1638,20 @@ jobs:
     name: QG Coverage
     runs-on: windows-latest
     needs: [changes]
-    if: needs.changes.outputs.docs-only != 'true'
+    # ⚠️ 2026-10-25（change: ci-push-heavy-job-dedupe）：push 侧不再跑覆盖率，PR 侧完整保留。
+    #
+    # 为什么可以去掉（不是「少跑一遍」那么简单）：
+    #   PR 侧这一档验的是 **merge preview**（base ⊕ head）⇒ 合并前的完整守门；push 侧这一档验的
+    #   其实是「origin/main 当前状态」⇒ 与 PR 侧**不是同一棵树** ⇒ 属重复劳动。
+    # 为什么值得去掉：它与 electron-tests 的桌面全量**并行**，两边都接近 45 分钟
+    #   （实测：QG Coverage 45.3 min、electron-tests 47.1 min，同一次 push 里几乎同时起止）
+    #   ⇒ 两者共同构成 push settle 周期的关键路径 ⇒ 只修其中一条不缩短周期，必须两条一起去。
+    #
+    # 窄缺口（如实披露，见 openspec/records/ci-push-heavy-job-dedupe.md）：
+    #   主干**当前状态**的覆盖率体检从「每次 push」变成「随下一个 PR 的 merge preview 一起」
+    #   ⇒ 合并之后、下一个 PR 之前那段窗口里，主干覆盖率若漂移，要到下一个 PR 才被发现。
+    #   恢复路径 = 删掉下面这个 event_name 条件（成本：settle 周期回到约 48 分钟）。
+    if: needs.changes.outputs.docs-only != 'true' && github.event_name == 'pull_request'
     # 40 → 60（2026-10-18）：40 这一档实测撞死过两趟 main push（run 39037127191 = PR #3836 的收口证据、
     # run 39084091986），后果不是"跑挂"而是 main 侧证据永久丢失；同一窗口里成功样本的尾部是 39.4/39.5/39.7，
     # 也就是**贴着天花板过线**。
@@ -2545,6 +2558,11 @@ jobs:
       # 本 job 是 main 的必需状态检查，但历史上只 echo 不判定，上游全红它也恒绿。
       # 口径：success/skipped 放行，其余（failure/cancelled/timed_out/action_required/空值）一律拦。
       # skipped 放行的依据：上游失败会把其下游置为 skipped，失败本身已由那个 failed 的上游捕获。
+      # ⚠️ 2026-10-25 起多一种 skipped 来源（change: ci-push-heavy-job-dedupe）：`QG Coverage`
+      #    在 **push 侧设计上就不跑**（见该 job 的 if 条件）⇒ push 侧读到的 `coverage: skipped`
+      #    意思是「这一档在 push 侧不设防」，**不是**「上游失败把它跳了」。
+      #    ⇒ 读这份报告时：push 侧的覆盖率缺口要靠**下一次 PR 的 coverage 结果**来补，
+      #      不能把 push 侧的 `coverage: skipped` 当成「覆盖率已验过」。
       #
       # 缺陷③口径统一（2026-10-12）：`autonomous` 在此列为 blocking，而 CI 侧 exec-record
       # 跑的是 advisory（恒 0）、agent-review-gate 对 LLM 空输出也放行 —— 三处口径分裂。

@@ -136,7 +136,46 @@ function classifyShard (res) {
   return 'crashed';
 }
 
-const sleepDefault = (ms) => new Promise((r) => setTimeout(r, ms));
+/**
+ * 默认 sleep：**不阻止进程退出**的定时器 promise。
+ *
+ * 为什么要 unref（2026-10-25 实测，根因级 —— 不是「CI 慢」，是**进程在空等**）：
+ * 整步预算的 deadline 用一个 45 分钟的 setTimeout 实现。Node 的事件循环只要还有一个
+ * pending timer 就**不会退出** ⇒ 测试在 19.7 分钟就跑完了，进程却挂到 45 分钟预算到期
+ * 才退出。main push 实测（tip 6e2b89c3 的 electron-tests 作业日志，逐段按输出行时间戳量）：
+ * 桌面 vitest 步 21:22:18 → 下一个 step 22:07:18 = **45.0 分钟**，与 2700000ms 预算**分秒不差**；
+ * 而脚本自己打印的逐片 elapsed 只有 `1180237ms` = **19.7 分钟**（两片 verdict=ok、rc=0、summary=2）。
+ * ⇒ 每次 push 白等 **25.3 分钟**，那段窗口里**什么都没在跑**。
+ * ⛔ 别把它读成「测试慢」：同一次作业里 `QG Desktop Shards (1/2)` 同样跑桌面全量，只用 21.4 分钟
+ *    且**没有任何空档**（它走 PowerShell，没有 Node 定时器）⇒ 差异只可能来自本脚本。
+ *
+ * 两条修法各管一半，缺一不可：
+ * ① `unref()`：即使漏掉取消，这个 timer 也不再阻止进程退出（**兜底**）。
+ * ② `cancel()`：整步收敛后主动清掉它（**主修法**）。
+ * ⚠️ 只做 ① 不做 ② 有副作用：若那一刻事件循环里**只剩**这个 timer，进程会**立刻退出**
+ *    （unref 的 timer 不保活）⇒ 可能发生在 report 还没写出去之前。
+ *    真实运行时不会（两个 vitest 子进程是活跃 handle），但探针/单测里会 ⇒ 所以 ② 必须做。
+ *
+ * 判据读数（`scripts/electron-ci-desktop-step.test.js`）：
+ * 「预算定时器不得阻止进程退出」用 `p.timer.hasRef() === false` 断言；
+ * 「整步收敛后必须取消预算」用注入一个带 cancel 计数的 sleep 断言；
+ * 另有一条**端到端**用例量「runStep 返回后子进程多久退出」（变异验证：撤掉这两条 ⇒ 挂满预算才退出）。
+ */
+const sleepDefault = (ms) => {
+  let timer = null;
+  const p = new Promise((resolve) => {
+    // ⚠️ Node 的 Timeout **不继承 EventEmitter**（没有 .on/.once），只有 ref/unref/hasRef/refresh
+    //    ⇒ 只能用 setTimeout 自己的回调来 resolve，不能挂 'timeout' 事件（实测 `timer.on is not a function`）。
+    timer = setTimeout(() => resolve(), ms);
+  });
+  // unref：让这个 timer 不再阻止进程退出（见上面的根因说明）。
+  if (timer && typeof timer.unref === 'function') timer.unref();
+  // cancel：整步收敛后主动清掉它。**按能力探测**：测试注入的 sleep 没有这个方法。
+  p.cancel = () => { if (timer) clearTimeout(timer); };
+  // timer：暴露句柄，让判据能核对 unref 真的生效（否则这条修法无法被机械验证）。
+  p.timer = timer;
+  return p;
+};
 
 /**
  * 起 `SHARD_COUNT` 片，**先全部启动再等**（串行就是本片的失效形态），共享同一份 `budgetMs`。
@@ -158,7 +197,10 @@ async function runStep (opts) {
     handles.push(Object.assign({ shard: argv.find((a) => /^--shard=/.test(a)) }, spawnImpl(argv)));
   }
   // ↑ 上面这个循环里**没有任何 await** ⇒ 两片都已启动；回归锁正是钉这一点的。
-  const deadline = sleep(Math.max(1, budgetMs)).then(() => 'deadline');
+  // ⚠️ 保留 deadlineTimer 的引用：`.then()` 会产出一个**新** promise，cancel 方法挂不上去
+  //    ⇒ 只留 deadline 的话，收尾时就取消不掉这个定时器（那正是要修的根因）。
+  const deadlineTimer = sleep(Math.max(1, budgetMs));
+  const deadline = deadlineTimer.then(() => 'deadline');
   const verdicts = {};
   const outputs = {};
   // 逐片墙钟：并行争用倍数是这片**唯一没测过**的因子，取数只能从真跑的现场来，
@@ -197,6 +239,11 @@ async function runStep (opts) {
     }
     break;
   }
+  // 收尾：把整步预算的 deadline 定时器**取消掉**（根因见 sleepDefault 的注释：
+  // 不取消 ⇒ Node 的事件循环永远不空 ⇒ 进程挂到 45 分钟预算到期才退出 ⇒ 每次 push 白等 25.3 分钟）。
+  // ⚠️ 按能力探测，**不能假设**注入的 sleep 带 cancel（测试注入的是普通 promise）。
+  // ⚠️ 超时路径上这个 timer 已经触发过 ⇒ clearTimeout 对它是 no-op，不影响 timeout 档判定。
+  if (typeof deadlineTimer.cancel === 'function') deadlineTimer.cancel();
   const elapsedMs = Math.max(0, (now() - startedAt) || 0);
   const lines = [];
   for (const h of handles) {
@@ -252,7 +299,7 @@ async function main () {
 module.exports = {
   SHARD_COUNT, STEP_BUDGET_MS, SHARD_TIMEOUT_MS, STEP_BUDGET_PROVENANCE,
   buildShardArgs, stripAnsi, countCompletedTests, countSummaryLines, formatCounters,
-  classifyShard, runStep, realSpawn,
+  classifyShard, runStep, realSpawn, sleepDefault,
 };
 
 if (require.main === module) { main(); }

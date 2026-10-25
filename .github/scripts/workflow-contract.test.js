@@ -538,7 +538,6 @@ test('docs-only 短路：全部重型 job 挂 needs: [changes] 且条件为 docs
     'static-gates',
     'unit-tests',
     'desktop-shards',
-    'coverage',
     'business-api-postgres',
     'visual',
     'e2e',
@@ -554,6 +553,24 @@ test('docs-only 短路：全部重型 job 挂 needs: [changes] 且条件为 docs
       `${name} 必须带 docs-only 短路条件（纯文档 PR 跳过、混合 PR 全量）`,
     );
   }
+  // ⭐ `coverage` **不在**上面那条统一断言里：它多一条「只在 PR 侧跑」的条件
+  //    （2026-10-25，change: ci-push-heavy-job-dedupe —— push 侧那档验的是 origin/main 当前状态，
+  //    与 PR 侧的 merge preview 不是同一棵树 ⇒ 属重复；且它与 electron-tests 并行、两边都接近
+  //    45 分钟 ⇒ 共同构成 push settle 周期的关键路径）。
+  //    ⇒ 它的不变量必须**双向**锁住，否则任何一方向的改动都会悄悄溜过去：
+  //      ① PR 侧必跑（覆盖率验的是 merge preview，是合并前的完整守门；少了它就是降标准）；
+  //      ② push 侧不跑（`always()` 会把它在 push 侧强行拉起 ⇒ 优化落空）。
+  //    ⇒ 判据按**合取子句集合**判，不按整串匹配：GitHub 的 if 是纯布尔表达式，
+  //      `A && B || C` 这类写法在字符串层面看不出「push 侧其实会跑」⇒ 出现析取就当场红。
+  const coverage = wf.jobs.coverage;
+  assert.ok(coverage, 'coverage job 必须存在');
+  assert.deepEqual(coverage.needs, ['changes'], 'coverage 必须 needs: [changes]');
+  const coverageClauses = String(coverage.if).split('&&').map((s) => s.trim()).filter(Boolean);
+  assert.deepEqual(coverageClauses.sort(), [
+    "github.event_name == 'pull_request'",
+    "needs.changes.outputs.docs-only != 'true'",
+  ], 'coverage 的 if 必须恰好是两个合取子句（docs-only 短路 + 只在 PR 侧跑）：多一项、少一项、'
+  + '或出现 `||`（会让 push 侧也跑）都改变语义 ⇒ 必须当场红');
   // gate-result 必须聚合 changes 的结论：判定 job 自身红（git 取证失败）时不得静默放行
   const gateResult = wf.jobs['gate-result'];
   assert.ok(gateResult.needs.includes('changes'), 'gate-result 必须依赖 changes（判定失败即拦）');

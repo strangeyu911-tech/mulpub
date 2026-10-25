@@ -12,6 +12,7 @@
  *   - element-plus：ElMessage / ElMessageBox 展示
  */
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { createBurstGuard } from '@/utils/notify-burst'
 import i18n from '@/i18n'
 import { notifyText, reportNotify } from '@/utils/notifyCore'
 import { looksLikeI18nKey } from '@/utils/message-contract'
@@ -27,6 +28,15 @@ import { looksLikeI18nKey } from '@/utils/message-contract'
  * @returns {string} 展示的文案（未命中且无 fallback 返回 ''）
  */
 export function useNotify () {
+  // 阶段 4.6「连发限频」：guard 挂在**本次 useNotify() 调用**上（不是模块级全局）。
+  // 理由两条，都不是"图省事"：
+  //  ① 症状来源是**一个循环里逐条弹**（批量发布 N 个账号各失败一次、批量采集逐条报错），
+  //     这些调用共用同一个 composable 实例 ⇒ 实例级就足以消灭叠屏。
+  //  ② 模块级全局会把无关组件的通知预算互相吃掉（A 面板刚弹满 6 条，B 面板的失败提示就没了），
+  //     那是一条"看起来在守、实际随机吞通知"的新缺陷，比叠屏更坏。
+  // 代价如实写：两个组件在同一时刻各自爆发，仍可能叠出 2×limit 条 —— 全局可见条数不是本判据的域。
+  const burstGuard = createBurstGuard()
+
   function notify (messageKey, options = {}) {
     const level = options.level || 'info'
     // 支持直接传文案（options.message 优先于 messageKey 解析），用于动态/运行时拼接文案
@@ -51,7 +61,24 @@ export function useNotify () {
       warn: () => ElMessage.warning(text),
       error: () => ElMessage.error(text),
     }[level]
-    if (show) show()
+    if (!show) {
+      // 未知 level：改动前就是"什么都不弹"，这里保持原样，且**不占窗口额度**。
+      // （QM-6 外部评审 i4：先扣额度再解析 show，会让 6 个静默调用把窗口烧满，
+      //   随后真实错误 toast 被误抑制 —— 那是本次改动自己引入的回归方向。）
+      reportNotify(messageKey, { ...options, level, error: text })
+      return text
+    }
+    const burst = burstGuard()
+    if (!burst.allow) {
+      // 抑制的是"再叠一条遮挡界面的 toast"，不是"这件事没发生过"：
+      // ① 日志照上报（notify:log 是排障真源，不得因为少弹一条就少记一笔）；
+      // ② console.warn 出声并带累计抑制数 —— 静默丢弃是本条要修的同型缺陷，
+      //    而"限频生效了"与"限频把通知全吞了"在用户侧完全同形，必须留可归因痕迹。
+      reportNotify(messageKey, { ...options, level, error: text })
+      console.warn('[notify] burst-limit: window already showed ' + burst.inWindow + ' toasts, suppressed ' + burst.suppressedCount + ' this run (level=' + level + ')')
+      return text
+    }
+    show()
     // P1 可观测性：把用户实际看到的文案作为 error 字段上报（此前只报 messageKey，
     // 主进程日志无法得知用户看到了什么内容；error 字段经 notify:log 脱敏后落盘）
     reportNotify(messageKey, { ...options, level, error: text })

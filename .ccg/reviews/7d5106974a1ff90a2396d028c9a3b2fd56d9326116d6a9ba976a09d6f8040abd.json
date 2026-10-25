@@ -1,0 +1,59 @@
+{
+  "sha": "74691885e0db5a2514d6a270f39dd9696c38431d",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 363 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 363,
+    "fileCount": 7,
+    "codeFileCount": 5,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 1,
+    "docSensitiveContentSample": [
+      "| Gate 7 CJK 扫描当场拦下的一处（本批自己的错，如实记） | ✅ | 第一版把抑制日志写成中文串（`'[notify] 连发限频：窗口内已满 '` 等 5 处串片段），`node .github/scripts/check-locale-sync.js --cjk` 在**提交前**当场 FAIL 并逐行点名（`useNotify.js:61` ×3、`notify-burst.js:50` ×2）。修法不是 `--update-baseline`（明文禁止掩盖新增），也不是给它开 locale 键（诊断日志不是用户可见文案，开键就是 AGENTS 禁止的死键）：改为仓库既有惯例的英文诊断（现场对照 `src` 里的 `[electron-bridge] permission error, falling back:`、`[content-categories] load failed, keeping defaults:`），并同步改掉断言中文串的两处测试与反证驱动锚点。改后 `CJK scan PASS（基线 1330 条，当前 1095 条，无新增硬编码）`，且七刀重跑仍 `CAUGHT=7/7` |"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "7d5106974a1ff90a2396d028c9a3b2fd56d9326116d6a9ba976a09d6f8040abd",
+  "decidedAt": "2026-10-24T21:06:18.788Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

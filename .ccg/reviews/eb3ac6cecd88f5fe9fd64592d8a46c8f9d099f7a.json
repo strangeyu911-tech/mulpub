@@ -1,0 +1,138 @@
+{
+  "sha": "eb3ac6cecd88f5fe9fd64592d8a46c8f9d099f7a",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 363 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 363,
+    "fileCount": 9,
+    "codeFileCount": 5,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 1,
+    "docSensitiveContentSample": [
+      "| Gate 7 CJK 扫描当场拦下的一处（本批自己的错，如实记） | ✅ | 第一版把抑制日志写成中文串（`'[notify] 连发限频：窗口内已满 '` 等 5 处串片段），`node .github/scripts/check-locale-sync.js --cjk` 在**提交前**当场 FAIL 并逐行点名（`useNotify.js:61` ×3、`notify-burst.js:50` ×2）。修法不是 `--update-baseline`（明文禁止掩盖新增），也不是给它开 locale 键（诊断日志不是用户可见文案，开键就是 AGENTS 禁止的死键）：改为仓库既有惯例的英文诊断（现场对照 `src` 里的 `[electron-bridge] permission error, falling back:`、`[content-categories] load failed, keeping defaults:`），并同步改掉断言中文串的两处测试与反证驱动锚点。改后 `CJK scan PASS（基线 1330 条，当前 1095 条，无新增硬编码）`，且七刀重跑仍 `CAUGHT=7/7` |"
+    ],
+    "ccgSensitiveContentHits": 1,
+    "ccgSensitiveContentSample": [
+      "      \"| Gate 7 CJK 扫描当场拦下的一处（本批自己的错，如实记） | ✅ | 第一版把抑制日志写成中文串（`'[notify] 连发限频：窗口内已满 '` 等 5 处串片段），`node .github/scripts/check-locale-sync.js --cjk` 在**提交前**当场 FAIL 并逐行点名（`useNotify.js:61` ×3、`notify-burst.js:50` ×2）。修法不是 `--update-baseline`（明文禁止掩盖新增），也不是给它开 locale 键（诊断日志不是用户可见文案，开键就是 AGENTS 禁止的死键）：改为仓库既有惯例的英文诊断（现场对照 `src` 里的 `[electron-bridge] permission error, falling back:`、`[content-categories] load failed, keeping defaults:`），并同步改掉断言中文串的两处测试与反证驱动锚点。改后 `CJK scan PASS（基线 1330 条，当前 1095 条，无新增硬编码）`，且七刀重跑仍 `CAUGHT=7/7` |\""
+    ],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-24T21:11:03.476Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_blocked",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "domains": [
+          "crypto"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "scripts/toast-burst-mutate.cjs 的 B4 刀与其声明的红点自相矛盾：被禁形态「被抑制也占用额度」在 '抑制不占用额度' 测试里不会变红——50 次被抑制调用注入的时刻都是 t=6（与最后一条已放行同刻），advance(BURST_WINDOW_MS)=3000 后 t=3006，while 过期判据 3006-6=3000 ≥ 3000 会把这批 t=6 的桩全部从队首弹出，窗口清空，allow 仍为 true，该测试照常通过；真正变红的是 '窗口内前 limit 条放行' 用例里 inWindow 从 6 变成 7 的断言。驱动按 r.out.includes('抑制不占用额度') 匹配会判 NOT_CAUGHT，最终 process.exit(1)——除非报告器把通过用例名也回显，那又等于归因形同虚设。因此记录与 PRD 声称的「本机实跑 CAUGHT=7/7、rc=0」与所提交的驱动代码不一致，反证效力存疑。另：收尾复跑 runVitest 只跑两个文件，漏了 useNotify.burst.test.js；汇总行还把「逐刀 md5 还原=true」绑定到 after 的 rc 而非逐刀 md5 比对结果。",
+        "highRiskDomains": [
+          "crypto"
+        ],
+        "prosecution": "驱动用 out.includes(红点名) 做归因；node:test/vitest 对通过用例也打印用例名，故 rc≠0 时该匹配恒真，CAUGHT 数无效力。并指 B4 具体漏检：50 次抑制与最后一条放行同刻，advance(3000) 后整批被弹出 ⇒ allow 仍 true，「抑制不占用额度」不会红。",
+        "defense": "无。逐条复核成立：v1 驱动源码里确无失败行过滤；实测把归因改成只读 ×/FAIL/not ok 行后首跑 CAUGHT=6/7，B4 NOT_CAUGHT，与预言的形态一致。",
+        "verdict": "upheld",
+        "rationale": "驱动 v2 重写：failedTestNames 只收失败行；selfCheckAttribution 分不清 ✓/× 就整轮 rc=2 拒绝出结论；收尾复跑覆盖三套；汇总行改绑真实 restored 标志。补强测试而非改 red 名：给「抑制不占用额度」加 last.inWindow===BURST_LIMIT 与 suppressedCount===50 两条断言，重跑 CAUGHT=7/7、rc=0。撤回声明已写进执行记录与 PR 正文：v1 报的 7/7 不可信。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "本批的核心有效性假设「批量循环里 N 次 notify 共用同一个 useNotify 实例」没有任何证据或锁：接线锁只证明『同一 useNotify 实例内超限被抑制』（自证），未覆盖真实批量调用点（useBatchPublish / useProviderCrud / CreatorMonitor / Accounts 等 20+ 处）。若任一调用点在循环内每次新建 useNotify()（或经 store/工具函数每消息取一次），每消息都是全新 guard，limit 永不触发，用户侧叠屏症状原样保留而任何测试都不会红——这正是 PRD 自己点名要防的「注册≠注入≠生效」家族。PRD §2 断言「这些调用共用同一个 composable 实例」但未给证据。",
+        "highRiskDomains": [],
+        "prosecution": "「批量循环共用同一 useNotify 实例」只在 PRD 断言，无证据无锁；若调用点每消息新建实例，limit 永不触发且测试全绿。",
+        "defense": "无。现场计数：useBatchPublish.js / useProviderCrud.js / Accounts.vue 各 1 次 useNotify() 调用，CreatorMonitor.vue 为 0（不走该出口）—— 此前这只是人工读数，不是判据。",
+        "verdict": "upheld",
+        "rationale": "新增 it.each 结构锁断言\"每文件恰好一次\"，并写明它是必要条件不是充分条件（充分性需要跨文件调用图，静态判据给不出）。锁在 useNotify.burst.test.js，红文案点名文件。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "useNotify.burst.test.js 头部注释声称「guard 是**模块级单例**（ElMessage 本身就是全局堆叠的，所以限频必须全局）」——这与实现（guard 在每次 useNotify() 调用内新建，见 useNotify.js 的 const burstGuard = createBurstGuard()）以及 PRD/执行记录（明确论证模块级全局会让无关组件预算互吃、刻意选实例级）正面矛盾。resetModules + 动态 import 的整套理由建立在一个并不存在的设计上；在实例级设计下 freshNotify() 每次新建 useNotify 本身就有新 guard，resetModules 只是无害的保险。读者会得到两份互相冲突的设计陈述，未来维护者可能被误导去把实现改成模块级，或误以为删除隔离会串状态。",
+        "highRiskDomains": [],
+        "prosecution": "测试头注释写 guard 是模块级单例，与实现（每次 useNotify() 新建）和 PRD（刻意不做全局）正面矛盾，会诱导维护者把实现改成模块级。",
+        "defense": "无。读源码确认三处陈述互斥，注释是错的这一份。",
+        "verdict": "upheld",
+        "rationale": "注释就地改正为实现事实 + 为什么刻意不做全局 + \"resetModules 只是无害双保险\"。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "useNotify.js 中 burstGuard() 在解析 show 映射之前消耗额度：若某调用方传入不在 success/info/warning/error 映射里的 level（show 为 undefined），当前行为是「不展示任何 toast 却占掉一个窗口槽位」——6 个槽位可被静默调用烧完，随后真实的错误 toast 会被误抑制。改动前该路径只是「什么都不弹」，改动后多了一个把窗口钉满的副作用，属于回归。",
+        "highRiskDomains": [],
+        "prosecution": "burstGuard() 在解析 show 之前扣额度；未知 level 的静默调用会占满 6 槽，随后真实错误 toast 被误抑制 —— 本次改动引入的回归。",
+        "defense": "无。原顺序确为 扣额度 → 解析 show → 有 show 才展示；未知 level 路径改动前不展示也不该占额度。",
+        "verdict": "upheld",
+        "rationale": "改为先解析 show，未知 level 直接 report + return（保持改动前行为）且不占额度，burstGuard() 移到其后；补行为锁「未知 level 不占窗口额度」：30 次静默调用后真实 error 仍能展示。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "crypto"
+        ]
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      }
+    ],
+    "note": "自扮演裁决：4 条指控成立或需外部复核",
+    "at": "2026-10-24T21:37:54.676Z"
+  }
+}

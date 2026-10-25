@@ -313,4 +313,53 @@ describe('identity:sessions is_current 归一化', () => {
       expect.objectContaining({ path: '/api/v1/me/notifications' }),
     )
   })
+
+  // 2026-10-26 服务端已原生下发 is_current（/api/v1/me/sessions 按 X-Device-ID 打标）。
+  // 主进程从「唯一打标者」降级为「兜底打标者」：服务端给了就用服务端的（真源收敛），
+  // 没给（旧服务端/异常响应）才自己比对。判定强度不减：服务端结果若与本地比对
+  // 不一致，以服务端为准——那说明服务端看到了本地不知道的会话事实。
+  it('服务端已给 is_current ⇒ 原样采用，不用本地比对覆盖', async () => {
+    const { handlers, event } = createSessionHandlers({
+      deviceId: 'device-self',
+      sessions: [
+        { id: 1, device_id: 'device-other', is_current: false },
+        { id: 2, device_id: 'device-self', is_current: true },
+      ],
+    })
+    const res = await handlers['identity:sessions'](event)
+    expect(res.data.sessions.map((s) => s.is_current)).toEqual([false, true])
+  })
+
+  it('服务端全 false ⇒ 不因本地能比对上就改判（服务端是真源）', async () => {
+    const { handlers, event } = createSessionHandlers({
+      deviceId: 'device-self',
+      sessions: [{ id: 1, device_id: 'device-self', is_current: false }],
+    })
+    const res = await handlers['identity:sessions'](event)
+    expect(res.data.sessions[0].is_current).toBe(false)
+  })
+
+  it('服务端未给 is_current 字段 ⇒ 本地比对兜底（兼容旧服务端）', async () => {
+    const { handlers, event } = createSessionHandlers({
+      deviceId: 'device-self',
+      sessions: [
+        { id: 1, device_id: 'device-other' },
+        { id: 2, device_id: 'device-self' },
+      ],
+    })
+    const res = await handlers['identity:sessions'](event)
+    expect(res.data.sessions.map((s) => s.is_current)).toEqual([false, true])
+  })
+
+  it('混合形态：部分行有字段、部分没有 ⇒ 只补缺失的那些', async () => {
+    const { handlers, event } = createSessionHandlers({
+      deviceId: 'device-self',
+      sessions: [
+        { id: 1, device_id: 'device-other', is_current: false },
+        { id: 2, device_id: 'device-self' },
+      ],
+    })
+    const res = await handlers['identity:sessions'](event)
+    expect(res.data.sessions.map((s) => s.is_current)).toEqual([false, true])
+  })
 })

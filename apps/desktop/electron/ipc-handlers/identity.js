@@ -9,8 +9,13 @@ function safeError(error) {
  *
  * 为什么不能留给渲染层：原先渲染层用 `index === 0` 判当前设备，那是**猜服务端
  * 返回顺序**——服务端一旦改排序（按最近活跃、按创建时间…），徽章就指向别人的设备。
- * 主进程每个会员请求都带 X-Device-Id（entitlementService.deviceId），服务端拿得到，
- * 所以在这里按 device_id 比对打标是唯一不靠猜的做法。
+ *
+ * 2026-10-26 起服务端已原生下发 `is_current`（/api/v1/me/sessions 按 X-Device-ID
+ * 打标），本函数从「唯一打标者」降级为「**兜底**打标者」：
+ *   - 行上已有 `is_current` 字段 ⇒ 原样采用（服务端是真源，它看到了本地不知道的
+ *     会话事实；包括「服务端说全 false」——此时不得因本地能比对上就改判）
+ *   - 行上没有该字段（旧服务端 / 异常响应）⇒ 本地按 device_id 比对 entitlementService.deviceId 补标
+ * 这样真源收敛到服务端，同时保留对旧服务端的兼容。
  *
  * C1-13 边界：**全 false 是合法态**（当前设备未 upsert 或不在返回列表）。
  * 此时渲染层显示「未识别当前设备」中性态；本函数**绝不**回退成"标第一行"——
@@ -26,6 +31,8 @@ function markCurrentSession(data, deviceId) {
     ...data,
     sessions: data.sessions.map((row) => {
       if (!row || typeof row !== 'object') return row
+      // 服务端已表态 ⇒ 不覆盖；缺失才兜底
+      if (typeof row.is_current === 'boolean') return row
       return { ...row, is_current: self !== '' && row.device_id === self }
     }),
   }

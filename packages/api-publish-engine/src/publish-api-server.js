@@ -972,7 +972,9 @@ class PublishApiServer {
             return;
           }
           if (method === "GET" && url === "/api/v1/me/sessions") {
-            this._json(res, 200, { sessions: await commerceRepository.listActiveSessions(userId) });
+            // is_current（P1-4）：X-Device-ID 命中⇒该行 true；无头/未知⇒全 false（C1-13 合法态）
+            const deviceId = this._deviceIdFrom(req);
+            this._json(res, 200, { sessions: (await commerceRepository.listActiveSessions(userId)).map((r) => ({ ...r, is_current: !!deviceId && r.device_id === deviceId })) });
             return;
           }
           if (method === "POST" && url === "/api/v1/me/sessions/revoke-others") {

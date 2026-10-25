@@ -32,7 +32,16 @@ function createRepositoryStub() {
     async listOrders(userId, options) { this.calls.push(['listOrders', userId, options]); return [{ id: 'ord-1', plan: 'pro', amount: 0, channel: 'redeem', status: 'paid' }] },
     async listNotifications(userId, options) { this.calls.push(['listNotifications', userId, options]); return [{ id: 'ntf-1', title: '公告', read_at: null }] },
     async markNotificationsRead(userId) { this.calls.push(['markRead', userId]); return ['ntf-1'] },
-    async listActiveSessions(userId) { this.calls.push(['listSessions', userId]); return [{ id: 'ses-x', device_id: 'device-a' }] },
+    // is_current 契约：两行。device-aaaaaaaaaaaa 长 18（命中服务端 X-Device-ID
+    // 正则 ^[A-Za-z0-9._:-]{16,128}$），device-short 长 11（永不命中，用来证明
+    // 「只标一行」而不是「全标」）。
+    async listActiveSessions(userId) {
+      this.calls.push(['listSessions', userId])
+      return [
+        { id: 'ses-x', device_id: 'device-aaaaaaaaaaaa', device_name: '我的笔记本' },
+        { id: 'ses-y', device_id: 'device-short', device_name: '办公室电脑' },
+      ]
+    },
     async upsertSession(record) { this.calls.push(['upsertSession', record]); return { id: 'ses-x', ...record } },
     async revokeOtherSessions(userId, keepDeviceId) { this.calls.push(['revokeOthers', userId, keepDeviceId]); return ['ses-old'] },
     async updateProfile(id, patch) { this.calls.push(['updateProfile', id, patch]); return { id, display_name: patch.display_name, avatar_url: patch.avatar_url } },
@@ -119,7 +128,25 @@ async function main() {
     assert.deepStrictEqual(markRead.body.ids, ['ntf-1'])
     const sessions = await request(port, 'GET', '/api/v1/me/sessions', 'member-read')
     assert.strictEqual(sessions.status, 200)
-    assert.strictEqual(sessions.body.sessions[0].device_id, 'device-a')
+    assert.strictEqual(sessions.body.sessions[0].device_id, 'device-aaaaaaaaaaaa')
+    // is_current：服务端按 X-Device-ID 直接下发「哪一行是当前设备」，
+    // 渲染层不必再猜返回顺序（方案 P1-4 的服务端侧收口）。
+    // 带头请求复用 /me 已登记过的同一设备头（/me 在场景 1 开头就用它跑通），
+    // 避免依赖请求顺序的隐性耦合。
+    const sessionsWithDevice = await request(port, 'GET', '/api/v1/me/sessions', 'member-read', null, { 'X-Device-ID': 'device-aaaaaaaaaaaa' })
+    assert.strictEqual(sessionsWithDevice.status, 200)
+    const flagged = sessionsWithDevice.body.sessions.filter((s) => s.is_current === true)
+    assert.strictEqual(flagged.length, 1, 'exactly one is_current=true')
+    assert.strictEqual(flagged[0].device_id, 'device-aaaaaaaaaaaa', 'is_current must be on the X-Device-ID row')
+    // 无设备头 => 全 false（合法态：当前设备未登记，客户端显示中性态，不猜顺序）
+    const sessionsNoDevice = await request(port, 'GET', '/api/v1/me/sessions', 'member-read', null, {})
+    assert.strictEqual(sessionsNoDevice.status, 200)
+    assert.strictEqual(sessionsNoDevice.body.sessions.every((s) => s.is_current === false), true, 'no header => all false')
+    // 设备头不匹配任何会话 => 同样全 false
+    const sessionsUnknownDevice = await request(port, 'GET', '/api/v1/me/sessions', 'member-read', null, { 'X-Device-ID': 'device-zzzzzzzzzzzz' })
+    assert.strictEqual(sessionsUnknownDevice.status, 200)
+    assert.strictEqual(sessionsUnknownDevice.body.sessions.every((s) => s.is_current === false), true, 'unknown device => all false')
+    console.log('  ✅ sessions 下发 is_current（命中/无头/未知设备三态）')
     const revokeNoHeader = await request(port, 'POST', '/api/v1/me/sessions/revoke-others', 'member-write', { deviceId: 'x' })
     assert.strictEqual(revokeNoHeader.status, 400, 'revoke-others 只认 X-Device-ID，body.deviceId 不得作为保活依据')
     const revoke = await request(port, 'POST', '/api/v1/me/sessions/revoke-others', 'member-write', {}, { 'X-Device-ID': 'device-aaaaaaaaaaaa' })

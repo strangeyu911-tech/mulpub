@@ -1,11 +1,22 @@
 # Design Note: official-keys-postgres-migration（DN-OFFICIAL-KEYS-PG-001）
 
-> **创建**：2026-10-23 ｜ **状态**：**提案（待评审）**
+> **创建**：2026-10-23 ｜ **状态**：**已定案**（落地形态 = D20；**D1–D19 随 D-① 失效**，见下方横幅）
 > **触发问题**：`compute-key-envelope-migration` 第 3 组的信封表外键指向 `official_keys(id)`，
 > 而该表在 ops-center 的 SQLite 里 ⇒ **FK 建不出来 ⇒ 落迁移文件会在部署时炸**
 > （`relation "official_keys" does not exist` ⇒ `assertReady` 硬失败 ⇒ 会员中心整体降级）。
 > **关联**：`openspec/changes/compute-key-envelope-migration/`（design.md D1–D12、tasks 3.1）；
 > `01-docs/HANDOFF-OFFICIAL-COMPUTE-2026-10-09.md` §附录 B（运营方 2026-10-11 拍板 D1 = A）。
+
+> ⚠️ **2026-10-25 横幅（读 D1–D19 前必读）**
+>
+> **D1–D19 全部建立在「把 `official_keys` 迁进 Postgres」这个前提上，该前提已被 D-① 推翻**
+> （供给侧零迁表 ⇒ **不建 Postgres 侧 `official_keys` 表、不占迁移号、不改 `SCHEMA` 数组**）。
+> ⇒ **D1–D19 是「决策随前提失效」的留档，不是待实施项。**
+> ⚠️ **「失效」≠「论证有错」**：把 D1–D19 放回它们各自的前提里读，每一条当时都是正确的
+> ⇒ 后来 Phase 1 重铺了地基（成本/用量/价格三类表已建在 ops-center 的 SQLite），前提才失效。
+> ⇒ **当前唯一有效的决策 = D20（三个定案）+ D21（第二轮订正）+ D22（第三轮对齐）**。
+> ⇒ D1–D19 里的**行号、列名、单位**等事实引用**本轮已逐条实测订正**（见 D22），
+> 但**结论层**一律以 D-①/D-②/D-③ 为准。
 
 ---
 
@@ -59,13 +70,15 @@
 
 ## D5 · ops-center 的双库连接管理
 
+> ⚠️ **本节随 D-① 失效**（D-① 下 ops-center **不需要**第二个 engine）⇒ 留档不作实施项。
+
 | 动作 | 细节 |
 |---|---|
 | 新增第二个 engine | `create_async_engine(BUSINESS_DATABASE_URL, ...)`，与现有 SQLite engine **并列**，不替换 |
 | 新增 session 工厂 | `async_sessionmaker(pg_engine)`，与现有 `get_db()` 并列 |
 | 新增依赖注入 | `get_pg_db()`（FastAPI `Depends`），与 `get_db()` 并列 |
 | **`OfficialKey` 必须换 DeclarativeBase** | 一个 ORM 类**不能绑两个库**。需为 Postgres 侧建独立 Base（或独立 metadata），`OfficialKey` 挂到它下面 |
-| `Base.metadata.create_all` 的归属 | `database.py:31` 那句会**把 Postgres 的表顺手建到 SQLite 里** ⇒ 必须把两边的 metadata 分开，`create_all` 各自只对自己的 engine |
+| `Base.metadata.create_all` 的归属 | `database.py:35` 那句（`await conn.run_sync(Base.metadata.create_all)`，**实测行号**）会**把 Postgres 的表顺手建到 SQLite 里** ⇒ 必须把两边的 metadata 分开，`create_all` 各自只对自己的 engine |
 | 驱动 | **`psycopg[binary]`**（PostgreSQL 官方维护，**无需编译工具链** —— `binary` extra 即为此准备；原提案「psycopg 需编译」的表述有误，已更正，见 proposal OQ2） |
 | 启动顺序 | 两个 engine 都要在 startup 建好；**Postgres 连接失败时的行为需定义**（fail-closed 还是回落 SQLite？）⇒ 见 D6 |
 
@@ -90,6 +103,11 @@
   保留一个**不调用的**函数零成本；删掉后想恢复只能改代码发版。
 
 ## D8 · 迁移编号：**本 change 优先占号**
+
+> ⚠️ **本节随 D-① 失效**（D-① 下本 change **不新增迁移文件** ⇒ 供给侧零迁表 ⇒ **不占号**）⇒ 留档不作实施项。
+> ⚠️ **另**：原「本 change 优先占号、信封表顺延到下一号」的分配前提**已整体作废** ——
+> `007` 现为**空号**（磁盘 `migrations/postgresql/` 无 `007_*.sql`；原「被信封 change 预定」只是**规格层预留**，
+> 而该 change 的前提已失效 ⇒ 磁盘与规格**都不再占 007**）⇒ 未来任何新迁移**从 `010` 起**。
 
 本 change 与 `compute-key-envelope-migration` 都要在 `migrations/postgresql/` 加文件。
 
@@ -139,10 +157,15 @@
 
 ## D11 · api-publish-engine 侧要改什么（**不多**）
 
+> ⚠️ **本节随 D-① 失效**（D-① 下 `official_keys` 留在 ops-center 的 SQLite ⇒
+> api-publish-engine 侧**不增表、不改 `SCHEMA` 数组、不改 `REQUIRED_SCHEMA_RELATIONS`、不加迁移**）⇒ 留档不作实施项。
+> ⚠️ 下面的行号**已按实测订正**（`initialize()` 实为 `:206`；`REQUIRED_SCHEMA_RELATIONS` 实为 `:11-27`，**15 项**），
+> 但**结论层**以 D-① 为准。
+
 | 位置 | 改动 | 为什么 |
 |---|---|---|
-| `postgres-identity-repository.js` 的 `SCHEMA` 数组 | 增 `official_keys` 建表语句 | 非生产环境走 `initialize()` 建库（`:273`），不补则本地开发环境缺表 |
-| 同文件 `REQUIRED_SCHEMA_RELATIONS`（`:8-21`） | 增 `official_keys` | 启动门禁要看见这张表，否则缺表时启动不报错、到运行时才炸 |
+| `postgres-identity-repository.js` 的 `SCHEMA` 数组 | 增 `official_keys` 建表语句 | 非生产环境走 `initialize()` 建库（**`:206`**，实测行号），不补则本地开发环境缺表 |
+| 同文件 `REQUIRED_SCHEMA_RELATIONS`（**`:11-27`**，**15 项**，实测行号） | 增 `official_keys` | 启动门禁要看见这张表，否则缺表时启动不报错、到运行时才炸 |
 | `migrations/postgresql/` | 新增迁移文件 | 建表 + 索引 |
 
 **不涉及**：权益扣减、快照形状、任何 feature 名。`official_keys` 不是权益维度。
@@ -182,7 +205,7 @@
 每次部署从 `mulpub` 的 `main` 稀疏检出 `ops-center/` ⇒ 部署的永远是最新代码。**
 **没有持续同步机制，因为不需要。**
 
-> ⚠️ **但 `docs/ops-center-ecs-deployment.md:35` 仍写着旧话**（「`deploy.sh` 从 `/root/ops-center`
+> ⚠️ **2026-10-25 复核订正**：`docs/ops-center-ecs-deployment.md:35` **已被另一条线订正**（现文为「✅ 仓库来源（2026-10-25 订正）…该表述已过时」）⇒ **「仍写着旧话」是假话**，本轮已改正。**原措辞**（「`deploy.sh` 从 `/root/ops-center`
 > （克隆自独立仓 `github.com/Colinchui007/ops-center.git`）拉取部署，而本 monorepo 的 `ops-center/` 目录是其镜像。
 > 把本仓的 ops-center 后端改动推上 ECS 前，**必须确认两者同步机制**」）⇒ **部署文档未跟上 `deploy.sh` 的修正，是真漂移**，
 > 本 change 一并订正。
@@ -278,7 +301,14 @@
 ```
 006_official_keys.sql        ← 与 006_payment_orders.sql 同前缀不同名，共存不报错
                                   且 'o'(official) < 'p'(payment) ⇒ 它先执行 ✅
+```
+006_official_keys.sql        ← 与 006_payment_orders.sql 同前缀不同名，共存不报错
+                                   且 'o'(official) < 'p'(payment) ⇒ 它先执行 ✅
 007_official_key_envelopes.sql ← 信封表，依赖 official_keys，'007' > '006' ✅
+```
+
+> ⚠️ **以上编号分配随 D-① 失效**（D-① 下不迁表 ⇒ 不占号）；
+> 且 `007` **现为空号**（原「被信封 change 预定」只是规格层预留，该 change 前提已失效）⇒ 未来新迁移**从 `010` 起**。
 ```
 
 **⇒ 顺带作废我在 AGENTS.md 里写错的那条纪律**（PR #4315 写的「撞号 ⇒ 启动期硬失败」是误诊），
@@ -288,7 +318,7 @@
 
 ## D16 · `create_all` 的归属：Postgres 侧**不得**跑（评审 C3）
 
-**取证**：`database.py:31` `await conn.run_sync(Base.metadata.create_all)`，
+**取证**：`database.py:35` `await conn.run_sync(Base.metadata.create_all)`（**实测行号**；`:32-33` 是 `PRAGMA journal_mode=WAL` / `PRAGMA foreign_keys=ON`）
 且 `:24-26` 里有 `PRAGMA journal_mode=WAL` / `PRAGMA foreign_keys=ON` —— **SQLite 专属**。
 
 **⇒ 两个后果**：
@@ -339,7 +369,7 @@ except (ValueError, Exception):
 **⇒ 顺带修正三处我写错的事实**：
 - 列数是 **17 列**不是 15（`rate_per_minute` / `daily_limit` / `alert_threshold_cost` / `note` 是运行时补的）
 - `rotate` 方法**不存在**（`key_service.py` 无此函数）
-- `BUSINESS_DATABASE_URL` 违反本仓 `OPS_` 前缀约定（`requirements.txt:1-7`）⇒ 本 change 的 DSN 键名要按 ops-center 约定定
+- `BUSINESS_DATABASE_URL` 违反本仓 `OPS_` 前缀约定（**真出处是 `ops-center/backend/config.py:43`** 的 `env_prefix: "OPS_"`；`:3` 的模块 docstring 同样声明 ⇒ ⚠️ `requirements.txt:1-7` 是**依赖清单**、不是前缀约定的出处，原引用错误）⇒ 本 change 的 DSN 键名要按 ops-center 约定定
 
 **⇒ 另修两处「与现状相反」的写法**：
 - `priority` 现状排序是 **ASC**（`key_service.py:306` 与 `:373`）⇒ 方案写的 `priority DESC` **与现状相反且未说明**
@@ -359,7 +389,7 @@ except (ValueError, Exception):
 |---|---|---|---|
 | `official_keys` | ops-center | SQLite | 已有 |
 | `model_price_cards` / `credit_price_config` | ops-center | SQLite | **Phase 1 新建** |
-| `model_usage_events`（`cost_cents` / `credit_cost`，**带 user_id**） | ops-center | SQLite | **Phase 1 新建** |
+| `model_usage_events`（**`cost_micros`（微元）** / `credit_cost`，**带 user_id**） | ops-center | SQLite | **Phase 1 新建** |
 | `model_usage_daily`（日聚合，无 user_id） | ops-center | SQLite | 不动（Phase 1 取舍 8） |
 | `identity_credit_accounts` / `identity_credit_ledger` | api-publish-engine | Postgres | **Phase 1 新建** |
 
@@ -399,8 +429,8 @@ resp = await client.post(url, json=payload, headers=headers)
   ├─【新增】官方算力模式 ──► ops-center  /api/v1/compute/execute
   │      ├─ 选 Key       official_keys (SQLite，已有)
   │      ├─ 调上游       httpx（已有，prompt_eval 已验证可行）
-  │      ├─ 算成本       model_price_cards → cost_cents（已有）
-  │      ├─ 算积分       ceil(cost_cents / credit_unit_price_cents × multiplier)（已有）
+  │      ├─ 算成本       model_price_cards → cost_micros（微元，已有）
+  │      ├─ 算积分       ceil(cost_micros / credit_unit_price_micros × multiplier)（已有，1 积分 = 10000 微元）
   │      ├─ 写事件       model_usage_events（已有，user_id 粒度）
   │      └─【新增】跨服务调 api-publish-engine 扣分
   │             identity_credit_accounts + identity_credit_ledger（已有）
@@ -496,7 +526,8 @@ resp = await client.post(url, json=payload, headers=headers)
 
 ## D21 · **第二轮对抗评审后的订正摘要**（2026-10-25）
 
-> 5 条评审线（事实核验 / 跨文档一致性 / openspec 合规 / 设计对抗 / 门禁流程）共交 **83 条发现**。
+> 5 条评审线（事实核验 / 跨文档一致性 / openspec 合规 / 设计对抗 / 门禁流程）共交 **93 条发现**
+> （⚠️ 上一版写的「83 条」是**算术错误**：20+19+14+30+10 = **93**）。
 > 下列为**已落到文档**的订正；逐条证据见 `01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md` §12 与
 > `openspec/records/official-compute-wiring-final.md`。
 
@@ -504,13 +535,13 @@ resp = await client.post(url, json=payload, headers=headers)
 |---|---|
 | **扣分时序** | 改为**两段式**：发货前**只读**额度预检（fail-closed 落点，不建表/不加迁移/不引入 reserve-settle）→ 发货后按实际成本实扣 ⇒ 原 §5.1 与 §5.3 互斥已消除 |
 | **幂等** | `refId` **空值必须 400 拒绝**（既有 `consumeCredit` 无 `if (refId)` 守卫 ⇒ 空值会静默「已扣」但不扣） |
-| **用户身份** | `userId` 统一为 **`identity_users.id`**（不是 Logto `sub`；`sub` 在 `auth_subject`）⇒ 解析在 api-publish-engine 侧 |
+| **用户身份** | wire 字段统一为 **`authSubject`（Logto `sub`）**，**端点内**用 `findBySubject('logto', sub)` 解析成 `identity_users.id` 后再调 `consumeCredit`（账本 FK 指向 `identity_users.id`）⇒ 消除「三处互斥」 |
 | **错误码** | `CREDIT_BALANCE_EXHAUSTED` 对齐既有 `CreditError.status`（**409**，非 402）；`CREDIT_AMOUNT_INVALID` 的实际抛出是 `TypeError` ⇒ 端点须在入口转 400；`CREDIT_PERIOD_INVALID` / `CREDIT_SERVICE_UNAVAILABLE` **仓内尚不存在** ⇒ 需新增（U-9） |
 | **响应体** | 字段名改 **camelCase**（与 `credit-repository.js` 既有返回一致） |
 | **选 Key** | `tier_access` 是**整数等级码**（`tier_access <= user_tier`），不是「含目标档位」的集合 |
 | **价格卡** | 生效价判据是 **`effective_to` 为空串**（`default=""`），**不是 `IS NULL`** |
 | **缺价** | 口径真源 `usage-metering-spec.md` 正式修订为**两态**（BYOK 记 0 告警 / 官方算力拒绝服务） |
 | **迁移编号** | `007` **已释放**（原「被信封 change 预定」是规格层预留，该 change 前提已失效）⇒ 新迁移从 **`010`** 起；另补 **`MIGRATION_PATTERN` 只认 3 位数字、不匹配者被静默丢弃（fail-open）** 这条判据 |
-| **未决项** | U-3 **关闭**（`official_credit_monthly` 实测已在 `quota` 下发）；U-5 改为「仓内已有调度器先例，缺的是没为补扣接上」；新增 **U-8**（归档与否，须人工过目）、**U-9**（错误码待新增）、**U-10**（迁移文件名须被认领） |
+| **未决项** | U-3 **关闭**（`official_credit_monthly` 实测已在 `quota` 下发）；**U-5 口径订正**：调度器先例**只在 Node 侧**（`scheduled-publish.js:93`），**ops-center（Python）侧实测为零**（`requirements.txt` 无 APScheduler/celery/rq；`routers/scheduler.py` 是发布调度器**契约校验**、不是定时宿主）⇒ 补扣要写 ops-center 的 SQLite ⇒ **Node 侧先例不可直接用** ⇒ 新增 **U-14**（宿主待拍板）；新增 **U-8**（归档与否，须人工过目）、**U-9**（**五个**错误码待新增）、**U-10**（迁移文件名须被认领）、**U-11**（账本列是否也统一到微元）、**U-12**（视频/图像价格卡是否入库）、**U-13**（额度预检读端点形态） |
 | **openspec 合规** | delta 补 **H1 + `## Purpose`**；补 **`## MODIFIED Requirements`**（`ops-center/model-usage`）；proposal 补 **`## Capabilities`** 段 |
 

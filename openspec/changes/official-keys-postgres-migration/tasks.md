@@ -61,7 +61,10 @@
 - [ ] 3.3 **算成本**：`model_price_cards` 取当前生效价；**缺价 ⇒ 拒绝服务 + 告警**（不许静默按 0）。
 - [ ] 3.4 **先落 `model_usage_events`（`status=pending`）再调上游** ⇒ 取得 `events.id`（幂等键来源）。
 - [ ] 3.5 **调上游**：复用 `prompt_eval_generation_service.py` 的 httpx 模式（`Bearer` 头 + 超时）。
-- [ ] 3.6 **算实际成本**：`cost_cents` + `credit_cost = ceil(cost_cents / credit_unit_price_cents × multiplier)`。
+- [ ] 3.6 **算实际成本**：`cost_micros`（**微元**）+ `credit_cost = ceil(cost_micros / credit_unit_price_micros × multiplier)`
+      （**1 积分 = 10000 微元**；`credit_unit_price_micros` 的兜底下限是 `CREDIT_UNIT_MICROS`，**不是 1**）。
+      ⚠️ **只读**：上游 `credit_price_service.compute_cost_micros` **只遍历 token 五类**（`TOKEN_FIELD_TO_UNIT`）⇒
+      **视频/图像/TTS/ASR 算不出成本 ⇒ `amount=0` ⇒ 每次白送**（阻断项 B-4 / U-12 待拍板）。
 - [ ] 3.7 **调扣分端点**：失败 ⇒ 发货前不发货 / 发货后置 `pending_charge` + 告警。
 
 ---
@@ -89,7 +92,9 @@
       （`packages/api-publish-engine/src/scheduled-publish.js:93`）；**ops-center（Python）侧实测为零**
       （`requirements.txt` 无 APScheduler/celery/rq；`routers/scheduler.py` 是发布调度器**契约校验**，不是定时宿主）
       ⇒ 补扣要写 ops-center 的 SQLite ⇒ **Node 侧先例不可直接用** ⇒ 宿主**待人工拍板**（U-14）。
-- [ ] 5.4 `client_reported_cost_micros`（⚠️ **列名是 `_micros`，不是 `_cents`**）与服务端值比对 ⇒ 差异进对拍报表（阈值 15%）。
+- [ ] 5.4 `client_reported_cost_micros`（⚠️ **列名是 `_micros`，不是 `_cents`**）与服务端值比对 ⇒ 差异进对拍报表。
+      ⚠️ **阈值以口径真源为准：5%**（`usage-metering-spec.md:61`）—— 本文件与 PRD §4.3 旧写的 15% **本轮已订正**。
+      ⚠️ 该列**全仓无写入方** ⇒ 对拍恒空 ⇒ 恒真通过（阻断项 B-11）。
       ⚠️ 该列**全仓无写入方** ⇒ 对拍恒空 ⇒ 恒真通过（阻断项，见设计文档 §13.2 B-11）。
 
 ---
@@ -109,7 +114,9 @@
       （`key_service.py:45-48` 在密钥不合法时会**静默 sha256 派生并改写** `settings.encryption_key`）。
 - [ ] 7.2 ⚠️ **不需要**扩充 Postgres 访问控制清单（无新增库内表）⇒
       **原 OQ1 的五条判据随 D-① 失效**，但「本库不含密钥材料密文」这一条**仍然成立**
-      （`identity_credit_ledger` 只存 `cost_cents` 整数，不存密文）。
+      （`identity_credit_ledger` 只存 `cost_cents` 整数，**单位是「分」**，不存密文；
+      ⚠️ 与供给侧的 `cost_micros`（**微元**）**单位不同** ⇒ 跨库边界必须有一次 **÷10000** 换算，
+      规则见设计文档 §3.3.1；账本列是否也统一到微元 = **U-11 待拍板**（改已应用迁移 `008` ⇒ 破坏性））。
 - [ ] 7.3 端到端真跑：成片 + 账本分录 + 用量事件**三方对账一致**。
 
 ---

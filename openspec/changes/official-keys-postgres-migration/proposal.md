@@ -61,7 +61,9 @@
 > 并入 mulpub（PR #475）并冻结为只读归档**（tag `archived-into-multi-publish`）；
 > `deploy.sh:17-24` 现在从 `mulpub.git` **sparse-checkout `ops-center/`** 部署 ⇒ **落地对象一直是 monorepo，
 > 每次部署都是最新代码，不存在同步问题**。
-> ⚠️ 但 `docs/ops-center-ecs-deployment.md:35` 仍写着旧话（要求「必须确认两者同步机制」）⇒ **部署文档是真漂移**，本 change 一并订正。
+> ⚠️ **2026-10-25 复核订正**：`docs/ops-center-ecs-deployment.md:35` **已被另一条线订正**（现文为
+> 「✅ **仓库来源（2026-10-25 订正）**…**该表述已过时**」）⇒ **本 change 这句「仍写着旧话」是假话**，本轮已改正。
+> ⇒ **部署文档不再是漂移源**；真正的漂移点是「独立仓已 subtree 并入并冻结」这一事实本身（见上）。
 **⇒ 现在落那个信封迁移文件会在部署时炸**：
 `relation "official_keys" does not exist` ⇒ 迁移失败 ⇒
 `postgres-identity-repository.js` 的 `assertReady`（`allowPending:false`）硬失败 ⇒

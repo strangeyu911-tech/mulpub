@@ -110,7 +110,7 @@ ops-center SHALL NOT 直连 Postgres 执行扣减，SHALL NOT 引入 key-broker 
 - **THEN** 该用量事件 SHALL 被置为 `pending_charge` 并产生告警
 - **AND** SHALL NOT 执行「退款」语义
 - **AND** 理由：上游已计费 ⇒ 成本真实发生 ⇒ 正确处置是**补扣**而非退款
-- **AND** 补扣 SHALL 具备定时对账入口（任务宿主待定，见 design.md U-5）
+- **AND** 补扣 SHALL 具备定时对账入口（**任务宿主待定**：先例**只在 Node 侧**、`ops-center` 侧实测为零 ⇒ 见设计文档 §11 的 U-5 / U-14）
 
 ### Requirement: 降级与扣费同向
 

@@ -60,7 +60,7 @@
 |---|---|---|---|
 | `official_keys` | ops-center | SQLite | 既有 |
 | `model_price_cards` / `credit_price_config` | ops-center | SQLite | **Phase 1 新建** |
-| `model_usage_events`（`cost_cents` / `credit_cost`，**带 `user_id`**） | ops-center | SQLite | **Phase 1 新建** |
+| `model_usage_events`（**`cost_micros`（微元）** / `credit_cost`，**带 `user_id`**） | ops-center | SQLite | **Phase 1 新建** |
 | `model_usage_daily`（日聚合，**无 `user_id`**） | ops-center | SQLite | 既有（Phase 1 取舍 8：**不动**） |
 | `identity_credit_accounts` / `identity_credit_ledger` | api-publish-engine | Postgres | **Phase 1 新建** |
 
@@ -76,11 +76,20 @@ Phase 1 两条取舍原文：
 `ops-center/backend/services/prompt_eval_generation_service.py:140-159`：
 
 ```python
+# 逐字摘自 ops-center/backend/services/prompt_eval_generation_service.py:149-159
+is_minimax = _is_minimax(str(cfg.get("provider") or ""), str(cfg.get("model") or ""))
+url = f"{base_url}/image_generation" if is_minimax else f"{base_url}/images/generations"
+headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+own_client = http is None
+# payload 校验（如 n 越界）在创建自建 client 之前完成，避免泄漏未关闭的 AsyncClient
 client = http or httpx.AsyncClient(timeout=120)
-url = f"{base_url}/images/generations"          # 或 minimax 的 /image_generation
-headers = {"Authorization": f"Bearer {api_key}"}
-resp = await client.post(url, json=payload, headers=headers)
+try:
+    ...
+    resp = await client.post(url, json=payload, headers=headers)
 ```
+
+⚠️ **逐字纪律**：本设计里所有贴出的代码块**必须是原文逐字**（顺序、缩进、缺失的字段都要一致）
+⇒ 上面的 `url` 是**一行三元**（不是两行）、`headers` **含 `Content-Type`**、语句顺序是 **url → headers → client → resp**。
 
 ⇒ ops-center 现成具备：**异步 HTTP 客户端**、**Key 解密（Fernet）**、**价格卡**、**成本核算**、**用量事件表（`user_id` 粒度）**。
 ⇒ **「官方算力代理放 ops-center」的地基是现成的，不需要新造任何基础设施。**
@@ -451,11 +460,25 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 - **只有「生成」扣积分，「操作」不扣**（沿用研究报告既有决策）
 - 判据 = **上游是否真的返回有效产出**，不是用户点没点取消
 - 失败 / 超时 / 空产出 ⇒ **不扣**
+- ⚠️ **但「上游超时」不等于「上游没计费」**（第 2 轮 D-21）：上游可能**已计费但响应没回来**
+  ⇒ 本设计**无法从客户端侧区分**「没计费的超时」与「计费了的超时」
+  ⇒ ⛔ **无供应商账单对拍通道 ⇒ 该类成本不可观测、不可追回**
+  ⇒ 处置：① 官方算力链路的**超时率必须单独监控**（`model_usage_events.status='failed'` 且 `latency_ms` 触顶）；
+  ② 运营侧**定期与供应商账单对账**（**本 change 不含**这条对账通道 ⇒ 登记为待补，见 §14）；
+  ③ 用户侧文案按「不扣」表述（保守），但**运营侧不能假设不扣 = 没花钱**。
 
 ### 7.2 降级必须同向降扣费（方向由运行时事实决定，不预设）
 
 降级到更便宜的上游 ⇒ 扣费**必须同步下调**；话术包装为「**省钱模式**」（正向表述）。
 ⚠️ 反向同理：升级到更贵的路径 ⇒ 扣费同步上调，且**须用户事前同意**（勾选框）。
+
+⚠️ **第 2 轮订正（B-03 / D-07）**：原写法把规则窄化成「降级 ⇒ 同向降扣费」，
+而**降级方向本身**（更贵还是更便宜）**不由规则预设** ⇒ 若 fallback 通道更贵（价格卡唯一键含
+`provider_id` ⇒ 同模型不同通道可有不同价），「同向降扣费」就变成「**多扣**」——
+⇒ 规则必须是「**扣费方向 = 该通道实际单价方向**」，不是「一律下调」。
+⚠️ **文案纪律（新增）**：只有在**实际更便宜**时才允许出现「省钱模式」「本次消耗更低」；
+**更贵时必须如实说明「本次消耗更高」**并需要用户事前同意（勾选框）⇒ **不许说反**。
+⚠️ **「约可生成」的换算基数随通道而变** ⇒ 降级前后必须**重算**，不得沿用降级前的估算。
 
 ### 7.3 BYOK
 
@@ -472,10 +495,31 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 
 ⚠️ **不修这条 ⇒ 官方算力链路无法把成本归到用户 ⇒ 账本无法核对 ⇒ 整条线不成立。**
 
+⛔ **但「载荷带 `user_id`」在日聚合上不可实现**（第 2 轮 D-18 / R2C-16）：
+`usage-reporter.js:103` 的聚合键是 `usage_date|provider_id|category|action`（**无 user**），
+`model_usage_daily` 的唯一键 `(usage_date, client_id, provider_id, action)`（**无 `user_id`**）
+⇒ **要么改聚合键（破坏既有看板与历史数据）**，**要么桌面端直写事件表**
+⇒ **本 change 不含这条改造** ⇒ 登记为阻断项 B-11（§13.2）与待补任务（§14）。
+⇒ **在它落地前**：官方算力链路的成本归属**只能靠 ops-center 侧的事件表**（`model_usage_events` 带 `user_id`），
+**不能**依赖桌面端的日聚合上报。
+
 ### 7.5 挂起与对账
 
 - 用量事件状态机：`pending` → `charged` / `failed` / `pending_charge` / `charge_rejected`
 - `pending_charge` 的事件需要**定时对账任务补扣**
+- ⛔ **补扣的四条边界（第 2 轮 D-08 / D-09 / D-17 未闭合，本轮写清）**：
+
+| 边界 | 规则 | 状态 |
+|---|---|---|
+| **金额冻结** | 补扣金额 = **原事件的 `credit_cost`**（不是重算）⇒ 重算会把差额静默吞进 `duplicated` 分支（D-09：既有实现命中幂等就返回旧 `amount`） | ✅ 本设计定案（`amount` 冻结） |
+| **跨周期** | 补扣时账户 `period` 可能已被 grant 覆写成新周期（`credit-repository.js:283-288`），而分录记的是**原周期** ⇒ 对账要**按分录周期**聚合，不按当前账户周期 | ⛔ 跨周期补扣的账户归属（D-17）**待拍板** |
+| **余额不足** | 余额不足时 `CHECK (balance >= 0)` 不许负数 ⇒ 补扣**物理上不可能** ⇒ 只能**挂起等下期**或**记为坏账** | ⛔ 终态**待拍板**（B-2/B-10） |
+| **时限** | 挂起事件**没有时限、没有重试次数、没有终态**（`model_usage_events` 无 `pending_charge_at` / `retry_count` 列）⇒ 挂起 = 永久白送 | ⛔ **需加列**（⇒ 迁移 ⇒ 从 `010` 起）|
+
+- ⚠️ **现成的对账能力干不了这件事**：`credit_cost_backfill_service.py:87-192` **只读 `model_usage_daily`**、
+  **只写 `daily.cost`**，**从不碰事件表 / 账本 / 不发 HTTP** ⇒ 不能当补扣器用
+- ⚠️ **对账公式的已知缺陷**：`credit-repository.js:231` 的 `reconcileAccount` 里 `adjust` 落 `ELSE 0`
+  ⇒ 退款/过期调整**永远对不平**（D-11）⇒ 该函数**连测试都没有调用方**
   ⚠️ **任务宿主尚未解决**（交接文档 K7）⇒ **跨轨裁决**：调度器先例**只在 Node 侧存在**
   （`packages/api-publish-engine/src/scheduled-publish.js:93` 的 `setTimeout` 递归定时器）；
   **ops-center（Python）侧实测为零**（`requirements.txt` 无 APScheduler / celery / rq；
@@ -497,36 +541,43 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 
 | 位置 | 显示项 | 数据来源 | 规则 |
 |---|---|---|---|
-| 会员中心「我的算力」卡 | 剩余积分 | `account.balance` | 整数，**不带小数** |
+| 会员中心「我的算力」卡 | 剩余积分 | `account.balance` | 整数，**不带小数**。⛔ **当前无读通道**（`getAccount` 无路由）⇒ 显示项与**读端点形态**（U-13）绑定 |
 | 同上 | 本月剩余天数 | `account.period_end` − 今天 | 归零后显示「下个周期」 |
-| 同上 | 约可生成（4 行换算） | 档位等效单价 | **必须带浮动说明**（文案不得承诺精确值） |
+| 同上 | 约可生成（4 行换算） | 档位等效单价 | **必须带浮动说明**（文案不得承诺精确值）。⛔ **「档位等效单价」仓内无实现、无数据源**（`officialCreditMonthly` 是**总量**不是单价）⇒ 该行**在单价口径落地前不显示**（显示「—」而不是猜一个数）|
 | 生成前确认弹窗 | 质量档下拉 | standard / hd / cinema | **pro 档位对 standard 用户禁用 + 升级引导** |
 | 同上 | 「背后模型：运营方配置中」 | — | **不展示具体模型名** |
-| 同上 | 本次预计消耗 | 档位等效单价 × 规格 | 标注「预计」，浮动范围提示 |
+| 同上 | 本次预计消耗 | 档位等效单价 × 规格 | 标注「预计」，浮动范围提示。⛔ 同上：**单价口径未落地前显示「—」**；且**降级到不同通道必须重算**（§7.2）|
 | 同上 | 剩余额度 | `account.balance` | 低于阈值变色 |
 | 同上 | 自动切换勾选框 | 用户偏好 | 默认**不勾选** |
 | 生成中 | 实时扣减提示 | — | **扣分未成功时不得显示「已扣除」** |
-| 生成完成 | 本次实际消耗 | `entry.amount` | 与预计不一致时给一句说明 |
+| 生成完成 | 本次实际消耗 | `entry.amount` | 与预计不一致时给一句说明。⚠️ `entry.amount` 来自**扣分端点响应**；扣分失败时**不显示**（显示「结算中」，见 §8.2）|
 
 ### 8.2 提示文字（zh / en **必须成对**，CI Gate 7 强制）
 
-| 场景 | 中文 | English |
-|---|---|---|
-| 余额不足 | `积分不足，当前剩余 {balance} 积分。本次需要 {required} 积分。` | `Not enough credits. You have {balance}, this request needs {required}.` |
-| 余额不足（可充值） | `积分不足，可充值后继续，或切换到你自己的 API Key。` | `Not enough credits. Top up to continue, or switch to your own API key.` |
-| 资源紧张 | `当前档位资源紧张，请稍后重试或切换到其他档位。` | `This quality tier is busy right now. Please retry later or switch tiers.` |
-| 服务暂不可用 | `服务暂不可用，已记录本次用量，请稍后查看。` | `Service temporarily unavailable. Your usage has been recorded; check back shortly.` |
-| 扣分结算中 | `生成成功，积分结算中（约 {seconds} 秒内完成）。` | `Done. Credits are being settled (within about {seconds}s).` |
-| 降级（省钱模式） | `已切换到省钱模式，本次消耗更低。` | `Switched to savings mode — this request costs less.` |
-| 降级（备用通道） | `已切换到备用通道，响应可能稍慢。` | `Switched to a backup channel; it may be slightly slower.` |
-| 上游失败 | `生成失败：{reason}。本次未扣除积分。` | `Generation failed: {reason}. No credits were charged.` |
-| 价目缺失（运营侧） | `缺少 {model} 的生效价格，已暂停该模型调度。` | `No active price for {model}; scheduling for it is paused.` |
+| 场景 | **判定条件**（缺这一列 ⇒ 文案会被用在错误的场景） | 中文 | English |
+|---|---|---|---|
+| 余额不足 | **发货前**额度预检判余额 < 本次需要（**上游未被调用**） | `积分不足，当前剩余 {balance} 积分。本次需要 {required} 积分。` | `Not enough credits. You have {balance}, this request needs {required}.` |
+| 余额不足（可充值） | 同上 **且** 账号未绑定自己的 API Key | `积分不足，可充值后继续，或切换到你自己的 API Key。` | `Not enough credits. Top up to continue, or switch to your own API key.` |
+| 资源紧张 | 官方 Key 池**无可用 Key**（限流/熔断）**且** 降级通道也不可用 ⇒ **未调上游** | `当前档位资源紧张，请稍后重试或切换到其他档位。` | `This quality tier is busy right now. Please retry later or switch tiers.` |
+| 服务暂不可用（**已产生用量**） | 扣分端点 5xx / 网络失败 **且** `model_usage_events` 已落库（`status='pending_charge'`） | `服务暂不可用，本次用量已记录，积分将在恢复后补扣。` | `Service temporarily unavailable. This usage was recorded; credits will be charged once the service recovers.` |
+| 服务暂不可用（**未产生用量**） | 上游未被调用（缺价拒绝 / 预检失败 / 选 Key 失败）⇒ **没有用量记录** | `服务暂不可用，本次未产生用量，也未扣除积分，请稍后重试。` | `Service temporarily unavailable. No usage was recorded and no credits were charged; please retry later.` |
+| 扣分结算中 | 扣分端点 5xx **且** 事件已落 `pending_charge` | `生成成功，积分结算中，稍后可在算力明细中查看。` | `Done. Credits are being settled; you can check the details later.` |
+| 降级（**确实更便宜**） | fallback 通道单价 **<** 原通道单价 | `已切换到省钱模式，本次消耗更低。` | `Switched to savings mode — this request costs less.` |
+| 降级（**备用通道，同价或更贵**） | fallback 通道单价 **≥** 原通道单价 | `已切换到备用通道，本次消耗以最终结算为准。` | `Switched to a backup channel; final consumption will be based on the settlement.` |
+| 降级（**更贵**） | fallback 通道单价 **>** 原通道单价 **且** 用户**已勾选**自动切换 | `已切换到备用通道，本次消耗会更高，已按你的设置自动完成。` | `Switched to a backup channel; this request costs more, as per your settings.` |
+| 上游失败 | 上游返回失败 / 空产出（**未产生有效产出**） | `生成失败：{reason}。本次未扣除积分。` | `Generation failed: {reason}. No credits were charged.` |
+| 价目缺失（运营侧） | 价格卡缺生效价（**成本恒 0**）⇒ 官方算力场景**拒绝服务** | `缺少 {model} 的生效价格，已暂停该模型调度。` | `No active price for {model}; scheduling for it is paused.` |
 
 ⚠️ **文案纪律**：
 - **不许承诺精确值**（「约可生成」必须带浮动说明）
 - **不许在扣分未成功时显示「已扣除」**
 - **失败文案必须明示「本次未扣除积分」**（降低客诉成本）
 - **降级一律正向表述**（「省钱模式」），不用「降级」「降质」等负面词
+- ⚠️ **「已记录本次用量」必须区分「已产生用量」与「未产生用量」**（第 2 轮 B-11 / D-27）：
+  在**缺价拒绝 / 预检失败 / 选 Key 失败**三种场景下**根本没有用量事件** ⇒ 旧文案在说假话
+- ⚠️ **不许承诺结算时限**（第 2 轮 D-26）：旧文案「约 {seconds} 秒内完成」承诺了一个**尚不存在的调度宿主**
+  ⇒ 宿主待定（U-14）⇒ **在 U-14 关闭前一律不许出现具体秒数**
+- ⚠️ **「省钱模式」只在实际更便宜时可用**（§7.2）⇒ 更贵时**必须如实说更贵**
 
 ### 8.3 运营后台显示项（ops-center）
 
@@ -535,9 +586,9 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 | 官方 Key 列表 | 供应商、密文掩码、tier_access、priority、rate_per_minute、daily_limit、expires_at、is_active | 密文**只显示掩码**，任何列表/导出不得含明文 |
 | 同上 | 「**能否解密**」健康列 | 解密失败 ⇒ **红标 + 告警**，不静默跳过 |
 | 同上 | 「**可被选中的档位**」 | 由 `tier_access` 反算，**只读**（避免与实际选 Key 逻辑漂移） |
-| 成本台账 | 日期、模型、tokens、cost_cents、credit_cost、price_id | **服务端算的值**为主；客户端透传值只作对拍列 |
+| 成本台账 | 日期、模型、tokens、**cost_micros（微元）**、credit_cost（积分）、price_id | **服务端算的值**为主；客户端透传值（`client_reported_cost_micros`）只作对拍列。⚠️ 列名随真源为**微元**；**账本侧** `identity_credit_ledger.cost_cents` 是**分**（跨库 ÷10000 换算，见 §3.3.1） |
 | 同上 | 「**缺价**」标记 | 缺价事件必须**显式列出**（不许静默按 0） |
-| 对账报表 | expected vs actual 差异 | 差异 > 15% 进对账报表（沿用 PRD §4.3） |
+| 对账报表 | expected vs actual 差异 | 差异 > **5%** 进对拍报表（⚠️ **阈值以真源 `usage-metering-spec.md:61` 为准**；PRD §4.3 旧写的 15% 本轮已订正）⚠️ 官方算力链路上 `client_reported_cost_micros` **无客户端写入方** ⇒ 对拍**恒空 ⇒ 恒真通过**（阻断项 B-11） |
 | 挂起队列 | `pending_charge` 事件列表 | 可见、可人工补扣 |
 
 ### 8.4 交互逻辑要点
@@ -567,7 +618,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 
 | 文档 | 继承内容 |
 |---|---|
-| `01-docs/usage-metering-spec.md` | **口径唯一真源**（五类 token / 整数分 / 版本化价格 / 信任边界 / 缺价不许静默） |
+| `01-docs/usage-metering-spec.md` | **口径唯一真源**（五类 token / **整数微元** / 版本化价格 / 信任边界 / 缺价不许静默） |
 | `01-docs/DESIGN-COMPUTE-BILLING-MODEL-2026-10-11.md` | 三类计费形状（A/B/C）、定价基准优先级（B>A>C）、形状数量有界为 3 |
 | `01-docs/usage-metering-spec.md` §4.1 | 赠送量与年付守线（**唯一真源**；standard 1600 / pro **3330**，年付守线 ≤40%）<br>（⚠️ 旧写法指向 `PRD-REMOVE-BUYOUT-AND-PRICING-2026-10-17.md` —— 该文件实测**零命中**「积分 / credit / 赠送 / 0.01」⇒ **引用断链**）<br>常量侧出处：`packages/api-publish-engine/src/auth/plan-matrix.js:45` |
 | `01-docs/DEEP-ANALYSIS-CREDIT-PRICING-2026-10-08.md` | 成本摊销（保底/接近耗尽/濒危/耗尽四段）、混合制 |
@@ -600,6 +651,10 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 - [ ] §11 的未决项（U-1、U-8、U-9、U-11、U-12、U-13、U-14）**逐条关闭**
 - [ ] 「决策失效」的条目都**带前提条件**（不裸写「已作废」）
 - [ ] 所有引用的 `file:line` **当场实测**（不推算）
+- [ ] ⚠️ **引用若跨越「另一条线改过的文件」，必须重测行号**（第 2 轮教训：12 条 `file:line` 发现未修，
+      根因就是**没回源重测**；本轮已逐条实测订正 8 处：`:273`→`:206`、`:8-21`→`:11-27`（15 项）、
+      `database.py:31`→`:35`、PRAGMA `:24-26`→`:32-33`、`OPS_` 前缀出处 `requirements.txt:1-7`→`config.py:43`、
+      `REQUIRED_SCHEMA_RELATIONS` 15 项、§1.2 代码块改逐字、`docs/ops-center-ecs-deployment.md:35` 的断言反转）
 - [ ] 中文写入后 `grep -c $'\xef\xbf\xbd'` = 0
 - ⚠️ **「三个定案在 PRD §4 与两个 change 目录中口径一致」这一条已撤回**：第 2 轮查出**多处不一致**
   （402 vs 409、007 占号口径、tokens 恒 0、「整数分」vs「整数微元」、PRD 流程图顺序、`official_credit` 前提），
@@ -635,6 +690,8 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 | **U-12** | **视频 / 图像 / TTS / ASR 的价格卡是否入库**：`model_price_cards.seed.json` 的 `_meta.rule` 明写「**已知才入库；待确认只登记不入库**」⇒ 这些 unit 现在**没有价格卡** | 不拍板 ⇒ 该场景**要么恒缺价（按 §6.3 拒绝服务 ⇒ 官方算力视频不可用）**，**要么按 §5.1 ⑧ 算出 `amount=0`（每次白送）**（§13.2 B-4） | **须人工拍板**（需要定价数据 —— 运营方的事） |
 | **U-13** | **额度预检的读余额通道形态**：新增只读端点（如 `GET /api/v1/credit/account`）／`consume` 端点加 `dryRun`／其它 | 没有它，fail-closed 的落点不存在（§13.2 B-1） | **须人工过目**（新增对外端点 = 改暴露面） |
 | **U-14** | **补扣任务的调度宿主**（ops-center 侧实测无定时宿主，见 U-5 / §13.3） | `pending_charge` 无补扣入口 ⇒ 挂起 = 永久白送（§13.2 B-10） | **须人工拍板**（GitHub Actions cron 出网受限 / 外部调度器 / ops-center 自建轮询 —— 三选一） |
+| **U-15** | **change 目录名与内容不符**：`official-keys-postgres-migration` 现在的内容是「扣减接线」（D-① 已推翻迁表）⇒ 目录名/能力名与内容相反 | 读者按目录名会以为在迁表；openspec 工具按目录名做能力归属 ⇒ 归档/同步时口径会错 | **须人工过目**（改目录结构 = 同 U-8 级别）｜本轮**只在文档内加「改向」横幅**，**未自行改名** |
+| **U-16** | **供应商账单对拍通道缺失**（§7.1）：「上游超时但已计费」的成本**不可观测、不可追回** | 官方算力链路的真实成本会**高于**账本记录 ⇒ 运营侧毛利被系统性高估 | 需**供应商侧账单接口**（运营方协调）⇒ 不在本仓能力范围 |
 | **U-10** | 迁移文件名**须被 `MIGRATION_PATTERN` 认领**（`/^\d{3}_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/`） | **只认 3 位数字**；4 位号/2 位号/非法名会被 `filter` **静默丢弃**（fail-open）⇒ `allowPending:false` 也发现不了 | 落任何迁移前**逐个核对文件名能被该正则认领**；本仓**零门禁**检查目录里 .sql 是否全被认领 ⇒ 需人工核 |
 
 ---
@@ -720,3 +777,57 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 
 > ⚠️ **不要把「本轮已改」当成「本设计已完工」。**
 > §13.2 的 12 条阻断项是**开工的前置条件**；§13.5 的四类是**实施前须逐条过的台账**。
+
+---
+
+## 14. 第 2 轮台账的处置（2026-10-25 第 4 轮）
+
+> 本节是**第 2 轮评审台账（123 条）的处置汇总**。
+> **逐条去向见执行记录** `openspec/records/official-compute-wiring-final.md` 的「台账处置矩阵」一节（123 行逐条）。
+> ⚠️ **「已处置」= 有明确去向**（已改 / 转实现任务 / 转未决项 / 确认不成立），
+> **不等于「内容都已改好」** —— 未修的实现性条目**全部转成了 tasks 条目**（§14.2）。
+
+### 14.1 按根因族汇总
+
+| 族 | 条数 | 处置 | 落点 |
+|---|---|---|---|
+| **单位口径**（分 vs 微元） | 22 | ✅ **本轮全链对齐**（10 个文件） | §3.3.1 + §6.3 + §7.6 + §9.2 + openspec change 四件套 + 执行记录 |
+| **行号 / 引用精度** | 12 | ✅ **本轮逐条实测订正 8 处**；其余 4 处为**已失效章节**内的引用（随 D-① 失效，已加横幅） | §1.2 + §10.1 + change design.md |
+| **`007` 占号** | 6 | ✅ 三处口径统一为「**007 已释放**」 | §9.3 + PRD §4.4-3 + change proposal/tasks/design + 执行记录 |
+| **错误码 / HTTP 状态** | 9 | ✅ 409 唯一化 + 五个码登记为「需新增」 | §3.3 错误表 + §11 U-9 + tasks 2.3 |
+| **tokens / cost 口径** | 6 | ✅ 「恒为 0」→「**仅兜底桶为 0**；`cost` 在 BYOK 路径为 NULL」 | §1.3 + §7.4 + PRD + proposal + spec |
+| **幂等** | 5 | ✅ `refType` 写死常量 + `refId` 全局唯一 + 补两道缺口 | §3.3 + §3.5 + spec |
+| **档位量纲** | 3 | ✅ `user_tier = modelTier + 1` | §6.2 |
+| **调度器 / 任务宿主** | 4 | ✅ 口径改为**限定进程** + 新增 U-14 | §7.5 + §11 U-5/U-14 + tasks 5.3 |
+| **跨文档一致性** | 11 | ✅ 逐条改（含 change 目录内 4 份文件的漏改） | 本轮 10 个文件 |
+| **openspec 合规** | 6 | ✅ 已在第 3 轮修（H1/Purpose/Capabilities/MODIFIED/Scenario 补齐） | spec/proposal |
+| **功能逻辑 / 交互 / 显示 / 文案** | 17 | ✅ **本轮补齐**（§7.1/§7.2/§7.4/§7.5 + §8.1/§8.2 判定条件列） | §7 + §8 |
+| **需拍板** | 9 | ⏸ **转未决项**（U-1/U-8/U-9/U-11/U-12/U-13/U-14/U-15/U-16） | §11 |
+| **需实现（须改代码）** | 23 | ⏸ **转 tasks 条目**（不属文档层） | tasks `0ter` 组 |
+| **确认不成立 / 已随前提失效** | 0 | —— | —— |
+
+### 14.2 转到「实现」的条目（**文档层做不了，必须写代码**）
+
+| 主题 | 条目 | 依赖 | 阻断 |
+|---|---|---|---|
+| 读余额端点 | R2C-01 / D-19 / G-09 | **U-13**（端点形态待拍板） | ✅ B-1 |
+| 事件写入路径 | R2C-12 / G-10 / D-15 | 需要 `model_usage_events` 写方 | ✅ B-11 |
+| 积分发放路径 | R2C-06 / D-06 / D-10 | 会员周期发放 + 兑换码核销 + 运营补发 | ✅ B-6 |
+| 非 token unit 成本计算 | R2C-04 / D-14 | 事件表要带 duration/数量字段（**⇒ 加列 ⇒ 迁移**）+ **U-12**（价格卡入库） | ✅ B-4 |
+| 桌面端 `user_id` 归属 | R2C-16 / D-18 | 改日聚合键（破坏存量）或直写事件表 | ✅ B-11 |
+| 端点身份绑定 | R2C-08 / D-03 / D-17 | **U-1**（服务间鉴权） | ✅ B-8 |
+| 幂等 DB 兜底 | R2C-09 / R2C-14 | `ref_id` 唯一性 + 索引条件 | ✅ B-9 |
+| 挂起补扣 | R2C-10 / D-08 / D-09 / D-11 / D-17 | 事件加列 + 补扣宿主 **U-14** | ✅ B-10 |
+| 限流/熔断/fallback | D-13 / B-05 | 计数器 + 原子占用 + fallback 链 | — |
+| 周期口径统一 | R2C-17 / D-23 | 自然月 vs 订阅周期 | — |
+| 事件保留策略 / 看板口径 | D-29 | — | — |
+| 供给侧成本归集 | D-21 / U-16 | 供应商账单对拍 | — |
+
+### 14.3 本轮**没有**做的事（如实登记）
+
+- ⛔ **没有**改任何**运行时代码**（本轮只改了 1 处**注释**：ops-center `credit_pricing.py` 的单位表述）
+- ⛔ **没有**新增/修改任何**迁移文件**（`008` 是已应用的 ⇒ 改它 = checksum 变更 = 破坏性 ⇒ 归 U-11）
+- ⛔ **没有**改**定价 / 赠送量**（归 U-12）
+- ⛔ **没有**新增**对外端点**（归 U-13）
+- ⛔ **没有**改**服务间鉴权**（归 U-1 = 「谁来守门」级别）
+- ⛔ **没有**自行**归档**或**改名** change 目录（归 U-8 / U-15）

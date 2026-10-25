@@ -186,6 +186,16 @@ class ModelUsageEvent(Base):
     tokens_cache_write = Column(Integer, nullable=False, default=0)
     tokens_reasoning = Column(Integer, nullable=False, default=0)
 
+    # ── 非 token 维度（视频按秒 / 图像按张 / 语音按字符）──────────────
+    # ⚠ **缺这三列 ⇒ `per_second` / `per_image` / `per_char` 三种 unit 永远拿不到数量**
+    #   ⇒ `compute_cost_micros` 里 `cards.get(unit)` 恒为 None
+    #   ⇒ 视频/图像/TTS 的成本**恒为 0 且全量报「缺价格」**（错误长得像「免费」）。
+    # ⚠ SQLite 的 `create_all` **不改已有表** ⇒ 存量库必须靠
+    #   `services/credit_usage_event_migration.py` 的幂等 ALTER 补列。
+    duration_seconds = Column(Integer, nullable=False, default=0)  # 视频/音频秒数
+    item_count = Column(Integer, nullable=False, default=0)  # 图像张数
+    char_count = Column(Integer, nullable=False, default=0)  # 语音字符数
+
     price_id = Column(String, nullable=False, default="")  # 命中的价格卡（可复算）
     cost_micros = Column(Integer, nullable=False, default=0)  # 服务端算的成本（微元）
     credit_cost = Column(Integer, nullable=False, default=0)  # 服务端算的积分消耗

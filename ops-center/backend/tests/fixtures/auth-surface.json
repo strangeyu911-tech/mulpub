@@ -1,5 +1,5 @@
 {
-  "total": 164,
+  "total": 165,
   "routes": [
     {
       "path": "/api/auth/change-password",
@@ -2089,6 +2089,19 @@
       ],
       "auth_kinds": [
         "session+role"
+      ],
+      "other_deps": []
+    },
+    {
+      "path": "/api/v1/usage/events",
+      "methods": [
+        "POST"
+      ],
+      "auth": [
+        "require_catalog_key"
+      ],
+      "auth_kinds": [
+        "apikey"
       ],
       "other_deps": []
     },

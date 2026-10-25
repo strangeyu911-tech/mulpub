@@ -1067,6 +1067,37 @@ describe('ModelProviderManager — P3.2 callAdapter 集成', () => {
       expect(logEntry.model).toBeNull()
     })
 
+    it('★ 用量维度的原料（params / result）必须交到存储层', async () => {
+      // ⚠ 这条是**接线**锁：维度的抽取与写列在**存储层**
+      //   （store/model-log-store.js ⇒ usage-dimensions.js 纯函数），
+      //   而 manager 只负责交出原料 ⇒ 「原料有没有交出去」只有这一条能判
+      //   ⇒ 同族缺陷：「新增叶子模块单测全绿、生产引用数为 0」。
+      // ⚠ 失败形态极隐蔽：原料没交出去 ⇒ 存储层抽不到维度
+      //   ⇒ 服务端拿不到秒/张/字符 ⇒ 成本恒 0 且全报「缺价格」（错误长得像「免费」）。
+      logManager.createProvider({
+        id: 'video-prov', name: 'Video', category: 'video',
+        api_key: 'sk-test', models: ['H3'],
+      })
+      logManager.registerAdapter('video-prov', (creds) => ({
+        id: 'video-prov',
+        credentials: creds,
+        supports: () => true,
+        generateVideo: vi.fn(async () => ({
+          taskId: 't1',
+          usage: { total_seconds: 10 },
+        })),
+      }))
+
+      const result = await logManager.callAdapter('video-prov', 'generateVideo', { resolution: '768p' })
+      expect(result.code).toBe(0)
+      expect(addProviderLogSpy).toHaveBeenCalledOnce()
+      const logEntry = addProviderLogSpy.mock.calls[0][0]
+      expect(logEntry.params).toEqual({ resolution: '768p' })
+      expect(logEntry.result.usage.total_seconds).toBe(10)
+      // ⚠ manager **不得**自己判 byok=0（那是存储层的缺省策略，见 store/model-log-store.test.js）
+      expect(logEntry.byok).toBeUndefined()
+    })
+
     it('S4：响应无 usage 时日志不携带 token 字段（保持 NULL 而非伪 0）', async () => {
       logManager.createProvider({
         id: 'no-usage-prov', name: 'NoUsage', category: 'video',

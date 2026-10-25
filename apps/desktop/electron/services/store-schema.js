@@ -18,6 +18,10 @@ const TABLE_NAMES = {
 
 const LEGACY_OWNER_SUBJECT = "__legacy__";
 
+const {
+  MODEL_PROVIDER_LOGS_TABLE_SQL,
+} = require('./store/model-provider-logs-schema')
+
 const OWNER_TABLE_SCHEMA_SQL = {
   accounts: `CREATE TABLE IF NOT EXISTS accounts (
     owner_subject TEXT NOT NULL,
@@ -131,21 +135,7 @@ const SCHEMA_SQL = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_model_providers_category ON model_providers(category)`,
   // ─── Phase 2+：模型供应商调用日志表 ───
-  `CREATE TABLE IF NOT EXISTS model_provider_logs (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_id   TEXT NOT NULL,
-    category      TEXT NOT NULL,
-    model         TEXT,
-    action        TEXT NOT NULL,
-    status        TEXT NOT NULL,
-    latency_ms    INTEGER,
-    tokens_in     INTEGER,
-    tokens_out    INTEGER,
-    cost          REAL,
-    error_message TEXT,
-    created_at    TEXT DEFAULT '',
-    FOREIGN KEY (provider_id) REFERENCES model_providers(id)
-  )`,
+  MODEL_PROVIDER_LOGS_TABLE_SQL,
   `CREATE INDEX IF NOT EXISTS idx_model_provider_logs_provider ON model_provider_logs(provider_id)`,
   `CREATE INDEX IF NOT EXISTS idx_model_provider_logs_created ON model_provider_logs(created_at)`,
   // ─── Backlot 项目库（OpenMontage 集成） ───

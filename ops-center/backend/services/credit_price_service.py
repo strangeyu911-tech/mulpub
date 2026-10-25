@@ -39,6 +39,10 @@ from models_credit import (
     UNIT_1K_TOKENS_IN,
     UNIT_1K_TOKENS_OUT,
     UNIT_1K_TOKENS_REASONING,
+    UNIT_PER_CHAR,
+    UNIT_PER_IMAGE,
+    UNIT_PER_SECOND,
+    UNIT_PER_SECOND_AUDIO,
 )
 
 ALL_UNITS = TOKEN_UNITS + NON_TOKEN_UNITS
@@ -51,6 +55,24 @@ TOKEN_FIELD_TO_UNIT = {
     "tokens_cache_write": UNIT_1K_TOKENS_CACHE_WRITE,
     "tokens_reasoning": UNIT_1K_TOKENS_REASONING,
 }
+
+# ⚠ **非 token 维度的上报字段映射**（本次新增，2026-10-25）。
+# ⚠ 缺这张表 ⇒ `per_second` / `per_image` / `per_char` 三种 unit **永远拿不到数量**
+#   ⇒ `compute_cost_micros` 里 `cards.get(unit)` 恒为 None
+#   ⇒ 视频/图像/TTS 的成本**恒为 0 且全量报「缺价格」**（错误长得像「免费」）。
+# ⚠ 这与「日桶级与事件级映射漂移」是同一族缺陷：**同一条成本路径上两处映射不一致 ⇒ 静默算成 0**。
+USAGE_FIELD_TO_UNIT = {
+    "duration_seconds": UNIT_PER_SECOND,
+    "item_count": UNIT_PER_IMAGE,
+    "char_count": UNIT_PER_CHAR,
+}
+
+# ⚠ **音频的秒数走另一个 unit**（`per_second_audio` ≠ `per_second`）：
+#   视频按秒、音频生成也按秒，但两者单价不同 ⇒ 必须分卡计价。
+#   桌面端上报的 `category` 取值域含 `audio`（model-log-store 的类别注释：
+#   llm/tts/image/video/audio）⇒ 用它分流。
+# ⚠ 分流**只影响 duration**：`item_count`/`char_count` 与类别无关。
+AUDIO_CATEGORIES = ("audio", "music", "voice")
 
 
 class CostResult:
@@ -283,12 +305,29 @@ async def ensure_credit_price_config(db: AsyncSession) -> None:
 
 
 def token_counts_from_event(event: dict) -> Dict[str, int]:
-    """从上报项抽出 unit → 数量映射（供成本计算）。"""
+    """从上报项抽出 unit → 数量映射（供成本计算）。
+
+    ⚠ **现在同时抽 token 维度与三个非 token 维度**（duration_seconds / item_count / char_count）。
+      只抽 token 的旧版 ⇒ 视频/图像/TTS 的成本恒 0 且全报「缺价格」。
+    ⚠ **音频的秒数走 `per_second_audio`**（与视频的 `per_second` 分卡计价），
+      分流依据是 `action_type` 或 `category`（桌面端取值域含 `audio`）。
+    ⚠ 两个维度同时命中同一个 unit 时**累加**（不是覆盖）——例如一条事件既是视频又有图片张数。
+    """
     counts: Dict[str, int] = {}
     for field, unit in TOKEN_FIELD_TO_UNIT.items():
         value = event.get(field)
         if value:
             counts[unit] = int(value)
+    category = str(
+        event.get("action_type") or event.get("category") or ""
+    ).strip().lower()
+    for field, unit in USAGE_FIELD_TO_UNIT.items():
+        value = event.get(field)
+        if not value:
+            continue
+        if field == "duration_seconds" and category in AUDIO_CATEGORIES:
+            unit = UNIT_PER_SECOND_AUDIO
+        counts[unit] = counts.get(unit, 0) + int(value)
     return counts
 
 

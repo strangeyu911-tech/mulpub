@@ -24,6 +24,7 @@ from services.pipeline_dependency_service import ensure_pipeline_deps_seeded
 from services.scheduler_service import ensure_scheduler_verification_table
 from services.usage_migration import ensure_usage_columns
 from services.prompt_eval_migration import ensure_prompt_eval_scene_columns, ensure_prompt_eval_dual_columns, ensure_prompt_eval_video_columns, ensure_provider_default_column
+from services.credit_usage_event_migration import ensure_model_usage_event_columns
 from services.update_policy_migration import ensure_update_policy_columns
 from services.credit_price_service import ensure_credit_price_config
 from services.auth_service import ensure_admin_seeded
@@ -57,6 +58,9 @@ async def lifespan(app: FastAPI):
         await ensure_pipeline_deps_seeded(db)
         await ensure_scheduler_verification_table(db)
         await ensure_usage_columns(db)
+        # 事件级用量表补列（duration_seconds/item_count/char_count）——存量库缺列会
+        # 让 model_usage_events 的写入报 no such column ⇒ 官方算力成本归集全线失败
+        await ensure_model_usage_event_columns(db)
         await ensure_update_policy_columns(db)
         await ensure_prompt_eval_scene_columns(db)
         await ensure_prompt_eval_dual_columns(db)

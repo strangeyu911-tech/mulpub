@@ -151,6 +151,58 @@ H3 2K 10 秒 = **800 积分**、image-01 出图 = **2.5 积分/张** ⇒
 （N=10 ⇒ 25 积分，精确；N=1 ⇒ 3 积分，比成本多 0.5）⇒ **收的永远 ≥ 官方成本**，
 **不存在「把官方价格低」的风险**。取整粒度必须落在**扣分侧**，价格卡里记的仍是官方成本 25000 微元/张。
 
+### 4.3 事件级用量通道与四个用量维度（2026-10-25 新增，官方算力第 5 轮 R5-1）
+
+**唯一真源**：`ops-center/backend/services/credit_price_service.py` 的 `TOKEN_FIELD_TO_UNIT` 与
+`USAGE_FIELD_TO_UNIT`（两端同源，不允许各写一份）。
+
+**上报字段 → 价格卡 unit 的映射**：
+
+| 上报字段 | unit | 单价语义 | 适用 |
+|---|---|---|---|
+| `tokens_in` / `tokens_out` / `tokens_cache_read` / `tokens_cache_write` / `tokens_reasoning` | `1k_tokens_*` | 微元 / **1K token** | LLM |
+| `duration_seconds` | `per_second` | 微元 / **秒** | 视频 |
+| `duration_seconds`（`action_type`/`category` ∈ audio·music·voice） | `per_second_audio` | 微元 / **秒** | 音频生成 |
+| `item_count` | `per_image` | 微元 / **张** | 图像 |
+| `char_count` | `per_char` | 微元 / **字符** | 语音 |
+
+⚠ **音频的秒数必须与视频分卡**（`per_second_audio` ≠ `per_second`）：混用 ⇒ 音频按视频价计费（少扣）。
+
+⚠ **单位语义按 unit 区分**（与 `compute_cost_micros` 的既有实现同源）：
+`1k_tokens_*` 的单价是「微元 / 1K token」⇒ **除以 1000**；
+`per_image` / `per_second` / `per_char` / `per_second_audio` 的单价是「微元 / 个」⇒ **不除**。
+早期版本对所有 unit 一律 /1000 ⇒ 非 token 维度会算错 **1000 倍**。
+
+**两条流并存**（各管一件事，水印**独立**）：
+
+| 流 | 端点 | 落表 | 粒度 | 成本来源 | 用途 |
+|---|---|---|---|---|---|
+| 日桶 | `POST /api/v1/usage/ingest` | `model_usage_daily` | (日期, provider, category, action) | 客户端透传的估算值 | 运营看板 |
+| **事件** | `POST /api/v1/usage/events` | `model_usage_events` | **一次调用一条** | **服务端按价格卡算** | 成本归集 / 扣积分 |
+
+⚠ **两条流读同一张本地表 ⇒ 水印必须用不同键**（`opsCenterUsageReport` vs `opsCenterUsageEventReport`），
+否则一条推进水印会让另一条**永久看不到那些行**（症状：少一半数据、**不报任何错**）。
+
+**幂等与拒收**：`event_id`（= `${clientId}:${本地行 id}`）是幂等键，服务端有唯一约束兜底；
+`event_id` **空值硬拒 400**（否则幂等键失效 ⇒ 重报重复计数）；负数维度硬拒。
+
+⚠ **成本由服务端算**：客户端只报用量维度，**不报成本**；客户端透传的成本只留档对拍
+（`client_reported_cost_micros`），**不参与计算**。
+
+⚠ **缺价必须被点名**：命中不到价格卡 ⇒ 成本按 0 记，但**必须出现在响应的 `missing_price` 与服务端日志里**
+——「成本是 0」必须可区分于「成本是 0 因为免费」。
+
+⚠ **BYOK 不扣官方积分**：`byok = 1` ⇒ 记 0 成本、**不查官方卡**（不报缺价）。
+桌面端当前的 provider 调用全部用用户自己的 Key ⇒ `byok` 缺省是 **1**；
+**缺省方向必须是「不扣」**（给用户错扣比不扣更糟）。
+
+⚠ **抽不到就是 0，不猜**：桌面端维度提取（`electron/services/usage-dimensions.js`，
+**由存储层 `store/model-log-store.js` 调用** —— 它是「这张表有哪些列」的归属）按
+「官方 `usage` 块 > 响应显式字段 > 请求侧参数」的优先级取；抽不到 ⇒ 0（不填默认值）。
+理由：填一个猜出来的值比 0 更坏 —— 0 会让服务端报「缺价格」（**可见**），
+猜出来的值会让成本**算错且看不出来**。
+
+
 ## 5. 价格卡：版本化，改价即新行
 
 价格卡存 `model_price_cards`，同一 `(provider_id, model_id, action_type, unit, spec,

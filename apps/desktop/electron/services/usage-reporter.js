@@ -14,9 +14,14 @@
 'use strict'
 
 const SETTING_KEY = 'opsCenterUsageReport'
+// ⚠ 事件流用**独立**的水印键：两条流读同一张表、共用一个水印会互相饿死
+//   （日桶流推进了水印 ⇒ 事件流看不到那些行 ⇒ 事件永久丢失）。
+const EVENT_SETTING_KEY = 'opsCenterUsageEventReport'
 const INTERVAL_MS = 30 * 60 * 1000
 const INITIAL_DELAY_MS = 5 * 1000
 const MAX_ROWS_PER_REPORT = 5000
+// ⚠ 服务端 `/usage/events` 单次上限是 500 条（`MAX_EVENT_ITEMS`）⇒ 这里对齐。
+const MAX_EVENT_ROWS_PER_REPORT = 500
 const SYNC_TIMEOUT_MS = 10 * 1000
 
 function classifyStatus (row) {
@@ -44,13 +49,14 @@ class UsageReporter {
   /** 启动周期上报：5s 首报 + 30min 周期（定时器不阻止进程退出） */
   start () {
     if (this._timer) return
-    this._timer = setInterval(() => {
+    const tick = () => {
+      // 日桶流（看板）与事件流（成本归集）**各自独立推进水印** ⇒ 互不影响。
       this.reportPending().catch(() => {})
-    }, INTERVAL_MS)
+      this.reportEvents().catch(() => {})
+    }
+    this._timer = setInterval(tick, INTERVAL_MS)
     if (this._timer && typeof this._timer.unref === 'function') this._timer.unref()
-    setTimeout(() => {
-      this.reportPending().catch(() => {})
-    }, INITIAL_DELAY_MS)
+    setTimeout(tick, INITIAL_DELAY_MS)
   }
 
   stop () {
@@ -69,6 +75,105 @@ class UsageReporter {
 
   _saveWatermark (id) {
     try { this._store.setSetting(SETTING_KEY, { lastId: id, reportedAt: new Date().toISOString() }) } catch (e) { this._log.warn('UsageReporter', 'watermark persist failed (will re-report after restart): ' + e.message) }
+  }
+
+  _getEventWatermark () {
+    let data = {}
+    try { data = this._store.getSettingObject(EVENT_SETTING_KEY, {}) } catch (e) {
+      this._log.warn('UsageReporter', 'event watermark read failed: ' + e.message)
+    }
+    return Number(data.lastId) || 0
+  }
+
+  _saveEventWatermark (id) {
+    try { this._store.setSetting(EVENT_SETTING_KEY, { lastId: id, reportedAt: new Date().toISOString() }) } catch (e) { this._log.warn('UsageReporter', 'event watermark persist failed (will re-report after restart): ' + e.message) }
+  }
+
+  /**
+   * **事件级**用量上报 —— 官方算力成本归集的地基。
+   *
+   * 与 `reportPending()`（日桶、看板用）的分工：
+   * - 日桶：一次调用被**聚合**进 (日期, provider, category, action) 桶 ⇒ 看「今天调了多少次」；
+   * - 事件：**一次调用一条**，带 spec / duration_seconds / item_count / char_count
+   *   ⇒ 服务端能算出「**这一次**花了多少钱」⇒ 扣积分要用它。
+   *
+   * ⚠ **幂等键** = `${clientId}:${row.id}`（本地自增主键）⇒ 重试重报不会重复计数。
+   * ⚠ **成本由服务端算**：这里只报用量维度，**不报成本**。
+   * ⚠ **byok 透传**：用户自带 Key 的调用 byok=1 ⇒ 服务端不扣官方积分。
+   *
+   * @returns {Promise<{code:number, reported?:number, skipped?:boolean, message?:string}>}
+   */
+  async reportEvents () {
+    const auth = this._getOpsCenterAuth()
+    if (!auth || !auth.url || !auth.apiKey) return { code: 0, skipped: true }
+    const db = this._store && this._store.db
+    if (!db || typeof db.prepare !== 'function') return { code: 0, skipped: true }
+
+    const lastId = this._getEventWatermark()
+    let rows
+    try {
+      rows = db.prepare(
+        'SELECT id, provider_id, category, model, action, status, latency_ms, tokens_in, tokens_out, ' +
+        'spec, duration_seconds, item_count, char_count, byok, created_at ' +
+        'FROM model_provider_logs WHERE id > ? ORDER BY id ASC LIMIT ?'
+      ).all(lastId, MAX_EVENT_ROWS_PER_REPORT)
+    } catch (e) {
+      this._log.warn('UsageReporter', 'read event logs failed: ' + e.message)
+      return { code: -1, message: e.message }
+    }
+    if (!rows || rows.length === 0) return { code: 0, reported: 0 }
+
+    const clientId = this._getClientId()
+    const today = new Date().toISOString().slice(0, 10)
+    const items = []
+    let maxId = lastId
+    for (const row of rows) {
+      const id = Number(row.id)
+      if (Number.isFinite(id) && id > maxId) maxId = id
+      const usageDate = String(row.created_at || '').slice(0, 10) || today
+      items.push({
+        // ⚠ 幂等键：客户端本地序号（自增主键）+ 设备哈希 ⇒ 重试重报不会重复计数
+        event_id: clientId + ':' + id,
+        usage_date: usageDate,
+        client_id: clientId,
+        provider_id: String(row.provider_id || ''),
+        category: String(row.category || 'llm'),
+        action_type: String(row.category || 'llm'),
+        model: row.model == null ? '' : String(row.model),
+        spec: row.spec == null ? '' : String(row.spec),
+        action: String(row.action || ''),
+        status: String(row.status || 'success'),
+        latency_ms: Number(row.latency_ms) || 0,
+        tokens_in: Number(row.tokens_in) || 0,
+        tokens_out: Number(row.tokens_out) || 0,
+        duration_seconds: Number(row.duration_seconds) || 0,
+        item_count: Number(row.item_count) || 0,
+        char_count: Number(row.char_count) || 0,
+        byok: Number(row.byok) === 0 ? 0 : 1,
+      })
+    }
+
+    const controller = typeof AbortController === 'function' ? new AbortController() : null
+    const timer = controller ? setTimeout(() => controller.abort(), SYNC_TIMEOUT_MS) : null
+    try {
+      const resp = await fetch(String(auth.url).replace(/\/+$/, '') + '/api/v1/usage/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Catalog-Key': auth.apiKey, Accept: 'application/json' },
+        body: JSON.stringify({ items, batch_id: clientId + ':events:' + lastId + ':' + maxId }),
+        redirect: 'error',
+        signal: controller && controller.signal,
+      })
+      if (!resp.ok) throw new Error('HTTP ' + resp.status)
+      this._saveEventWatermark(maxId)
+      this._log.info('UsageReporter', `reported ${items.length} usage events (watermark ${maxId})`)
+      return { code: 0, reported: items.length }
+    } catch (e) {
+      const isTimeout = e && (e.name === 'AbortError' || e.code === 'ABORT_ERR')
+      this._log.warn('UsageReporter', 'event report failed: ' + (isTimeout ? 'timeout' : e.message))
+      return { code: -1, message: isTimeout ? 'timeout' : e.message }
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
   }
 
   /** 聚合待上报日志并上报；返回 {code, skipped?, reported?} */

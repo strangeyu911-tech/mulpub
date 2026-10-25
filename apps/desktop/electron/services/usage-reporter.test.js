@@ -182,3 +182,92 @@ describe('P1 调度可观测性上报（scheduler 聚合项）', () => {
     expect(body.items.filter(i => i.action === 'scheduler-observation')).toHaveLength(0)
   })
 })
+
+// ⚠ 按 key 存取的 store 桩：真实 settings-store 的 setSetting/getSettingObject 是**按 key**的，
+//   而上面的 makeStore 只有一格 ⇒ 用它验证「日桶水印与事件水印互不影响」会得到假失败。
+function makeKeyedStore (rows, initial) {
+  const map = new Map(Object.entries(initial || {}))
+  return {
+    db: makeDb(rows),
+    getSetting: vi.fn((k) => (map.has(k) ? map.get(k) : '')),
+    getSettingObject: vi.fn((k, d = {}) => {
+      const v = map.get(k)
+      return v && typeof v === 'object' && !Array.isArray(v) ? v : d
+    }),
+    setSetting: vi.fn((k, v) => { map.set(k, typeof v === 'string' ? v : JSON.stringify(v)) }),
+    _map: map,
+  }
+}
+
+describe('UsageReporter.reportEvents（事件级上报 · 官方算力成本归集的地基）', () => {
+  let originalFetch
+  beforeEach(() => { originalFetch = global.fetch })
+  afterEach(() => {
+    global.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  const VIDEO_ROW = {
+    id: 7, provider_id: 'minimax', category: 'video', model: 'H3', action: 'generateVideo',
+    status: 'success', latency_ms: 12000, tokens_in: 0, tokens_out: 0,
+    spec: '768p', duration_seconds: 10, item_count: 0, char_count: 0, byok: 1,
+    created_at: '2026-10-25 10:00:00',
+  }
+
+  it('一次调用一条事件（不聚合），并带上用量维度', async () => {
+    const store = makeKeyedStore([VIDEO_ROW])
+    const r = new UsageReporter({ store, log: LOG, getOpsCenterAuth: () => AUTH, getClientId: () => 'dev-1' })
+    let body
+    global.fetch = vi.fn(async (url, opts) => {
+      body = JSON.parse(opts.body)
+      return { ok: true, status: 200 }
+    })
+    const res = await r.reportEvents()
+    expect(res.code).toBe(0)
+    expect(res.reported).toBe(1)
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://ops.example.com/api/v1/usage/events',
+      expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'X-Catalog-Key': 'k' }) }),
+    )
+    expect(body.items).toHaveLength(1)
+    const item = body.items[0]
+    // ★ 用量维度必须带上去：缺它们 ⇒ 服务端成本恒 0 且全报「缺价格」
+    expect(item.duration_seconds).toBe(10)
+    expect(item.spec).toBe('768p')
+    expect(item.model).toBe('H3')
+    expect(item.usage_date).toBe('2026-10-25')
+    // ★ 幂等键：重试重报不会重复计数
+    expect(item.event_id).toBe('dev-1:7')
+    // byok 透传：用户自带 Key ⇒ 服务端不扣官方积分
+    expect(item.byok).toBe(1)
+    // ★ 客户端**不报成本**：成本一律由服务端按价格卡算
+    expect(item.cost).toBeUndefined()
+  })
+
+  it('事件水印与日桶水印**互不影响**（两条流读同一张表）', async () => {
+    const store = makeKeyedStore([VIDEO_ROW])
+    const r = new UsageReporter({ store, log: LOG, getOpsCenterAuth: () => AUTH, getClientId: () => 'dev-1' })
+    global.fetch = vi.fn(async () => ({ ok: true, status: 200 }))
+    await r.reportEvents()
+    // 事件流推进了自己的水印
+    expect(JSON.parse(store._map.get('opsCenterUsageEventReport')).lastId).toBe(7)
+    // 日桶水印**没有**被推进（否则两条流会互相饿死：日桶推进后事件流就看不到那些行了）
+    expect(store._map.has('opsCenterUsageReport')).toBe(false)
+  })
+
+  it('事件上报失败保留事件水印（下次重试不丢数据）', async () => {
+    const store = makeKeyedStore([VIDEO_ROW])
+    const r = new UsageReporter({ store, log: LOG, getOpsCenterAuth: () => AUTH, getClientId: () => 'dev-1' })
+    global.fetch = vi.fn(async () => ({ ok: false, status: 500 }))
+    const res = await r.reportEvents()
+    expect(res.code).toBe(-1)
+    expect(store._map.has('opsCenterUsageEventReport')).toBe(false)
+  })
+
+  it('未配置 auth 时静默跳过（不发请求）', async () => {
+    const store = makeKeyedStore([VIDEO_ROW])
+    const r = new UsageReporter({ store, log: LOG, getOpsCenterAuth: () => null })
+    const res = await r.reportEvents()
+    expect(res).toEqual({ code: 0, skipped: true })
+  })
+})

@@ -6,6 +6,12 @@
  * 依赖：logger
  */
 const log = require('../logger')
+// ★ 维度提取放在**存储层**：它是「这张表有哪些列」的归属。
+//   形状假设集中在 usage-dimensions.js 这一个纯函数里（可逐条钉死）。
+//   ⚠ 为什么不放在 model-provider-manager：那个文件在门禁「点名还账」清单里
+//   （target 1284、容差 0）且「require 扇出」是**只降不升**的债务棘轮
+//   ⇒ 在那里抽模块会同时踩两条门禁；挂在存储层则两条都不碰。
+const { extractUsageDimensions } = require('../usage-dimensions')
 
 module.exports = {
   /**
@@ -21,6 +27,13 @@ module.exports = {
    * @param {number} [entry.tokens_out] - 输出 token 数
    * @param {number} [entry.cost] - 调用成本
    * @param {string} [entry.error_message] - 错误消息
+   * @param {string} [entry.spec] - 请求侧规格（分辨率等）；价格卡按 spec 精确匹配
+   * @param {number} [entry.duration_seconds] - 产出秒数（视频/音频）
+   * @param {number} [entry.item_count] - 产出张数（图像）
+   * @param {number} [entry.char_count] - 产出字符数（语音）
+   * @param {number} [entry.byok] - 1 = 用户自带 Key（官方算力不担成本）；缺省按 1
+   * @param {object} [entry.params] - 请求侧参数（供抽 spec / 时长 / 张数 / 字符数）
+   * @param {object} [entry.result] - 适配器响应（供抽官方 usage 里的权威用量）
    * @returns {boolean} 写入成功返回 true，store 未就绪返回 false
    */
   addProviderLog (entry) {
@@ -30,10 +43,13 @@ module.exports = {
       return false
     }
     try {
+      // ★ 用量维度：从请求侧参数 + 适配器响应里抽（权威来源优先，抽不到就是 0）
+      const dims = extractUsageDimensions({ params: entry.params, result: entry.result })
+      const spec = entry.spec != null && entry.spec !== '' ? entry.spec : dims.spec
       this.db.prepare(`
         INSERT INTO model_provider_logs
-          (provider_id, category, model, action, status, latency_ms, tokens_in, tokens_out, cost, error_message, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          (provider_id, category, model, action, status, latency_ms, tokens_in, tokens_out, cost, error_message, created_at, spec, duration_seconds, item_count, char_count, byok)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?)
       `).run(
         entry.provider_id,
         entry.category,
@@ -45,6 +61,13 @@ module.exports = {
         entry.tokens_out != null ? entry.tokens_out : null,
         entry.cost != null ? entry.cost : null,
         entry.error_message || null,
+        spec != null && spec !== '' ? spec : null,
+        entry.duration_seconds != null ? entry.duration_seconds : dims.duration_seconds || null,
+        entry.item_count != null ? entry.item_count : dims.item_count || null,
+        entry.char_count != null ? entry.char_count : dims.char_count || null,
+        // ⚠ byok 缺省必须是 1（用户自带 Key ⇒ 官方算力不扣积分）：
+        //   给用户错扣比不扣更糟 ⇒ 缺省方向是「不扣」。
+        entry.byok === 0 ? 0 : 1,
       )
       return true
     } catch (e) {

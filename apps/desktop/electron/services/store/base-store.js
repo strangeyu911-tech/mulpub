@@ -20,6 +20,7 @@ const {
   migratePerformanceLoopSchema,
   migrateCreatorLinkage,
 } = require('../store-schema')
+const { migrateModelProviderLogsSchema } = require('./model-provider-logs-schema')
 const log = require('../logger')
 
 let Database = null
@@ -87,6 +88,7 @@ class BaseStore {
       migrateOwnerIsolationSchema(this.db)
       migrateModelProvidersSchema(this.db)
       migrateAccountCredentialSchema(this.db)
+      migrateModelProviderLogsSchema(this.db)
       migrateKnowledgeEvolutionSchema(this.db)
       migrateViralPatternSchema(this.db)
       migratePerformanceLoopSchema(this.db)

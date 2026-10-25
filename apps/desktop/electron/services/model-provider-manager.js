@@ -354,10 +354,7 @@ class ModelProviderManager {
    * @param {string} status - 'success' | 'error'
    * @param {number} latencyMs - 延迟毫秒
    * @param {string|null} errorMessage - 错误消息
-   * @param {{params?: object, result?: object}} [context] - S4（2026-10-09）：成功路径
-   *   透传请求参数与 adapter 响应，用于提取 tokens/model/cost——G3/S4 断点修复，
-   *   让 model_provider_logs 的 tokens_in/tokens_out/cost 从恒 NULL 变为有数据，
-   *   这是官方算力成本归集（usage-reporter → ops-center model_usage_daily）的地基。
+   * @param {{params?: object, result?: object}} [context] - 成功路径透传请求参数与 adapter 响应（供提取 tokens/model/cost 与用量维度）。
    * @private
    */
   _writeLog (provider, action, status, latencyMs, errorMessage, context) {
@@ -365,10 +362,8 @@ class ModelProviderManager {
     try {
       const params = context && typeof context === 'object' ? context.params : null
       const result = context && typeof context === 'object' ? context.result : null
-      // S4：model 名取请求侧（params.model），usage 取响应侧（OpenAI 兼容口径
-      // prompt_tokens/completion_tokens；部分供应商用 input_tokens/output_tokens）。
-      // cost：响应自带 cost 字段时透传（官方代理场景），BYOK 直连场景留 NULL——
-      // 单价换算属 ModelPriceCard 后续立项，这里不做本地估算避免伪数据。
+      // S4：model 取请求侧；usage 取响应侧（OpenAI 兼容口径 prompt/completion_tokens）；
+      // cost 仅在响应自带时透传（BYOK 直连留 NULL，避免本地伪估算）。
       const usage = result && typeof result === 'object' && result.usage && typeof result.usage === 'object' ? result.usage : null
       const tokensIn = usage ? (Number(usage.prompt_tokens ?? usage.input_tokens) || null) : null
       const tokensOut = usage ? (Number(usage.completion_tokens ?? usage.output_tokens) || null) : null
@@ -384,6 +379,11 @@ class ModelProviderManager {
         tokens_out: tokensOut != null ? Math.round(tokensOut) : null,
         cost: cost != null ? cost : null,
         error_message: errorMessage,
+        // ★ 用量维度的原料：存储层据此补出 spec / 秒数 / 张数 / 字符数
+        //   （形状假设集中在 usage-dimensions.js）。不在此计算是因本文件同时受
+        //   「点名还账行数」与「require 扇出只降不升」两条门禁约束。
+        params,
+        result,
       })
     } catch (_) {
       // 日志写入失败不影响主流程

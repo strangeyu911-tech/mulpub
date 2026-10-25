@@ -18,19 +18,19 @@ test('plan-matrix 契约（spec §2）', async (t) => {
     const [free, standard, pro] = catalog
     assert.strictEqual(free.priceMonthlyCents, 0)
     assert.strictEqual(standard.priceMonthlyCents, 5900)
-    assert.strictEqual(standard.priceYearlyCents, 49900)
-    // v2.0 机制 C2.3 结构 A：相邻档 2.0x（行业中位），¥79 → ¥119、¥699 → ¥999
+    assert.strictEqual(standard.priceYearlyCents, 59000)
+    // v2.0 机制 C2.3 结构 A：相邻档 2.0x（行业中位），¥79 → ¥119、¥699 → ¥1190
     assert.strictEqual(pro.priceMonthlyCents, 11900)
-    assert.strictEqual(pro.priceYearlyCents, 99900)
+    assert.strictEqual(pro.priceYearlyCents, 119000)
     for (const item of catalog) assert.strictEqual(item.currency, 'CNY')
     // 档位序随目录下发，UI 排序与续叠保护同源（不得各自维护一份次序）
     assert.deepStrictEqual(catalog.map((it) => it.rank), [0, 1, 2])
   })
 
-  await t.test('官方积分月度配额：30 / 1600 / 3330', () => {
+  await t.test('官方积分月度配额：30 / 1500 / 3000', () => {
     assert.strictEqual(getPlanEntitlement('free').quota.official_credit_monthly, 30)
-    assert.strictEqual(getPlanEntitlement('standard').quota.official_credit_monthly, 1600)
-    assert.strictEqual(getPlanEntitlement('pro').quota.official_credit_monthly, 3330)
+    assert.strictEqual(getPlanEntitlement('standard').quota.official_credit_monthly, 1500)
+    assert.strictEqual(getPlanEntitlement('pro').quota.official_credit_monthly, 3000)
   })
 
   // ⚠️ 这条是**防复发**断言，不是复述数值：把「成本占比守线」写死成不变量，
@@ -39,8 +39,8 @@ test('plan-matrix 契约（spec §2）', async (t) => {
   //   —— 年付守线 ≤ 40%（年付按月等额发放 ⇒ 年付成本 = 12 × 月付成本）。
   await t.test('成本占比守线：月付 ≤ 30% 且年付 ≤ 40%（改价必须重解赠送量）', () => {
     const cases = [
-      { plan: 'standard', monthlyCents: 5900, yearlyCents: 49900, credit: 1600 },
-      { plan: 'pro', monthlyCents: 11900, yearlyCents: 99900, credit: 3330 },
+      { plan: 'standard', monthlyCents: 5900, yearlyCents: 59000, credit: 1500 },
+      { plan: 'pro', monthlyCents: 11900, yearlyCents: 119000, credit: 3000 },
     ]
     for (const c of cases) {
       const granted = getPlanEntitlement(c.plan).quota.official_credit_monthly

@@ -15,7 +15,7 @@
  * 语义边界（为什么与 identity_entitlement_usage 分表）：
  *   · identity_entitlement_usage = **次数配额**（能发几篇 / 生成几条视频），防刷用；
  *   · identity_credit_accounts/ledger = **积分余额**（官方算力花了多少钱），计费用。
- * 混在一张表会得到「发了 1600 积分，用户发 1600 篇就超限」这种荒谬语义。
+ * 混在一张表会得到「发了 1500 积分，用户发 1500 篇就超限」这种荒谬语义。
  */
 
 const CREDIT_SCHEMA = [

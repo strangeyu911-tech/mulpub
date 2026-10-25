@@ -59,6 +59,9 @@ v1.1 文档给出了三档（free / standard / pro）的功能与额度总表，
 
 ### 4.1 `plan-matrix.js` 字段（服务端唯一真源）
 
+> ⚠️ **2026-10-25 更新**：年付改「月付 × 10」（标准 ¥590 / 专业 ¥1190），官方积分 1500 / 3000
+> ⇒ 现行口径见 `01-docs/PRD-CREDIT-PRICING-2026-10-25.md`
+
 | 字段 | 含义 | free | standard | pro | 校验 |
 |---|---|---|---|---|---|
 | `rank` | 档位序（跨档续叠保护） | 0 | 1 | 2 | 整数 ≥0；**不可被 overrides 覆盖** |
@@ -67,7 +70,7 @@ v1.1 文档给出了三档（free / standard / pro）的功能与额度总表，
 | `batchSizePerRun` | 单次批量发布条数上限 | 1（单篇） | 10 | -1（不限） | 整数 ≥-1；1 表示不派生批量能力 |
 | `modelTier` | 模型分层访问级别 | 0 | 1 | 2 | 整数 0-2；**-1 被拒** |
 | `videoMonthly` | 视频月配额 | 0 | **300**（原 500） | 3000 | 整数 ≥-1 |
-| `priceMonthlyCents` / `priceYearlyCents` | 价格（分） | 0 / 0 | 5900 / 49900 | **11900 / 99900**（原 7900 / 69900） | 整数 ≥0 |
+| `priceMonthlyCents` / `priceYearlyCents` | 价格（分） | 0 / 0 | 5900 / 59000 | **11900 / 119000**（原 7900 / 69900） | 整数 ≥0 |
 
 **兼容性说明**：
 - `dailyPublish` 仍**不允许 -1**（它派生 `cloud_publish_monthly`，`consumeFeature` 要求 `limit >= 0`）。
@@ -269,6 +272,11 @@ handleTogglePlatform(platformId)
 | standard 视频配额 | 500/月 | **300/月** | v2.1 C4.3：3× 于画像 p75（100 条/月） |
 | standard 价格 | ¥59 / ¥499 | 不变 | — |
 | 积分配额 | 30 / 1600 / 2200 | 不变 | v1.2 定案，本文不推翻 |
+> ⚠️ **本节记录的是 2026-10-20 那一轮调价的变更前后对照**；该轮定案（pro 年付 ¥999、standard 年付 ¥499）
+> **已于 2026-10-25 被 `01-docs/PRD-CREDIT-PRICING-2026-10-25.md` 取代**（年付统一「月付 × 10」：
+> standard ¥590 / pro ¥1190，官方积分 1500 / 3000）。下表**不改**（它记录的是那一次变更的事实），
+> 但**不得**再被当作现行价引用。
+
 | 成本占比 | pro 27.8%（按 ¥79） | pro **18.5%**（按 ¥119，积分成本不变） | 涨价部分是功能价，毛利为正 |
 
 **零存量窗口**：真实支付未接通（G12），当前无在线付费用户；调价无退差价/存量兑换码重签问题。
@@ -360,6 +368,11 @@ handleTogglePlatform(platformId)
 | A10 | 纯函数边界（**部分函数未接线**） | `plan-limits.test.js`：空串/NaN 视为缺失、-1 不限、日发闭区间、selectedCount 非有限数放行。仅 `canAddPlatform` 已接线，其余见 N5/N1/N2 |
 | A11 | 全量测试 | `packages/api-publish-engine npm test` rc=0；`apps/desktop` 受影响用例全绿 |
 | A12 | QM-1 | `electron-builder --win --x64` rc=0；启动 8s 存活且 stderr 为空 |
+
+> ⚠️ **A1 的价格期望值是 2026-10-20 那一轮的验收判据**（当时 pro 年付 99900 分）。
+> 2026-10-25 起年付改「月付 × 10」⇒ 现行 pro 年付 **119000 分**、standard **59000 分**
+> （见 `01-docs/PRD-CREDIT-PRICING-2026-10-25.md`）。
+
 
 ---
 

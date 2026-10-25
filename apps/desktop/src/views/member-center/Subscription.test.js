@@ -110,13 +110,18 @@ describe('member-center/Subscription', () => {
     it('有数据 → 每档渲染卡片 + 价格', async () => {
       identityCtx.plans = [
         { id: 'free', label: '免费版', currency: 'CNY', priceMonthlyCents: 0, priceYearlyCents: 0 },
-        { id: 'standard', label: '标准版', currency: 'CNY', priceMonthlyCents: 5900, priceYearlyCents: 49900 },
-        { id: 'pro', label: '专业版', currency: 'CNY', priceMonthlyCents: 11900, priceYearlyCents: 99900 },
+        { id: 'standard', label: '标准版', currency: 'CNY', priceMonthlyCents: 5900, priceYearlyCents: 59000 },
+        { id: 'pro', label: '专业版', currency: 'CNY', priceMonthlyCents: 11900, priceYearlyCents: 119000 },
       ]
       const { wrapper } = await mountSubscription()
       expect(wrapper.find('[data-testid="plan-standard"]').exists()).toBe(true)
       expect(wrapper.get('[data-testid="plan-standard-price"]').text()).toContain('¥59')
       expect(wrapper.get('[data-testid="plan-pro-price"]').text()).toContain('¥119')
+      // ⚠ 年付价也必须被断言（2026-10-25 定价定案时补）：上面两条 `toContain('¥59')` / `toContain('¥119')`
+      // 是**前缀弱断言** —— '¥590' 也含 '¥59'、'¥1190' 也含 '¥119' ⇒ 年付价从 ¥499/¥999 改成
+      // ¥590/¥1190 时它们**照样绿** ⇒ 旧口径漏了过去。这两条用完整金额才有区分力。
+      expect(wrapper.get('[data-testid="plan-standard-price"]').text()).toContain('¥590')
+      expect(wrapper.get('[data-testid="plan-pro-price"]').text()).toContain('¥1190')
     })
   })
 
@@ -125,8 +130,8 @@ describe('member-center/Subscription', () => {
     beforeEach(() => {
       identityCtx.plans = [
         { id: 'free', label: '免费版', currency: 'CNY', priceMonthlyCents: 0, priceYearlyCents: 0 },
-        { id: 'standard', label: '标准版', currency: 'CNY', priceMonthlyCents: 5900, priceYearlyCents: 49900 },
-        { id: 'pro', label: '专业版', currency: 'CNY', priceMonthlyCents: 11900, priceYearlyCents: 99900 },
+        { id: 'standard', label: '标准版', currency: 'CNY', priceMonthlyCents: 5900, priceYearlyCents: 59000 },
+        { id: 'pro', label: '专业版', currency: 'CNY', priceMonthlyCents: 11900, priceYearlyCents: 119000 },
       ]
       identityCtx.entitlement = { plan: 'free', features: [], source: 'online', limits: { plan_rank: 0 } }
     })

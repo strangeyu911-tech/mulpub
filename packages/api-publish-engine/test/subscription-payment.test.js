@@ -192,12 +192,12 @@ test('createCheckout 金额真源', async (t) => {
     assert.strictEqual(order.plan, 'standard')
   })
 
-  await t.test('pro 年付按 plan-matrix 算 99900 分，durationDays=365', async () => {
+  await t.test('pro 年付按 plan-matrix 算 119000 分，durationDays=365', async () => {
     const repo = makeRepository()
     const svc = makeService(repo, { paymentProvider: fakeProvider })
     const out = await svc.createCheckout({ userId: 'u-1', plan: 'pro', period: 'year' })
     const order = repo.orders.get(out.orderId)
-    assert.strictEqual(order.amount, 99900)
+    assert.strictEqual(order.amount, 119000)
     assert.strictEqual(order.period, 'year')
   })
 

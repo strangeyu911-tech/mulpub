@@ -620,7 +620,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 |---|---|
 | `01-docs/usage-metering-spec.md` | **口径唯一真源**（五类 token / **整数微元** / 版本化价格 / 信任边界 / 缺价不许静默） |
 | `01-docs/DESIGN-COMPUTE-BILLING-MODEL-2026-10-11.md` | 三类计费形状（A/B/C）、定价基准优先级（B>A>C）、形状数量有界为 3 |
-| `01-docs/usage-metering-spec.md` §4.1 | 赠送量与年付守线（**唯一真源**；standard 1600 / pro **3330**，年付守线 ≤40%）<br>（⚠️ 旧写法指向 `PRD-REMOVE-BUYOUT-AND-PRICING-2026-10-17.md` —— 该文件实测**零命中**「积分 / credit / 赠送 / 0.01」⇒ **引用断链**）<br>常量侧出处：`packages/api-publish-engine/src/auth/plan-matrix.js:45` |
+| `01-docs/usage-metering-spec.md` §4.1 | 赠送量与年付守线（**唯一真源**；standard **1500** / pro **3000**，年付守线 ≤40%）<br>（⚠️ 旧写法指向 `PRD-REMOVE-BUYOUT-AND-PRICING-2026-10-17.md` —— 该文件实测**零命中**「积分 / credit / 赠送 / 0.01」⇒ **引用断链**）<br>常量侧出处：`packages/api-publish-engine/src/auth/plan-matrix.js:45` |
 | `01-docs/DEEP-ANALYSIS-CREDIT-PRICING-2026-10-08.md` | 成本摊销（保底/接近耗尽/濒危/耗尽四段）、混合制 |
 | Phase 1 执行记录 | 价格卡版本化、服务端算成本、缺价告警、原子扣减、账本不可变 |
 

@@ -32,7 +32,7 @@ const ORDER_PAID = {
   status: 'paid', period: 'month', createdAt: '2026-10-20T10:00:00.000Z', paidAt: '2026-10-20T10:01:00.000Z',
 }
 const ORDER_PENDING = {
-  id: 'wpdef67890', plan: 'pro', amount: 99900, currency: 'CNY',
+  id: 'wpdef67890', plan: 'pro', amount: 119000, currency: 'CNY',
   status: 'pending', period: 'year', createdAt: '2026-10-21T10:00:00.000Z', paidAt: null,
 }
 
@@ -60,7 +60,7 @@ describe('OrdersBilling', () => {
     expect(paidRow.text()).toContain('memberCenter.ordersStatusPaid')
 
     const pendingRow = wrapper.get(`[data-testid="order-row-${ORDER_PENDING.id}"]`)
-    expect(pendingRow.text()).toContain('¥999.00')
+    expect(pendingRow.text()).toContain('¥1190.00')
     expect(pendingRow.text()).toContain('memberCenter.periodYear')
     expect(pendingRow.text()).toContain('memberCenter.ordersStatusPending')
   })

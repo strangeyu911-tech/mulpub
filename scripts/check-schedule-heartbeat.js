@@ -27,6 +27,9 @@ const SLACK_ENV = 'MP_SCHEDULE_HEARTBEAT_SLACK_HOURS'
 const COLLECT_TIMEOUT_MS = 20000
 const REPO_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
 const WORKFLOW_FILE_RE = /^[A-Za-z0-9._-]+\.ya?ml$/
+// 下界取 1：正则**不放行**空串。"不带过滤"是哨兵语义，由 undefined 表达并在调用点单独判，
+// 不靠这里 {0,32} 的宽容——那等于把"缺失"和"写坏成空"合并成一个取值（QM-6 i2）。
+const EVENT_RE = /^[a-z_]{1,32}$/
 
 /* 出处必须是**可重跑**的读数，不是写进注释的死数（本仓定性过"量过一次之后没人再量"这一类）。
  * monthly 的 31 天是按最长月取的保守上界，**没有实测样本**——这一条逐字写在 unmeasuredKinds 里，
@@ -100,26 +103,53 @@ function resolveSlackHours (env, warn) {
 
 const REQUIRED_RUN_FIELDS = ['created_at', 'status', 'event']
 
-/**
- * 采集结果 → 心跳时间戳（新→旧）。两条纪律：
- *  - **字段缺席即失明**：少一个必需字段就抛，不得"当成没有 run"（本仓踩过读错字段名把 0 条读成全量）；
- *  - `conclusion=failure` **算一次心跳**：本判据问"跑没跑"，"跑失败"归 `ci-failure-handler` 那一刀管。
- */
-function heartbeatStamps (runs) {
+/* 两趟取证共用的形状校验 + 时间戳收集。抽成一份**不是**"顺手收敛"：上一轮 m7 的锚点在本文件里命中 2 次
+ * 并拒绝动手——两份逐字相同的校验，对变异判据就是歧义锚点，对下一个改判据的人就是"改一侧忘另一侧"。
+ * 顺序与旧实现逐字一致：先对**所有** run 校验形状（不分 event），再按 event/status 挑，
+ * 最后只对被挑中的那条解析 created_at——非 schedule 的 run 时间戳坏了，不该把整档抬成失明。 */
+function validateRunShape (runs) {
   if (!Array.isArray(runs)) throw new Error(`runs 不是数组（拿到 ${runs === null ? 'null' : typeof runs}）`)
-  const stamps = []
   for (const [i, r] of runs.entries()) {
     if (!r || typeof r !== 'object') throw new Error(`run[${i}] 不是对象`)
     for (const k of REQUIRED_RUN_FIELDS) {
       if (typeof r[k] !== 'string' || r[k] === '') throw new Error(`run[${i}] 缺必需字段 ${k}（采集器与 API 契约漂移）`)
     }
-    if (r.event !== 'schedule' || r.status !== 'completed') continue
+  }
+  return runs
+}
+
+/**
+ * 索引保持原样 ⇒ 错误文案指得回那一条 run；返回**条目**（ts + status），新→旧。
+ * 带 status 是为了让「排队」与「在跑」可分辨：queued（没抢到 runner）与 in_progress（跑起来没跑完）
+ * 是两种成因，只报一条 NEVER_COMPLETED 会把运维支使去查错方向（QM-6 i4）。
+ */
+function scanSchedule (runs, statusKeep) {
+  const validated = validateRunShape(runs)
+  const out = []
+  for (const [i, r] of validated.entries()) {
+    if (r.event !== 'schedule' || !statusKeep(r.status)) continue
     const ts = Date.parse(r.created_at)
     if (!Number.isFinite(ts)) throw new Error(`run[${i}].created_at 解析不动：${JSON.stringify(r.created_at)}`)
-    stamps.push(ts)
+    out.push({ ts, status: r.status })
   }
-  return stamps.sort((a, b) => b - a)
+  return out.sort((a, b) => b.ts - a.ts)
 }
+
+/**
+ * 心跳时间戳（新→旧）：`event=schedule` 且 `status=completed`。
+ * `conclusion=failure` **算一次心跳**：本判据问"跑没跑"，"跑失败"归 `ci-failure-handler` 那一刀管。
+ */
+function heartbeatStamps (runs) { return scanSchedule(runs, (s) => s === 'completed').map((e) => e.ts) }
+
+/**
+ * 「cron 兑现了，但那一次还没跑完」的证据：schedule 事件、status 不是 completed 的最近起跑时刻（新→旧）。
+ * 为什么单列一档而不是并回 NEVER_RAN：本判据问的是"**定时触发有没有兑现**"。
+ * 一条正在跑的 schedule run 就是兑现的证据；把它读成"从来没跑过"会让巡检作业第一天自己咬自己
+ * （2026-10-25 现场：它是全仓唯一一条 schedule run，扫描那一刻 status=in_progress）。
+ * 但也不能一律放行——文件头第 4 条成因就是"runner 长期排队永不 completed"。
+ * 分档不用新常量，用**同一把周期时钟**：age ≤ 阈值 ⇒ PENDING_FIRST（出声不阻断），超阈值 ⇒ NEVER_COMPLETED（红）。
+ */
+function pendingScheduleAttempts (runs) { return scanSchedule(runs, (s) => s !== 'completed') }
 
 function judge (opts = {}) {
   const now = typeof opts.now === 'number' ? opts.now : Date.now()
@@ -127,7 +157,7 @@ function judge (opts = {}) {
   const { hours: slackHours, warned, source: slackSource } = resolveSlackHours(opts.env || process.env, warn)
   const out = {
     verdict: null, rows: [], faults: [],
-    counts: { ok: 0, late: 0, never: 0, thin: 0 },
+    counts: { ok: 0, late: 0, never: 0, thin: 0, pending: 0, neverCompleted: 0, witness: 0 },
     now, slackHours, slackSource, slackWarned: warned,
   }
 
@@ -166,10 +196,58 @@ function judge (opts = {}) {
       row.verdict = 'SCANNER_FAULT'; row.reason = `读数形状不合：${e.message}`; out.faults.push({ file: w.file, reason: row.reason }); continue
     }
     row.collected = res.runs.length
+    row.windowFull = res.truncated === true
     row.heartbeats = stamps.length
-    if (stamps.length === 0) { row.verdict = 'NEVER_RAN'; out.counts.never++; continue }
+    if (stamps.length === 0) {
+      // 「我扫到的窗口里没有」不是「它从来没跑过」。先做一次带 event 过滤的 witness 取证，
+      // 再按 witness 的三种答案分档；witness 自己取不到数 ⇒ SCANNER_FAULT（rc=2）——
+      // 把工具的失明落成运维事实（NEVER_RAN）或落成通过（OK），是本仓点名的同一种错。
+      let wit
+      try { wit = opts.runsOf(w.file, { event: 'schedule' }) } catch (e) {
+        row.verdict = 'SCANNER_FAULT'; row.reason = `witness 采集抛错：${e.message}`; out.faults.push({ file: w.file, reason: row.reason }); continue
+      }
+      if (!wit || wit.ok !== true) {
+        row.verdict = 'SCANNER_FAULT'; row.reason = `witness 取不到数：${wit && wit.error ? wit.error : '采集器未返回 ok'}`
+        out.faults.push({ file: w.file, reason: row.reason }); continue
+      }
+      let wstamps
+      try { wstamps = heartbeatStamps(wit.runs) } catch (e) {
+        row.verdict = 'SCANNER_FAULT'; row.reason = `witness 读数形状不合：${e.message}`; out.faults.push({ file: w.file, reason: row.reason }); continue
+      }
+      row.witnessCollected = wit.runs.length
+      // 第二趟取证也可能自己被截断。档位不受它影响（runs 按 created_at 降序，截断砍不掉最新那条），
+      // 但「这一趟同样只看了最近 perPage 条」必须可见——否则 witness 会被下一个读者当成完整历史（QM-6 i3）。
+      row.witnessWindowFull = wit.truncated === true
+      // 「这一行的结论是谁给的」只由这一个字段承载：有心跳 ⇒ 走 OK/LATE（打「心跳来源」），
+      // witness 里只有未完成的 run ⇒ 走两档在途（打「证据来源」）。两种都是第二趟定的案，
+      // 所以首行的 witness= 计数也按同一个字段投影（QM-6 i3 采纳后的第二落点：在途档原本不出声）。
+      row.heartbeatSource = 'witness'
+      out.counts.witness++
+      if (wstamps.length > 0) {
+        stamps = wstamps
+        row.heartbeats = wstamps.length
+      } else {
+        // 这一趟**必须自己带保护**：completed 档把未完成的 run 过滤掉、从不解析它的 created_at，
+        // 而在途档恰恰要解析它——同一份校验在两趟里触发的输入集不同，所以不能靠上一趟兜（QM-6 第四轮 i1）。
+        let pending
+        try { pending = pendingScheduleAttempts(wit.runs) } catch (e) {
+          row.verdict = 'SCANNER_FAULT'; row.reason = `witness 在途读数形状不合：${e.message}`; out.faults.push({ file: w.file, reason: row.reason }); continue
+        }
+        if (pending.length > 0) {
+          const age = (now - pending[0].ts) / HOUR
+          row.lastAttempt = new Date(pending[0].ts).toISOString()
+          row.lastAttemptStatus = pending[0].status
+          row.attemptAgeHours = age
+          if (age > row.thresholdHours) { row.verdict = 'NEVER_COMPLETED'; out.counts.neverCompleted++ }
+          else { row.verdict = 'PENDING_FIRST'; out.counts.pending++ }
+          continue
+        }
+        row.verdict = 'NEVER_RAN'; out.counts.never++
+        continue
+      }
+    }
     // 样本薄 ≠ 失明：数据在、只是少，所以**出声但不改退出码**（每周作业实测只有 2 条样本）。
-    if (stamps.length < MIN_SAMPLES) out.counts.thin++
+    if (row.heartbeats < MIN_SAMPLES) out.counts.thin++
     row.last = new Date(stamps[0]).toISOString()
     row.ageHours = (now - stamps[0]) / HOUR
     if (row.ageHours > row.thresholdHours) { row.verdict = 'LATE'; out.counts.late++ } else { row.verdict = 'OK'; out.counts.ok++ }
@@ -196,17 +274,39 @@ function makeGhCollector (opts = {}) {
   if (typeof repo !== 'string' || !REPO_RE.test(repo)) throw new Error(`GITHUB_REPOSITORY 不可用或形状不合：${JSON.stringify(repo)}`)
   const exec = opts.exec || ((cmd, args, o) => execFileSync(cmd, args, o))
   const perPage = opts.perPage || 100
+  // 超过 100 时 GitHub **静默截到 100**，于是"取到的条数 >= perPage"永远不成立——
+  // 本刀最要紧的那个读数（truncated，窗口是否被填满）就会说谎。宁可当场拒绝构造（QM-6 i6）。
+  if (perPage > 100) throw new Error(`per_page 上限是 100，拿到 ${perPage}：API 会静默截断，truncated 读数随之失真 ⇒ 要更多历史只能翻页聚合`)
   const timeoutMs = opts.timeoutMs || COLLECT_TIMEOUT_MS
-  return function runsOf (file) {
+  return function runsOf (file, qopts) {
     if (!WORKFLOW_FILE_RE.test(String(file))) return { ok: false, error: `作业文件名形状不合，不拼进 API 路径：${JSON.stringify(file)}` }
-    const args = ['api', `repos/${repo}/actions/workflows/${file}/runs?per_page=${perPage}`, '--jq', JQ_RUNS]
+    const q = qopts || {}
+    // 两趟查询语义不同，必须分形状：
+    //   主查询 **不带** event 过滤 —— 只有不带它，才看得见"有 push run 而 cron 从未兑现"这一格（H5/H20 的现场）；
+    //   witness 查询 **必须带** event=schedule —— 主查询是"最近 per_page 条"，繁忙作业会把它自己的
+    //     schedule run 挤出窗口（2026-10-25 实测 dep-audit.yml：100 条窗口只覆盖 14.4 小时，全是 pull_request，
+    //     而按 event 过滤查得到 4 条 completed schedule run）。带过滤才是换了坐标去问，而不是拿同一个截断窗口自证。
+    const event = q.event === undefined ? '' : String(q.event)
+    // 「不带过滤」的哨兵**只能**是 undefined：显式空串是调用方写坏，必须单独一条文案（QM-6 i2——
+    // 把它并进"形状不合"等于把人支使去改一个没写错的正则）。两条成因、两种修法，不合并。
+    if (event === '') {
+      if (q.event !== undefined) return { ok: false, error: `event 给了空串：${JSON.stringify(q.event)} ⇒ 主查询用「不传 event」表达，显式空串是调用方写坏，拒绝而不是静默退化` }
+    } else if (!EVENT_RE.test(event)) {
+      return { ok: false, error: `event 取值形状不合，不拼进查询串：${JSON.stringify(q.event)}` }
+    }
+    const qs = `per_page=${perPage}${event ? `&event=${encodeURIComponent(event)}` : ''}`
+    const args = ['api', `repos/${repo}/actions/workflows/${file}/runs?${qs}`, '--jq', JQ_RUNS]
     let stdout
     try {
       stdout = exec('gh', args, { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 })
     } catch (e) {
       return { ok: false, error: `gh api 失败（${file}）：${e.message}` }
     }
-    return parseRunsJson(stdout, file)
+    const parsed = parseRunsJson(stdout, file)
+    if (!parsed.ok) return parsed
+    // 「窗口被填满」必须作为一个读数回报：否则下游无法区分"我没看见"与"确实没有"，
+    // 而 truncation 恰恰是这条判据第一个真实假阳性的来源。
+    return { ok: true, runs: parsed.runs, truncated: parsed.runs.length >= perPage }
   }
 }
 
@@ -263,28 +363,50 @@ function main (opts = {}) {
   }
   const r = judge({ root: parsed.root, now: typeof opts.now === 'number' ? opts.now : Date.now(), env, warn, runsOf, workflows: opts.workflows })
   const scoped = parsed.limit === null ? r.rows : r.rows.slice(0, parsed.limit)
-  const counts = { ok: 0, late: 0, never: 0, faults: 0 }
+  const counts = { ok: 0, late: 0, never: 0, faults: 0, pending: 0, neverCompleted: 0, witness: 0 }
+  // 新增档必须在这里显式领自己的桶：落进 `else counts.faults++` 会把"首跑在途"抬成 rc=2（把没红过的东西判成工具坏了）。
   for (const row of scoped) {
     if (row.verdict === 'OK') counts.ok++
     else if (row.verdict === 'LATE') counts.late++
     else if (row.verdict === 'NEVER_RAN') counts.never++
+    else if (row.verdict === 'PENDING_FIRST') counts.pending++
+    else if (row.verdict === 'NEVER_COMPLETED') counts.neverCompleted++
     else counts.faults++
   }
   counts.thin = scoped.filter((row) => row.heartbeats > 0 && row.heartbeats < MIN_SAMPLES).length
+  // witness 这一格不是 judge 里那个计数：CLI 面的读数必须由**被限定的那一组行**投影出来，否则 --limit 档与全量档同形。
+  // 第一版这里恒 0（main 从不回填它、judge 的计数被整丢掉），是 H17 新加的那条首行断言当场抓出来的 ⇒ 变异 m31 钉住。
+  counts.witness = scoped.filter((row) => row.heartbeatSource === 'witness').length
   // --limit 是"只跑前 N 条"的 smoke 档：判定一律按**被限定的那一组**算，不得让未采样的作业影响退出码。
   // 但域级失明（判据域为空 / loader 抛错）根本不在 rows 里，必须另加回来——
   // 否则"什么都没扫到"会被读成全绿（本仓把"按目录里有什么迭代"的门禁看不见"该有什么"点名为同型缺陷）。
   const domainFaults = r.faults.filter((f) => !r.rows.some((row) => row.file === f.file))
-  const verdict = (counts.faults + domainFaults.length) ? 'SCANNER_FAULT' : (counts.late + counts.never ? 'FAIL' : 'OK')
+  // PENDING_FIRST 不进 FAIL：它是"这一刻还在跑"，不是欠账（超预算的那一档已经换成 NEVER_COMPLETED 进 FAIL）。
+  const verdict = (counts.faults + domainFaults.length) ? 'SCANNER_FAULT' : (counts.late + counts.never + counts.neverCompleted ? 'FAIL' : 'OK')
+  // 运行面同源读数：witness 让最坏出站量变成「每条两趟」，这个数必须每天自己说出来，
+  // 而不是只在 PR 侧的锁（H27）里算一次（QM-6 第四轮 i2）。
+  const worstCollectSec = r.rows.length * 2 * COLLECT_TIMEOUT_MS / 1000
 
-  log(`SCHEDULE-HEARTBEAT now=${new Date(r.now).toISOString()} workflows=${r.rows.length} late=${counts.late} never=${counts.never} faults=${counts.faults} thin=${counts.thin} slack_hours=${r.slackHours}(${r.slackSource}) 判定=${verdict}`)
+  // 新增的三个计数放在 thin 之后、slack 之前：既有锁（H1/H17）钉的是 `late= never= faults= thin=` 这段连续形状，
+  // 往中间插字段会让它们假红——红得没有意义，还会诱导下一个人去放宽断言。
+  log(`SCHEDULE-HEARTBEAT now=${new Date(r.now).toISOString()} workflows=${r.rows.length} late=${counts.late} never=${counts.never} faults=${counts.faults} thin=${counts.thin} pending=${counts.pending} never_completed=${counts.neverCompleted} witness=${counts.witness} slack_hours=${r.slackHours}(${r.slackSource}) 采集最坏秒数=${worstCollectSec} 判定=${verdict}`)
   if (parsed.explain) {
     for (const row of r.rows) log(`  EXPLAIN ${row.file} crons=${JSON.stringify(row.crons)} period=${row.period || '-'} 阈值_hours=${row.thresholdHours === null ? '-' : row.thresholdHours.toFixed(1)}`)
   }
   for (const row of scoped) {
-    if (row.verdict === 'OK') log(`  OK ${row.file} name=${row.name} period=${row.period} last=${row.last} age_hours=${row.ageHours.toFixed(1)} 阈值_hours=${row.thresholdHours.toFixed(1)} 心跳样本=${row.heartbeats} 采集条数=${row.collected}`)
-    else if (row.verdict === 'LATE') log(`  LATE ${row.file} name=${row.name} period=${row.period} last=${row.last} age_hours=${row.ageHours.toFixed(1)} 阈值_hours=${row.thresholdHours.toFixed(1)}`)
-    else if (row.verdict === 'NEVER_RAN') log(`  NEVER_RAN ${row.file} name=${row.name} period=${row.period} completed_schedule_run=0 采集条数=${row.collected}`)
+    const win = ` 采集窗口=${row.windowFull ? '满' : '否'}`
+    // 同一个字段、两种说法，各自只在自己的语义成立时使用：在途档没有心跳，硬打「心跳来源」
+    // 等于造出一条假证据；OK/LATE 打「证据来源」则把已经拿到手的心跳降级成旁证。
+    const src = row.heartbeatSource !== 'witness' ? '' : (row.verdict === 'OK' || row.verdict === 'LATE' ? ' 心跳来源=witness' : ' 证据来源=witness')
+    const wwin = row.witnessWindowFull === true ? ' witness采集窗口=满' : ''
+    if (row.verdict === 'OK') log(`  OK ${row.file} name=${row.name} period=${row.period} last=${row.last} age_hours=${row.ageHours.toFixed(1)} 阈值_hours=${row.thresholdHours.toFixed(1)} 心跳样本=${row.heartbeats} 采集条数=${row.collected}${src}${win}${wwin}`)
+    // LATE 行也必须带「心跳来源/采集窗口」两个标签：降级与「迟到了」是两件同时成立的事，
+    // 只在 OK 行出声会让「迟到的那条其实是换坐标查到的」这一格在日志里消失（采纳 QM-6 i3 时实测到的第二格）。
+    else if (row.verdict === 'LATE') log(`  LATE ${row.file} name=${row.name} period=${row.period} last=${row.last} age_hours=${row.ageHours.toFixed(1)} 阈值_hours=${row.thresholdHours.toFixed(1)}${src}${win}${wwin}`)
+    else if (row.verdict === 'NEVER_RAN') log(`  NEVER_RAN ${row.file} name=${row.name} period=${row.period} completed_schedule_run=0 采集条数=${row.collected} witness_schedule_run=0${win}${wwin}`)
+    // 在途两档的结论**完全**来自第二趟取证（主窗口那时是零心跳），所以标签一个都不能少：
+    else if (row.verdict === 'PENDING_FIRST') log(`  PENDING_FIRST ${row.file} name=${row.name} period=${row.period} 上次尝试=${row.attemptAgeHours.toFixed(1)}h 状态=${row.lastAttemptStatus} 阈值_hours=${row.thresholdHours.toFixed(1)}${src}${win}${wwin} ⇒ cron 已兑现、那一次尚未 completed，不计欠账`)
+    else if (row.verdict === 'NEVER_COMPLETED') log(`  NEVER_COMPLETED ${row.file} name=${row.name} period=${row.period} 上次尝试=${row.attemptAgeHours.toFixed(1)}h 状态=${row.lastAttemptStatus} 阈值_hours=${row.thresholdHours.toFixed(1)}${src}${win}${wwin} ⇒ schedule run 超预算仍未完成（文件头第 4 条成因；状态是 queued 就查 runner/配额，是 in_progress 就查作业自己）`)
     else log(`  SCANNER_FAULT ${row.file} name=${row.name} 原因=${row.reason}`)
   }
   for (const f of domainFaults) log(`  SCANNER_FAULT ${f.file} 原因=${f.reason}`)
@@ -297,6 +419,6 @@ if (require.main === module) process.exit(main())
 
 module.exports = {
   judge, main, periodFromCron, shortestPeriod, resolveSlackHours, heartbeatStamps,
-  makeGhCollector, parseRunsJson, parseArgs,
-  HEARTBEAT_PROVENANCE, JQ_RUNS, PERIODS, DEFAULT_SLACK_HOURS, MIN_SAMPLES, SLACK_ENV, REQUIRED_RUN_FIELDS,
+  makeGhCollector, parseRunsJson, parseArgs, pendingScheduleAttempts, scanSchedule,
+  HEARTBEAT_PROVENANCE, JQ_RUNS, PERIODS, DEFAULT_SLACK_HOURS, MIN_SAMPLES, SLACK_ENV, REQUIRED_RUN_FIELDS, COLLECT_TIMEOUT_MS,
 }

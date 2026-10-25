@@ -14,6 +14,11 @@
  *  6. MISSED 只允许是**声明过的**重叠防呆（ALLOWED_MISSED），且重叠必须由另一条变异机械证明；
  *     否则算失败。本驱动当前不允许任何 MISSED。
  *  7. 写后必须回读：锚点命中数只证明"它在原文里唯一"，不证明"盘上现在是被改后的内容"。
+ *  8. 新增**档位**时先问「这一格的读数由谁产」，再问「有没有一条锁只看这个读数」。2026-10-25 补 witness 一族时
+ *     实测到：判据本体已经算了 truncated，但**没有任何用例读它**——两趟取数的夹具各自算自己的 truncated，
+ *     于是 m27（把采集器那个读数写死成 false）首轮 MISSED。正解不是给变异找豁免，是先补 H24（两个方向 +
+ *     绑 per_page 而非绑死 100），再让 m27 指名红它。同族第三条：m20 一次打断四条锁，说明 witness 的**坐标**
+ *     （event 过滤）比它的结论更值得单独立锁。
  *
  * 行尾：靶子文件有的在工作副本是 CRLF（workflows/*.yml、check-schedule-failure-watch.js）、
  * 有的是 LF（本刀新建的两个 js）。锚点一律按"归一行尾后的文本"匹配，写回时按原文件的
@@ -36,7 +41,7 @@ const HND = '.github/workflows/ci-failure-handler.yml'
 const REG = 'scripts/gate-timeout-registry.json'
 
 const SUITES = [
-  { file: LOCKS, minTests: 16 },
+  { file: LOCKS, minTests: 30 },
   { file: WATCHLOCKS, minTests: 13 },
   // 第三套是**对照**：m17（把登记格子的 jobId 写错）它也必须红，m18（workflow 里的数与登记数分叉）它必须绿。
   // 后者不是失败，而是要在现场演示的那件事 —— Gate 2b7 的枚举域取自注册表自身（check-coverage-budget.js:239），
@@ -48,16 +53,17 @@ const SUITES = [
 const MUTATIONS = [
   {
     id: 'm1', file: JUDGE,
-    note: '摘掉 status=completed 过滤 ⇒ 排队中/进行中的 run 被当成一次心跳兑现（永不 NEVER_RAN）',
-    from: "    if (r.event !== 'schedule' || r.status !== 'completed') continue",
-    to: "    if (r.event !== 'schedule') continue",
-    expect: ['H6'],
+    note: '摘掉 completed 这一档（statusKeep 恒真）⇒ 排队/在途的 run 被当成一次心跳兑现，PENDING_FIRST 与 NEVER_COMPLETED 两档一起失效',
+    from: "function heartbeatStamps (runs) { return scanSchedule(runs, (s) => s === 'completed').map((e) => e.ts) }",
+    to: "function heartbeatStamps (runs) { return scanSchedule(runs, () => true).map((e) => e.ts) }",
+    expect: ['H6', 'H18', 'H19'],
   },
   {
     id: 'm2', file: JUDGE,
-    note: '摘掉 event=schedule 过滤 ⇒ 只有 push run 的作业被读成"cron 按时兑现了"',
-    from: "    if (r.event !== 'schedule' || r.status !== 'completed') continue",
-    to: "    if (r.status !== 'completed') continue",
+    note: '摘掉 event=schedule 过滤 ⇒ 只有 push run 的作业被读成「cron 按时兑现了」。两趟取证共用收集器后，' +
+      '这一刀会同时打掉主查询与 witness，红集比旧实现宽——那是共用一处实现的**收益**，不是新的盲区',
+    from: "    if (r.event !== 'schedule' || !statusKeep(r.status)) continue",
+    to: "    if (!statusKeep(r.status)) continue",
     expect: ['H5'],
   },
   {
@@ -97,10 +103,11 @@ const MUTATIONS = [
   },
   {
     id: 'm8', file: JUDGE,
-    note: '查询里加回 event=schedule ⇒ 判据侧的 event 过滤变成死码，"只有 push run"这一现场信息也被丢掉',
-    from: 'runs?per_page=${perPage}',
-    to: 'runs?event=schedule&per_page=${perPage}',
-    expect: ['H13'],
+    note: '把 event 写死成 schedule（旧形态：查询串里直接带 event=schedule）⇒ 主查询也被服务端过滤，' +
+      '判据侧的 event 判断退化成死码，"有 push run 但 cron 从未兑现"这一现场信息整个丢掉',
+    from: "    const event = q.event === undefined ? '' : String(q.event)",
+    to: "    const event = 'schedule'",
+    expect: ['H13', 'H22'],
   },
   {
     id: 'm9', file: JUDGE,
@@ -187,6 +194,173 @@ const MUTATIONS = [
     to: '',
     expect: ['H12'],
     expectGreen: ['scripts/check-coverage-budget.test.js'],
+  },
+  /* ===== m20-m30：2026-10-25 那一格 follow-up（窗口截断 / 在途两档）各自指名的红 =====
+   * 这一批不是"多几条凑数"：H17-H25 每一条都要能指出"把对应分支拆掉它红"，
+   * 而 m20 同时打断四条（witness 的坐标一丢，四种现场全部退回 NEVER_RAN）——那正是它要防的形状。 */
+  {
+    id: 'm20', file: JUDGE,
+    note: 'witness 查询丢掉 event=schedule ⇒ 拿同一个截断窗口自证，等于没查：窗口满/首跑在途/witness 失明三种现场全部退回 NEVER_RAN',
+    from: "      try { wit = opts.runsOf(w.file, { event: 'schedule' }) } catch (e) {",
+    to: "      try { wit = opts.runsOf(w.file) } catch (e) {",
+    expect: ['H17', 'H21', 'H22', 'H25'],
+  },
+  {
+    id: 'm21', file: JUDGE,
+    note: 'witness 取不到数被读成 NEVER_RAN ⇒ 工具的失明落成运维事实，且退出码从 2 掉到 1（下一个修的人去查 cron，而该修的是采集器）',
+    from: "        row.verdict = 'SCANNER_FAULT'; row.reason = `witness 取不到数：${wit && wit.error ? wit.error : '采集器未返回 ok'}`\n        out.faults.push({ file: w.file, reason: row.reason }); continue",
+    to: "        row.verdict = 'NEVER_RAN'; out.counts.never += 1\n        continue",
+    expect: ['H21'],
+  },
+  {
+    id: 'm22', file: JUDGE,
+    note: 'witness 那一趟**抛错**被 catch 后吞成 NEVER_RAN（与 m21 是两条分支：!ok 与 throw 各守各的，合并成一条就留下一格没人守）',
+    from: "        row.verdict = 'SCANNER_FAULT'; row.reason = `witness 采集抛错：${e.message}`; out.faults.push({ file: w.file, reason: row.reason }); continue",
+    to: "        row.verdict = 'NEVER_RAN'; out.counts.never += 1; continue",
+    expect: ['H25'],
+  },
+  {
+    id: 'm23', file: JUDGE,
+    note: '在途两档整块塌回 NEVER_RAN ⇒ 巡检作业第一天自己咬自己（唯一一条 schedule run 就是此刻这条），而"排队永不完成"也从这一格被放走',
+    from: '        if (pending.length > 0) {',
+    to: '        if (false) {',
+    expect: ['H6', 'H18', 'H19'],
+  },
+  {
+    id: 'm24', file: JUDGE,
+    note: '把 PENDING_FIRST 算进 FAIL ⇒ "cron 已兑现、那一次还在跑"变成阻断，首跑必假红一次（与 m23 相反方向的同一格）',
+    from: "  const verdict = (counts.faults + domainFaults.length) ? 'SCANNER_FAULT' : (counts.late + counts.never + counts.neverCompleted ? 'FAIL' : 'OK')",
+    to: "  const verdict = (counts.faults + domainFaults.length) ? 'SCANNER_FAULT' : (counts.late + counts.never + counts.neverCompleted + counts.pending ? 'FAIL' : 'OK')",
+    expect: ['H18'],
+  },
+  {
+    id: 'm25', file: JUDGE,
+    note: '把 NEVER_COMPLETED 从 FAIL 里摘掉 ⇒ 文件头第 4 条成因（runner 长期排队永不 completed）永远不响，两档合并只剩"都放行"',
+    from: "  const verdict = (counts.faults + domainFaults.length) ? 'SCANNER_FAULT' : (counts.late + counts.never + counts.neverCompleted ? 'FAIL' : 'OK')",
+    to: "  const verdict = (counts.faults + domainFaults.length) ? 'SCANNER_FAULT' : (counts.late + counts.never ? 'FAIL' : 'OK')",
+    expect: ['H19'],
+  },
+  {
+    id: 'm26', file: JUDGE,
+    note: 'PENDING_FIRST 在 main() 的计数循环里不领自己的桶 ⇒ 落进 else faults++，把"没红过的东西"判成"工具坏了"（rc 从 0 抬成 2）',
+    from: "    else if (row.verdict === 'PENDING_FIRST') counts.pending++",
+    to: "    else if (row.verdict === '__pending_unreachable__') counts.pending++",
+    expect: ['H18'],
+  },
+  {
+    id: 'm27', file: JUDGE,
+    note: '采集器的 truncated 恒 false ⇒ 窗口截断这个**起因**从读数里消失，witness 回退与降级出声一起失效（本刀补 H24 之前这条是 MISSED）',
+    from: '    return { ok: true, runs: parsed.runs, truncated: parsed.runs.length >= perPage }',
+    to: '    return { ok: true, runs: parsed.runs, truncated: false }',
+    expect: ['H24'],
+  },
+  {
+    id: 'm28', file: JUDGE,
+    note: '行上的「采集窗口=满」读数恒否 ⇒ 降级发生了但不说话，读日志的人会以为主窗口与 witness 看的是同一份数据',
+    from: '    row.windowFull = res.truncated === true',
+    to: '    row.windowFull = false',
+    expect: ['H17'],
+  },
+  {
+    id: 'm29', file: JUDGE,
+    note: '把「这一行的结论来自第二趟」那个唯一字段写成 main ⇒ 三种出口（心跳来源/证据来源/witness= 计数）' +
+      '一起消失：一个字段承载三处读数，正是收敛成一份的收益，也是它必须被四条锁各守一侧的理由',
+    from: "      row.heartbeatSource = 'witness'",
+    to: "      row.heartbeatSource = 'main'",
+    expect: ['H17', 'H18', 'H19', 'H26'],
+  },
+  {
+    id: 'm30', file: JUDGE,
+    note: 'witness 计数进错桶（加到 pending）⇒ 首行两个读数同时说谎，"这次是靠第二趟取证的"在汇总面上不可见',
+    from: '      out.counts.witness++',
+    to: '      out.counts.pending++',
+    expect: ['H17'],
+  },
+  {
+    id: 'm31', file: JUDGE,
+    note: '把 CLI 面的 witness 计数退回本刀实测到的坏形态（恒 0）⇒ 首行永远报 witness=0，降级在汇总面上不可见；判据面仍为 1，所以只有"两个投影各有一条断言"才抓得住这一格',
+    from: "  counts.witness = scoped.filter((row) => row.heartbeatSource === 'witness').length",
+    to: '  counts.witness = scoped.filter(() => false).length',
+    expect: ['H17'],
+  },
+  {
+    id: 'm32', file: JUDGE,
+    note: 'witness 自己的窗口饱和不报（恒 false）⇒ 第二趟取证被读成"完整历史"；档位不会错（降序列表砍不掉最新那条），' +
+      '但"这次也只看了最近 100 条 schedule run"这件事消失，下一次归因又会去猜',
+    from: '      row.witnessWindowFull = wit.truncated === true',
+    to: '      row.witnessWindowFull = false',
+    expect: ['H26'],
+  },
+  {
+    id: 'm33', file: JUDGE,
+    note: '把单趟采集硬超时从 20s 抬到 400s ⇒ H27 的预算不等式必须当场红（它测的不是"今天够不够"，是"够不够会不会悄悄不成立"）',
+    from: 'const COLLECT_TIMEOUT_MS = 20000',
+    to: 'const COLLECT_TIMEOUT_MS = 400000',
+    expect: ['H27'],
+  },
+  {
+    id: 'm34', file: JUDGE,
+    note: 'LATE 行丢掉降级标签（心跳来源/采集窗口只在 OK 行出声）⇒「迟到的那条其实是换坐标查到的」在日志里不可见；' +
+      '与 m28/m29 同一族，但靶子是**另一条出口**——这是采纳 QM-6 i3 时实测到的第二格',
+    from: "    else if (row.verdict === 'LATE') log(`  LATE ${row.file} name=${row.name} period=${row.period} last=${row.last} age_hours=${row.ageHours.toFixed(1)} 阈值_hours=${row.thresholdHours.toFixed(1)}${src}${win}${wwin}`)",
+    to: "    else if (row.verdict === 'LATE') log(`  LATE ${row.file} name=${row.name} period=${row.period} last=${row.last} age_hours=${row.ageHours.toFixed(1)} 阈值_hours=${row.thresholdHours.toFixed(1)}${win}`)",
+    expect: ['H26'],
+  },
+  {
+    id: 'm35', file: JUDGE,
+    note: '在途两档不带「证据来源=witness」⇒ 这两行的结论完全来自第二趟取证，读数里却看不出来；' +
+      '与 m29 同族但靶子是另两个出口（QM-6 i3 采纳后的第二落点）',
+    from: "    const src = row.heartbeatSource !== 'witness' ? '' : (row.verdict === 'OK' || row.verdict === 'LATE' ? ' 心跳来源=witness' : ' 证据来源=witness')",
+    to: "    const src = row.heartbeatSource === 'witness' && (row.verdict === 'OK' || row.verdict === 'LATE') ? ' 心跳来源=witness' : ''",
+    expect: ['H18', 'H19'],
+  },
+  {
+    id: 'm36', file: JUDGE,
+    note: '把「显式 event 空串」的拒绝改成恒假 ⇒ 写坏的取值静默退化成主查询，witness 那一趟被偷偷替换而 ok 仍为 true' +
+      '（QM-6 i6：这条正是本刀要消灭的形状的第二落点）',
+    from: "      if (q.event !== undefined) return { ok: false, error: `event 给了空串：${JSON.stringify(q.event)} ⇒ 主查询用「不传 event」表达，显式空串是调用方写坏，拒绝而不是静默退化` }",
+    to: "      if (false) return { ok: false, error: `event 给了空串：${JSON.stringify(q.event)} ⇒ 主查询用「不传 event」表达，显式空串是调用方写坏，拒绝而不是静默退化` }",
+    expect: ['H28'],
+  },
+  {
+    id: 'm37', file: JUDGE,
+    note: 'PENDING_FIRST 行不报状态 ⇒ queued（没抢到 runner）与 in_progress（跑起来没完）在日志里同形，' +
+      '而这两种成因的修法相反（QM-6 i4）',
+    from: "    else if (row.verdict === 'PENDING_FIRST') log(`  PENDING_FIRST ${row.file} name=${row.name} period=${row.period} 上次尝试=${row.attemptAgeHours.toFixed(1)}h 状态=${row.lastAttemptStatus} 阈值_hours=${row.thresholdHours.toFixed(1)}${src}${win}${wwin} ⇒ cron 已兑现、那一次尚未 completed，不计欠账`)",
+    to: "    else if (row.verdict === 'PENDING_FIRST') log(`  PENDING_FIRST ${row.file} name=${row.name} period=${row.period} 上次尝试=${row.attemptAgeHours.toFixed(1)}h 阈值_hours=${row.thresholdHours.toFixed(1)}${src}${win}${wwin} ⇒ cron 已兑现、那一次尚未 completed，不计欠账`)",
+    expect: ['H18'],
+  },
+  {
+    id: 'm38', file: JUDGE,
+    note: 'NEVER_COMPLETED 行不报状态 ⇒ 红是红了，但"该查 runner/配额"还是"该查作业自己"这条归因线索被丢掉' +
+      '（与 m37 是两行各自守，合并成一条就会留下一格没人守）',
+    from: "    else if (row.verdict === 'NEVER_COMPLETED') log(`  NEVER_COMPLETED ${row.file} name=${row.name} period=${row.period} 上次尝试=${row.attemptAgeHours.toFixed(1)}h 状态=${row.lastAttemptStatus} 阈值_hours=${row.thresholdHours.toFixed(1)}${src}${win}${wwin} ⇒ schedule run 超预算仍未完成（文件头第 4 条成因；状态是 queued 就查 runner/配额，是 in_progress 就查作业自己）`)",
+    to: "    else if (row.verdict === 'NEVER_COMPLETED') log(`  NEVER_COMPLETED ${row.file} name=${row.name} period=${row.period} 上次尝试=${row.attemptAgeHours.toFixed(1)}h 阈值_hours=${row.thresholdHours.toFixed(1)}${src}${win}${wwin} ⇒ schedule run 超预算仍未完成（文件头第 4 条成因；状态是 queued 就查 runner/配额，是 in_progress 就查作业自己）`)",
+    expect: ['H19'],
+  },
+  {
+    id: 'm39', file: JUDGE,
+    note: '取消 per_page 上限校验 ⇒ 配到 500 时 GitHub 静默截到 100，`条数 >= perPage` 永不成立，' +
+      '"窗口被填满"这个本刀最要紧的读数恒说"否"——工具谎报比没有读数更坏（QM-6 i6）',
+    from: '  if (perPage > 100) throw new Error(`per_page 上限是 100，拿到 ${perPage}：API 会静默截断，truncated 读数随之失真 ⇒ 要更多历史只能翻页聚合`)',
+    to: '  if (false) throw new Error(`per_page 上限是 100，拿到 ${perPage}：API 会静默截断，truncated 读数随之失真 ⇒ 要更多历史只能翻页聚合`)',
+    expect: ['H29'],
+  },
+  {
+    id: 'm40', file: JUDGE,
+    note: '在途读数的形状异常被 catch 后塌回 NEVER_RAN ⇒ 与 m21/m22 同族但守的是**第三条**分支' +
+      '（completed 档过滤掉的 run 恰是 pending 档要解析的那批，所以这条分支只能单独守，QM-6 第四轮 i1）',
+    from: "          row.verdict = 'SCANNER_FAULT'; row.reason = `witness 在途读数形状不合：${e.message}`; out.faults.push({ file: w.file, reason: row.reason }); continue",
+    to: "          row.verdict = 'NEVER_RAN'; out.counts.never += 1; continue",
+    expect: ['H30'],
+  },
+  {
+    id: 'm41', file: JUDGE,
+    note: '首行不打"采集最坏秒数" ⇒ 预算这件事只在 PR 侧的锁里看得见，每天真跑的那一次对自己的成本是瞎的' +
+      '（QM-6 第四轮 i2：运行面与判据面必须同源）',
+    from: '  log(`SCHEDULE-HEARTBEAT now=${new Date(r.now).toISOString()} workflows=${r.rows.length} late=${counts.late} never=${counts.never} faults=${counts.faults} thin=${counts.thin} pending=${counts.pending} never_completed=${counts.neverCompleted} witness=${counts.witness} slack_hours=${r.slackHours}(${r.slackSource}) 采集最坏秒数=${worstCollectSec} 判定=${verdict}`)',
+    to: '  log(`SCHEDULE-HEARTBEAT now=${new Date(r.now).toISOString()} workflows=${r.rows.length} late=${counts.late} never=${counts.never} faults=${counts.faults} thin=${counts.thin} pending=${counts.pending} never_completed=${counts.neverCompleted} witness=${counts.witness} slack_hours=${r.slackHours}(${r.slackSource}) 判定=${verdict}`)',
+    expect: ['H27'],
   },
   {
     id: 'msanity', file: LOCKS,

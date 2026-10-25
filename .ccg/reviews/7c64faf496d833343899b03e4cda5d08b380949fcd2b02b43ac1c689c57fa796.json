@@ -1,0 +1,119 @@
+{
+  "sha": "9c26325344964eed064e4824791cf5385e4607c8",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 616 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 616,
+    "fileCount": 8,
+    "codeFileCount": 3,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 3,
+    "docSensitiveContentSample": [
+      "  --jq '[.workflow_runs[]|select(.status==\"completed\")|.created_at]'",
+      "   命中体是 design §4 的取数命令 `--jq '[.workflow_runs[]|select(.status…'`（jq 投影被认成凭证形状）。",
+      "   逐条确认**不是密钥**：那是一段只读 API 过滤表达式。判据本身已把文档行排除在模式判定之外，"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "7c64faf496d833343899b03e4cda5d08b380949fcd2b02b43ac1c689c57fa796",
+  "decidedAt": "2026-10-25T06:48:30.397Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "judge() 里 stamps 声明为 const，却在 witness 分支写 stamps = wstamps（重赋值），运行时 TypeError；修法必须改为 let stamps 且保持同块可见。",
+        "highRiskDomains": [],
+        "prosecution": "若 `stamps` 的声明是 const，则 `stamps = wstamps` 会在第一次走 witness 分支时抛 `TypeError: Assignment to constant variable`；而这条路径恰是本刀新增的主路径，零心跳档整体崩，H17/H20/H26/H28/H29/H30 都拿不到定值，判据给出的档位失去对象。",
+        "defense": "实测否证。`grep -n let.scripts/check-schedule-heartbeat.js` ⇒ 判据第 194 行是 `let stamps`（无初始化的 let 声明），第 227 行 `stamps = wstamps` 是同块内对同一 let 的赋值；`node --test scripts/check-schedule-heartbeat.test.js` 现跑 `# tests 30 / pass 30 / fail 0`。H17（witness 有心跳）、H20（witness 零条）、H26（witness 窗口满）、H29（perPage 上限）、H30（在途读数形状不合）都真跑过这条赋值或其紧邻分支——const 赋值会以 crash 形态显形（rc 非 0 且失败清单里出现 Assignment to constant variable），实测没有。这是同一句话第四次提出；第四轮采纳的是**另一格**（pending 档裸调用缺 try/catch），已落地并由 H30/m40 钉住。",
+        "verdict": "dismissed",
+        "rationale": "代码路径与指控相反，它建议的修法（改成 let stamps）就是现状；依据是 diff 上下文之外的猜测，而落地文件里那一行本来就是 let。可重取坐标：判据 194 与 227 行、`# tests 30 / pass 30`。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "变异 m20（丢 event 过滤）同时打断 H17/H21/H22/H25 四条锁，说明 witness 坐标与四个独立出口耦合过紧；一处改动引发连锁红，维护成本高。",
+        "highRiskDomains": [],
+        "prosecution": "一个变异（m20：witness 丢掉 event 过滤）同时打断 H17/H21/H22/H25 四条锁，说明「第二趟坐标」被四处独立依赖：一处改动引发连锁红，等于把四条锁焊成一根绳，将来任何合法的坐标调整都会同时撞四条，读结果的人会开始怀疑锁而不是改锁。",
+        "defense": "连锁是设计目标，不是耦合缺陷。终跑（CAUGHT=42 MISSED=0 PROBLEM=0）打印 m20 的红集 = 指名的 H17/H21/H22/H25，另加连带红 H6/H18/H19，而驱动把后者如实列在「未预期但红」**不认领成设计如此**。这六格量的是同一件事的六个不同现场：有心跳、witness 报 not-ok、必须带 event 坐标、witness 抛错、两档在途、在途资格判定。缩减会留下可测的洞：只留 H22（它看的是采集器 argv 里有没有 event=schedule）时，把 m20 应用到判据侧的 witness 调用点不会红；只留 H17 时，两档在途退回 NEVER_RAN 也不会红。口径写在 `scripts/check-schedule-heartbeat.mutation.js` 的 expect / alsoExpect / unexpected 三分上，与上一刀 m3「红集含未预期但红的 H2/H7」同一处置。",
+        "verdict": "dismissed",
+        "rationale": "一条不变式被多处消费，必然表现为一条变异打断多处，这是覆盖充分而不是过耦合。要减锁请先给出「减掉哪一条、哪个现场就没人守」的可测答案；本条没有可修对象。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "pending 档使用 row.thresholdHours（可为 null）；null 在数字比较中强制转 0，导致非 cron 作业的在途 run 被误判为 NEVER_COMPLETED 或 PENDING_FIRST。",
+        "highRiskDomains": [],
+        "prosecution": "若某条作业推不出周期，`row.thresholdHours` 为 null，则 `age > row.thresholdHours` 把 null 强转成 0，任何在途 run 都被判成 NEVER_COMPLETED（红），巡检会在「cron 形状可疑」的同一行上再叠一条误红，而归因被指向排队。",
+        "defense": "该状态在本判据里构造不出来。判据第 182 行在周期推不出时立刻置 SCANNER_FAULT 并 continue，第 184 行 `row.thresholdHours = (sp.period.ms + slackHours * HOUR) / HOUR` 只在它之后执行；在途比较在同一循环体更深处（第 227 行之后），所以任何走到那里的行都已带数值阈值。同一处还有更硬的一格：两档在途的打印语句本身写的是 `阈值_hours=${row.thresholdHours.toFixed(1)}`，null 走到那里当场 TypeError；而测试第 349 行断言 NEVER_COMPLETED 行含 阈值_hours=32.0、第 351 行断言同行含 状态=in_progress，H18/H19 真跑过这两个出口，现跑 30/30 全绿。",
+        "verdict": "dismissed",
+        "rationale": "不可达路径不写防御分支——那会造出一份永远不被执行、因而永远不被验证的代码，正是本仓点名的装饰性形状。本条在第四轮以 i5 提出过一次，当时的依据（182/184 的顺序 + H19 的打印断言）今天重取仍然成立。顺带一句：即便可达，null 强转成 0 的后果是一律 NEVER_COMPLETED，与指控写的「误判为 PENDING_FIRST」方向相反。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "judge() 现已超长（含主查询、witness、pending 两档、故障处理、降级标签），控制流深且嵌套多层，难以逐条审计。",
+        "highRiskDomains": [],
+        "prosecution": "judge() 把主查询、witness、两档在途、三类失明与降级标签压在同一个函数里，读的人要一次装下六种出口；新增档位时容易漏改一处——本刀就在采纳途中漏过 LATE 与两档在途各一次。",
+        "defense": "长度实测 108 行（从 `function judge` 到其顶层闭合括号）。而「漏改一处」这个风险已经被出口枚举式覆盖接住：六种出口各有指名锁（H1/H2/H4/H5/H17/H18/H19/H20/H21/H25/H26/H28/H29/H30），标签与桶位各有指名变异（m21-m22、m23-m26、m28-m31、m32-m41）——本刀漏掉的 LATE 与两档在途，恰恰是这套覆盖在采纳过程中**当场暴露**的（m34/m37/m38 就是为它们补的，各自指名红）。抽函数已登记为执行记录遗留 8 并写明前提：先有一条「同一批 runs 喂旧新两版、逐字段比较 rows」的行为对拍，否则抽函数会把刚钉牢的红集整体重洗，那正是「锁与实现互不认账」的入口。",
+        "verdict": "dismissed",
+        "rationale": "形状偏好不是缺陷；风险已被指名锁 + 指名变异覆盖，改进本身已带前提地登记为欠账。本刀这段连着改过四轮，第五次重排在同一 PR 里只会让红集再次失去可归因性。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "每条无心跳作业触发第二趟 gh api（顺序执行）；6 条作业最坏 12 趟 × 20s = 240s，虽 H27 有预算锁，但无并行或超时聚合，CI 实际耗时不可控。",
+        "highRiskDomains": [],
+        "prosecution": "每条零心跳作业顺序多发一趟 API，6 条作业最坏 12 趟 × 20s = 240s；没有并行也没有限流，CI 实际耗时不可控，真撞 600s 预算时表现为整作业超时而不给归因。",
+        "defense": "上界是算术且每次跑自报：单趟由判据第 27 行的 COLLECT_TIMEOUT_MS（20s 硬超时）持有，趟数由 H22 两条断言钉住（有心跳时 calls.length===1、零心跳时恰好 2），所以最坏 = 域内作业数 × 2 × 20s。判据首行现在直接打印它——真仓 2026-10-25T06:42:00Z 现跑读数：`workflows=6 … witness=2 slack_hours=8(default) 采集最坏秒数=240 判定=FAIL`。PR 侧 H27 比对声明预算（timeout-minutes × 60 = 600s ≥ 240s）并在域退化（作业数 < 4）时同样红；变异 m33（把单趟超时抬到 400s）与 m41（首行不打这个数）各指名红一条。并行不是没考虑：它把同一 token 的并发出站翻倍，换来的只是这个病理上界的 40%；真要治，正解是翻页聚合（遗留 3 原文），不是给第二趟加线程。",
+        "verdict": "dismissed",
+        "rationale": "「不可控」与现状不符：耗时上界可算、每天自己打印、并被一条 PR 侧的锁拦在前面。加并行/限流会把可见性问题换成新的运行面复杂度，且与本判据「只在必要时多发一趟」（H22）相互抵消。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-25T07:11:52.797Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4432#issuecomment-6394731179",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@c5e68073a6fb6aad467684d5c3dda09765d4aa27c872d2ec29856f87b38cabd1"
+  }
+}

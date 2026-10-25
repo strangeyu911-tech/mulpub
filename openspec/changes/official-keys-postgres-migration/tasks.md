@@ -109,3 +109,23 @@
 - [ ] 8.6 **不实现套餐池 / 熔断 / fallback 的完整运营后台**（属另一条线；本 change 只做接线必需的最小面）。
 - [ ] 8.7 **不做 reserve / settle 预扣模型**（改向后是「发货前扣分」）。
 - [ ] 8.8 **不改桌面端既有 BYOK 路径**。
+
+---
+
+## 0bis. 第二轮对抗评审后的整改项（2026-10-25）
+
+> 上述 1–7 组**实施前**必须先闭合本组（多为「实现时会踩」的坑）。
+
+- [ ] 0bis.1 **`refId` 空值硬拒**：扣分端点**入口**校验 `refId` 非空 ⇒ 空值 400（**不得依赖仓储层**——`consumeCredit` 无 `if (refId)` 守卫）。
+- [ ] 0bis.2 **响应体字段名用 camelCase**（`grantedTotal` / `periodStart` / `balanceAfter`），与 `credit-repository.js` 既有返回一致。
+- [ ] 0bis.3 **`userId` 传 `identity_users.id`**：api-publish-engine 侧提供 `auth_subject` → `id` 的解析（它才有 `identity_users` 表）。
+- [ ] 0bis.4 **错误码对齐既有实现**：`CREDIT_BALANCE_EXHAUSTED` = **409**（`CreditError.status` 硬编码）；
+      `CREDIT_AMOUNT_INVALID` 由端点**入口**自己校验并转 400（仓储层抛的是 `TypeError`）；
+      `CREDIT_PERIOD_INVALID` / `CREDIT_SERVICE_UNAVAILABLE` **需新增**。
+- [ ] 0bis.5 **生效价判据用 `effective_to` 空串**（不是 `IS NULL`）；`tier_access` 按**整数等级码**比较。
+- [ ] 0bis.6 **缺价规则两态**：官方算力场景**拒绝服务**；并**正式修订** `01-docs/usage-metering-spec.md`（BYOK 场景维持「记 0 + 告警」）。
+- [ ] 0bis.7 **扣分时序按两段式**：发货前**只读**额度预检 ⇒ 不足则**不调上游**；发货后实扣。
+- [ ] 0bis.8 **迁移文件名逐个核对能被 `MIGRATION_PATTERN` 认领**（只认 3 位数字；不匹配者被静默丢弃）。
+- [ ] 0bis.9 **执行记录补齐两形态**：表行 + `- 保留门禁：… | 远程同步 <状态>` bullet，并补 `## CHANGELOG 条目` 小节。
+- [ ] 0bis.10 **待人工过目项落地**：`compute-key-envelope-migration` 归档与否（U-8）｜服务间鉴权（U-1）｜错误码新增（U-9）。
+

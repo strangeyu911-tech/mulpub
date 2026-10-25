@@ -492,3 +492,25 @@ resp = await client.post(url, json=payload, headers=headers)
 | D19（前提被推翻） | ✅ **保留**（诊断留档） | D20 是它的结论 |
 | `compute-key-envelope-migration` | ⛔ **前提失效** | 其存在理由是「Node 侧要解官方 Key」；已在该 change 的 proposal 顶部声明；**归档与否须人工确认** |
 
+---
+
+## D21 · **第二轮对抗评审后的订正摘要**（2026-10-25）
+
+> 5 条评审线（事实核验 / 跨文档一致性 / openspec 合规 / 设计对抗 / 门禁流程）共交 **83 条发现**。
+> 下列为**已落到文档**的订正；逐条证据见 `01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md` §12 与
+> `openspec/records/official-compute-wiring-final.md`。
+
+| 类别 | 订正 |
+|---|---|
+| **扣分时序** | 改为**两段式**：发货前**只读**额度预检（fail-closed 落点，不建表/不加迁移/不引入 reserve-settle）→ 发货后按实际成本实扣 ⇒ 原 §5.1 与 §5.3 互斥已消除 |
+| **幂等** | `refId` **空值必须 400 拒绝**（既有 `consumeCredit` 无 `if (refId)` 守卫 ⇒ 空值会静默「已扣」但不扣） |
+| **用户身份** | `userId` 统一为 **`identity_users.id`**（不是 Logto `sub`；`sub` 在 `auth_subject`）⇒ 解析在 api-publish-engine 侧 |
+| **错误码** | `CREDIT_BALANCE_EXHAUSTED` 对齐既有 `CreditError.status`（**409**，非 402）；`CREDIT_AMOUNT_INVALID` 的实际抛出是 `TypeError` ⇒ 端点须在入口转 400；`CREDIT_PERIOD_INVALID` / `CREDIT_SERVICE_UNAVAILABLE` **仓内尚不存在** ⇒ 需新增（U-9） |
+| **响应体** | 字段名改 **camelCase**（与 `credit-repository.js` 既有返回一致） |
+| **选 Key** | `tier_access` 是**整数等级码**（`tier_access <= user_tier`），不是「含目标档位」的集合 |
+| **价格卡** | 生效价判据是 **`effective_to` 为空串**（`default=""`），**不是 `IS NULL`** |
+| **缺价** | 口径真源 `usage-metering-spec.md` 正式修订为**两态**（BYOK 记 0 告警 / 官方算力拒绝服务） |
+| **迁移编号** | `007` **已释放**（原「被信封 change 预定」是规格层预留，该 change 前提已失效）⇒ 新迁移从 **`010`** 起；另补 **`MIGRATION_PATTERN` 只认 3 位数字、不匹配者被静默丢弃（fail-open）** 这条判据 |
+| **未决项** | U-3 **关闭**（`official_credit_monthly` 实测已在 `quota` 下发）；U-5 改为「仓内已有调度器先例，缺的是没为补扣接上」；新增 **U-8**（归档与否，须人工过目）、**U-9**（错误码待新增）、**U-10**（迁移文件名须被认领） |
+| **openspec 合规** | delta 补 **H1 + `## Purpose`**；补 **`## MODIFIED Requirements`**（`ops-center/model-usage`）；proposal 补 **`## Capabilities`** 段 |
+

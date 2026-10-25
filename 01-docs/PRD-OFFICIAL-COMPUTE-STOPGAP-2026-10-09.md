@@ -214,7 +214,8 @@ const LOGTO_ONLY_FEATURES = new Set(["cloud_publish"]);
   → ④ 调上游（httpx + 官方 Key）
   → ⑤ 算实际成本：cost_cents = f(实际 tokens, 生效价)
         credit_cost = ceil(cost_cents / credit_unit_price_cents × multiplier)
-  → ⑥ 调 api-publish-engine POST {businessApiUrl}/api/v1/credit/consume
+  → ⑤' **额度预检（只读）** ⇒ 余额不足 ⇒ **不调上游**（fail-closed 落点）
+  → ⑥ 调 api-publish-engine POST {businessApiUrl}/api/v1/credit/consume（**发货后实扣**）
         body: { userId, amount: credit_cost, costCents, priceId, refId: events.id, periodStart, periodEnd }
         ├─ 成功 ⇒ events.status=charged
         ├─ 余额不足 ⇒ events.status=charge_rejected → **不向用户发货**
@@ -254,11 +255,14 @@ const LOGTO_ONLY_FEATURES = new Set(["cloud_publish"]);
 2. ~~近 30 天上游账单~~ → **🔄 进行中（2026-10-11：运营方确认可导出）**。上游为**多供应商 + 混合计费**（订阅套餐 + 按量付费中转站），数据将全量提供或提供只读接口由接手方自行拉取；交接口径见 `01-docs/HANDOFF-UPSTREAM-BILLING-INTAKE-2026-10-11.md`。
 3. **迁移编号核对**：`migrations/postgresql/` 现占用 002-005，新表迁移从 006 起必须先查台账锁 checksum（交接文档 K4）。
    - ⚠️ **2026-10-25 实测订正**：占用已变为 `002/003/004/005/006_payment_orders/008_credit_ledger/009_redeem_code_issued_to`
-     ⇒ `006` 已占、`007` 已被 `compute-key-envelope-migration` 预定、`008`/`009` 已占 ⇒ **新迁移从 `010` 起**。
+     ⇒ `006` 已占、`008`/`009` 已占；⚠️ **`007` 已被释放**（原「被信封 change 预定」是规格层预留，该 change 前提已失效；实测磁盘无 `007_*.sql`）⇒ **新迁移从 `010` 起**。
    - ⚠️ 且真实约束**不是「撞号」**，而是 **FK 建表顺序 = 文件名 `localeCompare` 序**
      （`postgres-migrations.js:6` 的 `MIGRATION_PATTERN`、`:28` 的 `.sort((l,r)=>l.name.localeCompare(r.name))`、`:102` 按序执行）
      ⇒ 被 FK 引用方的**文件名必须小于**引用方；同前缀不同名**可共存**（台账锁的是全文件名 + checksum）。
-   - ⚠️ **加文件与执行必须同批部署**（`postgres-identity-repository.js:293` 的 `assertReady` 用 `allowPending:false`
+   - ⚠️ **另一条更隐蔽的约束**：`MIGRATION_PATTERN` 只认**3 位数字**（`/^\d{3}_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/`）
+     ⇒ 4 位号 / 2 位号 / 非法名会被 `filter` **静默丢弃**（fail-open），`allowPending:false` **也发现不了**
+     ⇒ 落任何迁移前**逐个核对文件名能被该正则认领**（本仓**零门禁**检查目录里 .sql 是否全被认领 ⇒ 只能人工核）。
+   - ⚠️ **加文件与执行必须同批部署**（`postgres-identity-repository.js` 的 `assertReady`（**在 `:215`，`allowPending:false` 在 `:232`**）
      ⇒ 「文件已入库未执行」会让 identity 仓储**启动期硬失败**，表现为会员中心整体降级）。
 4. **任务宿主**：全仓无 cron/APScheduler；套餐用量日聚合、对账、超时回收都需要先解决任务宿主（交接文档 K7）。
 5. **退款路径**：`identity_entitlement_usage.used` 只增不减（K6），预扣-结算-退款模型必须先建出减回通道且不撞 `CHECK (used >= 0)`。

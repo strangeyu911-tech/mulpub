@@ -1,3 +1,14 @@
+# official-keys-postgres Specification
+
+## Purpose
+
+官方算力供给链路的**接线契约**：官方算力代理落在 ops-center（供给侧零迁表），
+积分扣减经一次 HTTP 调用落到 api-publish-engine 的不可变账本。
+
+**本能力要解决的问题**：官方算力模式下，扣分时序必须 fail-closed（积分不足就不调上游）、
+扣分必须幂等（同一用量事件只扣一次）、用量必须能归到用户（带 `user_id`）、
+降级必须同向降扣费、缺价必须拒绝服务（官方场景）而不是静默按 0。
+
 ## ADDED Requirements
 
 ### Requirement: 官方算力代理的物理归属
@@ -165,3 +176,29 @@ Postgres 迁移文件的编号 SHALL 是跨 change 共享的单调序列。
 - **THEN** 积分账户 SHALL 继续使用当前单周期模型
 - **AND** 「会员额度日释放+月清零 / 充值积分永久有效」与「FIFO 按过期时间扣减」SHALL 由**独立 change** 承载
 - **AND** 该独立 change SHALL 单独评审（改主键属破坏性 schema 变更）
+
+## MODIFIED Requirements
+
+### Requirement: 桌面端用量上报
+
+`UsageReporter` SHALL 从 model_provider_logs 读 `id > lastId` 记录，按上报日期+provider+category+action 聚合（calls/ok/fail/ratelimit/总耗时/tokens/cost/耗时分布桶），POST ingest，成功后水印推进（settings `opsCenterUsageReport.lastId`），失败保留重试；启动 5s 首报 + 30min 周期；无 url/key 静默跳过；不上报 error_message 等敏感内容。`addProviderLog` INSERT 补 created_at=datetime('now')。
+
+**2026-10-25 修订（官方算力接线）**：载荷 SHALL 额外携带 **`user_id`**（Logto `sub`），
+使官方算力链路的成本可归到用户（`model_usage_events` 已是 `user_id` 粒度）。
+
+#### Scenario: 鉴权
+- **WHEN** 未带/带错 X-Catalog-Key（或未配置）
+- **THEN** 401（或 404）
+
+#### Scenario: 幂等累加
+- **WHEN** 同桶数据分两次上报
+- **THEN** 计数累加不重复行；再次重放同 payload 计数不翻倍（聚合后 upsert）
+
+#### Scenario: 非法输入
+- **WHEN** usage_date 非 YYYY-MM-DD / 负数 / 缺 provider_id / 超过 500 条
+- **THEN** 400 且提示字段
+
+#### Scenario: 载荷携带 user_id
+- **WHEN** 桌面端上报官方算力链路的用量
+- **THEN** 载荷 SHALL 包含 `user_id`（Logto `sub`）与 `client_id`
+- **AND** `tokens_in` / `tokens_out` / `cost` SHALL 为真实聚合值（仅兜底桶为 0）

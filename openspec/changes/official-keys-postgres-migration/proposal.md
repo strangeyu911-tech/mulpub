@@ -7,6 +7,15 @@
 
 ---
 
+## Capabilities
+
+**新增能力**（主规格 `openspec/specs/` 下当前**不存在**该 capability ⇒ 用 `## ADDED Requirements`）：
+
+- `official-keys-postgres` —— 官方算力供给链路的**接线契约**（代理物理归属 / 扣分通道契约 /
+  扣分失败语义 / 降级同向 / 用量归属与写入时序 / 价格卡缺失处理 / 账户模型边界）
+- **修改既有能力**：`ops-center/model-usage` 的「桌面端用量上报」（载荷补 `user_id`）
+  ⇒ 对应 `## MODIFIED Requirements` 块
+
 ## Why
 
 > ✅ **2026-10-25 前提级订正已闭环 —— 运营方拍板：代理放 ops-center（D-①）、扣分走一次 HTTP（D-②）、账户模型缺口立项（D-③）。**

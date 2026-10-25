@@ -85,7 +85,8 @@ resp = await client.post(url, json=payload, headers=headers)
 
 - 用量 POST 到 **ops-center** `POST /api/v1/usage/ingest`（`X-Catalog-Key` 鉴权，`:183`）
 - 载荷**只有 `client_id`**（`:136`、`:160`），**无 `user_id`**
-- `tokens_in` / `tokens_out` / `cost` **恒为 0**（`:109`、`:171`）
+- `tokens_in` / `tokens_out` / `cost` **主路径已是数据库聚合的真实值**（`:123-125` 累加、`:145-147` 上报）；
+  **仅兜底桶**写死为 0（`:109`、`:169-171`）⇒ 真正缺的是 `user_id`，不是这三个数
 
 ⇒ 这正是 Phase 1 点名的缺陷（「`model_usage_daily` 只按 `client_id` 聚合、**无 `user_id`** ⇒ 成本无法归到用户」）的**上游成因**。
 ⇒ **官方算力链路上线必须同时修这一条**（§7.4）。
@@ -152,31 +153,31 @@ key-broker 会把「同一事务内扣减」永久降级为最终一致；本场
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `userId` | string | ✅ | 桌面端用户标识（Logto `sub`） |
+| `userId` | string | ✅ | **必须是 `identity_users.id`**（账本 FK 指向它）。⚠️ **不是 Logto `sub`**：`identity_users.id` 是 `crypto.randomUUID()` 生成的内部 id，Logto 的 `sub` 存在 `auth_subject` 列（`002_logto_identity.sql:7` / `:16` 的 `UNIQUE (auth_provider, auth_subject)`）⇒ 用 `sub` 会**直接撞外键约束**。**解析在 api-publish-engine 侧完成**（它才有 `identity_users` 表） |
 | `amount` | integer | ✅ | 扣减积分（**正整数**；`amount <= 0` ⇒ `CREDIT_AMOUNT_INVALID`） |
 | `costCents` | integer | ✅ | 上游真实成本（**分**；非负整数） |
 | `priceId` | string | — | 价目卡 id（版本化价格，禁 UPDATE） |
 | `reason` | string | — | 人类可读原因（进账本 `reason` 列） |
 | `refType` | string | — | 默认 `usage_event` |
-| `refId` | string | ✅ | **幂等键**：对应 `model_usage_events.id` |
+| `refId` | string | ✅ | **幂等键**：对应 `model_usage_events.id`。⛔ **空值必须 400 拒绝**：既有 `consumeCredit` **没有** `if (refId)` 守卫（`grantCredit` 有，`credit-repository.js:78`）⇒ `refId=''` 与**任何**一次空 refId 的扣分共用查重键 `(usage_event,'')` ⇒ **第二次起静默「已扣」但实际不扣** ⇒ 静默免费算力 |
 | `periodStart` / `periodEnd` | ISO8601 | ✅ | 发放周期边界 |
 
 **响应体**：
 
 | 字段 | 说明 |
 |---|---|
-| `account` | 扣后账户快照（`balance` / `granted_total` / `spent_total` / `period_start` / `period_end`） |
-| `entry` | 账本分录（`id` / `amount` / `balance_after`） |
+| `account` | 扣后账户快照（**camelCase**：`balance` / `grantedTotal` / `spentTotal` / `periodStart` / `periodEnd` —— 与 `credit-repository.js:357-366` 的既有返回一致） |
+| `entry` | 账本分录（**camelCase**：`id` / `amount` / `balanceAfter`） |
 | `duplicated` | `true` ⇒ 该 `refId` 已扣过，**本次未重复扣**（幂等命中） |
 
 **错误码**：
 
 | 码 | HTTP | 含义 | ops-center 的处置 |
 |---|---|---|---|
-| `CREDIT_BALANCE_EXHAUSTED` | 402 | 余额不足 | **不发货**，回传用户「积分不足」 |
-| `CREDIT_AMOUNT_INVALID` | 400 | `amount` 非正整数 | **不发货**，告警（属内部契约错误） |
-| `CREDIT_PERIOD_INVALID` | 400 | 周期边界不合法 | **不发货**，告警 |
-| `CREDIT_SERVICE_UNAVAILABLE` | 503 | 扣分服务不可用 | **不发货**（fail-closed，见 §3.4） |
+| `CREDIT_BALANCE_EXHAUSTED` | **409**（既有 `CreditError.status` 硬编码 409，**不是 402**） | 余额不足 | **不发货**，回传用户「积分不足」 |
+| `CREDIT_AMOUNT_INVALID` | **400** | `amount` 非正整数。⚠️ **既有实现抛的是 `TypeError`（不是 `CreditError`）** ⇒ 端点须在**入口**自己校验并转成 400 | **不发货**，告警（属内部契约错误） |
+| `CREDIT_PERIOD_INVALID` | 400 | 周期边界不合法。⚠️ **仓内当前无此错误码**（`grep` 零命中）⇒ 需**新增**（见 §11 U-9） | **不发货**，告警 |
+| `CREDIT_SERVICE_UNAVAILABLE` | 503 | 扣分服务不可用。⚠️ **仓内当前无此错误码**（`grep` 零命中）⇒ 需**新增**（见 §11 U-9） | **不发货**（fail-closed，见 §3.4） |
 | 未知 | 5xx | — | **不发货**，重试上限内重试；超限 ⇒ 挂起 + 告警 |
 
 ### 3.4 失败语义（fail-closed）
@@ -279,6 +280,10 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 ⑤ ops-center：算成本（预估）
    └─ model_price_cards 取当前生效价（缺价 ⇒ 告警 + 拒绝，不许按 0）
 
+⑤' ops-center：**额度预检（只读，不扣分）**
+   └─ 读账户余额 ⇒ 余额不足 ⇒ **不调上游**，回「积分不足」
+   ⚠️ **这是 fail-closed 的落点**：预检**只读**，不建表、不加迁移、不引入 reserve/settle 模型
+
 ⑥ ops-center：**先落 model_usage_events（status=pending）** ⇒ 拿到 events.id
    ⚠️ 必须在调上游之前落库（幂等键来源，§3.5）
 
@@ -287,7 +292,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 ⑧ ops-center：算实际成本
    └─ cost_cents = f(实际 tokens, 生效价) ；credit_cost = ceil(cost_cents / 单价 × 倍率)
 
-⑨ ops-center：调 api-publish-engine POST /api/v1/credit/consume
+⑨ ops-center：**发货后实扣** —— 调 api-publish-engine POST /api/v1/credit/consume
    body: { userId, amount: credit_cost, costCents, priceId, refId: events.id, periodStart, periodEnd }
    ├─ 成功 ⇒ events.status=charged
    └─ 失败 ⇒ events.status=pending_charge + 告警（§3.4）
@@ -318,7 +323,8 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 | 缺价格卡 | 否 | 否 | 否（**但必须告警**） | 「服务暂不可用」（**不许静默按 0**） |
 | 上游报错 / 超时 | 是 | **否**（失败不扣） | 是（status=failed） | 「生成失败，请重试」 |
 | 上游成功但扣分失败 | 是 | **待补扣** | 是（status=pending_charge） | 「生成成功，积分结算中」（**不谎报已扣**） |
-| 扣分返回余额不足 | 是 | 否 | 是（status=charge_rejected） | 「积分不足，请充值或切换 BYOK」 |
+| 额度预检判定余额不足 | **否**（发货前已拦） | 否 | **否** | 「积分不足，请充值或切换 BYOK」 |
+| 预检通过但实扣时余额被并发抢走 | 是 | **待补扣** | 是（status=pending_charge） | 「生成成功，积分结算中」（**不谎报已扣**） |
 
 ---
 
@@ -342,7 +348,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 | 校验 | 依据 |
 |---|---|
 | `is_active = 1` | 熔断位 |
-| `tier_access` 含目标档位 | `get_active_keys_for_tier` 的语义（⚠️ 该函数**生产引用数为 0**，实现时须同步接线） |
+| `tier_access` **等级码 ≤ 用户档位等级**（**整数等级码**，不是「含目标档位」的集合；真实判据是 `tier_access <= user_tier`）（⚠️ `get_active_keys_for_tier` **生产引用数为 0**，实现时须同步接线） |
 | `expires_at` 未过期 | **字符串字典序比较**（现状是 String，不是 date ⇒ 迁移时若改类型须同步改比较逻辑） |
 | `rate_per_minute` / `daily_limit` 未超 | 限流器 |
 | 优先级排序 | **`priority` ASC**（⚠️ **不是 DESC**） |
@@ -352,7 +358,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 
 | 校验 | 失败处置 |
 |---|---|
-| 当前生效价存在（`effective_to IS NULL`） | **拒绝服务 + 告警**（Phase 1 取舍 6：缺价格卡必须告警，不许静默按 0） |
+| 当前生效价存在（⚠️ **判据是 `effective_to` 为空串** `''`（`default=""`），**不是 `IS NULL`**；代码判据 `if card.effective_to and card.effective_to <= moment`） | **拒绝服务 + 告警**（Phase 1 取舍 6：缺价格卡必须告警，不许静默按 0） |
 | `cost_cents` 为非负整数 | 500 + 告警 |
 | `credit_cost = ceil(cost_cents / credit_unit_price_cents × multiplier)` | 单价 ≤ 0 ⇒ 除零兜底（Phase 1 已实现） |
 | `client_reported_cost_cents` 与服务端值比对 | 差异进对拍报表（**不自动改账**） |
@@ -361,7 +367,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 
 | 校验 | 实现位置 | 失败 |
 |---|---|---|
-| 账户存在 | `ensureAccount(userId, periodStart, periodEnd)` | 400 |
+| 账户存在 | ⚠️ **删**：`ensureAccount` **不在扣分路径上**，且它 upsert 建零余额账户、**从不返回 400** ⇒ 真出现 FK 违例是 500 | 500 |
 | `amount` 正整数 | `_assertGrant` | `CREDIT_AMOUNT_INVALID` |
 | 余额充足 + 并发安全 | `_applyBalance` 带 `balance >= amount` 的原子 CAS | `CREDIT_BALANCE_EXHAUSTED` |
 | 余额非负 | `CHECK (balance >= 0)` | 触发即回滚（最后一道防线） |
@@ -378,7 +384,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 - 判据 = **上游是否真的返回有效产出**，不是用户点没点取消
 - 失败 / 超时 / 空产出 ⇒ **不扣**
 
-### 7.2 降级必须同向降扣费
+### 7.2 降级必须同向降扣费（方向由运行时事实决定，不预设）
 
 降级到更便宜的上游 ⇒ 扣费**必须同步下调**；话术包装为「**省钱模式**」（正向表述）。
 ⚠️ 反向同理：升级到更贵的路径 ⇒ 扣费同步上调，且**须用户事前同意**（勾选框）。
@@ -393,7 +399,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 | 现状 | 目标 |
 |---|---|
 | `usage-reporter.js` 只发 `client_id` | **发 `user_id`（Logto `sub`）+ `client_id`** |
-| `tokens_in`/`tokens_out`/`cost` 恒 0 | **填真实值**（服务端另算，客户端值只作对拍样本） |
+| `tokens_in`/`tokens_out`/`cost` **主路径已是真值**（仅兜底桶为 0） | **保持真值**（服务端另算，客户端值只作对拍样本） |
 | 缺 `user_id` ⇒ 成本归不到用户 | 有 `user_id` ⇒ `model_usage_events` 具备用户级归属 |
 
 ⚠️ **不修这条 ⇒ 官方算力链路无法把成本归到用户 ⇒ 账本无法核对 ⇒ 整条线不成立。**
@@ -504,7 +510,8 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 005_cloud_accounts.sql
 ```
 
-⇒ `006` 已占、`007` 已被 `compute-key-envelope-migration` 预定、`008`/`009` 已占
+⇒ `006` 已占、`008`/`009` 已占；⚠️ **`007` 已被释放**——原「被 `compute-key-envelope-migration` 预定」是**规格层预留**，
+  该 change 在同一次合并里被判前提失效（D-①）⇒ 磁盘与规格**都不再占 007**（实测 `migrations/postgresql/` 无 `007_*.sql`）
 ⇒ **新迁移从 `010` 起**（FK 建表顺序 = 文件名 `localeCompare` 序，**不是撞号**）
 ⇒ ⚠️ **加文件与执行必须同批部署**（`assertReady` 用 `allowPending:false`）
 
@@ -538,11 +545,14 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 |---|---|---|---|
 | **U-1** | ops-center → api-publish-engine 的**服务间鉴权机制** | 阻塞 D-② | 复用既有服务间凭据（若已有）；若无，需在 api-publish-engine 加**独立于用户 Bearer** 的服务凭据校验 ⇒ **属「谁来守门」级别的改动，须人工过目** |
 | **U-2** | 官方算力端点的**路径与幂等键归属** | 影响桌面端接线 | 建议 `POST /api/v1/compute/execute` + `idempotencyKey` 由桌面端生成 |
-| **U-3** | `official_credit` **不在 plan-matrix 的 features 数组**（Phase 1 记录明说） | **未加则扣分端点拿不到 feature 授权** | 补进 features 数组 + 档位映射（属定价/权益变更，**须人工过目**） |
+| **U-3** | `official_credit_monthly` **实测已在 plan-matrix 的 `quota` 下发** ⇒ 「扣分端点拿不到 feature 授权」**不成立** | 降级为普通条目 | **关闭**（若要为「扣分」单设 feature 才需人工过目） |
 | **U-4** | `get_active_keys_for_tier` **生产引用数为 0** | 选 Key 逻辑无现成调用点 | 实现时**必须接线**，不能只写函数 |
-| **U-5** | 定时对账任务的**任务宿主**（全仓无 cron/APScheduler） | 阻塞 `pending_charge` 补扣 | 与 Phase 1 同源问题，须一并立项 |
+| **U-5** | 定时对账任务的**任务宿主**（仓内**已有调度器先例**，「全仓无 cron/APScheduler」不成立） | 阻塞 `pending_charge` 补扣 | 复用仓内既有调度器；真缺口是「**没为补扣场景接上**」，不是「没有调度器」 |
 | **U-6** | D-③ 账户模型（双轨 + `expires_at`）的具体 DDL | 阻塞双轨能力上线 | **独立 change + 独立评审**（改主键 = 破坏性变更） |
 | **U-7** | 官方 Key 的**运维迁移**（存量 Key 从 Fernet 到新形态） | D-① 下**不需要**（Fernet 保持不变） | **关闭**（前提失效） |
+| **U-8** | `compute-key-envelope-migration` **归档与否**（其前提已失效） | 归档会把**已失效的契约**写进主规格 | **须人工过目**（改目录结构） |
+| **U-9** | `CREDIT_PERIOD_INVALID` / `CREDIT_SERVICE_UNAVAILABLE` **仓内当前无此错误码** | 扣分端点的错误码不完整 | 实现时**新增**这两个码（或复用既有语义） |
+| **U-10** | 迁移文件名**须被 `MIGRATION_PATTERN` 认领**（`/^\d{3}_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/`） | **只认 3 位数字**；4 位号/2 位号/非法名会被 `filter` **静默丢弃**（fail-open）⇒ `allowPending:false` 也发现不了 | 落任何迁移前**逐个核对文件名能被该正则认领**；本仓**零门禁**检查目录里 .sql 是否全被认领 ⇒ 需人工核 |
 
 ---
 
@@ -551,3 +561,4 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 | 日期 | 变更 |
 |---|---|
 | 2026-10-25 | 初版。三个定案（D-①/D-②/D-③）落定；`official-keys-postgres-migration` 改向为「扣减接线」；`compute-key-envelope-migration` 前提失效。 |
+| 2026-10-25（第二轮对抗评审后） | **修正 21 处事实性错误 + 6 处跨文档矛盾 + 30 处设计缺陷**：扣分时序改**两段式**（发货前只读预检 + 发货后实扣）；`refId` 空值硬拒 400；`userId` 统一为 `identity_users.id`；错误码与既有 `CreditError.status`（409）对齐；响应体字段名改 camelCase；`tier_access` 改为整数等级码；生效价判据改 `effective_to` 空串；`007` 号源澄清为**已释放**；未决项增至 U-10（U-3/U-5 修正）。 |

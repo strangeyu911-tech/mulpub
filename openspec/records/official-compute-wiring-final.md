@@ -16,7 +16,9 @@ branch: official-compute-wiring-final
 | 迁移编号 | ✅ | **本 change 不新增迁移文件**（D-① 供给侧零迁表）⇒ 编号问题归零。实测 `migrations/postgresql/` 占用 = `002/003/004/005/006_payment_orders/008_credit_ledger/009_redeem_code_issued_to` ⇒ `006` 已占、`007` 已被 `compute-key-envelope-migration` 预定、`008`/`009` 已占 ⇒ **D-③ 落地时新迁移从 `010` 起**；真实约束是 **FK 建表顺序 = 文件名 `localeCompare` 序**，不是「撞号」。 |
 | 保留门禁（docs-only 豁免项） | N/A | **QM-1 打包 / QM-2 代码必检项 / QM-4 视觉 / TDD（无代码）** 全部不适用 —— **本 PR 未改任何运行时代码**。 |
 | QM-6 CCG 双模型外部评审 | **未执行** | 本环境无可用外部评审通道（`ccg-deep-review.js` 全盘不存在；`claude` / `opencode` / `codex` / `codeagent-wrapper` 均不可用）⇒ **如实记为未执行，不以自审冒充通过**。本片为**前提级订正 + 定案落文档**，风险面是「文档口径漂移」而非「运行时代码缺陷」。 |
-| 远程同步 | 由门禁推导 | |
+| 远程同步 | 由门禁推导 |
+
+- 保留门禁：行尾对账 ✅ | 品牌残留 ✅ | 文档同步 ✅ | 远程同步 由门禁推导 | CHANGELOG 收口 如适用 |
 
 ## 本片做了什么（一句话）
 
@@ -78,3 +80,13 @@ $ node scripts/check-no-brand-residue.js
 - **实现**：`official-compute-credit-wiring` 的 tasks 1–7（官方算力端点 + 扣分端点 + 桌面端接线 + 状态机 + 运营可观测 + 部署文档 + 端到端三方对账）
 - **独立 change**：账户双轨模型（D-③，改主键 ⇒ 独立评审）
 - **待人工确认**：服务间鉴权（U-1）、`official_credit` feature 补登（U-3）、`compute-key-envelope-migration` 归档与否
+
+## CHANGELOG 条目
+
+- **docs(official-compute): 官方算力扣减接线落地形态定案（D-①/D-②/D-③）** ——
+  经两轮对抗评审（5 轨 × 2 轮，共 83 条发现）后修订：
+  扣分时序改**两段式**（发货前只读额度预检 + 发货后实扣）、
+  `refId` 空值硬拒 400、`userId` 统一为 `identity_users.id`、
+  错误码与响应体字段名对齐既有实现、缺价规则正式修订口径真源为两态、
+  迁移编号澄清 `007` 已释放、新迁移从 `010` 起并补 `MIGRATION_PATTERN` 认领判据、
+  openspec delta 补 H1 + `## Purpose` + `## MODIFIED Requirements`、proposal 补 `## Capabilities`。

@@ -723,6 +723,27 @@ jobs:
         run: |
           node --test scripts/cleanup-artifacts.test.js
 
+      # --- Gate 2b15：未接线组件门禁（阶段 5.3，change: ux-audit-unwired-components）---
+      # 动因是审计 1.1 的实测：71 条体验问题里 11 条属同一形状 —— 组件/composable **写好了、测好了、
+      # 却没有任何生产消费方**（useTheme 零调用方，而全仓 72-77 处 [data-theme=dark] 分支与「深色低对比
+      # 61→0」的整改成果在用户侧永远不可达）。这是本仓「装饰性链路」在 UI 层的复发，此前没有任何东西在看。
+      # 落点必须在 changes 作业（与 Gate 2b9/2b10/2b13 同一条理由）：判据的**数据文件**
+      # scripts/unwired-components-baseline.json 是"谁来认这笔债"的登记面，一旦哪天被放进 docs-only
+      # 白名单，接在 static-gates 就等于给它自己关掉校验（AGENTS「进白名单的前提锁」，实测事故 #3114）。
+      # 成本实测本机 1.5s（domain=12670 / components=87 / consumers=1257），不碰 30 分钟预算墙。
+      # 判据本体在前（对真仓给结论），行为锁在中（夹具正/负控 + 接线自检 + 规模下界），
+      # 反证驱动在后 —— 这一步是"这把锁有牙"的唯一现场证据。整步本机实测 22s（判据 1.5s + 锁 3s +
+      # 七刀 17s），所以变异扫描**直接进每次 PR**，不再复用"只手动跑"的反证驱动惯例
+      # （任务 #23 记的那三个 contract-mutate 是数百秒量级才留在手动档；秒级却留手动等于没有反证）。
+      # ⚠ 反证驱动会就地改写判据/基线/workflow 再逐刀 md5 核对还原；它只在本 worktree/runner 的
+      #   临时检出里动，且任何一刀还原不一致就立刻抛错停止后续刀（不得把树留在变异态）。
+      - name: "Gate 2b15 - Unwired components gate (changes job)"
+        shell: bash
+        run: |
+          node scripts/check-unwired-components.js
+          node --test scripts/check-unwired-components.test.js
+          node scripts/unwired-components-mutate.js
+
   static-gates:
     name: QG Static
     runs-on: windows-latest

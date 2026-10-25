@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "note": "阶段 5.3「未接线组件」存量账：登记 = 承认欠账，不是豁免。清单只能缩小；任何一条被接线后必须**同次**从本文件删除，否则 STALE_BASELINE 判红。reason 必须写清「为什么不在这次 PR 里直接接线」。",
+  "entries": [
+    {
+      "path": "apps/desktop/src/components/AnnouncementBanner.vue",
+      "reason": "审计 1.2：组件已实现但根级未挂载；接线工作已在 PR #4213（ux-audit-announcement-mount）里做，合并后本条必须同次删除。挂它需先过 overlay 互斥合同（WebContentsView 是压在 DOM 之上的原生图层，CSS z-index 无效），不能顺手 v-if 一下。"
+    },
+    {
+      "path": "apps/desktop/src/components/PipelineBrowser.vue",
+      "reason": "本门禁首次运行时新发现的第 4 例同型对象（审计只列了 13 个未接线对象里的 3 个组件）：它自带 12 条测试与一个 e2e-smoke 的**文件存在性**检查，因此长期看起来像\"在用\"，但没有任何视图 import 它 ⇒ 用户永远看不到。处置是产品裁决项（接进 /create 或删除），不能由门禁单方面删组件，故先登记。"
+    },
+    {
+      "path": "apps/desktop/src/components/StaggeredList.vue",
+      "reason": "审计 66：零引用且**自身有错**（items 缺 key 时 TransitionGroup 复用节点会错位）。接线前要先修它对 item 契约的假设，属独立切片；本次只做可见性，不在门禁 PR 里顺手删组件。"
+    }
+  ]
+}

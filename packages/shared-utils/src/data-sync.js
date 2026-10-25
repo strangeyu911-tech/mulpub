@@ -12,6 +12,15 @@
  */
 const TTL_DEFAULT = 60 * 60 * 1000  // 1 小时
 
+// 采集契约层（纯函数）：判读页面里跑出来的采集结果，并把失败分型。
+// ⚠️ 跨包边界：`packages/shared-utils` 是跨包共享包 ⇒ **不得** require desktop 的 electron 模块；
+//    采集执行体一律由主进程注入（见构造器的 `options.rpaViewManager`）。
+const {
+  evaluateCollectorObservation,
+  classifyCollectorTimeout,
+  assertCollectorPlatform,
+} = require('./collector-contract')
+
 // 支持数据同步的平台
 const SYNC_PLATFORMS = ['douyin', 'bilibili', 'xiaohongshu', 'tencent_video', 'wechat_mp']
 
@@ -42,10 +51,14 @@ class DataSyncService {
    * @param {SettingsStore | null} store - Store 实例（需有 getSetting/setSetting）
    * @param {object} [options]
    * @param {number} [options.cacheTTL] - 缓存有效期 (ms)
+   * @param {{collect?: (platform: string, payload: {url: string, script: string}) => Promise<unknown>}} [options.rpaViewManager]
+   *   - 主进程可达的采集执行体（由 `container.setup.js` 注入 `rpaViewManager`）。
+   *   - 不注入 ⇒ 采集一律 fail-loud 抛错（绝不产出看起来像真数据的 0）。
    */
   constructor (store, options = {}) {
     this._store = store
     this._cacheTTL = options.cacheTTL || TTL_DEFAULT
+    this._rpaViewManager = options.rpaViewManager || null
 
     // 注册同步器。显式映射让平台与实现的合同可被 TypeScript 校验。
     /** @type {Record<string, Syncer>} */
@@ -190,52 +203,48 @@ class DataSyncService {
   // 内部辅助：通过 RPA 提取平台统计数据
   // 向主进程发送 IPC 请求，由 RpaViewManager 在隐藏 BrowserWindow 中执行
   /**
+   * 采集平台统计数据。
+   *
+   * ⚠️ 本服务跑在**主进程**（`core/container.setup.js` 注册 `dataSync`），
+   *    而旧实现走的两条通路（`window.electronAPI` / `ipcRenderer`）**只存在于渲染进程**
+   *    ⇒ 在主进程里必然全部落空 ⇒ 必然落到「返回一组 0」的兜底
+   *    ⇒ 而该兜底被 `_makeSyncResult()` 打上 `syncedAt: now` 写进缓存
+   *    ⇒ 界面显示「0阅读 · 更新于 10:51」——**看上去是刚采到的真数据，实际是常量 0**。
+   *
+   * ⇒ 现在改为**依赖注入**一个主进程可达的采集执行体（`options.rpaViewManager`）：
+   *    跨包边界（`packages/shared-utils` 是跨包共享包）不允许 require desktop 的 electron 模块，
+   *    因此只能注入，不能自己去找。
+   *
    * @param {string} platform
    * @param {string} url
    * @param {string} extractScript
    * @returns {Promise<SyncData>}
    */
   async _rpaFetchStats (platform, url, extractScript) {
-    try {
-      // 通过 IPC 调用主进程的 RPA 引擎
-      // 主进程处理: open hidden window -> navigate to url -> execute script -> return data
-      // 实际已通过 electron-bridge 暴露为 window.electronAPI.rpaFetchData(platform, url, script)
-      if (typeof window !== 'undefined') {
-        const rendererWindow = /** @type {Window & {electronAPI?: RendererElectronApi}} */ (window)
-        if (rendererWindow.electronAPI?.rpaFetchData) {
-          const data = await rendererWindow.electronAPI.rpaFetchData(platform, url, extractScript)
-          if (isRecord(data)) return data
-        }
-      }
-      // 回退：尝试 require (主进程直接使用)
-      const { ipcRenderer } = require('electron')  // may be null in sandbox
-      if (ipcRenderer) {
-        const data = /** @type {unknown} */ (
-          await ipcRenderer.invoke('rpa:fetchData', { platform, url, script: extractScript })
-        )
-        if (isRecord(data)) return data
-      }
-    } catch (err) {
-      console.warn(`[DataSync] RPA fetch failed for ${platform}:`, errorMessage(err))
+    const collector = this._rpaViewManager
+    if (!collector || typeof collector.collect !== 'function') {
+      // ⛔ 取不到真值 ⇒ 抛错，绝不返回一组 0（PR #4435 已确立的 fail-loud 纪律）。
+      throw new Error(
+        `平台数据采集通道未接入（${platform}）：本版本未实现创作者后台数据采集，取不到真值`
+      )
     }
-    // ⛔ 取不到真值 ⇒ **抛错**，绝不返回一组 0。
-    //
-    // 旧实现在这里返回 `{articles:0, views:0, comments:0, likes:0, followers:0, _note:'RPA 不可用'}`，
-    // 而它被 _makeSyncResult() 打上 `syncedAt: now` 写进缓存 ⇒
-    // 看板显示成「0阅读 / 0评论 / 0点赞 / 0粉丝 · 更新于 10:51」——
-    // **看上去是刚采到的真数据，实际是常量 0**（数据页 5 张平台卡全是这种假数据）。
-    //
-    // 更硬的事实：本服务跑在**主进程**（core/container.setup.js: new DataSyncService(store)），
-    // 而上面两条通路用的 window.electronAPI / ipcRenderer **只存在于渲染进程**
-    // ⇒ 在主进程里必然全部落空 ⇒ 必然走这个兜底 ⇒ 必然是 0。
-    // 且 `rpa:fetchData` 这个 IPC 通道**全仓没有任何 handler**（已 grep 确认）。
-    //
-    // 所以这里必须 fail-loud：抛出的错误会被 _syncOne 捕获并转成
-    // `{ platform, syncedAt, error }` —— 带 error 的记录**不可信**，
-    // 渲染端据此不显示任何数字（显示「—」并说明原因），而不是显示 0。
-    throw new Error(
-      `平台数据采集通道未接入（${platform}）：本版本未实现创作者后台数据采集，取不到真值`
-    )
+    const raw = await collector.collect(platform, { url, script: extractScript })
+    const judged = evaluateCollectorObservation(raw)
+    if (!judged.ok) {
+      // 单次观测即终态（执行体内部已做轮询与就绪等待）⇒ 按契约分型抛错，
+      // 让渲染端能区分「页面没就绪」与「选择器过期」而不是只给一句「不可用」。
+      const classified = classifyCollectorTimeout([judged])
+      throw new Error(
+        `平台数据采集失败（${platform}）：${classified.code}${classified.field ? ' / ' + classified.field : ''}`
+      )
+    }
+    const platformCheck = assertCollectorPlatform(platform, judged.data)
+    if (!platformCheck.ok) {
+      throw new Error(
+        `平台数据采集失败（${platform}）：${platformCheck.code}（期望 ${platformCheck.expected}，实际 ${platformCheck.actual}）`
+      )
+    }
+    return judged.data
   }
 
   async _sync_douyin () {

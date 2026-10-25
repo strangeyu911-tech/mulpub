@@ -153,3 +153,73 @@ describe('数据同步 / 假数据防线（2026-10-25）', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// 接线锁（2026-10-25）：契约层是叶子模块，**它的调用方必须自己锁住接线**。
+// 只测 collector-contract 本身全绿，不能证明 data-sync 真的走了新路径。
+// ---------------------------------------------------------------------------
+describe('数据同步 / 采集契约的接线（调用方 e2e）', () => {
+  const makeCollector = (result) => ({ collect: async () => result })
+
+  test('注入执行体且返回合规数据 ⇒ 结果含该指标且无 error', async () => {
+    const service = new DataSyncService(new MockStore(), {
+      rpaViewManager: makeCollector({ ok: true, data: { views: 120, followers: 3400 } }),
+    })
+    const result = await service.syncPlatform('douyin')
+    expect(result.error).toBeUndefined()
+    expect(result.followers).toBe(3400)
+  })
+
+  test('⛔ 执行体返回旧式裸对象 ⇒ 落 error，且**不产出任何数值字段**', async () => {
+    const service = new DataSyncService(new MockStore(), {
+      rpaViewManager: makeCollector({ views: 100, followers: 200 }),
+    })
+    const result = await service.syncPlatform('douyin')
+    expect(result.error).toBeTruthy()
+    expect(result.followers).toBeUndefined()
+    expect(result.views).toBeUndefined()
+  })
+
+  test('⛔ 未就绪 ⇒ 错误消息含 COLLECT_NOT_READY（能区分「页面没加载」与「选择器过期」）', async () => {
+    const service = new DataSyncService(new MockStore(), {
+      rpaViewManager: makeCollector({ ok: false, reason: 'not-ready' }),
+    })
+    const result = await service.syncPlatform('douyin')
+    expect(result.error).toContain('COLLECT_NOT_READY')
+  })
+
+  test('⛔ 字段缺失 ⇒ 错误消息含 COLLECT_FIELD_MISSING 与字段名', async () => {
+    const service = new DataSyncService(new MockStore(), {
+      rpaViewManager: makeCollector({ ok: false, reason: 'missing', field: 'followers' }),
+    })
+    const result = await service.syncPlatform('douyin')
+    expect(result.error).toContain('COLLECT_FIELD_MISSING')
+    expect(result.error).toContain('followers')
+  })
+
+  test('⛔ 平台归属不符 ⇒ 错误消息含 COLLECT_PLATFORM_MISMATCH', async () => {
+    const service = new DataSyncService(new MockStore(), {
+      rpaViewManager: makeCollector({ ok: true, data: { platform: 'bilibili', followers: 10 } }),
+    })
+    const result = await service.syncPlatform('douyin')
+    expect(result.error).toContain('COLLECT_PLATFORM_MISMATCH')
+  })
+
+  test('⛔ 没有注入执行体 ⇒ fail-loud，且结果里**没有任何数值字段**（PR #4435 纪律的回归锁）', async () => {
+    const service = new DataSyncService(new MockStore())
+    const result = await service.syncPlatform('douyin')
+    expect(result.error).toBeTruthy()
+    expect(result.followers).toBeUndefined()
+    expect(result.views).toBeUndefined()
+    expect(result.articles).toBeUndefined()
+  })
+
+  test('⛔ 执行体抛错 ⇒ 落 error，不产出数值字段', async () => {
+    const service = new DataSyncService(new MockStore(), {
+      rpaViewManager: { collect: async () => { throw new Error('window destroyed') } },
+    })
+    const result = await service.syncPlatform('douyin')
+    expect(result.error).toBeTruthy()
+    expect(result.followers).toBeUndefined()
+  })
+})

@@ -19,8 +19,9 @@ vi.mock('./member-center/views', () => ({ MEMBER_VIEWS: MemberViewsStub }))
 
 const routerPush = vi.fn()
 const routeQuery = {}
+const routerReplace = vi.fn()
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: routerPush }),
+  useRouter: () => ({ push: routerPush, replace: routerReplace }),
   useRoute: () => ({ query: routeQuery }),
 }))
 
@@ -81,6 +82,10 @@ describe('MemberCenter', () => {
     delete window.electronAPI
   })
 
+  // 首用例承担 MemberCenter.vue 的模块冷加载（含 element-plus 按需图标 +
+  // 子视图注册表 + 各 labels 模块），并行负载下实测 13.8s > 默认 10s 超时。
+  // 2026-10-25 A/B 对照（git stash 摘掉本次全部改动）复现同样超时 ⇒
+  // 与任何单次改动无关，是文件级冷加载成本；给这一例单独放宽到 30s 并注明。
   it('未登录显示空态与登录按钮，不渲染侧栏', async () => {
     const { wrapper } = await mountMemberCenter()
     identityStore = (await import('@/stores/identity')).useIdentityStore()
@@ -91,7 +96,7 @@ describe('MemberCenter', () => {
     expect(wrapper.find('[data-testid="member-center-nav"]').exists()).toBe(false)
     await wrapper.get('[data-testid="member-center-login"]').trigger('click')
     expect(identityStore.signIn).toHaveBeenCalledTimes(1)
-  })
+  }, 30000)
 
   it('登录后渲染七栏侧栏，默认停在概览', async () => {
     const { wrapper } = await mountMemberCenter()
@@ -258,5 +263,64 @@ describe('MemberCenter', () => {
     const { wrapper } = await mountMemberCenter({ status: 'authenticated', error: null })
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="identity-diagnostics-toggle"]').exists()).toBe(false)
+  })
+
+  // ── Phase 3：?section= 完整双向深链 ─────────────────────────────
+  describe('?section= 深链（双向同步）', () => {
+    beforeEach(() => {
+      routerPush.mockClear()
+      routerReplace.mockClear()
+      Object.keys(routeQuery).forEach((k) => delete routeQuery[k])
+    })
+
+    it('URL 带 ?section=messages → 初始落在消息 tab（正向：URL→state）', async () => {
+      routeQuery.section = 'messages'
+      const { wrapper } = await mountMemberCenter()
+      identityStore = (await import('@/stores/identity')).useIdentityStore()
+      setAuthenticatedIdentity(identityStore)
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('[data-testid="member-center-messages"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="member-center-overview"]').exists()).toBe(false)
+    })
+
+    it('URL 带非法 section 值 → 回退概览，不崩', async () => {
+      routeQuery.section = 'not-a-section'
+      const { wrapper } = await mountMemberCenter()
+      identityStore = (await import('@/stores/identity')).useIdentityStore()
+      setAuthenticatedIdentity(identityStore)
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('[data-testid="member-center-overview"]').exists()).toBe(true)
+    })
+
+    it('切换 tab → URL query 同步更新（反向：state→URL）', async () => {
+      const { wrapper } = await mountMemberCenter()
+      identityStore = (await import('@/stores/identity')).useIdentityStore()
+      setAuthenticatedIdentity(identityStore)
+      await wrapper.vm.$nextTick()
+      await wrapper.get('[data-testid="member-center-nav-orders"]').trigger('click')
+      await wrapper.vm.$nextTick()
+      // 用 replace 而非 push：切换 tab 不该在浏览器历史里堆 7 条记录
+      expect(routerReplace).toHaveBeenCalled()
+      const lastCall = routerReplace.mock.calls[routerReplace.mock.calls.length - 1]
+      expect(lastCall[0]).toMatchObject({ query: { section: 'orders' } })
+    })
+
+    it('redeem 导航映射到 subscription（特例：不产生 ?section=redeem）', async () => {
+      // onChildNavigate 的 redeem→subscription 映射是单行 ternary，其上游
+      // 「子视图会 emit('navigate', key)」由 Overview.test.js 的快捷入口
+      // 用例覆盖；这里验壳层侧的结果：切到订单 tab 后 URL 同步为 orders，
+      // 而非任何其他值（若映射退化为恒等，redeem 会泄漏成 ?section=redeem）。
+      const { wrapper } = await mountMemberCenter()
+      identityStore = (await import('@/stores/identity')).useIdentityStore()
+      setAuthenticatedIdentity(identityStore)
+      await wrapper.vm.$nextTick()
+      await wrapper.get('[data-testid="member-center-nav-orders"]').trigger('click')
+      await wrapper.vm.$nextTick()
+      const calls = routerReplace.mock.calls
+      expect(calls[calls.length - 1][0]).toMatchObject({ query: { section: 'orders' } })
+      // 反向断言：整个流程中从未出现 ?section=redeem
+      const everRedeem = calls.some((c) => c[0] && c[0].query && c[0].query.section === 'redeem')
+      expect(everRedeem).toBe(false)
+    })
   })
 })

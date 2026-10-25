@@ -116,6 +116,7 @@ const { t } = useI18n()
 const identityStore = useIdentityStore()
 const memberStore = useMemberStore()
 const router = useRouter()
+const routerReplace = router.replace.bind(router)
 const route = useRoute()
 const { status, user, loading, error, signIn, switchAccount, signOut } = useIdentity()
 
@@ -166,6 +167,23 @@ watch(
 // ── 导航 ─────────────────────────────────────────────────────────
 const activeSection = computed(() => MEMBER_SECTIONS.find((s) => s.key === activeKey.value) || MEMBER_SECTIONS[0])
 const activeView = computed(() => MEMBER_VIEWS[activeSection.value.name])
+
+/**
+ * Phase 3：?section= 完整双向深链。
+ *
+ * 正向（URL → state）在 onMounted 读一次；反向（state → URL）在这里：
+ * activeKey 变化时把分区名同步进 query，让「当前停在哪个 tab」可分享/可刷新恢复。
+ *
+ * 为什么用 router.replace 而不是 router.push：
+ *   - push 会在浏览器历史里为每次切 tab 堆一条记录，用户按「后退」要先退出 7 个 tab 才离开会员中心；
+ *   - replace 保持「进会员中心前的那一页」仍是后退目标，符合 tab 切换不产生导航的预期。
+ * 为什么不用 watch 直接改 route.query：route.query 是只读派生值，改它必须走 router API。
+ */
+watch(activeKey, (key) => {
+  const current = route.query.section
+  if (current === key) return
+  routerReplace({ query: { ...route.query, section: key } })
+})
 
 // 子视图（订单页空态）的导航请求。`redeem` 不是独立分区——激活码卡片常驻在订阅页上方，
 // 所以切到订阅分区即可，用户落眼就是激活码输入框。

@@ -176,6 +176,7 @@ export default {
     unknownDevice: '未知设备',
     lastSeen: '最近活动',
     messagesTitle: '通知消息',
+    messagesLoading: '正在加载消息...',
     messagesEmptyHint: '暂无新消息。',
     markAllRead: '全部标记为已读',
     markingRead: '正在标记...',

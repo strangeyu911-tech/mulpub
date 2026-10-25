@@ -37,6 +37,11 @@ describe('ProfileMenu', () => {
     push.mockReset()
   })
 
+  // 首用例承担 ProfileMenu.vue 全链冷加载（element-plus 图标 + labels 链 +
+  // pinia store 装配），并行负载下实测 12-13s > 默认 10s 超时，且超时后会
+  // 连带下一个用例失败（promise 仍在后台跑，污染后续）。
+  // 2026-10-25 A/B 对照（git stash 摘掉全部本次改动）复现同样 2 failed
+  // 21 passed ⇒ 与任何单次改动无关，是文件级冷加载成本。给首例放宽到 30s。
   it('未登录（signed_out）点击头像直接触发登录，不展开菜单', async () => {
     await mountMenu()
     store.status = 'signed_out'
@@ -45,7 +50,7 @@ describe('ProfileMenu', () => {
     await wrapper.get('[data-testid="mp-profile"]').trigger('click')
     expect(store.signInOrSwitch).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="profile-menu-panel"]').exists()).toBe(false)
-  })
+  }, 30000)
 
   it('已登录点击头像展开菜单，含会员中心/切换账号/退出登录', async () => {
     await mountMenu()

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 
 vi.mock('vue-i18n', () => ({
   createI18n: () => ({ global: { locale: { value: 'zh' } } }),
@@ -10,12 +10,13 @@ vi.mock('vue-i18n', () => ({
 
 // P0-5：store.error 只可能是 safeInvoke/setError 规范化的已知码，
 // 渲染层必须经 resolveMemberErrorKey 本地化——**绝不透裸码**。
-const memberCtx = {
+const memberCtx = reactive({
   notifications: [],
   unreadCount: 0,
   error: null,
+  loading: false,
   markNotificationsRead: vi.fn(async () => true),
-}
+})
 vi.mock('@/stores/member', () => ({
   useMemberStore: () => memberCtx,
 }))
@@ -60,5 +61,27 @@ describe('member-center/Messages', () => {
     const wrapper = await mountMessages()
     expect(wrapper.text()).toContain('会员开通')
     memberCtx.notifications = []
+  })
+
+  // ── Phase 3：加载态（原实现无 loading 展示，加载中显示空态误导用户）──
+  describe('加载态', () => {
+    it('loading 中 → 显示加载提示，不显示空态', async () => {
+      memberCtx.error = null
+      memberCtx.notifications = []
+      memberCtx.loading = true
+      const wrapper = await mountMessages()
+      expect(wrapper.find('[data-testid="messages-loading"]').exists()).toBe(true)
+      expect(wrapper.text()).not.toContain('memberCenter.messagesEmptyHint')
+      memberCtx.loading = false
+    })
+
+    it('loading 结束且无数据 → 显示空态', async () => {
+      memberCtx.error = null
+      memberCtx.notifications = []
+      memberCtx.loading = false
+      const wrapper = await mountMessages()
+      expect(wrapper.find('[data-testid="messages-loading"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('memberCenter.messagesEmptyHint')
+    })
   })
 })

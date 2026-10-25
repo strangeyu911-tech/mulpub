@@ -7,15 +7,22 @@
           {{ marking ? t('memberCenter.markingRead') : t('memberCenter.markAllRead') }}
         </button>
       </div>
-      <ul v-if="memberStore.notifications.length" class="member-center-list">
-        <li v-for="(item, index) in memberStore.notifications" :key="item.id || index" class="member-center-list-item">
-          <div class="member-center-list-main">
-            <span class="member-center-list-title" :class="{ 'is-unread': !item.read }">{{ item.title || t('memberCenter.untitledMessage') }}</span>
-            <span v-if="item.body" class="member-center-list-meta">{{ item.body }}</span>
-            <span class="member-center-list-meta">{{ formatTimestamp(item.createdAt) }}</span>
-          </div>
-        </li>
-      </ul>
+      <!-- 条件链顺序：有数据 > 加载中 > 空态。
+           原实现把「加载中」落到空态分支，让用户以为真的没有消息。 -->
+      <template v-if="memberStore.notifications.length">
+        <ul class="member-center-list">
+          <li v-for="(item, index) in memberStore.notifications" :key="item.id || index" class="member-center-list-item">
+            <div class="member-center-list-main">
+              <span class="member-center-list-title" :class="{ 'is-unread': !item.read }">{{ item.title || t('memberCenter.untitledMessage') }}</span>
+              <span v-if="item.body" class="member-center-list-meta">{{ item.body }}</span>
+              <span class="member-center-list-meta">{{ formatTimestamp(item.createdAt) }}</span>
+            </div>
+          </li>
+        </ul>
+      </template>
+      <p v-else-if="memberStore.loading" class="member-center-empty-hint" data-testid="messages-loading">
+        {{ t('memberCenter.messagesLoading') }}
+      </p>
       <div v-else class="member-center-empty">
         <p class="member-center-empty-hint">{{ t('memberCenter.messagesEmptyHint') }}</p>
       </div>

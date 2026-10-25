@@ -177,6 +177,7 @@ export default {
     unknownDevice: 'Unknown device',
     lastSeen: 'Last active',
     messagesTitle: 'Notifications',
+    messagesLoading: 'Loading messages...',
     messagesEmptyHint: 'No messages right now.',
     markAllRead: 'Mark all as read',
     markingRead: 'Marking...',

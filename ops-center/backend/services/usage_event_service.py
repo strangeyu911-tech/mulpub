@@ -25,10 +25,20 @@ import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models_credit import ModelUsageEvent
+from models_credit import (
+    CHARGE_SOURCE_CLIENT,
+    CHARGE_SOURCE_SERVER,
+    CHARGE_STATUS_FREE,
+    CHARGE_STATUS_NOT_APPLICABLE,
+    CHARGE_STATUS_PENDING,
+    CHARGE_STATUS_SETTLED,
+    CHARGE_STATUS_UNBILLABLE,
+    ModelUsageEvent,
+)
 from services.credit_price_service import (
     compute_cost_micros,
     compute_credit_cost,
+    compute_period_bounds,
     get_credit_unit_price_micros,
     load_effective_cards,
     summarize_missing_price,
@@ -43,6 +53,10 @@ _MAX_STR_LEN = 200
 
 # 上报字段 → ModelUsageEvent 列（字符串列统一截断，避免超长入库存爆）
 _STR_FIELDS = {
+    # ⚠ `user_id` 必须收：**事件表有这一列**，而桌面端上报的 user_id（Logto sub）
+    #   是按用户维度归集成本的前提 ⇒ 漏收 ⇒ 事件行的 user_id 恒为空
+    #   ⇒ 既看不到「谁用掉的算力」，也永远判不出「可扣」。
+    "user_id": 128,
     "client_id": 64,
     "provider_id": 100,
     "category": 32,
@@ -138,6 +152,48 @@ def _validate_event(item: dict) -> dict:
     return out
 
 
+def resolve_charge_state(
+    *,
+    byok: bool,
+    has_missing_price: bool,
+    credit_cost: int,
+    user_id: str,
+    source: str,
+) -> tuple:
+    """判定一条事件的**扣分状态**（纯函数，**无 IO**）。
+
+    :returns: ``(charge_status, charge_error)``
+
+    ⚠ **判定顺序有讲究**（每一步都排除了前面更根本的原因）：
+      ① BYOK            → ``not_applicable``：用户自带 Key，官方算力不担成本
+      ② 缺价            → ``unbillable`` + ``MISSING_PRICE``：算不出成本，扣了也是乱扣
+      ③ 无用户          → ``unbillable`` + ``MISSING_USER``：不知道扣谁
+      ④ 成本为 0        → ``free``：上游免费，无需扣（engine 也会拒 ``costCents=0``）
+      ⑤ 来源不可信      → ``unbillable`` + ``UNTRUSTED_IDENTITY``：**安全红线**（见下）
+      ⑥ 其余            → ``pending``：待扣分执行体来扣
+
+    ⚠⚠ **第 ⑤ 步是安全红线，不是业务规则**：
+      客户端上报的事件里 ``user_id`` 是**客户端自称**的
+      （上报端点只认静态 ``X-Catalog-Key``，**没有任何用户身份**）⇒ **不可信**。
+      若拿它去扣分 ⇒ 恶意客户端上报**别人的 sub** ⇒ **扣别人的积分**。
+      ⇒ **只有 ``source == 'server'``（ops-center 自己写、身份已认证）的事件才允许进扣分队列。**
+
+    ⚠ **本函数是状态的唯一真源**：客户端入口与将来的代理入口**共用**它
+    ⇒ 判定逻辑只有一份 ⇒ 不会出现「两处实现漂移」。
+    """
+    if byok:
+        return CHARGE_STATUS_NOT_APPLICABLE, ""
+    if has_missing_price:
+        return CHARGE_STATUS_UNBILLABLE, "MISSING_PRICE"
+    if not str(user_id or "").strip():
+        return CHARGE_STATUS_UNBILLABLE, "MISSING_USER"
+    if int(credit_cost or 0) <= 0:
+        return CHARGE_STATUS_FREE, ""
+    if source != CHARGE_SOURCE_SERVER:
+        return CHARGE_STATUS_UNBILLABLE, "UNTRUSTED_IDENTITY"
+    return CHARGE_STATUS_PENDING, ""
+
+
 async def ingest_usage_events(db: AsyncSession, body: dict) -> dict:
     """事件级用量入库 + 服务端按价格卡算成本。
 
@@ -159,12 +215,26 @@ async def ingest_usage_events(db: AsyncSession, body: dict) -> dict:
     missing_price: List[str] = []
     missing_detail: List[Dict[str, object]] = []
 
+    # 发放周期在**事件发生时**算好并落库（自然月 / UTC）。
+    # ⚠ 为什么不留到扣分时再算：补扣可能跨月 ⇒ 那时算出来的周期会与「额度所属周期」错位
+    #   （DESIGN §13.2 B-2 记录的跨周期补扣问题）⇒ 周期必须**随事件一起定下来**。
+    period_start, period_end = compute_period_bounds()
+
     for row in validated:
+        row["charge_period_start"] = period_start
+        row["charge_period_end"] = period_end
+        # ⚠ **本入口是客户端上报** ⇒ 事件里的 user_id 是**客户端自称**的
+        #   （上报端点只认静态 X-Catalog-Key，**无任何用户身份**）⇒ **不可信**。
+        #   ⇒ 这批事件**永远不进扣分队列**（fail-closed），只用于成本归集与对拍。
+        #   真正可扣的事件由 ops-center 自己写（代理上游、身份已认证）⇒ charge_source='server'。
+        row["charge_source"] = CHARGE_SOURCE_CLIENT
         # BYOK：用户自带 Key ⇒ 官方算力不担成本 ⇒ 记 0（但仍留档，供对拍）
         if row.get("byok"):
             row["price_id"] = ""
             row["cost_micros"] = 0
             row["credit_cost"] = 0
+            row["charge_status"] = CHARGE_STATUS_NOT_APPLICABLE
+            row["charge_error"] = ""
         else:
             cards = await load_effective_cards(
                 db,
@@ -192,6 +262,16 @@ async def ingest_usage_events(db: AsyncSession, body: dict) -> dict:
                         "missing_units": list(result.missing_units),
                     }
                 )
+            # ── 扣分状态（唯一真源：resolve_charge_state）──
+            row["charge_status"], row["charge_error"] = resolve_charge_state(
+                byok=bool(row.get("byok")),
+                has_missing_price=result.has_missing_price,
+                credit_cost=int(row.get("credit_cost") or 0),
+                user_id=str(row.get("user_id") or ""),
+                source=str(row.get("charge_source") or CHARGE_SOURCE_CLIENT),
+            )
+            if row["charge_status"] == CHARGE_STATUS_PENDING:
+                row["pending_charge_at"] = _now_iso()
 
         try:
             # ⚠ 不用 `async with db.begin()`：前面的 `load_effective_cards` 是 SELECT，
@@ -218,4 +298,12 @@ async def ingest_usage_events(db: AsyncSession, body: dict) -> dict:
         "ingested": ingested,
         "duplicate": duplicate,
         "missing_price": sorted(set(missing_price)),
+        # 待扣条数（可观测：事件落库后有多少笔等着补扣执行体去扣）
+        "charge_pending": sum(
+            1 for r in validated if r.get("charge_status") == CHARGE_STATUS_PENDING
+        ),
+        # 不可计费条数（可观测：算不出成本 / 身份不可信 ⇒ 不会去扣）
+        "charge_unbillable": sum(
+            1 for r in validated if r.get("charge_status") == CHARGE_STATUS_UNBILLABLE
+        ),
     }

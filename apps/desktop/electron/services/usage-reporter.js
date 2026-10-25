@@ -36,11 +36,14 @@ function classifyStatus (row) {
 }
 
 class UsageReporter {
-  constructor ({ store, log, getOpsCenterAuth, getClientId, getSchedulerMetrics }) {
+  constructor ({ store, log, getOpsCenterAuth, getClientId, getSchedulerMetrics, getUserSubject }) {
     this._store = store
     this._log = log || { info() {}, warn() {}, error() {}, notify() {} }
     this._getOpsCenterAuth = typeof getOpsCenterAuth === 'function' ? getOpsCenterAuth : () => null
     this._getClientId = typeof getClientId === 'function' ? getClientId : () => ''
+    // 事件要带 Logto sub（成本按用户维度归集；将来平台签名凭证落地后它才有资格参与扣分）。
+    // ⚠ 默认空串：拿不到身份时**不编造**（编一个会污染按用户的统计）。
+    this._getUserSubject = typeof getUserSubject === 'function' ? getUserSubject : () => ''
     // P1：governor 调度可观测性提供者（取走并清零排队/冷却计数）；未注入则跳过
     this._getSchedulerMetrics = typeof getSchedulerMetrics === 'function' ? getSchedulerMetrics : () => ({})
     this._timer = null
@@ -61,6 +64,19 @@ class UsageReporter {
 
   stop () {
     if (this._timer) { clearInterval(this._timer); this._timer = null }
+  }
+
+  /**
+   * 后绑定「当前登录用户」的取值器（Logto sub）。
+   *
+   * ⚠ **为什么是 setter 而不是构造参数**：本 reporter 在 phase1 构造，
+   *   而 identityService 在 phase3 才建（`identity-service-factory.js`）⇒ 构造时拿不到。
+   *   仓内已有同款后绑定先例：`store.setOwnerSubjectProvider` / `accountManager.setOwnerSubjectProvider`
+   *   / `runStateStore.setOwnerProvider`（都在 phase3-services.js 里挂同一个 provider）。
+   * @param {(() => string|null)|null} provider
+   */
+  setOwnerSubjectProvider (provider) {
+    this._getUserSubject = typeof provider === 'function' ? provider : () => ''
   }
 
   _getWatermark () {
@@ -136,6 +152,9 @@ class UsageReporter {
         event_id: clientId + ':' + id,
         usage_date: usageDate,
         client_id: clientId,
+        // 事件归属用户（Logto sub）；拿不到就留空（不编造）。
+        // ⚠ 服务端**不会**用这个字段扣分（客户端自称的身份不可信）⇒ 它只用于按用户维度归集成本。
+        user_id: this._getUserSubject() || '',
         provider_id: String(row.provider_id || ''),
         category: String(row.category || 'llm'),
         action_type: String(row.category || 'llm'),

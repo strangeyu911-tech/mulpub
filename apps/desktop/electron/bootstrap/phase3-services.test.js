@@ -19,6 +19,8 @@ __registerMock('../services/analytics-providers', {
 const mockOfflineManager = { setOwnerSubjectProvider: vi.fn() }
 __registerMock('../services/offline-manager', mockOfflineManager)
 
+const fs = require('node:fs')
+const path = require('node:path')
 const log = require('../services/logger')
 const { startServices } = require('./phase3-services')
 
@@ -263,7 +265,8 @@ describe('phase3-services.startServices', () => {
       getState: vi.fn(() => ({ status: 'authenticated', user: { sub: 'user-a' } })),
     }
     const createIdentityService = vi.fn(async () => identityService)
-    const deps = makeMockDeps({ createIdentityService })
+    const usageReporter = { setOwnerSubjectProvider: vi.fn() }
+    const deps = makeMockDeps({ createIdentityService, usageReporter })
     const result = await startServices(deps)
 
     expect(createIdentityService).toHaveBeenCalledWith(expect.objectContaining({ store: deps.store }))
@@ -282,6 +285,11 @@ describe('phase3-services.startServices', () => {
     const batchManager = deps.container.get('batchManager')
     expect(batchManager.setOwnerSubjectProvider).toHaveBeenCalledWith(expect.any(Function))
     expect(mockOfflineManager.setOwnerSubjectProvider).toHaveBeenCalledWith(expect.any(Function))
+    // ★ 用量事件要带 Logto sub ⇒ reporter 也挂**同一个** provider（后绑定）。
+    //   ⚠ reporter 在 phase1 构造、identityService 在 phase3 才建 ⇒ 只能后绑定。
+    expect(usageReporter.setOwnerSubjectProvider).toHaveBeenCalledWith(expect.any(Function))
+    const usageOwnerProvider = usageReporter.setOwnerSubjectProvider.mock.calls[0][0]
+    expect(usageOwnerProvider()).toBe('user-a')
   })
 
   it('身份服务使用合并后的公开运行时配置', async () => {
@@ -559,5 +567,34 @@ describe('phase3-services 启动期日计数裁剪', () => {
     expect(log.notify.mock.calls.some((c) => String(c[1] || '').includes('prune')),
       `启动期裁剪失败必须留痕，实际: ${JSON.stringify(log.notify.mock.calls)}`).toBe(true)
     await result.rollback()
+  })
+})
+
+// ★ 接线契约（源码级）：模块级单测覆盖不到「谁把什么传给了谁」
+//   背景（2026-10-25）：本文件里 startServices 的用例直接喂 usageReporter，
+//   所以「bootstrap 有没有把 phase1 的 usageReporter 真的传进来」**从未被构造**；
+//   首版把作用域变量名写错（ctx / 实际是 context）⇒ ESLint no-undef 判红、
+//   而 49 条模块级用例全绿。接线级缺陷必须由接线级断言看。
+describe('phase3-services 接线契约（源码级）', () => {
+  const read = (rel) => fs.readFileSync(path.resolve(__dirname, rel), 'utf8')
+
+  it('bootstrap 必须把 phase1 的 usageReporter 传进 startServices（取自 context，不是别的作用域）', () => {
+    const src = read('../bootstrap.js')
+    const callIdx = src.indexOf('await startServices({')
+    expect(callIdx, 'bootstrap.js 里必须真的调 startServices').toBeGreaterThan(-1)
+    const block = src.slice(callIdx, src.indexOf('})', callIdx))
+    expect(block, 'startServices 的实参块必须带 usageReporter').toContain('usageReporter: context.usageReporter')
+    // 反断言：ctx 是另一个作用域的名字，用它会被 ESLint no-undef 判红（模块级用例看不见）
+    expect(src, '不得引用未定义作用域的 ctx.usageReporter').not.toContain('ctx.usageReporter')
+  })
+
+  it('startServices 的签名必须真的解构 usageReporter（传了但没解构 ⇒ 静默不生效）', () => {
+    const src = read('./phase3-services.js')
+    expect(src, 'startServices 的参数列表必须解构 usageReporter').toMatch(/usageReporter\s*\}\s*\)/)
+  })
+
+  it('phase1 的 context 必须真的带 usageReporter（否则上面那个键读到 undefined）', () => {
+    const src = read('./phase1-context.js')
+    expect(src, 'phase1 返回的 context 里必须有 usageReporter').toMatch(/usageReporter\s*,/)
   })
 })

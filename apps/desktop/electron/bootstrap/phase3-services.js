@@ -64,7 +64,8 @@ async function runCleanups(cleanups) {
  */
 async function startServices({ container, usageTracker, store, taskQueue, callbackServer, scheduler,
   keywordMonitor, analyticsService, pythonBridge, CloudPublisher, modelProviderManager, getMainWin,
-  createIdentityService, loadIdentityRuntimeEnv, waitForStoreReady, opsCenterSync, automationScheduler }) {
+  createIdentityService, loadIdentityRuntimeEnv, waitForStoreReady, opsCenterSync, automationScheduler,
+  usageReporter }) {
   /** @type {Array<() => unknown | Promise<unknown>>} */
   const cleanups = []
   let rollbackPromise = null
@@ -243,6 +244,12 @@ async function startServices({ container, usageTracker, store, taskQueue, callba
     }
     const getOptionalService = (name) => {
       try { return container.get(name) } catch (_) { return null }
+    }
+    // 用量事件要带 Logto sub（按用户维度归集成本）⇒ 同一个 provider 后绑定。
+    // ⚠ reporter 在 phase1 构造、identityService 在 phase3 才建 ⇒ 只能后绑定（与上面同款先例）。
+    if (usageReporter && typeof usageReporter.setOwnerSubjectProvider === 'function') {
+      usageReporter.setOwnerSubjectProvider(ownerSubjectProvider)
+      cleanups.push(() => usageReporter.setOwnerSubjectProvider(null))
     }
     const commentManager = getOptionalService('commentManager')
     const runStateStore = getOptionalService('runStateStore')

@@ -255,6 +255,8 @@ servicesResult = await startServices({
         container, store, taskQueue, callbackServer, scheduler,
         keywordMonitor, analyticsService, usageTracker, pythonBridge, CloudPublisher, commentManager,
         modelProviderManager, getMainWin, opsCenterSync,
+        // 用量事件要带 Logto sub ⇒ phase3 里把 identityService 算出的 subject provider 后绑定给 reporter。
+        usageReporter: context.usageReporter,
       })
 
       // 启动知识进化调度器

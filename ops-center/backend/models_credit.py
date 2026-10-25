@@ -54,6 +54,36 @@ BILLED_BY_USAGE = "billed_by_usage"   # B 类按量付费 —— 首选基准
 BILLED_BY_QUOTA = "billed_by_quota"   # A 类有总额度的套餐 —— 次选
 BILLED_BY_WINDOW = "billed_by_window"  # C 类窗口配额 —— 仅作参考，不入基准
 
+# ── 扣分状态机的取值（`ModelUsageEvent.charge_status`）────────────────
+# ⚠ **5 个取值都不可省**：「用户自己的 Key」与「上游免费」虽然都「不需要扣」，
+#   但**语义不同**（前者是钱由用户出，后者是上游没收钱）⇒ 共用一个标记
+#   会让后续统计/对拍分不清 ⇒ 主动选择与失败兜底必须**分旗**。
+CHARGE_STATUS_NOT_APPLICABLE = "not_applicable"  # BYOK：用户自带 Key ⇒ 官方算力不担成本
+CHARGE_STATUS_FREE = "free"                      # 成本为 0（上游免费）⇒ 无需扣，账本也不记
+CHARGE_STATUS_PENDING = "pending"                # 待扣 / 扣不动待重试
+CHARGE_STATUS_SETTLED = "settled"                # 扣分成功（账本已记）
+CHARGE_STATUS_UNBILLABLE = "unbillable"          # 算不出成本（缺价）或无用户 ⇒ 永久失败
+# ── 事件来源（`ModelUsageEvent.charge_source`）────────────────────────
+# ⚠ **这是安全边界，不是统计字段**：
+#   「客户端上报的事件」里的 user_id 是**客户端自称**的
+#   （上报端点只认静态 `X-Catalog-Key`，**没有任何用户身份**）⇒ **不可信**。
+#   ⚠ 若拿它去扣分 ⇒ 恶意客户端上报**别人的 sub** ⇒ **扣别人的积分**。
+#   ⇒ **只有 ops-center 自己写的（代理上游时，身份已认证）事件才允许进扣分队列。**
+# ⚠ 当前形态下桌面端直连 provider ⇒ Key 是用户自己的 ⇒ 那条路本质是 BYOK ⇒ 本就不该扣官方积分；
+#   真正的官方算力（扣官方积分）必然发生在「ops-center 代理」或「客户端持平台签名凭证」这两条路上
+#   ⇒ 后者（平台签名凭证）尚未落地 ⇒ **此刻客户端事件一律不可扣**。
+CHARGE_SOURCE_CLIENT = "client"  # 客户端上报 ⇒ 身份不可信 ⇒ **永不扣分**
+CHARGE_SOURCE_SERVER = "server"  # ops-center 自己写（代理上游，身份已认证）⇒ 可扣
+CHARGE_SOURCES = (CHARGE_SOURCE_CLIENT, CHARGE_SOURCE_SERVER)
+
+CHARGE_STATUSES = (
+    CHARGE_STATUS_NOT_APPLICABLE,
+    CHARGE_STATUS_FREE,
+    CHARGE_STATUS_PENDING,
+    CHARGE_STATUS_SETTLED,
+    CHARGE_STATUS_UNBILLABLE,
+)
+
 # 「1 积分值多少微元」的**单一真源**。
 # ⚠️ 1 积分 = 1 分 = ¥0.01 = **10000 微元**。
 # ⚠️ 这三个值（default / 读不到时的兜底 / 建默认行）必须同源 ——
@@ -201,3 +231,24 @@ class ModelUsageEvent(Base):
     credit_cost = Column(Integer, nullable=False, default=0)  # 服务端算的积分消耗
     client_reported_cost_micros = Column(Integer)  # 客户端透传值，仅用于对拍
     created_at = Column(String, default=lambda: datetime.datetime.utcnow().isoformat())
+
+    # ── 扣分状态机（2026-10-25，官方算力第 5 轮 R5-2）────────────────
+    # ⚠ **为什么需要这组列**：`model_usage_events` 记的是「这次调用花了多少钱」，
+    #   而**扣分发生在另一个进程**（engine / Postgres）⇒ 事件落库与扣分**天然是两步**。
+    #   没有这组列 ⇒ 扣不动的事件**无处记录**（挂起 = 永久白送，DESIGN §13.2 B-10）。
+    #
+    # ⚠ **状态取值只有 4 个，且刻意不设「终态丢弃」**：
+    #   not_applicable —— BYOK（用户自带 Key）⇒ 官方算力不担成本 ⇒ 不扣
+    #   pending       —— 已算好成本与积分，等补扣执行体来扣；扣不动就**继续 pending + 退避重试**
+    #   settled       —— 扣分成功（账本已记）
+    #   unbillable    —— **算不出成本**（缺价格卡）⇒ 扣了也是乱扣 ⇒ 永久失败，待人工补卡后重跑
+    #   ⇒ 「一直扣不动怎么办（坏账？跨周期？）」是**终态决策**，属待拍板项（U-14 / B-2），
+    #     **本刀不预设** ⇒ 反复失败只增 `retry_count` + 推后 `pending_charge_at`。
+    charge_status = Column(String, nullable=False, default="not_applicable")  # 见上
+    charge_source = Column(String, nullable=False, default="client")  # 见上；缺省 client = 安全侧
+    charge_period_start = Column(String, nullable=False, default="")  # 事件发生时的自然月起（UTC）
+    charge_period_end = Column(String, nullable=False, default="")  # 事件发生时的自然月止（UTC）
+    pending_charge_at = Column(String, nullable=False, default="")  # 下次可重试时间（ISO8601）
+    retry_count = Column(Integer, nullable=False, default=0)  # 已重试次数（可观测）
+    charge_error = Column(String, nullable=False, default="")  # 最后一次失败的错误码（可观测）
+    charged_at = Column(String, nullable=False, default="")  # 扣分成功时间（ISO8601）

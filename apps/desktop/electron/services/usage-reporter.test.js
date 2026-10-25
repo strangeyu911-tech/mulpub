@@ -244,6 +244,26 @@ describe('UsageReporter.reportEvents（事件级上报 · 官方算力成本归�
     expect(item.cost).toBeUndefined()
   })
 
+  it('事件带 user_id（Logto sub）—— 后绑定 provider 提供的身份', async () => {
+    const store = makeKeyedStore([VIDEO_ROW])
+    const r = new UsageReporter({ store, log: LOG, getOpsCenterAuth: () => AUTH, getClientId: () => 'dev-1' })
+    r.setOwnerSubjectProvider(() => 'logto-sub-42')
+    let body
+    global.fetch = vi.fn(async (url, opts) => { body = JSON.parse(opts.body); return { ok: true, status: 200 } })
+    await r.reportEvents()
+    expect(body.items[0].user_id).toBe('logto-sub-42')
+  })
+
+  it('拿不到身份时 user_id 留空（不编造）', async () => {
+    // ⚠ 编一个身份会污染「按用户维度归集成本」⇒ 拿不到就留空。
+    const store = makeKeyedStore([VIDEO_ROW])
+    const r = new UsageReporter({ store, log: LOG, getOpsCenterAuth: () => AUTH, getClientId: () => 'dev-1' })
+    let body
+    global.fetch = vi.fn(async (url, opts) => { body = JSON.parse(opts.body); return { ok: true, status: 200 } })
+    await r.reportEvents()
+    expect(body.items[0].user_id).toBe('')
+  })
+
   it('事件水印与日桶水印**互不影响**（两条流读同一张表）', async () => {
     const store = makeKeyedStore([VIDEO_ROW])
     const r = new UsageReporter({ store, log: LOG, getOpsCenterAuth: () => AUTH, getClientId: () => 'dev-1' })

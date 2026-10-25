@@ -112,7 +112,15 @@ describe('publish-monitor — B 站专用分派的装配锁', () => {
       const callback = vi.fn()
       const task = mod.createMonitorTask({ platform: 'bilibili', postId: BVID, cookies: 'SESSDATA=abc', callback })
       await vi.advanceTimersByTimeAsync(10000)
-      await settle('T2 第二跳应发生', () => requests.length >= 2)
+      // ⚠️ 等的是**回调到达**，不是「第二跳已发出」：第二跳在**服务端收到**那一刻 `requests.length` 就 +1，
+      //   而回调要等**响应被客户端读回并判定之后**才触发（publish-monitor.js:66）。
+      //   只等 `requests` ⇒ 慢 runner 上会提前放行 ⇒ `task.stop()` 先跑 ⇒ 回调永不发生
+      //   ⇒ 断言读到 `callback.mock.calls[0] === undefined` ⇒ TypeError（2026-10-25 CI 上真实红过一轮：
+      //   `publish-monitor.test.js:118` TypeError: Cannot read properties of undefined (reading '0')）。
+      //   口径与同文件既有两处一致：T1 等 `callback.mock.calls.length > 0`、T7 等 `requests && callback`。
+      //   ⛔ 断言一个字没放宽：回调真的不发生，settle 8s 后抛「settle timeout」并点名等待条件
+      //   （比原来的 TypeError 可读），仍然是红。
+      await settle('T2 第二跳应发生且回调应到达', () => requests.length >= 2 && callback.mock.calls.length > 0)
       task.stop()
       expect(requests[1].url).toContain('/x/other/archives')
       expect(callback.mock.calls[0][0].status).toBe('published')

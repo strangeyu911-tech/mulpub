@@ -52,9 +52,19 @@ ops-center SHALL NOT 直连 Postgres 执行扣减，SHALL NOT 引入 key-broker 
 #### Scenario: 扣分请求的字段契约
 
 - **WHEN** ops-center 发起扣分调用
-- **THEN** 请求体 SHALL 携带 `userId`、`amount`（正整数）、`costCents`（非负整数）、`priceId`、`reason`、`refType`、`refId`、`periodStart`、`periodEnd`
-- **AND** `refId` SHALL 等于本次用量事件的 id
+- **THEN** 请求体 SHALL 携带 `authSubject`、`amount`（正整数）、`costCents`（非负整数，单位**分**）、`priceId`、`reason`、`refType`、`refId`、`periodStart`、`periodEnd`
+- **AND** `authSubject` SHALL 是 Logto `sub`；服务端 SHALL 在**端点内**解析为 `identity_users.id` 后再执行扣减（账本 FK 指向 `identity_users.id`）
+- **AND** `refId` SHALL 等于本次用量事件的 id，且 SHALL **全局唯一**
+- **AND** `refType` SHALL 等于常量 `'usage_event'`（DB 唯一索引是**部分索引**，只覆盖该值）
+- **AND** `costCents` SHALL 由 ops-center 侧的 `cost_micros`（**微元**）按 **÷10000 向上取整**换算而来；SHALL NOT 用 `costCents` 反算 `amount`
 - **AND** 响应 SHALL 返回 `account`（扣后账户快照）、`entry`（账本分录）、`duplicated`（幂等命中标志）
+
+#### Scenario: refId 为空必须被拒绝
+
+- **WHEN** 扣分请求的 `refId` 为空串
+- **THEN** 端点 SHALL 在**入口**返回 400（`CREDIT_REF_INVALID`）
+- **AND** SHALL NOT 依赖仓储层兜底（既有 `consumeCredit` **没有** `if (refId)` 守卫）
+- **AND** 理由：空 `refId` 与任何一次空 `refId` 的扣分共用查重键 `(usage_event,'')` ⇒ 第二次起静默「已扣」但实际不扣 ⇒ 静默免费算力
 
 #### Scenario: 幂等键保证重复调用不重复扣费
 
@@ -62,6 +72,12 @@ ops-center SHALL NOT 直连 Postgres 执行扣减，SHALL NOT 引入 key-broker 
 - **THEN** 服务端 SHALL 至多扣减一次
 - **AND** 重复请求 SHALL 返回 `duplicated: true` 且不产生新分录
 - **AND** 理由：幂等键为 `(ref_type, ref_id, entry_type='spend')` ⇒ 重试安全
+
+#### Scenario: 扣分端点必须绑定服务身份
+
+- **WHEN** 任何请求调用扣分端点
+- **THEN** 服务端 SHALL 校验**服务间凭据**；SHALL NOT 仅凭 `publish:submit` 这类默认 scope 放行
+- **AND** 理由：默认 scope 下任何持 api_key 的调用方可扣**任意** `authSubject` ⇒ 越权扣分
 
 #### Scenario: 服务间凭据不得与用户凭据混用
 
@@ -81,6 +97,13 @@ ops-center SHALL NOT 直连 Postgres 执行扣减，SHALL NOT 引入 key-broker 
 - **AND** SHALL NOT 产生上游成本
 - **AND** SHALL 向用户返回明确提示
 
+#### Scenario: 余额不足的终态唯一
+
+- **WHEN** 扣分调用返回 409（`CREDIT_BALANCE_EXHAUSTED`）
+- **THEN** 该用量事件 SHALL 置为 `pending_charge`（挂起补扣）
+- **AND** SHALL NOT 置为「不发货」终态 —— 扣分发生在**发货后**，上游成本已发生
+- **AND** 「不发货」只适用于**发货前**的额度预检（那时上游未被调用）
+
 #### Scenario: 已产出后扣分失败
 
 - **WHEN** 上游已返回有效产出、但扣分调用失败
@@ -92,6 +115,13 @@ ops-center SHALL NOT 直连 Postgres 执行扣减，SHALL NOT 引入 key-broker 
 ### Requirement: 降级与扣费同向
 
 当官方算力链路发生上游降级时，扣费 SHALL **同向调整**。
+
+#### Scenario: 降级方向由运行时事实决定
+
+- **WHEN** 官方 Key 池耗尽，需要切到 fallback 通道
+- **THEN** 扣费方向 SHALL 由**该通道的实际单价**决定，不得预设方向
+- **AND** 若 fallback 更贵，SHALL 同步提高扣费，且界面文案 SHALL NOT 宣称「更便宜」
+- **AND** 理由：价格卡唯一键含 `provider_id` ⇒ 同模型不同通道可有不同价；「同向降扣费」若被窄化成「只管更便宜」⇒ 更贵时无规定 ⇒ 多扣且文案说更便宜
 
 #### Scenario: 降级到更便宜的上游
 
@@ -114,7 +144,8 @@ ops-center SHALL NOT 直连 Postgres 执行扣减，SHALL NOT 引入 key-broker 
 - **WHEN** 桌面端上报用量
 - **THEN** 载荷 SHALL 包含 `user_id`（Logto `sub`）与 `client_id`
 - **AND** `tokens_in` / `tokens_out` / `cost` SHALL 填真实值
-- **AND** 理由：现状只带 `client_id` 且三项恒为 0 ⇒ 成本无法归到用户 ⇒ 账本无法核对
+- **AND** 理由：现状只带 `client_id` ⇒ 成本无法归到用户 ⇒ 账本无法核对
+  （⚠️ **口径订正 2026-10-25**：tokens 主路径已是真实聚合值、**仅兜底桶为 0**；`cost` 在 BYOK 直连路径为 NULL）
 
 #### Scenario: 事件先落库再调上游
 

@@ -13,7 +13,7 @@ branch: official-compute-wiring-final
 | 品牌残留 | ✅（范围受限） | `node scripts/check-no-brand-residue.js` → **`PASS`（扫描 9 个 tracked 文件，无品牌残留；已豁免第三方签名服务域名）**。⚠️ **覆盖范围说明**：这 9 个是**本地等价仓库的全集**（8 个本 PR 改动文件 + 1 个门禁脚本本身）⇒ **本地覆盖面远小于 CI 的全仓扫描**；全仓覆盖随 CI 判据。 |
 | 文档同步检查 | 随 CI | `bash scripts/check-docs-sync.sh --base=main --head=HEAD` 随 CI `Doc Sync Gate`；**本地 git 通路不可用 ⇒ 未实跑**（如实标注，不冒充通过）。 |
 | 执行记录存在性 | ✅ | 本文件（`openspec/records/official-compute-wiring-final.md`）。frontmatter 为**现行形态**（`record` / `task` / `date` / `branch` 四字段，**不带** `sync_status` / `sync_reason` / `sync_backfill_owner`）；状态列写 `\| 远程同步 \| 由门禁推导 \|`，**不手写 PENDING/PASS**。 |
-| 迁移编号 | ✅ | **本 change 不新增迁移文件**（D-① 供给侧零迁表）⇒ 编号问题归零。实测 `migrations/postgresql/` 占用 = `002/003/004/005/006_payment_orders/008_credit_ledger/009_redeem_code_issued_to` ⇒ `006` 已占、`007` 已被 `compute-key-envelope-migration` 预定、`008`/`009` 已占 ⇒ **D-③ 落地时新迁移从 `010` 起**；真实约束是 **FK 建表顺序 = 文件名 `localeCompare` 序**，不是「撞号」。 |
+| 迁移编号 | ✅ | **本 change 不新增迁移文件**（D-① 供给侧零迁表）⇒ 编号问题归零。实测 `migrations/postgresql/` 占用 = `002/003/004/005/006_payment_orders/008_credit_ledger/009_redeem_code_issued_to` ⇒ `006` 已占、**`007` 已释放**（原「被 `compute-key-envelope-migration` 预定」只是规格层预留，而该 change 前提已失效 ⇒ 磁盘与规格**都不再占 007**，实测无 `007_*.sql`）、`008`/`009` 已占 ⇒ **D-③ 落地时新迁移从 `010` 起**；真实约束是 **FK 建表顺序 = 文件名 `localeCompare` 序**，不是「撞号」。 |
 | 保留门禁（docs-only 豁免项） | N/A | **QM-1 打包 / QM-2 代码必检项 / QM-4 视觉 / TDD（无代码）** 全部不适用 —— **本 PR 未改任何运行时代码**。 |
 | QM-6 CCG 双模型外部评审 | **未执行** | 本环境无可用外部评审通道（`ccg-deep-review.js` 全盘不存在；`claude` / `opencode` / `codex` / `codeagent-wrapper` 均不可用）⇒ **如实记为未执行，不以自审冒充通过**。本片为**前提级订正 + 定案落文档**，风险面是「文档口径漂移」而非「运行时代码缺陷」。 |
 | 远程同步 | 由门禁推导 |
@@ -24,6 +24,25 @@ branch: official-compute-wiring-final
 
 把官方算力链路**从「搬表」改向为「接线」**——三个定案（代理落 ops-center / 扣分走一次 HTTP / 账户模型缺口立项）落进 PRD、openspec change 与新建设计文档。
 
+## 第 2 轮对抗复评（2026-10-25，第 3 轮修订的依据）
+
+对**已合并版本** `main @ 99701282` 跑了 3 条独立轨 + 1 次 owner 独立复核：
+
+| 轨 | 规模 | 结论 |
+|---|---|---|
+| 回归验收 | 第 1 轮 **93** 条发现逐条核对 | 完全修好 **17** / 部分修 **24** / 未修 **49** / 原发现不成立 **1** / 被另一条线覆盖 **2**；另 **9** 条新发现 |
+| 实现对账 | **26** 条缺口（+5 条已核实一致） | 文档断言与主干真实实现不符：单位口径、列名、现成能力、跨文档一致性 |
+| 对抗复评 | **17** 条新的可复现失效路径 | **8 CRITICAL / 8 MAJOR / 1 MAJOR-杂项** |
+
+**owner 独立复核过的关键结论（全部成立）**：
+`publish-api-server.js` 全文 1566 行 `credit` **零命中** ⇒ 扣分/读余额端点都不存在；
+`TOKEN_FIELD_TO_UNIT` 只有 5 类 token ⇒ 视频/图像成本恒 0；
+`ops-center/backend/requirements.txt` 无任何调度器依赖 ⇒ ops-center 侧无定时宿主；
+`models_credit.py` 用 `cost_micros` / `credit_unit_price_micros`（微元），而 `credit-schema.js:44` 用 `cost_cents`（分）⇒ 跨库单位不一致。
+
+**跨轨分歧的裁决**：调度器先例**只在 Node 侧**（`scheduled-publish.js:93`）；**ops-center 侧实测为零**
+⇒ 原先「仓内已有调度器先例」的说法**未限定进程、是错的** ⇒ 已改写为 U-5 + 新增 U-14。
+
 ## 本片的实质变更（不是文档搬运）
 
 | # | 变更 | 性质 |
@@ -32,7 +51,7 @@ branch: official-compute-wiring-final
 | 2 | **三个定案落文档**：D-① 代理落 ops-center（供给侧零迁表）、D-② 扣分走 `POST /api/v1/credit/consume` 一次 HTTP（不直连 Postgres、不建 key-broker）、D-③ 账户双轨 + `expires_at` 缺口独立立项 | 新增决策 |
 | 3 | **两个既有决策标记失效**：① 官方 Key 迁 AES-256-GCM + KMS（`PRD` §4.4-1）—— 随 D-① 失效；② `compute-key-envelope-migration` 整条 change —— 其存在理由「Node 侧要解官方 Key」不成立 | 失效标注（**非论证被推翻**） |
 | 4 | **PRD §4.3 流程图重画**：原图把「服务端」当一个整体 ⇒ 拆成 ops-center（供给+算成本+记用量）与 api-publish-engine（扣分）两个服务；「预扣-结算-退款」改为「**发货前扣分 + 发货后挂起补扣**」（上游已计费 ⇒ 退款是错的，补扣才对） | 实质修正 |
-| 5 | **新建设计文档** `01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（553 行）：端到端流程、失败矩阵、数据校验清单、功能逻辑、交互逻辑、显示项、提示文字（zh/en 成对 9 条）、验收 12 条、未决项 7 条 | 新增 |
+| 5 | **新建设计文档** `01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（初版 553 行 → **723 行**）：端到端流程、失败矩阵、数据校验清单、功能逻辑、交互逻辑、显示项、提示文字（zh/en 成对 9 条）、验收、未决项，**+ §3.3.1 跨库单位换算 + §13 第 2 轮复评结论与 12 条阻断项** | 新增 |
 | 6 | **openspec spec 整体改写**：从「Key 池物理归属 / 切读失败语义 / 迁移四层校验 / 回滚路径」改为「代理物理归属 / 扣分通道契约 / 扣分失败语义 / 降级同向 / 用量归属与时序 / 缺价处理 / 迁移编号 / 账户模型边界」 | 契约改写 |
 | 7 | **tasks 从 8 组「迁表」任务改写为 8 组「接线」任务**（第 0 组前提重核标记闭合） | 任务改写 |
 
@@ -48,7 +67,7 @@ branch: official-compute-wiring-final
 
 ## 未决项（已写入设计文档 §11）
 
-U-1 服务间鉴权机制（**须人工过目**）｜U-2 官方算力端点路径与幂等键归属｜U-3 `official_credit` 不在 features 数组（**须人工过目**）｜U-4 `get_active_keys_for_tier` 生产引用数为 0｜U-5 定时对账任务宿主（全仓无 cron/APScheduler）｜U-6 账户双轨 DDL｜U-7 官方 Key 运维迁移（**已关闭**：Fernet 保持不变）
+U-1 服务间鉴权机制（**须人工过目**）｜U-2 官方算力端点路径与幂等键归属｜U-3 `official_credit`（**已关闭**：`plan-matrix.js:223` 现在会 push 该 feature ⇒ 「拿不到授权」不成立；配套 tasks 1.3 的实施动作随之取消）｜U-4 `get_active_keys_for_tier` 生产引用数为 0｜U-5 定时对账任务宿主（**口径已订正**：先例**只在 Node 侧**，ops-center 侧实测为零 ⇒ 见 U-14）｜U-6 账户双轨 DDL｜U-7 官方 Key 运维迁移（**已关闭**：Fernet 保持不变）｜U-8 `compute-key-envelope-migration` 归档与否（**须人工过目**）｜U-9 五个错误码仓内均不存在 ⇒ 需新增｜U-10 迁移文件名须被 `MIGRATION_PATTERN` 认领｜**U-11 账本成本列是否也统一到微元（须人工过目：改已应用迁移 = 破坏性）**｜**U-12 视频/图像/TTS/ASR 价格卡是否入库（须人工拍板：要定价数据）**｜**U-13 额度预检的读余额通道形态（须人工过目）**｜**U-14 补扣任务的调度宿主（须人工拍板）**
 
 ## 验证结果（实测读数）
 
@@ -79,14 +98,26 @@ $ node scripts/check-no-brand-residue.js
 
 - **实现**：`official-compute-credit-wiring` 的 tasks 1–7（官方算力端点 + 扣分端点 + 桌面端接线 + 状态机 + 运营可观测 + 部署文档 + 端到端三方对账）
 - **独立 change**：账户双轨模型（D-③，改主键 ⇒ 独立评审）
-- **待人工确认**：服务间鉴权（U-1）、`official_credit` feature 补登（U-3）、`compute-key-envelope-migration` 归档与否
+- **待人工确认**：服务间鉴权（U-1）、`compute-key-envelope-migration` 归档与否（U-8）、错误码新增（U-9）、账本成本列口径（U-11）、视频/图像价格卡是否入库（U-12）、额度预检读端点形态（U-13）、补扣调度宿主（U-14）
+- ⛔ **开工前置**：第 2 轮复评的 **12 条阻断项**（设计文档 §13.2 / tasks `0ter` 组）必须先关闭
 
 ## CHANGELOG 条目
 
-- **docs(official-compute): 官方算力扣减接线落地形态定案（D-①/D-②/D-③）** ——
-  经两轮对抗评审（5 轨 × 2 轮，共 83 条发现）后修订：
-  扣分时序改**两段式**（发货前只读额度预检 + 发货后实扣）、
-  `refId` 空值硬拒 400、`userId` 统一为 `identity_users.id`、
+# docs(official-compute): 官方算力扣减接线落地形态定案（D-①/D-②/D-③）—— 并如实标注「第 2 轮复评后尚不可开工」的 12 条阻断项
+
+经两轮对抗评审后修订（第 1 轮 **93** 条发现 + 第 2 轮 **26** 条实现符合性缺口 + **17** 条新的可复现失效路径）：
+
+- **第 1 轮已修**：扣分时序改**两段式**（发货前只读额度预检 + 发货后实扣）、`refId` 空值硬拒 400、
   错误码与响应体字段名对齐既有实现、缺价规则正式修订口径真源为两态、
   迁移编号澄清 `007` 已释放、新迁移从 `010` 起并补 `MIGRATION_PATTERN` 认领判据、
   openspec delta 补 H1 + `## Purpose` + `## MODIFIED Requirements`、proposal 补 `## Capabilities`。
+- **第 2 轮已修**：单位口径全量改**微元** + 新增 §3.3.1 跨库单位换算（÷10000 向上取整）、
+  身份链定为 `authSubject`（端点内解析成 `identity_users.id`）、409 语义唯一化为「挂起补扣」、
+  `refType` 写死常量 + `refId` 必须全局唯一、档位量纲 `user_tier = modelTier + 1`、
+  积分单价兜底下限 10000、错误码补 3 个、赠送量引用断链修正、
+  PRD 流程图把额度预检前移到调上游**之前**、tasks 的 `official_credit` 前提失效作废、
+  `007` 占号口径三处统一、tokens 口径从「恒为 0」订正为「仅兜底桶为 0」、
+  新增 §13（复评结论 + 12 条阻断项）与 tasks `0ter` 组。
+- ⚠️ **诚实披露**：第 1 轮 **93** 条发现里**真正修好的只有 17 条**（部分修 24 / 未修 49 / 被覆盖 2）；
+  此前 PR 正文写的「83 条逐条订正」是**算术错误**（20+19+14+30+10 = **93**）**且过度声称**。
+  ⇒ 剩余台账（73 + 23 + 26 + 17 条）**未逐条修**，已如实登记在设计文档 §13.5 与 tasks `0ter.N-*`。

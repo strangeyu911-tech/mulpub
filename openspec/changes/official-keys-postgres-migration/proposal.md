@@ -79,7 +79,9 @@
 - **新增**：api-publish-engine 的**扣分端点** `POST /api/v1/credit/consume`
   （复用 Phase 1 已有的 `credit-repository.js` 的 `consumeCredit`，**不新建扣减逻辑**）。
 - **修改**：桌面端 `usage-reporter.js` —— 载荷**补 `user_id`**（Logto `sub`），
-  `tokens_in` / `tokens_out` / `cost` **填真实值**（现状三者恒为 0 ⇒ 成本无法归到用户）。
+  `tokens_in` / `tokens_out` / `cost` **填真实值**。
+  ⚠️ **口径订正（2026-10-25）**：tokens **主路径已是真实聚合值**，**仅兜底桶为 0**（`usage-reporter.js:85/123-125/145-147`）；
+  `cost` 只在「官方代理响应自带 `cost`」时有值，**BYOK 直连路径为 NULL** ⇒ 「三者恒为 0」是**旧口径**。
 - **修改**：`model_usage_events` 引入**状态机**（`pending` / `charged` / `failed` / `pending_charge` / `charge_rejected`）
   与**先落库再调上游**的时序（`events.id` 是扣分的幂等键来源）。
 - **不改变**：`official_keys` 的**物理归属**（仍在 ops-center 的 SQLite）、**加密形态**（Fernet 不变）、
@@ -132,7 +134,7 @@
 
 （历史记录：改向前本 change 与 `compute-key-envelope-migration` 都要在 `migrations/postgresql/` 加文件、编号会撞。
 2026-10-25 实测占用为 `002/003/004/005/006_payment_orders/008_credit_ledger/009_redeem_code_issued_to`
-⇒ `006` 已占、`007` 已被信封 change 预定、`008`/`009` 已占 ⇒ **新迁移从 `010` 起**。）
+⇒ `006` 已占、**`007` 已释放**（原「被信封 change 预定」只是规格层预留，而该 change 前提已失效 ⇒ 磁盘与规格**都不再占 007**，实测无 `007_*.sql`）、`008`/`009` 已占 ⇒ **新迁移从 `010` 起**。）
 
 ⚠️ **D-③（账户双轨）落地时需要新迁移**，届时 SHALL 现查 `migrations/postgresql/` 并遵守：
 真实约束是 **FK 建表顺序 = 文件名 `localeCompare` 序**（不是「撞号」），

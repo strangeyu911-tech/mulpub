@@ -12,6 +12,12 @@
 
 ## 0. 结论（TL;DR）
 
+> ⚠️ **本设计的当前状态：尚不可直接开工。**
+> 第 2 轮对抗复评在**本设计的已合并版本**上又查出 **26 条实现符合性缺口 + 17 条新的可复现失效路径
+> （其中 8 条 CRITICAL）**；且第 1 轮发现的回归验收结果是「完全修好 17 / 部分修 24 / 未修 49」。
+> ⇒ **实施前必须先关闭 §13.2 的 12 条阻断项 + §11 的未决项。**
+> 详见文末 **§13「第 2 轮对抗复评结论与本设计的当前完成度」**。
+
 ### 三个定案
 
 | # | 定案 | 一句话 |
@@ -25,8 +31,8 @@
 ```
 桌面端 ──► ops-center 官方算力端点 ──┬─ 选 Key（official_keys）
                                       ├─ 调上游（httpx）
-                                      ├─ 算成本（model_price_cards → cost_cents）
-                                      ├─ 算积分（ceil(cost_cents / 单价 × 倍率)）
+                                      ├─ 算成本（model_price_cards → **cost_micros，微元**）
+                                      ├─ 算积分（ceil(cost_micros / credit_unit_price_micros × 倍率)）
                                       ├─ 记用量（model_usage_events，带 user_id）
                                       └─► api-publish-engine POST /api/v1/credit/consume
                                               └─ identity_credit_accounts + identity_credit_ledger
@@ -153,13 +159,13 @@ key-broker 会把「同一事务内扣减」永久降级为最终一致；本场
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `userId` | string | ✅ | **必须是 `identity_users.id`**（账本 FK 指向它）。⚠️ **不是 Logto `sub`**：`identity_users.id` 是 `crypto.randomUUID()` 生成的内部 id，Logto 的 `sub` 存在 `auth_subject` 列（`002_logto_identity.sql:7` / `:16` 的 `UNIQUE (auth_provider, auth_subject)`）⇒ 用 `sub` 会**直接撞外键约束**。**解析在 api-publish-engine 侧完成**（它才有 `identity_users` 表） |
+| `authSubject` | string | ✅ | **携带 Logto `sub`**（= `auth_subject.auth_subject`），**不是** `identity_users.id`（后者是 `crypto.randomUUID()` 生成的内部 id，`002_logto_identity.sql:7` / `:16`）。⚠️ **端点内解析**：api-publish-engine 用 `postgres-identity-repository.findBySubject('logto', sub)` 解析出 `identity_users.id` 后再调 `consumeCredit`（账本 FK 指向 `identity_users.id`，`credit-schema.js:23`）⇒ **sub→id 的解析只发生在引擎侧**；ops-center **不查 Postgres**、不认识 `identity_users`（守 §3.1） |
 | `amount` | integer | ✅ | 扣减积分（**正整数**；`amount <= 0` ⇒ `CREDIT_AMOUNT_INVALID`） |
-| `costCents` | integer | ✅ | 上游真实成本（**分**；非负整数） |
+| `costCents` | integer | ✅ | 上游真实成本（**分**；非负整数）。⚠️ **ops-center 手里是「微元」⇒ 必须换算**：源列 `model_usage_events.cost_micros`（微元）⇒ 换算规则见 **§3.3.1 跨库单位换算** |
 | `priceId` | string | — | 价目卡 id（版本化价格，禁 UPDATE） |
 | `reason` | string | — | 人类可读原因（进账本 `reason` 列） |
-| `refType` | string | — | 默认 `usage_event` |
-| `refId` | string | ✅ | **幂等键**：对应 `model_usage_events.id`。⛔ **空值必须 400 拒绝**：既有 `consumeCredit` **没有** `if (refId)` 守卫（`grantCredit` 有，`credit-repository.js:78`）⇒ `refId=''` 与**任何**一次空 refId 的扣分共用查重键 `(usage_event,'')` ⇒ **第二次起静默「已扣」但实际不扣** ⇒ 静默免费算力 |
+| `refType` | string | — | ⚠️ **必须是常量 `'usage_event'`**（不可配、不可省）：DB 唯一索引是**部分索引**，只覆盖 `ref_type='usage_event'`（`credit-schema.js:56-58` / `008_credit_ledger.sql:78-80`）⇒ 传别的值 ⇒ 索引 WHERE 不成立 ⇒ 并发重复扣分**不再被 DB 拦** |
+| `refId` | string | ✅ | **幂等键**：对应 `model_usage_events.id`。⛔ **空值必须 400 拒绝**：既有 `consumeCredit` **没有** `if (refId)` 守卫（`grantCredit` 有，`credit-repository.js:78`）⇒ `refId=''` 与**任何**一次空 refId 的扣分共用查重键 `(usage_event,'')` ⇒ **第二次起静默「已扣」但实际不扣** ⇒ 静默免费算力。<br>⚠️ **查重不含 `user_id`**（`credit-repository.js:145-149` 的预查只按 `(ref_type, ref_id, entry_type)`）⇒ `refId` 必须**全局唯一且不可复用**（建议 `events.id` 用 UUID，不用自增整数） |
 | `periodStart` / `periodEnd` | ISO8601 | ✅ | 发放周期边界 |
 
 **响应体**：
@@ -174,11 +180,43 @@ key-broker 会把「同一事务内扣减」永久降级为最终一致；本场
 
 | 码 | HTTP | 含义 | ops-center 的处置 |
 |---|---|---|---|
-| `CREDIT_BALANCE_EXHAUSTED` | **409**（既有 `CreditError.status` 硬编码 409，**不是 402**） | 余额不足 | **不发货**，回传用户「积分不足」 |
+| `CREDIT_BALANCE_EXHAUSTED` | **409**（既有 `CreditError.status` 硬编码 409，**不是 402**） | 余额不足 | ⚠️ **此处语义唯一**：扣分发生在**发货后** ⇒ 409 ⇒ **挂起该用量事件**（`pending_charge`）+ 告警（§3.4）⇒ **不是**「不发货」——发货前的余额拦截由 §5.1 ⑤' 的**额度预检**负责（那时上游根本没被调用） |
 | `CREDIT_AMOUNT_INVALID` | **400** | `amount` 非正整数。⚠️ **既有实现抛的是 `TypeError`（不是 `CreditError`）** ⇒ 端点须在**入口**自己校验并转成 400 | **不发货**，告警（属内部契约错误） |
 | `CREDIT_PERIOD_INVALID` | 400 | 周期边界不合法。⚠️ **仓内当前无此错误码**（`grep` 零命中）⇒ 需**新增**（见 §11 U-9） | **不发货**，告警 |
-| `CREDIT_SERVICE_UNAVAILABLE` | 503 | 扣分服务不可用。⚠️ **仓内当前无此错误码**（`grep` 零命中）⇒ 需**新增**（见 §11 U-9） | **不发货**（fail-closed，见 §3.4） |
+| `CREDIT_SERVICE_UNAVAILABLE` | 503 | 扣分服务不可用。⚠️ **仓内当前无此错误码**（`grep` 零命中）⇒ 需**新增**（见 §11 U-9） | 挂起 + 告警（§3.4） |
+| `CREDIT_REF_INVALID` | 400 | `refId` 为空 / `refType` 不是常量 `'usage_event'`。⚠️ **仓内无此码** ⇒ 需**新增**（见 §11 U-9） | 挂起 + 告警（内部契约错误） |
+| `CREDIT_AUTH_INVALID` | 401 / 403 | 服务间凭据缺失或无权调用扣分端点。⚠️ **仓内无此码** ⇒ 需**新增**（见 §11 U-9） | 挂起 + 告警 |
 | 未知 | 5xx | — | **不发货**，重试上限内重试；超限 ⇒ 挂起 + 告警 |
+
+### 3.3.1 跨库单位换算（**必读**：两个库的单位不同）
+
+| 侧 | 库 | 列 / 字段 | 单位 | 依据 |
+|---|---|---|---|---|
+| 供给侧（算成本） | ops-center / SQLite | `model_usage_events.cost_micros` | **微元**（1e-6 元） | `models_credit.py:190` |
+| 供给侧（单价） | ops-center / SQLite | `model_price_cards.unit_price_micros` | **微元** / unit | `models_credit.py:116` |
+| 供给侧（积分单价） | ops-center / SQLite | `credit_price_config.credit_unit_price_micros` | **微元 / 积分**（默认 `CREDIT_UNIT_MICROS = 10000`） | `models_credit.py:61/142` |
+| 供给侧（算积分） | ops-center / Python | `compute_credit_cost(cost_micros, credit_unit_price_micros, multiplier)` | 积分（**ceil**） | `credit_price_service.py:136-145` |
+| **账本侧（记成本）** | api-publish-engine / Postgres | `identity_credit_ledger.cost_cents` | **分** | `credit-schema.js:44`、`008_credit_ledger.sql:50` |
+| **账本侧（入参）** | api-publish-engine / JS | `consumeCredit({ costCents })` | **分**（非负整数） | `credit-repository.js:133/142` |
+
+⚠️ **口径真源是「微元」**：`01-docs/usage-metering-spec.md` §3 明写「**单位一律用整数微元（1e-6 元）**」，
+并给出理由 —— LLM 每千 token 单价天然**亚分**，整数「分」存不下 ⇒ 只能存 0（**静默当免费**）或 1（**放大 3.3 倍**）。
+⚠️ 仓内 `ops-center/backend/scripts/seed_credit_price_cards.py:103-108` 的 `LEGACY_COLUMNS`
+也把 `unit_price_cents` / `credit_unit_price_cents` 显式列为**待改名的旧 schema** ⇒ **勿照抄「分」口径的旧名**。
+
+**换算规则（本设计定案）**
+
+```
+① 积分量 amount    = ceil(cost_micros × multiplier / credit_unit_price_micros)   ← ops-center 侧算，**权威**
+② wire 字段 costCents = ceil(cost_micros / 10000)                               ← 微元 → 分
+```
+
+- ② 的**向上取整**是刻意的：账本成本列是**审计与对账依据**，记 0 等于「静默免费」、记低等于系统性偏低
+  ⇒ **宁可略高，不可记 0**。
+- ⚠️ **① 与 ② 不是同一个量**：② 只给账本留审计痕迹，**绝不能用 ② 反算 ①**
+  ⇒ 反算会在单位混用时放大 10000 倍（§6.3）。
+- ⚠️ **账本列名口径是否统一到微元，属待拍板项（§11 U-11）**：改列名要重做**已应用**的迁移
+  `008_credit_ledger.sql` ⇒ checksum 变更 ⇒ **破坏性**，agent 不得自行决定。
 
 ### 3.4 失败语义（fail-closed）
 
@@ -196,7 +234,13 @@ key-broker 会把「同一事务内扣减」永久降级为最终一致；本场
 ### 3.5 幂等
 
 - 幂等键 = `(ref_type, ref_id, entry_type='spend')`（`credit-repository.js:145-155` 的既有实现）
-- `ref_id` = `model_usage_events.id`（ops-center 侧生成）
+- `ref_id` = `model_usage_events.id`（ops-center 侧生成，**必须 UUID**）
+- ⚠️ **两道已知缺口（实施时必须补，否则幂等不闭合）**：
+  1. **查重不含 `user_id`**（`credit-repository.js:145-149`）⇒ 撞上别人的 `refId` 会命中他人分录
+     ⇒ `refId` 必须**全局唯一**。
+  2. **仓储层查重是 read-then-write、非原子**（`credit-repository.js:145-149`）⇒ 并发下两道同 `refId`
+     可能双双穿过查重 ⇒ **DB 部分唯一索引是最后一道防线**，而它只覆盖 `ref_type='usage_event'`
+     ⇒ `refType` 必须是常量（见 §3.3）。
 - ⇒ **重试安全**：同一用量事件重复扣分只会成功一次，第二次返回 `duplicated: true`
 - ⚠️ **前置**：ops-center 侧 `model_usage_events.id` 必须在**调上游之前**就生成并落库
   （否则上游已计费但事件未落 ⇒ 重试会生成新 id ⇒ 重复扣分）
@@ -266,6 +310,9 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 ① 桌面端：用户选质量档（standard/hd/cinema）+ 规格
    └─ 调 GET /api/v1/usage/estimate（或本地按档位等效单价估算）
       → 展示「本次预计消耗 N 积分」
+   ⚠️ **两个端点仓内都不存在**（`ops-center/backend/routers/usage.py` 只有 `ingest` 与 `summary`；
+      「档位等效单价」**仓内无实现、无数据源**——`officialCreditMonthly` 是**总量**不是单价）
+      ⇒ **阻断项 B-8**（§13.2）
 
 ② 桌面端：POST ops-center {opsCenterUrl}/api/v1/compute/execute
    body: { userId, tier, spec, prompt, ... , idempotencyKey }
@@ -283,17 +330,35 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 ⑤' ops-center：**额度预检（只读，不扣分）**
    └─ 读账户余额 ⇒ 余额不足 ⇒ **不调上游**，回「积分不足」
    ⚠️ **这是 fail-closed 的落点**：预检**只读**，不建表、不加迁移、不引入 reserve/settle 模型
+   ⛔ **阻断项 B-2**：**当前没有可用的读余额通道**——
+      `credit-repository.js:53` 的 `getAccount` **无任何路由**（`publish-api-server.js` 全文 1566 行
+      `credit` **零命中**），且 `PostgresCreditRepository` **生产零实例化**
+      ⇒ 契约里**只有 consume 一个端点**，预检**无端点、无契约、无任务**
+   ⛔ **阻断项 B-3**：**赠送量从未进入积分账户**——`grantCredit`（`credit-repository.js:73`）**生产调用方 0**
+      ⇒ 账本 `entry_type='grant'` 无写入方 ⇒ 账户行不存在或 `balance=0`
+      ⇒ 预检**恒判「余额不足」** ⇒ 每个官方算力请求都被拒
 
 ⑥ ops-center：**先落 model_usage_events（status=pending）** ⇒ 拿到 events.id
    ⚠️ 必须在调上游之前落库（幂等键来源，§3.5）
+   ⛔ **阻断项 B-4**：**事件表当前「有表无写方」**——`ModelUsageEvent`（`models_credit.py:149`）在
+      `ops-center/backend/` 全树**只有类定义、无任何 INSERT/UPDATE**；现有上报路径写的是**日聚合表**
+      `model_usage_daily`（`usage_service.py:133/150-161`）⇒ 事件写入路径**需新建**
 
 ⑦ ops-center：调上游（httpx + 官方 Key）
 
 ⑧ ops-center：算实际成本
-   └─ cost_cents = f(实际 tokens, 生效价) ；credit_cost = ceil(cost_cents / 单价 × 倍率)
+   └─ cost_micros = f(实际 tokens, 生效价)              ← **微元**
+      credit_cost = ceil(cost_micros / credit_unit_price_micros × 倍率)   ← **积分（权威）**
+   ⛔ **阻断项 B-5**：**视频 / 图像 / TTS / ASR 的成本恒为 0**——
+      `compute_cost_micros` 只遍历 `token_counts`（`credit_price_service.py:112`），
+      而 `TOKEN_FIELD_TO_UNIT`（`:47-53`）**只有 5 类 token** ⇒ 非 token unit 不产生任何 unit
+      ⇒ `cost_micros = 0` ⇒ `credit_cost = 0` ⇒ `amount=0` 被 `consumeCredit` 拒（`credit-repository.js:259`）
+      ⇒ **每一次都白送**，且 `has_missing_price` 为 False ⇒ 「缺价 ⇒ 拒绝服务」**在主力场景不触发**
+      ⇒ 需与 **U-12（价格卡是否入库）** 一并拍板
 
 ⑨ ops-center：**发货后实扣** —— 调 api-publish-engine POST /api/v1/credit/consume
-   body: { userId, amount: credit_cost, costCents, priceId, refId: events.id, periodStart, periodEnd }
+   body: { authSubject, amount: credit_cost, costCents, priceId, refId: events.id, periodStart, periodEnd }
+   ⚠️ `costCents` 由 `cost_micros` **÷10000 向上取整**换算而来（§3.3.1）⇒ **它不是 amount 的来源**
    ├─ 成功 ⇒ events.status=charged
    └─ 失败 ⇒ events.status=pending_charge + 告警（§3.4）
 
@@ -334,13 +399,15 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 
 | 字段 | 校验 | 失败处置 |
 |---|---|---|
-| `userId` | 非空、长度 ≤ 128、存在于 `identity_users` | 400 `CREDIT_USER_INVALID` |
+| `authSubject`（扣分时） | 非空、长度 ≤ 128；**端点内** `findBySubject('logto', sub)` 能解析出 `identity_users.id` | 404 `CREDIT_USER_INVALID`（**仓内无此码**，见 §11 U-9） |
 | `tier` | ∈ {standard, hd, cinema} | 400 |
 | `spec` | 属于该 tier 的允许集合 | 400 |
 | `prompt` | 非空、长度 ≤ 档位上限 | 400 |
 | `idempotencyKey` | 非空、≤ 128、**同键重复 ⇒ 返回上次结果** | 409 或直接返回上次结果 |
-| `amount`（扣分时） | **正整数** | `CREDIT_AMOUNT_INVALID` |
-| `costCents`（扣分时） | **非负整数** | `TypeError`（既有实现） |
+| `amount`（扣分时） | **正整数**（`amount=0` 也非法 —— 视频/图像场景会算出 0，见 §5.1 ⑧） | `CREDIT_AMOUNT_INVALID` |
+| `costCents`（扣分时） | **非负整数**，单位**分**（由 `cost_micros` 换算，§3.3.1） | `TypeError`（既有实现）⇒ 端点入口转 400 |
+| `refId`（扣分时） | **非空** + 全局唯一 | 400 `CREDIT_REF_INVALID`（**仓内无此码**，见 §11 U-9） |
+| `refType`（扣分时） | **必须等于常量** `'usage_event'` | 400 `CREDIT_REF_INVALID` |
 | `periodStart`/`periodEnd` | `start < end` | `CREDIT_PERIOD_INVALID` |
 
 ### 6.2 Key 池（选 Key 时）
@@ -348,7 +415,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 | 校验 | 依据 |
 |---|---|
 | `is_active = 1` | 熔断位 |
-| `tier_access` **等级码 ≤ 用户档位等级**（**整数等级码**，不是「含目标档位」的集合；真实判据是 `tier_access <= user_tier`）（⚠️ `get_active_keys_for_tier` **生产引用数为 0**，实现时须同步接线） |
+| `tier_access` **等级码 ≤ 用户档位等级**（**整数等级码**，不是「含目标档位」的集合；真实判据是 `tier_access <= user_tier`）（⚠️ `get_active_keys_for_tier` **生产引用数为 0**，实现时须同步接线）<br>⚠️ **量纲必须对齐（否则三档各错一级）**：`tier_access` 是 **1-based**（`models.py:127`：1=all / 2=standard+ / 3=pro only）；而 `plan-matrix.js` 的 `modelTier` 是 **0-based**（free 0 / standard 1 / pro 2，经 `:245` 的 `limits.model_tier` 下发）⇒ **`user_tier = modelTier + 1`**。直接拿 `model_tier` 当 `user_tier` ⇒ free 档一条 Key 都选不到、standard 档拿不到 `tier_access=2` 的 Key、pro 档拿不到 `tier_access=3` 的 Key |
 | `expires_at` 未过期 | **字符串字典序比较**（现状是 String，不是 date ⇒ 迁移时若改类型须同步改比较逻辑） |
 | `rate_per_minute` / `daily_limit` 未超 | 限流器 |
 | 优先级排序 | **`priority` ASC**（⚠️ **不是 DESC**） |
@@ -359,9 +426,10 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 | 校验 | 失败处置 |
 |---|---|
 | 当前生效价存在（⚠️ **判据是 `effective_to` 为空串** `''`（`default=""`），**不是 `IS NULL`**；代码判据 `if card.effective_to and card.effective_to <= moment`） | **拒绝服务 + 告警**（Phase 1 取舍 6：缺价格卡必须告警，不许静默按 0） |
-| `cost_cents` 为非负整数 | 500 + 告警 |
-| `credit_cost = ceil(cost_cents / credit_unit_price_cents × multiplier)` | 单价 ≤ 0 ⇒ 除零兜底（Phase 1 已实现） |
-| `client_reported_cost_cents` 与服务端值比对 | 差异进对拍报表（**不自动改账**） |
+| `cost_micros` 为非负整数（**微元**） | 500 + 告警 |
+| `credit_cost = ceil(cost_micros / credit_unit_price_micros × multiplier)` | ⚠️ **兜底下限是 `CREDIT_UNIT_MICROS`(10000)，不是 1**（`credit_price_service.py:262/264` 的 `max(CREDIT_UNIT_MICROS, …)`；`:144` 的 `max(1, …)` 只是第二层）⇒ 读配置读到 0 时**退回基准 10000**，**不是退到 1** ⇒ 自行实现成「退到 1」会**扣分放大 10000 倍** |
+| `client_reported_cost_micros` 与服务端值比对 | 差异进对拍报表（**不自动改账**）。⚠️ 该列**全仓无写入方**（桌面端官方算力链路上**没有客户端上报**，服务端自己算）⇒ 对拍能力**形同虚设**（§13.2 阻断项 B-9） |
+| **非 token unit（视频/图像/TTS/ASR）** | ⛔ `TOKEN_FIELD_TO_UNIT` 只有 5 类 token ⇒ 这些 unit **算不出成本** ⇒ `amount=0` ⇒ 见 §5.1 ⑧ 与 U-12 |
 
 ### 6.4 扣分（api-publish-engine 侧，沿用既有实现）
 
@@ -408,11 +476,17 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 
 - 用量事件状态机：`pending` → `charged` / `failed` / `pending_charge` / `charge_rejected`
 - `pending_charge` 的事件需要**定时对账任务补扣**
-  ⚠️ **任务宿主尚未解决**（全仓无 cron/APScheduler，交接文档 K7）⇒ 与 Phase 1 同源问题，须一并立项
+  ⚠️ **任务宿主尚未解决**（交接文档 K7）⇒ **跨轨裁决**：调度器先例**只在 Node 侧存在**
+  （`packages/api-publish-engine/src/scheduled-publish.js:93` 的 `setTimeout` 递归定时器）；
+  **ops-center（Python）侧实测为零**（`requirements.txt` 无 APScheduler / celery / rq；
+  `routers/scheduler.py` 是「发布调度器**契约校验**」，不是定时宿主；`main.py` 只在启动时建表）
+  ⇒ **补扣任务要写 ops-center 的 SQLite ⇒ Node 侧的先例不能直接用** ⇒ 宿主待定，见 **U-14**
 
 ### 7.6 计费口径真源
 
-`01-docs/usage-metering-spec.md` 是**口径唯一真源**（五类 token、整数分、版本化价格、信任边界、缺价不许静默）。
+`01-docs/usage-metering-spec.md` 是**口径唯一真源**（五类 token、**整数微元**、版本化价格、信任边界、缺价不许静默）。
+⚠️ 其单位是**微元**（§3「**单位一律用整数微元（1e-6 元）**」）⇒ 本设计里的成本列一律用 `*_micros`；
+「分」只出现在**账本侧** `identity_credit_ledger.cost_cents`（跨库换算见 §3.3.1）。
 本设计**不重新定义口径**，只引用。
 
 ---
@@ -495,7 +569,7 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 |---|---|
 | `01-docs/usage-metering-spec.md` | **口径唯一真源**（五类 token / 整数分 / 版本化价格 / 信任边界 / 缺价不许静默） |
 | `01-docs/DESIGN-COMPUTE-BILLING-MODEL-2026-10-11.md` | 三类计费形状（A/B/C）、定价基准优先级（B>A>C）、形状数量有界为 3 |
-| `01-docs/PRD-REMOVE-BUYOUT-AND-PRICING-2026-10-17.md` | 定价与赠送量口径（1 积分 = ¥0.01） |
+| `01-docs/usage-metering-spec.md` §4.1 | 赠送量与年付守线（**唯一真源**；standard 1600 / pro **3330**，年付守线 ≤40%）<br>（⚠️ 旧写法指向 `PRD-REMOVE-BUYOUT-AND-PRICING-2026-10-17.md` —— 该文件实测**零命中**「积分 / credit / 赠送 / 0.01」⇒ **引用断链**）<br>常量侧出处：`packages/api-publish-engine/src/auth/plan-matrix.js:45` |
 | `01-docs/DEEP-ANALYSIS-CREDIT-PRICING-2026-10-08.md` | 成本摊销（保底/接近耗尽/濒危/耗尽四段）、混合制 |
 | Phase 1 执行记录 | 价格卡版本化、服务端算成本、缺价告警、原子扣减、账本不可变 |
 
@@ -521,10 +595,15 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 
 ### 10.1 本设计（文档层）
 
-- [ ] 三个定案在 `PRD-OFFICIAL-COMPUTE-STOPGAP` §4 与两个 change 目录中**口径一致**（无矛盾表述）
+- [x] **§13.2 的 12 条阻断项逐条关闭**（**开工前置条件**）
+- [ ] §13.5 的四类台账（73 + 23 + 26 + 17 条）**逐条过**
+- [ ] §11 的未决项（U-1、U-8、U-9、U-11、U-12、U-13、U-14）**逐条关闭**
 - [ ] 「决策失效」的条目都**带前提条件**（不裸写「已作废」）
 - [ ] 所有引用的 `file:line` **当场实测**（不推算）
 - [ ] 中文写入后 `grep -c $'\xef\xbf\xbd'` = 0
+- ⚠️ **「三个定案在 PRD §4 与两个 change 目录中口径一致」这一条已撤回**：第 2 轮查出**多处不一致**
+  （402 vs 409、007 占号口径、tokens 恒 0、「整数分」vs「整数微元」、PRD 流程图顺序、`official_credit` 前提），
+  本轮已统一其中 6 处，**剩余随 §13.5 台账逐条处理** ⇒ 该条改为「**台账清零后**才可勾选」
 
 ### 10.2 实施（后续 change，本设计不含）
 
@@ -547,11 +626,15 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 | **U-2** | 官方算力端点的**路径与幂等键归属** | 影响桌面端接线 | 建议 `POST /api/v1/compute/execute` + `idempotencyKey` 由桌面端生成 |
 | **U-3** | `official_credit_monthly` **实测已在 plan-matrix 的 `quota` 下发** ⇒ 「扣分端点拿不到 feature 授权」**不成立** | 降级为普通条目 | **关闭**（若要为「扣分」单设 feature 才需人工过目） |
 | **U-4** | `get_active_keys_for_tier` **生产引用数为 0** | 选 Key 逻辑无现成调用点 | 实现时**必须接线**，不能只写函数 |
-| **U-5** | 定时对账任务的**任务宿主**（仓内**已有调度器先例**，「全仓无 cron/APScheduler」不成立） | 阻塞 `pending_charge` 补扣 | 复用仓内既有调度器；真缺口是「**没为补扣场景接上**」，不是「没有调度器」 |
+| **U-5** | 定时对账任务的**任务宿主**。⚠️ **原表述「仓内已有调度器先例」未限定进程，是错的**（第 2 轮裁决，见 §13.3）：先例**只在 Node 侧**（`packages/api-publish-engine/src/scheduled-publish.js:93`）；**ops-center（Python）侧实测为零**（`requirements.txt` 无 APScheduler/celery/rq；`routers/scheduler.py` 是发布调度器**契约校验**，不是定时宿主） | 阻塞 `pending_charge` 补扣（§13.2 B-10） | 补扣要写 ops-center 的 SQLite ⇒ **Node 侧先例不可直接用** ⇒ 宿主需**重新选型**，见 **U-14** |
 | **U-6** | D-③ 账户模型（双轨 + `expires_at`）的具体 DDL | 阻塞双轨能力上线 | **独立 change + 独立评审**（改主键 = 破坏性变更） |
 | **U-7** | 官方 Key 的**运维迁移**（存量 Key 从 Fernet 到新形态） | D-① 下**不需要**（Fernet 保持不变） | **关闭**（前提失效） |
 | **U-8** | `compute-key-envelope-migration` **归档与否**（其前提已失效） | 归档会把**已失效的契约**写进主规格 | **须人工过目**（改目录结构） |
-| **U-9** | `CREDIT_PERIOD_INVALID` / `CREDIT_SERVICE_UNAVAILABLE` **仓内当前无此错误码** | 扣分端点的错误码不完整 | 实现时**新增**这两个码（或复用既有语义） |
+| **U-9** | `CREDIT_PERIOD_INVALID` / `CREDIT_SERVICE_UNAVAILABLE` / **`CREDIT_REF_INVALID`** / **`CREDIT_AUTH_INVALID`** / **`CREDIT_USER_INVALID`** —— **五个码仓内全部不存在**（`grep` 零命中） | 扣分端点的错误码不完整 | 实现时**新增**这五个码（或复用既有语义） |
+| **U-11** | **账本侧成本列的单位口径**：`identity_credit_ledger.cost_cents` 保持**分**（本设计已按 §3.3.1 写死换算规则），**vs** 改列名为 `cost_micros` 与供给侧统一 | 改列名要重做**已应用**的迁移 `008_credit_ledger.sql` ⇒ **checksum 变更 ⇒ 破坏性** ⇒ `allowPending:false` 会让 identity 仓储启动期硬失败 | **须人工过目**（agent 不得自行改已应用迁移） |
+| **U-12** | **视频 / 图像 / TTS / ASR 的价格卡是否入库**：`model_price_cards.seed.json` 的 `_meta.rule` 明写「**已知才入库；待确认只登记不入库**」⇒ 这些 unit 现在**没有价格卡** | 不拍板 ⇒ 该场景**要么恒缺价（按 §6.3 拒绝服务 ⇒ 官方算力视频不可用）**，**要么按 §5.1 ⑧ 算出 `amount=0`（每次白送）**（§13.2 B-4） | **须人工拍板**（需要定价数据 —— 运营方的事） |
+| **U-13** | **额度预检的读余额通道形态**：新增只读端点（如 `GET /api/v1/credit/account`）／`consume` 端点加 `dryRun`／其它 | 没有它，fail-closed 的落点不存在（§13.2 B-1） | **须人工过目**（新增对外端点 = 改暴露面） |
+| **U-14** | **补扣任务的调度宿主**（ops-center 侧实测无定时宿主，见 U-5 / §13.3） | `pending_charge` 无补扣入口 ⇒ 挂起 = 永久白送（§13.2 B-10） | **须人工拍板**（GitHub Actions cron 出网受限 / 外部调度器 / ops-center 自建轮询 —— 三选一） |
 | **U-10** | 迁移文件名**须被 `MIGRATION_PATTERN` 认领**（`/^\d{3}_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/`） | **只认 3 位数字**；4 位号/2 位号/非法名会被 `filter` **静默丢弃**（fail-open）⇒ `allowPending:false` 也发现不了 | 落任何迁移前**逐个核对文件名能被该正则认领**；本仓**零门禁**检查目录里 .sql 是否全被认领 ⇒ 需人工核 |
 
 ---
@@ -561,4 +644,79 @@ D-③ **不阻塞** D-① / D-② 的**接线**（`consumeCredit` 当前的单�
 | 日期 | 变更 |
 |---|---|
 | 2026-10-25 | 初版。三个定案（D-①/D-②/D-③）落定；`official-keys-postgres-migration` 改向为「扣减接线」；`compute-key-envelope-migration` 前提失效。 |
+| 2026-10-25（**第 3 轮：第 2 轮对抗复评后**） | **新增 §13**：第 2 轮评审结论（**93** 条第 1 轮发现的回归验收 + 26 条实现符合性缺口 + 17 条新失效路径）⇒ **如实标注「本设计尚不可直接开工」**；**12 条阻断项**逐条列出并映射证据；跨轨分歧（调度器先例）裁决；单位口径全量改微元 + 新增 §3.3.1 跨库单位换算；身份链定为 `authSubject`；409 语义唯一化；幂等两处缺口；档位量纲 `modelTier + 1`；积分单价下限 10000；错误码补 3 个；引用断链修正；未决项新增 U-11…U-14（**四项须人工拍板**）。<br>⚠️ **第 1 轮发现的 93 条里真正修好的只有 17 条**（此前 PR 正文误写为「83 条逐条订正」—— **83 是算术错误，实为 93**）。 |
 | 2026-10-25（第二轮对抗评审后） | **修正 21 处事实性错误 + 6 处跨文档矛盾 + 30 处设计缺陷**：扣分时序改**两段式**（发货前只读预检 + 发货后实扣）；`refId` 空值硬拒 400；`userId` 统一为 `identity_users.id`；错误码与既有 `CreditError.status`（409）对齐；响应体字段名改 camelCase；`tier_access` 改为整数等级码；生效价判据改 `effective_to` 空串；`007` 号源澄清为**已释放**；未决项增至 U-10（U-3/U-5 修正）。 |
+
+---
+
+## 13. 第 2 轮对抗复评结论与本设计的当前完成度（2026-10-25）
+
+> ⚠️ **本节是本设计的真实状态说明。** 读 §0～§12 之前先读这一节。
+> 本节由第 2 轮评审（3 条独立轨：回归验收 / 实现对账 / 对抗复评）在**本设计的已合并版本**
+> `main @ 99701282` 上跑出的结果，以及 owner 对其中关键结论的**独立复核**。
+
+### 13.1 结论
+
+**本设计目前不可直接开工。**
+
+| 来源 | 规模 | 结论 |
+|---|---|---|
+| 第 1 轮发现的**回归验收** | **93** 条第 1 轮发现（**不是 83** —— 83 是上一轮写进 PR 正文的**算术错误**） | 完全修好 **17** / 部分修 **24** / 未修 **49** / 原发现不成立 **1** / 被另一条线覆盖 **2** |
+| **实现符合性对账** | **26** 条缺口（G-01…G-26） | 文档断言与主干真实实现不符（单位口径、列名、现成能力、跨文档一致性） |
+| **对抗复评** | **17** 条新的可复现失效路径 | **8 CRITICAL / 8 MAJOR / 1 MAJOR-杂项** |
+| 第 1 轮「设计对抗 30 条」的复验 | 30 条 | 完全修好 **2** / 部分修好 **5** / **修错 3** / 未修 **20** |
+
+⇒ **上一轮声称的「逐条订正」实际只真正修好 17 条。** §0～§12 里凡标为「已修」的结论，
+**只有 17 条经得起回源码复核**；其余是部分修、没修，或**被修错**。
+⇒ **实施前必须先关闭 §13.2 的 12 条阻断项 + §11 的未决项。**
+
+### 13.2 阻断项（照此实现会资损 / 白送 / 全站不可用）
+
+| # | 阻断项 | 照此实现的后果 | 证据（文档侧 / 实现侧） | 状态 |
+|---|---|---|---|---|
+| **B-1** | **额度预检没有通道**：契约里只有 consume 一个端点；`getAccount` 无任何路由；`PostgresCreditRepository` **生产零实例化** | fail-closed 无落点：要么全站 409 拒绝（服务 100% 不可用），要么实现者自行发明一个**不在契约里**的读端点 | DESIGN §5.1 ⑤' / §3.3 ｜ `credit-repository.js:53`；`publish-api-server.js` 全文 `credit` **零命中** | ⛔ **待拍板 U-13** |
+| **B-2** | **预检与实扣之间的竞态窗口 = 整个上游调用时长**；余额 100、单次 100、并发 10 ⇒ 上游计费 10 次、扣 1 次、其余永久白送，且 `CHECK (balance >= 0)` 使补扣**物理上不可能** | **无上限资损** | DESIGN §3.4 / §5.1 ｜ `credit-repository.js:294-302`（CAS 失败即抛 409）；`008_credit_ledger.sql:36` | ⛔ 需**设计级**决策（预扣 / 限流 / 接受风险） |
+| **B-3** | **单位口径跨库不一致**：ops-center 侧全是**微元**，账本侧是**分**，设计文档通篇写「分」且引用了**仓内已列为 legacy 的旧列名** | 少扣 250 倍（白送 99.6%）／多扣 10000 倍（余额清零）／账本成本虚高 10000 倍；**都是正整数、都会入库 ⇒ 不报错** | DESIGN §0/§3.3/§5.1/§6.3 ｜ `models_credit.py:116/142/190`；`credit_price_service.py:11-12`；`seed_credit_price_cards.py:103-108`；`credit-schema.js:44` | ✅ **本轮已改**（§3.3.1 + §6.3 + §0/§5.1 口径统一）；⚠️ **账本列名是否也改微元 = U-11 待拍板** |
+| **B-4** | **视频 / 图像 / TTS / ASR 的成本恒为 0**：`compute_cost_micros` 只遍历 token 五类 | 官方算力**主力场景每一次都白送**（`amount=0` 被拒 ⇒ 发货后才发现）；且 `has_missing_price` 为 False ⇒「缺价 ⇒ 拒绝服务」**不触发** | DESIGN §5.1 ⑧ / §6.3 ｜ `credit_price_service.py:47-53/112/142`；`credit-repository.js:259`；`model_price_cards.seed.json` 的 `_meta.rule`（「待确认只登记不入库」） | ⛔ **待拍板 U-12**（要定价数据） |
+| **B-5** | **409 有两种终态**：§3.3 写「不发货」，§3.4 写「挂起补扣」——而扣分发生在**发货后** | 一种终态直接**抹掉债务**（上游成本已发生，系统内不可见） | DESIGN §3.3 错误表 / §3.4 / §5.1 ⑨ ｜ `credit-repository.js:169-171`（409 不写分录 ⇒ 账本零痕迹） | ✅ **本轮已改**（§3.3 错误表 409 行写死为「挂起补扣」；「不发货」只归 §5.1 ⑤' 预检） |
+| **B-6** | **全仓 `grantCredit` 生产调用方 0** ⇒ 赠送量从未进入积分账户 ⇒ 余额恒 0 | 上线后**第一次扣分必然 409**；且「发放」在 PRD 前置 / tasks / spec 三处**都不是阻断项** | DESIGN §11 U-3 ｜ `credit-repository.js:73`；`usage-metering-spec.md:177` | ⛔ **阻断项本身已登记**，但**发放链路的落地不在本 change 范围** ⇒ 需决策 |
+| **B-7** | **身份链三处互斥**：「必须是 `identity_users.id`」／「ops-center 侧校验它存在于 identity_users」／「引擎侧解析」 | 三条实现路线各自失败（FK 500 / 破 §3.1 / 契约字段名与实现不符） | DESIGN §3.3 / §6.1 ｜ `credit-repository.js:130-141`（仓储层**不做**任何身份解析）；`002_logto_identity.sql:7/16`；`business-identity.js:26/38`；`postgres-identity-repository.js:242-248` | ✅ **本轮已改**（wire 字段定为 `authSubject`＝Logto `sub`，**端点内** `findBySubject` 解析成 `identity_users.id`） |
+| **B-8** | **扣分端点无身份绑定**：只禁了 `X-Catalog-Key` 与用户 Bearer 透传，**没禁 api_key**；且错误表无 401/403 | 任何持 `publish:submit` 的 api_key 可扣**任意** userId（越权扣分）；服务身份走 feature 门禁必然 403 ⇒ 落「挂起」⇒ 全量免费 | DESIGN §3.3 / §11 U-1 ｜ `publish-api-server.js:461-473`（POST 默认 scope）、`:475-483`、`:591-594`（注释原文：「未来 compute/官方算力路由是**新代码**，必须按评审 R7 显式 requireLogto」） | ⛔ **待拍板 U-1**（服务间鉴权 = 「谁来守门」级别） |
+| **B-9** | **幂等键不含 `user_id`**；`refType` 可配 ⇒ DB 唯一索引（**部分索引**，只覆盖 `ref_type='usage_event'`）失效 | 显式传 `refType=''` ⇒ 并发重复扣分不再被 DB 拦；`refId` 串号 ⇒ 命中他人分录 | DESIGN §3.3 / §3.5 ｜ `credit-repository.js:145-149`（read-then-write，非原子）；`credit-schema.js:56-58` vs `:59-61` | ✅ **本轮已改**（`refType` 写死常量 + `refId` 必须全局唯一 + §3.5 补两道缺口） |
+| **B-10** | **`pending_charge` 无补扣入口、无宿主、无终态**；仓内「回算/对账」能力（`credit_cost_backfill_service.py`）只读日聚合表、只写 `daily.cost`，**不碰事件表/账本、不发 HTTP** | 挂起 = **永久白送**；跨周期补扣时账户周期与分录周期错位 | DESIGN §3.4 / §7.5 ｜ `credit_cost_backfill_service.py:87-192`；`models_credit.py:166-193`（无 `pending_charge_at`/`retry_count` 列） | ⛔ **待拍板 U-14**（ops-center 侧实测**无**定时宿主） |
+| **B-11** | **没有任何表/查询能回答「发了货有没有扣到钱」**：事件表**零生产写者**；`reconcileAccount` 只核余额↔账本；`client_reported_cost_micros` **全仓无写入方** | 资损**既不可发现也不可度量**；对拍恒空 ⇒ 恒真通过 | DESIGN §7.5 / §8.3 / §10.2 ｜ `models_credit.py:149`（仅类定义）；`credit-repository.js:222-253` | ✅ **本轮已改**（§6.3 / §7.5 / §13.2 如实标注「对拍列无写入方」「事件表有表无写方」） |
+| **B-12** | **降级到更贵的通道 ⇒ 多扣，但文案说「省钱模式、本次消耗更低」**；spec 层还把规则窄化成只管「更便宜」 | 多扣 90 积分，且界面明说更便宜 | DESIGN §5.2 / §7.2 / §8.2 ｜ `models_credit.py:102-105`（价格卡唯一键含 `provider_id` ⇒ 同模型不同通道可不同价） | ⛔ 需改 spec 的 Requirement 表述（**改契约 = 须人工过目**） |
+
+### 13.3 跨轨分歧的裁决（owner）
+
+第 2 轮有**一处跨轨分歧**，两条轨各对一半：
+
+| 争议 | 一轨的说法 | 另一轨的说法 | **裁决** |
+|---|---|---|---|
+| 仓内到底有没有调度器先例 | 「先例存在」：`packages/api-publish-engine/src/scheduled-publish.js:93` 的 `setTimeout` 递归定时器 | 「没有」：`ops-center/backend/requirements.txt` 无 APScheduler/celery/rq；`routers/scheduler.py` 是**发布调度器契约校验**（`scheduler_service.create_verification_run` / `contract_check`），不是定时宿主；`main.py` 只在启动时建表 + 挂路由 | **两边都对，但必须限定进程**：调度器先例**只在 Node 侧**；**ops-center（Python）侧实测为零**。⇒ 补扣任务要写 ops-center 的 SQLite ⇒ **Node 侧的先例不能直接用** ⇒ 宿主待定（**U-14**）<br>⇒ §7.5 与 §11 U-5 已按本裁决改写（原写法「仓内已有调度器先例」**未限定进程**，是错的） |
+
+### 13.4 本轮（第 3 轮）已就地改掉的部分
+
+| 类别 | 改了什么 |
+|---|---|
+| **单位口径** | §0 / §3.3 / §5.1 / §6.3 / §7.6 全部改为**微元**；新增 **§3.3.1 跨库单位换算**（源 `cost_micros` → wire `costCents`，÷10000 向上取整；并写明「绝不能用 costCents 反算 amount」） |
+| **身份链** | wire 字段 `userId`（`identity_users.id`）改为 **`authSubject`（Logto `sub`）**，端点内解析（§3.3 / §6.1） |
+| **409 语义** | 唯一化为「挂起补扣」；「不发货」只归发货前的额度预检（§3.3 错误表） |
+| **幂等** | `refType` 写死常量 `'usage_event'`；`refId` 必须全局唯一；§3.5 补「查重不含 user_id」「查重非原子」两道缺口 |
+| **档位量纲** | §6.2 补 `tier_access`（1-based）与 `modelTier`（0-based）的偏移规则 `user_tier = modelTier + 1` |
+| **积分单价下限** | §6.3 补「兜底下限是 `CREDIT_UNIT_MICROS`(10000)，不是 1」 |
+| **错误码** | 错误表补 `CREDIT_REF_INVALID` / `CREDIT_AUTH_INVALID`；§11 U-9 补 `CREDIT_USER_INVALID` |
+| **引用断链** | §9.2 的赠送量来源由 `PRD-REMOVE-BUYOUT-AND-PRICING-2026-10-17.md`（实测零命中）改为 `usage-metering-spec.md` §4.1 |
+| **现实能力标注** | §5.1 ①②⑤'⑥⑧ 与 §6.3 / §7.5 / §13.2 标出「**当前没有**」的地方（无读端点、无发放、无事件写方、非 token unit 无成本、对拍列无写入方、预估端点不存在） |
+
+### 13.5 仍未修的部分（**登记在案，不装作已修**）
+
+| 类别 | 规模 | 处置 |
+|---|---|---|
+| 第 1 轮 93 条发现中「未修 49 + 部分修 24」 | 73 条 | 本轮**未逐条改**；逐条状态与「改法」在第 2 轮评审台账里（仓外 `openspec/records/` 之外，尚未入库）⇒ **实施前须逐条过** |
+| 第 1 轮「设计对抗 30 条」中未修 20 + 修错 3 | 23 条 | 同上；其中 3 条「修错」的已在 §13.2 映射为阻断项 |
+| 实现符合性缺口 26 条 | 26 条 | 本轮改了与「单位口径 / 跨文档一致性 / 现实能力标注」相关的那部分；其余（现成能力盘点、错误码对账、迁移编号等）留在台账 |
+| 对抗复评 17 条新发现 | 17 条 | 8 条 CRITICAL 全部进 §13.2；MAJOR 级别的 R2C-16（桌面端 `user_id` 不可实现）、R2C-17（周期口径两套）**本轮未改** |
+
+> ⚠️ **不要把「本轮已改」当成「本设计已完工」。**
+> §13.2 的 12 条阻断项是**开工的前置条件**；§13.5 的四类是**实施前须逐条过的台账**。

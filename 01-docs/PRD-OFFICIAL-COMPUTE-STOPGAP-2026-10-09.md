@@ -13,6 +13,10 @@
 ### 1.1 三份前序文档的结论链
 
 1. **研究报告**（`DEEP-ANALYSIS-CREDIT-PRICING-2026-10-08.md`）：完成定价测算（v1.2：标准 ¥59/¥499、专业 ¥79/¥699，赠送 30/1600/2200 积分，年付 = 月付 × 12），列出 G1-G12 缺口与 Week-0 三项快赢。
+   ⚠️ **该口径已被 2026-10-25 的赠送量重解取代**（唯一真源：`01-docs/usage-metering-spec.md` §4.1）——
+   专业档现为 **¥119/月、¥999/年付、赠送 3330**；上表的 **2200 / ¥79 / ¥699 是旧价时代的遗留值**
+   （真源原文：「2200 是旧价 ¥79 时代按 27.8% 反解的遗留值，涨价后占比掉到 18.5%、年付 26.4% ⇒ 白送 13.6 个点」）。
+   ⇒ 本 PRD 保留 10-08 的**历史结论**，但**实施口径一律以 `usage-metering-spec.md` §4.1 为准**。
 2. **定价落地**（PR #3178）：定价矩阵已按 v1.2 写入 `plan-matrix.js` 并附契约测试——**研究报告 §6.4A 的改价工作不再需要**。
 3. **交接文档**（`HANDOFF-OFFICIAL-COMPUTE-2026-10-09.md`）：确认「积分扣减引擎不存在、官方算力供给不存在、成本账恒为 0」三大事实；安全审计列出 S1-S7；推荐「方案 A：平台能力优先 + 安全止血」。
 
@@ -154,7 +158,7 @@ const LOGTO_ONLY_FEATURES = new Set(["cloud_publish"]);
 | 条目 | 原内容（2026-10-11 拍板） | 现状 | 理由 |
 |---|---|---|---|
 | §4.4-1 | 官方 Key 迁进 AES-256-GCM 信封体系（复用 `cloud-accounts/envelope-crypto.js`，**Node 侧** + KMS），待办「Node 必须能解开 Python 写的密文」 | **随 D-① 失效** | 该待办的前提是「Node 侧要自己解官方 Key」；D-① 下**解密留在 Python 侧** ⇒ 不需要跨语言对拍，**官方 Key 也不需要 KMS**（KMS 是给用户云账号凭证用的） |
-| §4.4-3 | `migrations/postgresql/` 现占用 002-005，新表迁移从 006 起 | **订正为**：`006` 已占（`006_payment_orders.sql`）、`007` 已被 `compute-key-envelope-migration` 预定、`008_credit_ledger.sql`/`009_redeem_code_issued_to.sql` 已占 ⇒ **新迁移从 `010` 起** | 编号实测（2026-10-25）；且真实约束是 **FK 建表顺序 = 文件名 `localeCompare` 序**，不是「撞号」 |
+| §4.4-3 | `migrations/postgresql/` 现占用 002-005，新表迁移从 006 起 | **订正为**：`006` 已占（`006_payment_orders.sql`）、**`007` 已释放**（原「被 `compute-key-envelope-migration` 预定」只是规格层预留，而该 change 前提已失效 ⇒ 磁盘与规格**都不再占 007**，实测 `migrations/postgresql/` 无 `007_*.sql`）、`008_credit_ledger.sql`/`009_redeem_code_issued_to.sql` 已占 ⇒ **新迁移从 `010` 起** | 编号实测（2026-10-25）；且真实约束是 **FK 建表顺序 = 文件名 `localeCompare` 序**，不是「撞号」 |
 
 ### 4.1 角色与核心概念
 
@@ -211,16 +215,20 @@ const LOGTO_ONLY_FEATURES = new Set(["cloud_publish"]);
         └─ 缺价格卡 ⇒ **拒绝服务 + 告警**（Phase 1 取舍 6：不许静默按 0）
   → ③ **先落 model_usage_events（status=pending）** ⇒ 拿到 events.id
         ⚠️ 必须在调上游之前落库（events.id 是扣分的幂等键来源）
-  → ④ 调上游（httpx + 官方 Key）
-  → ⑤ 算实际成本：cost_cents = f(实际 tokens, 生效价)
-        credit_cost = ceil(cost_cents / credit_unit_price_cents × multiplier)
-  → ⑤' **额度预检（只读）** ⇒ 余额不足 ⇒ **不调上游**（fail-closed 落点）
-  → ⑥ 调 api-publish-engine POST {businessApiUrl}/api/v1/credit/consume（**发货后实扣**）
-        body: { userId, amount: credit_cost, costCents, priceId, refId: events.id, periodStart, periodEnd }
+  → ④ **额度预检（只读）** ⇒ 余额不足 ⇒ **不调上游**（fail-closed 落点）
+        ⚠️ **必须在 ⑤ 之前**（本图上一版把它排在 ⑤ 之后 ⇒ 预检拦不住上游调用 ⇒ 变成白送成本）
+        ⛔ 当前**没有读余额通道**（`getAccount` 无路由）⇒ 阻断项，见设计文档 §13.2 B-1
+  → ⑤ 调上游（httpx + 官方 Key）
+  → ⑥ 算实际成本：cost_micros = f(实际 tokens, 生效价)          ← **微元**
+        credit_cost = ceil(cost_micros / credit_unit_price_micros × multiplier)   ← **积分（权威）**
+        ⛔ 视频/图像/TTS/ASR **算不出成本**（只有 5 类 token 有 unit）⇒ 阻断项，见 §13.2 B-4
+  → ⑦ 调 api-publish-engine POST {businessApiUrl}/api/v1/credit/consume（**发货后实扣**）
+        body: { authSubject, amount: credit_cost, costCents, priceId, refId: events.id, periodStart, periodEnd }
+        ⚠️ `costCents` 由 `cost_micros` ÷10000 向上取整换算而来（设计文档 §3.3.1），**不是 amount 的来源**
         ├─ 成功 ⇒ events.status=charged
-        ├─ 余额不足 ⇒ events.status=charge_rejected → **不向用户发货**
+        ├─ 余额不足（409）⇒ events.status=pending_charge + 告警（**不丢账**）
         └─ 服务不可用 ⇒ events.status=pending_charge + 告警（**不丢账**）
-  → ⑦ 写 generation_requests 台账（研究报告 §4.2），expected vs actual 差异 >15% 进对账报表
+  → ⑧ 写 generation_requests 台账（研究报告 §4.2），expected vs actual 差异 >15% 进对账报表
 ```
 
 **⚠️ 与原图的三处差异（都是定案带来的实质变化）**：

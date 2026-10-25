@@ -15,7 +15,8 @@
       ⚠️ **该 change 的归档与否待人工确认**（改目录结构 = 须人工过目）。
 - [x] 0.3 **账户模型缺口立项** → **✅ D-③**：独立 change + 独立评审（改 `user_id` 主键 = 破坏性变更）；
       不阻塞接线，阻塞双轨能力上线。**新迁移从 `010` 起**。
-- [x] 0.4 **订正迁移编号** → **✅ 已订正**：`007` 被 `compute-key-envelope-migration` 预定；
+- [x] 0.4 **订正迁移编号** → **✅ 已订正**：`007` **已释放**（原「被 `compute-key-envelope-migration` 预定」
+      只是规格层预留，而该 change 前提已失效 ⇒ 磁盘与规格**都不再占 007**，实测 `migrations/postgresql/` 无 `007_*.sql`）；
       实测占用 `002/003/004/005/006_payment_orders/008_credit_ledger/009_redeem_code_issued_to` ⇒ **新迁移从 `010` 起**。
       ⚠️ **本 change 不新增迁移**（供给侧零迁表）⇒ 编号问题归零。
 - [x] 0.5 **确认编号现状** → **✅ 已实测**（见 0.4）；且真实约束是 **FK 建表顺序 = 文件名 `localeCompare` 序**，不是「撞号」。
@@ -28,9 +29,11 @@
       （见 `DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md` §3.3）写入 `specs/official-keys-postgres/spec.md`。
 - [ ] 1.2 **服务间鉴权方案定案（U-1）**：⚠️ **若需在 api-publish-engine 新增独立于用户 Bearer 的服务凭据校验** ⇒
       属「**谁来守门**」级别 ⇒ **须人工过目，agent 不得自行改**。
-- [ ] 1.3 **`official_credit` feature 补登（U-3）**：Phase 1 记录明说 `official_credit` **不在 features 数组**
-      ⇒ 扣分端点拿不到 feature 授权 ⇒ 补进 plan-matrix 的 features + 档位映射
-      （属定价/权益变更 ⇒ **须人工过目**）。
+- [x] 1.3 ~~**`official_credit` feature 补登（U-3）**~~ → **✅ 前提已失效，动作取消**：
+      Phase 1 记录说 `official_credit` 不在 features 数组，但 **`plan-matrix.js:223` 现在会 push 它**
+      （`if (matrix.officialCreditMonthly !== 0) features.push('official_credit')`；免费 30 / standard 1600 / pro 3330 三档都 > 0）
+      ⇒ 「扣分端点拿不到 feature 授权」**不成立** ⇒ **不要动 plan-matrix 的 features**（那是定价/权益变更，须人工过目）。
+      ⇒ 真正的缺口在**别处**：feature 门禁与「服务身份」互斥（见 0ter 组 B-8）。
 - [ ] 1.4 **官方算力端点契约**：`POST /api/v1/compute/execute` 的入参、`idempotencyKey` 归属、返回形状。
 
 ---
@@ -38,9 +41,13 @@
 ## 2. api-publish-engine 侧：扣分端点
 
 - [ ] 2.1 新增 `POST /api/v1/credit/consume` 路由（`publish-api-server.js`），**复用** `credit-repository.js` 的 `consumeCredit`。
-- [ ] 2.2 `_requiredFeature(url, method)` 为该端点返回正确 feature（依赖 1.3）。
-- [ ] 2.3 **错误码映射**：`CREDIT_BALANCE_EXHAUSTED`（402）/ `CREDIT_AMOUNT_INVALID`（400）/
-      `CREDIT_PERIOD_INVALID`（400）/ `CREDIT_SERVICE_UNAVAILABLE`（503）。
+- [ ] 2.2 `_requiredFeature(req)`（**单参**，`publish-api-server.js:475`；调用点 `:808`）为该端点返回正确 feature。
+      ⚠️ **不再依赖 1.3**（该任务前提已失效）。
+- [ ] 2.3 **错误码映射**：`CREDIT_BALANCE_EXHAUSTED`（**409**，`CreditError.status` 硬编码，`credit-repository.js:26`）/
+      `CREDIT_AMOUNT_INVALID`（400，端点入口自校验）/ `CREDIT_PERIOD_INVALID`（400）/
+      `CREDIT_SERVICE_UNAVAILABLE`（503）/ `CREDIT_REF_INVALID`（400）/ `CREDIT_AUTH_INVALID`（401|403）。
+      ⚠️ **后四个码仓内均不存在 ⇒ 需新增**（见 U-9）。
+      ⚠️ 409 的语义**唯一**：扣分在**发货后** ⇒ 409 ⇒ **挂起补扣**（不是「不发货」）。
 - [ ] 2.4 **幂等回归测试**：同 `refId` 重复调用只扣一次、第二次 `duplicated: true`、不新增分录。
 - [ ] 2.5 **并发回归测试**：并发同用户扣减，余额不负、只允许一个成功（`balance >= amount` 的 CAS）。
 
@@ -61,7 +68,12 @@
 
 ## 4. 桌面端接线
 
-- [ ] 4.1 **`usage-reporter.js` 补 `user_id`**（Logto `sub`）+ 真实 `tokens_in` / `tokens_out` / `cost`（现状三者恒 0）。
+- [ ] 4.1 **`usage-reporter.js` 补 `user_id`**（Logto `sub`）+ 真实 `tokens_in` / `tokens_out` / `cost`。
+      ⚠️ **口径订正**：tokens **主路径已是真实聚合值**（`usage-reporter.js:85/123-125/145-147`），**仅兜底桶为 0**；
+      `cost` 只在「官方代理响应自带 `cost`」时有值（`model-provider-manager.js:370-375`），**BYOK 直连路径为 NULL** ⇒
+      「现状三者恒为 0」是**旧口径**。
+      ⛔ 另注：日聚合桶**无 user 维度**（`usage-reporter.js:103` 的聚合键 + `model_usage_daily` 唯一键都没有 `user_id`）
+      ⇒ 「载荷带 user_id」在**日聚合**上不可实现 ⇒ 阻断项，见设计文档 §13.2 B-11。
 - [ ] 4.2 官方算力模式的调用路径（质量档 + 规格 → `/api/v1/compute/execute`）。
 - [ ] 4.3 **`idempotencyKey` 由桌面端生成**；用户点「重试」时**复用同一个键**。
 - [ ] 4.4 **显示项**（见设计文档 §8.1）：剩余积分、本月剩余天数、约可生成、本次预计消耗、剩余额度。
@@ -73,9 +85,12 @@
 
 - [ ] 5.1 事件状态机：`pending` → `charged` / `failed` / `pending_charge` / `charge_rejected`。
 - [ ] 5.2 `pending_charge` 的**补扣入口**（人工可触发）。
-- [ ] 5.3 **定时对账任务宿主（U-5）**：⚠️ 全仓无 cron/APScheduler ⇒ **与 Phase 1 同源问题，须一并立项**
-      （否则 `pending_charge` 只能人工补）。
-- [ ] 5.4 `client_reported_cost_cents` 与服务端值比对 ⇒ 差异进对账报表（阈值 15%）。
+- [ ] 5.3 **定时对账任务宿主（U-5 / U-14）**：⚠️ **跨进程裁决**（设计文档 §13.3）——调度器先例**只在 Node 侧**
+      （`packages/api-publish-engine/src/scheduled-publish.js:93`）；**ops-center（Python）侧实测为零**
+      （`requirements.txt` 无 APScheduler/celery/rq；`routers/scheduler.py` 是发布调度器**契约校验**，不是定时宿主）
+      ⇒ 补扣要写 ops-center 的 SQLite ⇒ **Node 侧先例不可直接用** ⇒ 宿主**待人工拍板**（U-14）。
+- [ ] 5.4 `client_reported_cost_micros`（⚠️ **列名是 `_micros`，不是 `_cents`**）与服务端值比对 ⇒ 差异进对拍报表（阈值 15%）。
+      ⚠️ 该列**全仓无写入方** ⇒ 对拍恒空 ⇒ 恒真通过（阻断项，见设计文档 §13.2 B-11）。
 
 ---
 
@@ -128,4 +143,46 @@
 - [ ] 0bis.8 **迁移文件名逐个核对能被 `MIGRATION_PATTERN` 认领**（只认 3 位数字；不匹配者被静默丢弃）。
 - [ ] 0bis.9 **执行记录补齐两形态**：表行 + `- 保留门禁：… | 远程同步 <状态>` bullet，并补 `## CHANGELOG 条目` 小节。
 - [ ] 0bis.10 **待人工过目项落地**：`compute-key-envelope-migration` 归档与否（U-8）｜服务间鉴权（U-1）｜错误码新增（U-9）。
+
+---
+
+## 0ter. 第 2 轮对抗复评后的阻断项（2026-10-25）
+
+> ⚠️ **这 12 条是「开工前置条件」**，逐条对应设计文档 `01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md` §13.2。
+> 第 2 轮评审（回归验收 / 实现对账 / 对抗复评 3 轨）在已合并版本上查出：
+> **26 条实现符合性缺口 + 17 条新的可复现失效路径（8 条 CRITICAL）**，
+> 且第 1 轮 93 条发现的回归验收结果是「完全修好 17 / 部分修 24 / 未修 49」。
+> ⇒ **本 change 在这 12 条关闭前不可开工。**
+
+- [ ] **0ter.B-1** ⛔ **额度预检没有通道**：契约里只有 consume 一个端点；`credit-repository.js:53` 的 `getAccount` 无任何路由
+      （`publish-api-server.js` 全文 `credit` 零命中）；`PostgresCreditRepository` 生产零实例化
+      ⇒ fail-closed 无落点。**读余额端点形态待拍板（U-13）**。
+- [ ] **0ter.B-2** ⛔ **预检与实扣的竞态窗口 = 整个上游调用时长**；`CHECK (balance >= 0)` 使补扣物理上不可能
+      ⇒ 并发下**无上限资损**。需设计级决策（预扣 / 限流 / 显式接受风险）。
+- [ ] **0ter.B-3** ⚠️ **单位口径跨库不一致**（ops-center 微元 / 账本分）—— **本轮已在设计文档 §3.3.1 写死换算规则**；
+      剩下的「账本列是否也改微元」= **U-11 待拍板**（改已应用迁移 = 破坏性）。
+- [ ] **0ter.B-4** ⛔ **视频 / 图像 / TTS / ASR 的成本恒为 0**（`TOKEN_FIELD_TO_UNIT` 只有 5 类 token）
+      ⇒ 官方算力主力场景**每次白送**；且「缺价 ⇒ 拒绝服务」不触发。**价格卡是否入库待拍板（U-12，需要定价数据）**。
+- [ ] **0ter.B-5** ✅ **409 语义已唯一化**（设计文档 §3.3 错误表）—— 本条**已改**，此处登记以备追踪。
+- [ ] **0ter.B-6** ⛔ **全仓 `grantCredit` 生产调用方 0** ⇒ 赠送量从未进入积分账户 ⇒ 余额恒 0 ⇒ 第一次扣分必然 409
+      ⇒ 需决策「发放链路是否纳入本 change 的前置」。
+- [ ] **0ter.B-7** ✅ **身份链已定案**（wire 字段 = `authSubject`，端点内解析）—— 本条**已改**。
+- [ ] **0ter.B-8** ⛔ **扣分端点无身份绑定**（只禁了 `X-Catalog-Key` 与用户 Bearer 透传，没禁 api_key；错误表无 401/403）
+      ⇒ 越权扣任意用户。**服务间鉴权待拍板（U-1）**。
+- [ ] **0ter.B-9** ✅ **幂等两处缺口已标注**（`refType` 写死常量、`refId` 必须全局唯一）—— 本条**已改**；
+      遗留的「仓储层查重非原子」需在实现时靠 DB 部分唯一索引兜底。
+- [ ] **0ter.B-10** ⛔ **`pending_charge` 无补扣入口、无宿主、无终态**（仓内 `credit_cost_backfill_service.py` 只读日聚合表）
+      ⇒ 挂起 = 永久白送。**调度宿主待拍板（U-14）**。
+- [ ] **0ter.B-11** ⛔ **白送不可观测**：事件表**零生产写者**；`client_reported_cost_micros` **全仓无写入方**
+      ⇒ 对拍恒空 ⇒ 恒真通过。需与 B-4 一并解决。
+- [ ] **0ter.B-12** ⛔ **降级到更贵却说省钱**（spec 的 Requirement 原先只写「更便宜」）
+      ⇒ **本轮已在 spec 加 Scenario「降级方向由运行时事实决定」**，但改的是既有 Requirement 的覆盖面 ⇒ **须人工过目**。
+
+### 0ter 的其他条目（不在阻断链，但同样未修）
+
+- [ ] **0ter.N-1** 第 1 轮 93 条发现中「未修 49 + 部分修 24」= **73 条**，本轮**未逐条改**
+      ⇒ 逐条状态与改法在第 2 轮评审台账里 ⇒ **实施前须逐条过**。
+- [ ] **0ter.N-2** 第 1 轮「设计对抗 30 条」中未修 20 + 修错 3 = **23 条**，同上。
+- [ ] **0ter.N-3** 对抗复评的 MAJOR 级新发现 **R2C-16**（桌面端 `user_id` 在日聚合上不可实现）
+      与 **R2C-17**（周期口径两套并存），本轮**未改**。
 

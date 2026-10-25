@@ -4,6 +4,8 @@ const { discoverMigrations, validateMigrationLedger } = require('./postgres-migr
 const { PostgresCommerceTransaction, CommerceMethods } = require('./postgres-commerce-store')
 const { PAYMENT_SCHEMA } = require('./payment-schema')
 const { CREDIT_SCHEMA } = require('./credit-schema')
+// 010 订阅段链：同样独立成 subscription-segments-schema.js（理由同上）。
+const { SEGMENT_SCHEMA } = require('./subscription-segments-schema')
 const { PostgresWebhookTransaction } = require('./postgres-webhook-store')
 
 const DEFAULT_MIGRATION_DIRECTORY = path.resolve(__dirname, '../../../..', 'migrations', 'postgresql')
@@ -24,6 +26,9 @@ const REQUIRED_SCHEMA_RELATIONS = [
   'identity_payment_customers',
   'identity_credit_accounts',
   'identity_credit_ledger',
+  // 010 订阅段链（段链 = 订阅的唯一事实源；identity_subscriptions 降级为它的物化投影）。
+  // ⚠ **必须排在末位**：漂移锁断言「REQUIRED_SCHEMA_RELATIONS 末位 == SCHEMA 最后一张表」。
+  'identity_subscription_segments',
 ]
 
 const SCHEMA = [
@@ -182,6 +187,9 @@ const SCHEMA = [
   ...PAYMENT_SCHEMA,
   // 008 积分账户与不可变账本：同样独立成 credit-schema.js（理由同上）。
   ...CREDIT_SCHEMA,
+  // 010 订阅段链：独立成 subscription-segments-schema.js（理由同上）。
+  // ⚠ 追加在**最后** ⇒ 它是 SCHEMA 里最后一张 CREATE TABLE（漂移锁按此推导清单末位）。
+  ...SEGMENT_SCHEMA,
 ]
 
 class PostgresIdentityRepository {

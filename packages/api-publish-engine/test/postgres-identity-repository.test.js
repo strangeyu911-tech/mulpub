@@ -57,17 +57,14 @@ test('PostgresIdentityRepository', async (t) => {
 
   await t.test('生产 readiness 只检查连接、migration ledger 和关键表，不执行 DDL', async () => {
     const calls = []
-    const expected = [
-      'identity_schema_migrations', 'identity_users', 'identity_subscriptions',
-      'identity_entitlement_snapshots', 'identity_entitlement_usage',
-      'identity_webhook_events', 'identity_user_sessions',
-      'identity_orders', 'identity_redeem_codes', 'identity_notifications',
-      'cloud_accounts', 'cloud_account_tombstones',
-      // 006 微信 Native 支付：新表进 readiness 清单（缺一张即 ready 检查发现不了生产缺表）
-      'identity_payment_customers',
-      // 008 积分账户与不可变账本：同样进 readiness 清单（运行时要求存在 ⇒ 生产迁移必须建出来）
-      'identity_credit_accounts', 'identity_credit_ledger',
-    ]
+    // ⚠ 这份表清单**从运行时真源派生**，不再在本文件里手抄一份。
+    //   原因（2026-10-25 实际踩到）：本文件曾手抄一份清单 ⇒ 010 往真源加了
+    //   identity_subscription_segments 后，**两份副本漂移** ⇒ 假池子少回一张表
+    //   ⇒ assertReady 直接判 BUSINESS_DATABASE_SCHEMA_NOT_READY ⇒ 既有测试凭空变红，
+    //   而根因是「副本漂移」不是实现坏了。
+    //   ⇒ 清单只有一个真源（REQUIRED_SCHEMA_RELATIONS），副本一律派生。
+    //   「真源清单不得被清空 / 不得漏掉核心表」由 test/subscription-segments-migrations.test.js 单独锁住。
+    const { REQUIRED_SCHEMA_RELATIONS: expected } = require('../src/auth/postgres-identity-repository')
     const pool = {
       async query(text, values) {
         calls.push({ text, values })
@@ -93,17 +90,8 @@ test('PostgresIdentityRepository', async (t) => {
     const migrationDirectory = path.resolve(__dirname, '../../../migrations/postgresql')
     const { discoverMigrations } = require('../src/auth/postgres-migrations')
     const migrations = discoverMigrations(migrationDirectory)
-    const expectedRelations = [
-      'identity_schema_migrations', 'identity_users', 'identity_subscriptions',
-      'identity_entitlement_snapshots', 'identity_entitlement_usage',
-      'identity_webhook_events', 'identity_user_sessions',
-      'identity_orders', 'identity_redeem_codes', 'identity_notifications',
-      'cloud_accounts', 'cloud_account_tombstones',
-      // 006 微信 Native 支付：新表进 readiness 清单（缺一张即 ready 检查发现不了生产缺表）
-      'identity_payment_customers',
-      // 008 积分账户与不可变账本：同样进 readiness 清单（运行时要求存在 ⇒ 生产迁移必须建出来）
-      'identity_credit_accounts', 'identity_credit_ledger',
-    ]
+    // 同上：**从真源派生**，本文件不再手抄表清单（副本漂移 ⇒ readiness 假红）。
+    const { REQUIRED_SCHEMA_RELATIONS: expectedRelations } = require('../src/auth/postgres-identity-repository')
     const makeRepository = (ledgerRows) => {
       const pool = {
         async query(text) {

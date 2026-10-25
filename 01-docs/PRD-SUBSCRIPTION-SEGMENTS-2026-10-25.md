@@ -262,7 +262,7 @@ CREATE TABLE IF NOT EXISTS identity_subscription_segments (
     duration_days INTEGER NOT NULL CHECK (duration_days > 0 AND duration_days <= 36500),
     -- 段在链上的位置（每用户单调递增）；插到链中间时其后各段整体后移。
     -- ⚠ 链序的唯一真源就是这一列（I6）⇒ 读链必须 ORDER BY seq，**不得**用 created_at 代替。
-    seq BIGINT NOT NULL,
+    seq BIGINT NOT NULL CHECK (seq > 0),
     status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'active', 'consumed')),
     period_start TIMESTAMPTZ,
     period_end TIMESTAMPTZ,
@@ -271,11 +271,21 @@ CREATE TABLE IF NOT EXISTS identity_subscription_segments (
     remaining_ms BIGINT CHECK (remaining_ms IS NULL OR remaining_ms >= 0),
     -- 段的来源：幂等键。source_reference 全局唯一 = 「同一笔授权最多落一段」。
     source_kind TEXT NOT NULL CHECK (source_kind IN ('redeem', 'payment', 'grant')),
-    source_reference TEXT NOT NULL UNIQUE,
+    source_reference TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (user_id, seq),
-    CHECK (period_start IS NULL OR period_end IS NULL OR period_end > period_start)
+    -- 幂等键：唯一约束**必须即时**（冲突当场暴露），不得 DEFERRABLE。
+    CONSTRAINT uq_identity_subscription_segments_source_reference UNIQUE (source_reference),
+    -- 链序：唯一约束**必须 DEFERRABLE** —— 单条 `UPDATE ... SET seq = seq + 1` 会**逐行**撞唯一约束
+    --（行 5→6 时 6 还在）⇒ 段链插到链中间必然 23505；DEFERRABLE 把检查推迟到 COMMIT，
+    -- ⚠ **DEFERRABLE 只推迟「检查」，不推迟「可见性」**：同一事务内的读者**看得到中间态**
+    --   （那一瞬有重复 seq）⇒ shift 之后**不得再读链**；只有事务外的读者看不到中间态。
+    -- ⚠ 与之相对，「至多一个 active」的部分唯一索引**保持即时**（那是 D-1 的错，要当场暴露）。
+    CONSTRAINT uq_identity_subscription_segments_user_seq UNIQUE (user_id, seq) DEFERRABLE INITIALLY DEFERRED,
+    -- 段时刻：要么两个都空（排队中），要么两个都有且终点晚于起点（已落过实际起止）。
+    CHECK ((period_start IS NULL AND period_end IS NULL) OR (period_start IS NOT NULL AND period_end IS NOT NULL AND period_end > period_start)),
+    -- 排队中的段**不得**带时刻（规格 §2.2「排队中的段为空」这条语义在 DB 层的承载）。
+    CHECK (status <> 'queued' OR (period_start IS NULL AND period_end IS NULL))
 );
 
 -- I2：任一用户至多一个 active 段（防「两个同时生效」）
@@ -289,6 +299,15 @@ CREATE INDEX IF NOT EXISTS idx_identity_subscription_segments_user
 
 COMMIT;
 ```
+
+⚠ **2026-10-25（S1 实施时）的五处收紧，规格与实现已同步**：
+① 段时刻 CHECK 从「允许半截」收紧为「**要么都空、要么都有且 end > start**」
+   （半截段 = 写崩了留下的残骸，不该被允许）；
+② 两个 UNIQUE **显式命名**（`uq_..._source_reference` / `uq_..._user_seq`）
+   ⇒ 23505 能按约束名精确分类（幂等命中 vs 链序冲突 vs 单活冲突），不必猜 Postgres 的自动命名；
+③ `(user_id, seq)` 加 **DEFERRABLE INITIALLY DEFERRED**（见上面注释：否则段序后移必 23505）；
+④ `seq` 加 **CHECK (seq > 0)**（配合应用层「只允许正位移」⇒ 链序不会被推到非正数）；
+⑤ 加 **CHECK (status <> 'queued' OR 两个时刻都空)**（把「排队中的段为空」这条语义落到 DB 层）。
 
 ⚠ **DDL 的两处上界口径不同，是有意的**：
 - **段表 CHECK 上界 = 36500**（宽松，只防时间戳溢出）；
@@ -429,14 +448,26 @@ POST /api/v1/redeem  { code }
 > 而旧段 C 此刻还是 `'active'` ⇒ 同一 `user_id` 上两行 active ⇒ 23505 ⇒ 整个事务回滚
 > ⇒ 表现为「**每次高档码兑换都失败（500）**」，且会被 V4 判成「内部状态错误」。
 >
-> ⇒ **必须「先 demote C，再 activate N」**（同事务内，顺序不可颠倒）：
+> ⇒ **必须「先 shift 后 insert，再 demote，最后 activate」**（同事务内，四步顺序不可颠倒）：
 > ```
-> 1) UPDATE ... SET status='queued', remaining_ms=..., period_start=NULL, period_end=NULL
->    WHERE id = C.id AND status='active'
-> 2) INSERT 新段 N (status='active', period_start=now, period_end=now+duration, seq=C.seq)
-> 3) UPDATE 后续段 SET seq = seq + 1 WHERE user_id=? AND seq >= C.seq
+> 1) shiftSegmentSeq(userId, C.seq, +1)   -- ① 让位：C 及其后续段整体后移，空出 C.seq
+> 2) insertQueuedSegment(N, seq = C.seq)   -- ② 占位：新段恒为 queued（D-1 的结构保证）
+> 3) demoteActiveSegment(C)               -- ③ 降级：剩余由本行 period_end 自算，不接受调用方传值
+> 4) activateSegment(N, {periodStart, periodEnd})  -- ④ 生效
 > ```
-> ⇒ 或用**单条 `UPDATE … SET status = CASE WHEN id=C.id THEN 'queued' ELSE 'active' END`** 同时改两行。
+>
+> ⛔ **为什么「shift 必须在 insert 之前」**（独立复核实测出来的，原伪码写反了）：
+>   链序唯一约束是 `DEFERRABLE INITIALLY DEFERRED` ⇒ **冲突推迟到 COMMIT 才报**。
+>   若先 `INSERT N (seq=C.seq)` 再 `UPDATE 后续段 SET seq=seq+1 WHERE seq >= C.seq`
+>   ⇒ **那条后移会把刚插入的 N 一起后移** ⇒ C 与 N 落到同一个 seq
+>   ⇒ 违例在 **COMMIT 时**抛出 ⇒ **逃出语句级的分类器** ⇒ 裸 23505 没有 status ⇒ **500**
+>   ⇒ 正是本节要消灭的「每次高档兑换都 500」。
+>   ⇒ **正确顺序：先 shift（把 C 及其后续整体后移、腾出 C.seq），再 insert 到空出的 C.seq。**
+>
+> ⚠ 「单条 `UPDATE … SET status = CASE …` 同时改两行」这条备选**在 S1 的原语集里表达不了**
+>   （原语不提供「插入 active 段」这个动作）⇒ 已弃用，别照抄。
+> ⇒ ⚠ **DEFERRABLE 只推迟「检查」，不推迟「可见性」**：**同一事务内的读者看得到中间态**
+>   （那一瞬有重复 seq）⇒ **shift 之后不得再读链**（只有事务外的读者看不到中间态）。
 > ⇒ ⚠ **验收必须覆盖这一格**（§10.1 A22）：只测「造数据撞索引」测不到它。
 
 ### 5.2 结算流程（惰性）
@@ -669,7 +700,7 @@ POST /api/v1/redeem  { code }
 | A10 | 口径分裂守卫：**结算后**投影的 plan/period 必须等于当前生效段的 plan/period | 断言 I5 |
 | A11 | 用量窗口：段切换后新窗口 `used` 从 0 起算（旧窗口不串） | 断言 `identity_entitlement_usage` |
 | A12 | 单活守卫：同一用户不可能有两个 `active` 段（撞部分唯一索引 ⇒ fail closed） | 造数据撞索引 |
-| A13 | 段面值不可变：插入后改 `duration_days`/`plan` 必须失败（应用层与 DB 层都要挡）；**`remaining_ms` 只允许在 demote 时写一次**（此后只读），且**不得覆盖 `duration_days`**（两者是两个量，I3） | 变异验证 |
+| A13 | 段面值不可变：**应用层不提供**任何改写 `plan` / `duration_days` 的语句（源码级锁 + 变异验证）；`remaining_ms` 只在 demote 时写一次（由本行 `period_end` **自算**，调用方不传值 ⇒ 结构上无法声明错值），且**不得覆盖 `duration_days`**（两者是两个量，I3） | 变异验证。⚠ **DB 层尚未挡**（无 trigger 拒改 `plan`/`duration_days`）⇒ 这条欠账**已登记**，见 §12 B12 |
 | A14 | 显示项：排队场景下会员中心返回 `queuedSegments` 非空且每项带**预计**生效时间 | 断言返回体 |
 | A15 | 文案分支：R1/R2/R3/R4 四种结果分别命中**互斥**的文案键（互斥性用反断言锁） | 四构造 + 反断言 |
 | A16 | 迁移 checksum：新增迁移文件被改动 ⇒ 迁移台账判红（现有判据自带） | — |

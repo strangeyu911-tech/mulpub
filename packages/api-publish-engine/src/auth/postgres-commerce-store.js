@@ -1,5 +1,8 @@
 const crypto = require('crypto')
 const { planRank } = require('./plan-matrix')
+// 010 订阅段链的仓储原语：与订阅投影 / 权益快照**同事务**写入（段链是事实源）。
+// ⛔ 挂进事务类（而不是仓储池级）⇒ 写段与写投影/快照天然同事务，rollback 一起回滚。
+const { SubscriptionSegmentMethods } = require('./subscription-segments')
 
 /**
  * postgres-commerce-store.js — 会员中心 P1 商务数据访问层。
@@ -187,6 +190,11 @@ class PostgresCommerceTransaction {
  * 会员中心 P1 商务读写方法宿主类：通过 mixin 将实例方法挂到 PostgresIdentityRepository.prototype。
  * 以 class 形态承载方法（类体方法之间无需逗号），this.pool 由宿主仓储实例提供。
  */
+// 段链原语混入事务类：读链 / 插段 / 降级 / 激活 / 消费 / 链序后移。
+// ⚠ 与 CommerceMethods 的 pool 级 mixin 同型，但宿主是 this.client（事务内）⇒ 写段可与
+//   identity_subscriptions / identity_entitlement_snapshots 同事务回滚。
+Object.assign(PostgresCommerceTransaction.prototype, SubscriptionSegmentMethods)
+
 class CommerceMethods {
   // ——— 会员中心 P1 商务读写 ———
 
@@ -441,6 +449,19 @@ class CommerceMethods {
       return result
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {})
+      // ⚠ **COMMIT 阶段的唯一约束违例在这里逃出**（复核 D-11）：
+      //   链序约束是 DEFERRABLE INITIALLY DEFERRED ⇒ **只在 COMMIT 时检查**
+      //   ⇒ 语句级的分类器永远看不到它 ⇒ 裸 23505 没有 status ⇒ 上层按 500 兜
+      //   ⇒ 而「高档兑换每次都 500」正是段链模型要消灭的那个故障形态。
+      //   ⇒ 在这里统一补上 409 与稳定错误码；**保留 pgCode**（原 23505）与 constraint
+      //   ⇒ 段链侧的分类器仍能按约束名细分语义。
+      if (error && error.code === '23505' && !error.status) {
+        throw Object.assign(error, {
+          code: 'COMMERCE_UNIQUE_CONFLICT',
+          status: 409,
+          pgCode: '23505',
+        })
+      }
       throw error
     } finally {
       client.release()

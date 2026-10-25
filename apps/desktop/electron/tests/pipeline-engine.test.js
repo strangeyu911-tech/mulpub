@@ -688,12 +688,20 @@ describe('PipelineEngine animated-explainer 编排', () => {
     expect(defs.scenes.type).toBe('explainer_scenes')
     expect(defs.assets.type).toBe('explainer_generate_assets')
     expect(defs.editing.type).toBe('explainer_editing')
-    expect(defs.compose.type).toBe('compose')
+    // ⚠ **P2b 契约变更（有意）**：explainer 的 compose/publish 改用**专属** type
+    //   （explainer_compose / explainer_publish）—— 因为内置 compose/publish 是
+    //   story2video 等 5 条流水线**共用**的，而本片要求 explainer 的这两个阶段
+    //   产出上游 artifact（render_report + final_review / publish_log）
+    //   ⇒ 改内置执行器的输出形态会破坏那 5 条线 ⇒ 必须用独立 key（零侵入）。
+    //   ⇒ 内置 type 本身**仍然存在**（`'compose'` / `'publish'`），story2video 等仍用它
+    //   ⇒ 见下面那条「反向锁」用例。
+    expect(defs.compose.type).toBe('explainer_compose')
     expect(defs.compose.inputFrom).toBe('assets')
-    expect(defs.publish.type).toBe('publish')
+    expect(defs.publish.type).toBe('explainer_publish')
     expect(defs.publish.inputFrom).toBe('compose')
     expect(pl.stageDefs.every(stage => stage.checkpointRequired === false)).toBe(true)
   })
+
 
   it('autoAdvance 跨全部 8 阶段完成并把各阶段输出写入 context', async () => {
     const stageExecutor = {

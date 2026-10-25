@@ -18,7 +18,7 @@ const path = require('path')
 
 const {
   autoRunIdFor, locateShot, shotFileName, buildRefMap, syncProjectFromDisk,
-  runAutoBatch, regenerateOneShot, collectMissingShots,
+  runAutoBatch, regenerateOneShot, collectMissingShots, countShotsOnDisk,
 } = require('./auto-runner')
 
 const MEDIA_ROOT = path.join(os.tmpdir(), 'film-engineering')
@@ -345,5 +345,50 @@ describe('自动模式批次产物：轮次隔离（2026-10-23）', () => {
     probeCalls.length = 0
     collectMissingShots({ project: { taskId: 'tk', runSeq: 1, shots: [{ shotId: 'S1' }] }, probe })
     expect(probeCalls).toEqual(['auto/tk/b0'])
+  })
+})
+
+describe('auto-runner · 磁盘为真的已落盘计数（面板进度用）', () => {
+  // 2026-10-25 实测：逐镜状态在**批次收口**时才回写台账 ⇒ 执行期间台账恒 pending
+  // ⇒ 面板只能显示 0/M ⇒ 需要一个「磁盘为真」的口径给**显示**用。
+  it('台账全 pending 但磁盘已有 3 个片 ⇒ 磁盘口径 = 3', () => {
+    const root = tmpRoot()
+    const project = makeProject(3)
+    const runDirOf = (runId) => path.join(root, runId)
+    // 台账口径此刻仍为 0（未收口）
+    expect(project.shots.every((s) => s.status === 'pending')).toBe(true)
+    // 落 3 个片（模拟逐镜生成已落盘、批次尚未收口）
+    for (let i = 0; i < 3; i++) {
+      const p = path.join(runDirOf('auto/auto-1/b0'), shotFileName(i))
+      fs.mkdirSync(path.dirname(p), { recursive: true })
+      fs.writeFileSync(p, 'FAKE')
+    }
+    expect(countShotsOnDisk(project, { _testRunDir: runDirOf })).toBe(3)
+  })
+
+  it('★ 轮次隔离：runSeq≥2 只数 r<N> 目录，上一轮的残留片不算本轮已完成', () => {
+    const root = tmpRoot()
+    const runDirOf = (runId) => path.join(root, runId)
+    const project = makeProject(2)
+    project.runSeq = 2
+    // 上一轮（runSeq=1）的目录里躺着 2 个残留片
+    for (let i = 0; i < 2; i++) {
+      const p = path.join(runDirOf('auto/auto-1/b0'), shotFileName(i))
+      fs.mkdirSync(path.dirname(p), { recursive: true })
+      fs.writeFileSync(p, 'STALE')
+    }
+    // 本轮 r2 目录里只有 1 个片
+    const p2 = path.join(runDirOf('auto/auto-1/r2/b0'), shotFileName(0))
+    fs.mkdirSync(path.dirname(p2), { recursive: true })
+    fs.writeFileSync(p2, 'FRESH')
+    expect(countShotsOnDisk(project, { _testRunDir: runDirOf })).toBe(1)
+  })
+
+  it('没有片 ⇒ 0；没有 shots ⇒ 0；缺 taskId ⇒ 0（不谎报进度）', () => {
+    const root = tmpRoot()
+    const runDirOf = (runId) => path.join(root, runId)
+    expect(countShotsOnDisk(makeProject(2), { _testRunDir: runDirOf })).toBe(0)
+    expect(countShotsOnDisk({ taskId: 'x', runSeq: 1, shots: [] }, { _testRunDir: runDirOf })).toBe(0)
+    expect(countShotsOnDisk({ runSeq: 1, shots: [{ shotId: 'a' }] }, { _testRunDir: runDirOf })).toBe(0)
   })
 })

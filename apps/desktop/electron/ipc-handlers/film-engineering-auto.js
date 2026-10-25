@@ -37,7 +37,7 @@ const {
   resolveTaskId, mediaRootOf, isWithinRoot,
 } = require('../services/film-engineering/auto-project')
 const {
-  runAutoBatch, regenerateOneShot, collectMissingShots, autoRunIdFor, shotFileName,
+  runAutoBatch, regenerateOneShot, collectMissingShots, autoRunIdFor, shotFileName, countShotsOnDisk,
 } = require('../services/film-engineering/auto-runner')
 // 第 12 轮 i6：重开项目时用**当前** kit 重算提示词资产哈希 ⇒ 检出「资产已变」
 const { buildPlanPromptContext } = require('../services/film-engineering/shot-prompt-task')
@@ -108,6 +108,9 @@ function registerAutoHandlers (ipcMain, deps) {
     const shots = Array.isArray(project.shots) ? project.shots : []
     const done = shots.filter((s) => s.status === 'done').length
     const rec = reconcileCounters(project, { doneCount: done, totalCount: shots.length })
+    // 2026-10-25：**磁盘为真**的已落盘镜数（逐镜状态在批次收口时才回写 ⇒ 执行期间台账恒为 pending
+    // ⇒ 面板只能显示 0/M）。⚠️ **只用于显示**：磁盘有片 ≠ 该镜成功 ⇒ 收口判定仍用台账口径。
+    const doneCountOnDisk = countShotsOnDisk(project)
     // 影视工程 v2 · F-I（第 12 轮 i6）：**重开项目时也要校验资产没被换过** ——
     // 面板的命中/阻断是从落盘的 `promptMissing` 重算的，但那份清单是**当时**的资产算出来的；
     // 若 kit 已被替换，重算出来的结论会**看起来仍然成立** ⇒ 与「篡改必须可检测」契约冲突。
@@ -133,6 +136,7 @@ function registerAutoHandlers (ipcMain, deps) {
     }
     return {
       taskId: project.taskId,
+      doneCountOnDisk,
       runSeq: project.runSeq || 1,
       planId: project.planId,
       aspect: project.aspect,

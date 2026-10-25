@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { toFileUrl } from './file-url'
 import { PROMPT_BLOCK_HEADINGS, checkPromptBlocks } from './auto-prompt-blocks'
+import { resolveProgressCounters } from './auto-progress-counters'
 
 describe('toFileUrl（本地成品可播放 URL）', () => {
   it('Windows 盘符路径补足三斜杠并统一分隔符', () => {
@@ -101,5 +102,37 @@ describe('块标题单一真源对账（前端复刻 vs 后端 BLOCK_HEADINGS）
     const backendHeadings = [...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1])
     expect(backendHeadings.length).toBeGreaterThanOrEqual(3)
     expect([...PROMPT_BLOCK_HEADINGS]).toEqual(backendHeadings)
+  })
+})
+
+describe('resolveProgressCounters（出片进度：台账口径 vs 磁盘口径）', () => {
+  // 2026-10-25：逐镜状态在**批次收口**时才回写 ⇒ 执行期间台账恒为 pending
+  // ⇒ 面板只能显示 0/M ⇒ 显示口径必须取「台账 ∪ 磁盘」。
+  it('磁盘已落盘、台账仍 pending ⇒ 显示口径取磁盘', () => {
+    const r = resolveProgressCounters({ ledgerDone: 0, diskDone: 3 })
+    expect(r.displayDone).toBe(3)
+    expect(r.diskDone).toBe(3)
+  })
+
+  it('★ 收口口径**只认台账**：磁盘有片 ≠ 该镜成功 ⇒ 不得用它提前收口', () => {
+    const r = resolveProgressCounters({ ledgerDone: 0, diskDone: 3 })
+    expect(r.closeDone).toBe(0)
+    // 台账 3、磁盘 5（残留）⇒ 收口仍认 3
+    const r2 = resolveProgressCounters({ ledgerDone: 3, diskDone: 5 })
+    expect(r2.closeDone).toBe(3)
+    expect(r2.displayDone).toBe(5)
+  })
+
+  it('收口后（台账 3、磁盘 3）⇒ 两个口径一致', () => {
+    const r = resolveProgressCounters({ ledgerDone: 3, diskDone: 3 })
+    expect(r.displayDone).toBe(3)
+    expect(r.closeDone).toBe(3)
+  })
+
+  it('非法输入归 0（不报 NaN、不谎报进度）', () => {
+    expect(resolveProgressCounters().displayDone).toBe(0)
+    expect(resolveProgressCounters({}).closeDone).toBe(0)
+    expect(resolveProgressCounters({ ledgerDone: null, diskDone: undefined }).displayDone).toBe(0)
+    expect(resolveProgressCounters({ ledgerDone: 'x', diskDone: 'y' }).displayDone).toBe(0)
   })
 })

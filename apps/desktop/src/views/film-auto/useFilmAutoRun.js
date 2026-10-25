@@ -12,6 +12,7 @@
  * 依赖经 ctx 注入（feApi/t/props + 面板持有的 phase/project/plan/… 状态），保证与面板是同一份状态。
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { resolveProgressCounters } from './auto-progress-counters'
 import { ElMessage } from 'element-plus'
 import {
   pipelineStartOrchestrated, pipelineGetRunContext, onPipelineUpdate,
@@ -92,14 +93,23 @@ async function refreshStatus () {
     const data = unwrap(await api.autoStatus({ taskId: plan.value.taskId }))
     if (!data || !data.exists) return
     project.value = data
+    // ⚠️ 两个口径**同名不同义**，必须分开（2026-10-25）：
+    //   - `data.doneCountOnDisk` = 磁盘上**已落盘**的镜数（批次执行期间就在涨）⇒ **只用于显示**；
+    //   - `data.doneCount`       = 台账里**有结论**（done）的镜数（批次收口后才准）⇒ **收口判定必须用它**。
+    // ⚠️ 磁盘有片 ≠ 该镜成功 ⇒ 若拿磁盘口径做收口判定，会在产物还在落盘时**提前收口**。
+    //   两个口径由 resolveProgressCounters 一次产出（displayDone / closeDone 分名）⇒ 用错口径会显眼。
+    const counters = resolveProgressCounters({
+      ledgerDone: data.doneCount,
+      diskDone: data.doneCountOnDisk,
+    })
     progress.value = {
-      doneCount: Number(data.doneCount) || 0,
+      doneCount: counters.displayDone,
       totalCount: Number(data.totalCount) || progress.value.totalCount,
       batchIndex: progress.value.batchIndex,
       lastType: progress.value.lastType,
     }
     const total = Number(data.totalCount) || 0
-    const done = Number(data.doneCount) || 0
+    const done = counters.closeDone // ⚠️ 收口判定**只认台账口径**（磁盘有片 ≠ 该镜成功）
     const shotsNow = Array.isArray(data.shots) ? data.shots : []
     const failed = shotsNow.filter((s) => s.status === 'failed').length
     if (data.running) {
@@ -120,7 +130,9 @@ async function refreshStatus () {
 function applyAutoEvent (evt) {
   if (!evt || typeof evt !== 'object') return
   progress.value = {
-    doneCount: Number(evt.doneCount) || progress.value.doneCount,
+    // ⚠️ 事件口径只带台账 doneCount（无磁盘口径）⇒ 与当前显示值取 max，**不让进度回退**
+    // （收口事件可能报一个比磁盘口径小的数 ⇒ 直接赋值会让进度条倒退）。
+    doneCount: Math.max(Number(evt.doneCount) || 0, Number(progress.value.doneCount) || 0),
     totalCount: Number(evt.totalCount) || progress.value.totalCount,
     batchIndex: evt.batchIndex === undefined ? progress.value.batchIndex : evt.batchIndex,
     lastType: String(evt.type || ''),
@@ -203,7 +215,8 @@ async function restoreLastTask (taskId) {
       estimates: null,
     }
     progress.value = {
-      doneCount: Number(data.doneCount) || 0,
+      // 重开项目：同样按「台账 ∪ 磁盘」显示（磁盘上本轮已落盘的片也算已产出）
+      doneCount: resolveProgressCounters({ ledgerDone: data.doneCount, diskDone: data.doneCountOnDisk }).displayDone,
       totalCount: Number(data.totalCount) || 0,
       batchIndex: null,
       lastType: '',

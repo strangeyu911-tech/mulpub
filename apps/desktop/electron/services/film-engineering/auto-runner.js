@@ -183,6 +183,47 @@ async function runAutoBatch (opts) {
 }
 
 /**
+ * 本轮**已落盘**的逐镜产物数（**磁盘为真**）。
+ *
+ * ## 为什么需要它（2026-10-25 实测）
+ *
+ * 逐镜状态是在**批次收口**时才回写台账的（`runAutoBatch` 的 `persist` 在批末）⇒
+ * 批次执行期间 `project.shots[].status` **恒为 pending** ⇒
+ * 面板的「已完成 N / M」在出片过程中**一直显示 0**（实测 12 镜时全程 0/12）⇒ 用户以为没在干活。
+ *
+ * ## 三条口径纪律（**别改错**）
+ *
+ * 1. ⚠️ **磁盘有片 ≠ 该镜成功** ⇒ 本函数**只能用于显示**，
+ *    **绝不可**用于「是否收口」的判定（收口必须用台账口径：每镜都有 done/failed 结论）。
+ * 2. ⚠️ **只数本轮目录**：`autoRunIdFor(taskId, batchIndex, runSeq)` 带轮次号
+ *    （runSeq ≥ 2 ⇒ `auto/<taskId>/r<N>/b<M>`）⇒ 上一轮的残留片**不被算成**本轮已完成。
+ * 3. ⚠️ **同批目录复用**：重跑同一批时目录沿用（既有语义）⇒ 残留片仍会被计入
+ *    ⇒ 与既有 `syncProjectFromDisk`（同样以磁盘为真）**同源**⇒ 口径一致，不新增第二种真相。
+ *
+ * @param {object} project 项目文件内容（需 taskId / runSeq / shots）
+ * @param {{_testRunDir?:Function, batchSize?:number}} [opts]
+ * @returns {number} 已落盘的逐镜产物数
+ */
+function countShotsOnDisk (project, opts) {
+  const o = opts || {}
+  const shots = Array.isArray(project && project.shots) ? project.shots : []
+  if (shots.length === 0) return 0
+  const runDirOf = o._testRunDir || getFilmRunDir
+  const batchSize = Number.isInteger(o.batchSize) && o.batchSize > 0 ? o.batchSize : PRODUCTION_BATCH_SIZE
+  const runSeq = Number.isInteger(project && project.runSeq) && project.runSeq > 0 ? project.runSeq : 1
+  const taskId = String((project && project.taskId) || '')
+  if (!taskId) return 0
+  let n = 0
+  for (let i = 0; i < shots.length; i++) {
+    const loc = locateShot(i, batchSize)
+    const runId = autoRunIdFor(taskId, loc.batchIndex, runSeq)
+    const file = path.join(runDirOf(runId), shotFileName(loc.inBatchIndex))
+    try { if (fs.existsSync(file)) n++ } catch { /* 读不到就不计（不谎报进度） */ }
+  }
+  return n
+}
+
+/**
  * 单镜重生成（原子覆盖，D15）
  * 流程：临时目录生成 → ffprobe 校验 → rename 覆盖正式 shot_NNN.mp4
  * @returns {Promise<{ok: boolean, path?: string, errorCode?: string, message?: string}>}
@@ -290,5 +331,6 @@ module.exports = {
   runAutoBatch,
   regenerateOneShot,
   collectMissingShots,
+  countShotsOnDisk,
   AUTO_BATCH_CONCURRENCY: PRODUCTION_BATCH_CONCURRENCY,
 }

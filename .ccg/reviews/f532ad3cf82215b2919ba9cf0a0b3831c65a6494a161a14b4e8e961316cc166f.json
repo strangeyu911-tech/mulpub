@@ -1,0 +1,128 @@
+{
+  "sha": "c109a1c9903d6e2bd9dc8a7eeec390c03435998a",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 0 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 3,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "f532ad3cf82215b2919ba9cf0a0b3831c65a6494a161a14b4e8e961316cc166f",
+  "decidedAt": "2026-10-25T14:10:07.297Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "claude",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "domains": [
+          "crypto"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "`.ccg/reviews/*.json` 引用 sha `c109a1c99`（历史 fix 提交）而非 PR head `86f8b485`；deepReview.required=true 但 status=pending 却被提交入库；stats 改行数为 0，与实际 241 行变更矛盾。",
+        "verdict": "dismissed",
+        "prosecution": ".ccg/reviews/*.json 引用 sha `c109a1c99`（历史 fix 提交）而非 PR head `86f8b485`；deepReview.required=true 但 status=pending 却被提交入库；stats 改行数为 0，与实际 241 行变更矛盾。",
+        "defense": "三个子项分别是三件事，不能混为一谈。① **sha 指向父提交**：这正是 pre-commit 的既定行为——判定记录在提交**之前**生成，此刻新提交还不存在，只能挂父提交上；深审入口自己打印「判定记录写在父 sha 上——这是预期行为」，且被评差量由 stagedDiffHash（= 文件名，内容寻址）标识。实测本记录：sha == `git rev-parse HEAD^` ✓，stagedDiffHash == 文件名 ✓。② **status=pending 却入库**：这是评审链的正常中间态——pre-commit 自动生成记录（required=true 表示「需要评审」），真正的评审由 deep-review.sh 跑外部后端产出，随后写回。**本次评审已跑通**（critic=claude，6 条意见），裁决已逐条填写、记录已写回为 status=self_play_resolved / tier=external / performedBy=claude / findings / evidence=delivery@<sha256>（仓内 scripts/lib/ccg-delivery-digest.js 算，与判据侧同源）。③ **changedLines=0 vs 241 行**：两套统计口径 —— changedLines 只计**源码行**（判据的 codeExtensions 白名单），而本次差量是 `.md` / `.html` / `.json` 三类文档资源（唯一的「源码类」文件是判定器自己的产物，被 SELF_ARTIFACT_PATH 整条排除）⇒ codeFileCount=0 是正确口径。可核：scripts/ccg-review-decider.js 的 RULES.codeExtensions 与 SELF_ARTIFACT_PATH 两处注释同源。",
+        "rationale": "三个子项都不构成缺陷：sha 挂父提交是 pre-commit 既定行为；pending 入库是评审链的中间态且本轮已闭环写回；changedLines=0 是「只计源码行」口径下的正确值（本次差量全是文档资源）。可核：本记录 sha == `git rev-parse HEAD^`；stagedDiffHash == 文件名；判据的 codeExtensions / SELF_ARTIFACT_PATH。",
+        "externalReview": null
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "`openspec/records/*.md` 自称 QM-6 外部双家族评审已跑通，但无独立评审者身份、输出链接或签名，仅为自证记录。",
+        "verdict": "upheld",
+        "prosecution": "openspec/records/*.md 自称 QM-6 外部双家族评审已跑通，但无独立评审者身份、输出链接或签名，仅为自证记录。",
+        "defense": "「自证」的判断依据是**记录里没写出处**。本 PR 的执行记录已写明评审后端（critic=claude、proposer=opencode，体检命令与输出都在 §四），且**公开证据**在 PR 评论里（critic 原始输出逐字 + 逐条裁决 + 可核取证坐标）——评论 URL 会在 PR 开启后补进本记录（与仓内既有先例一致：PR #4351 / #4354 的执行记录都引用公开评论 URL）。可核：`gh pr view <n> --json comments` 能读到那条评论；评论里带 critic 的原始 JSON 输出。",
+        "rationale": "指控的**问题**成立（记录当时没给公开链接，读者无法独立核验「外部评审跑过」这件事）。已修：PR 开启后把公开评论 URL 补进执行记录 §四，并注明该评论含 critic 原始输出逐字。可核：PR 评论（公开可点开）+ 执行记录 §四 的 URL 引用。",
+        "externalReview": {
+          "performedBy": "claude",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4468#issuecomment-6398771166",
+          "reviewedAt": "2026-10-25T14:18:48.767Z",
+          "reviewedBy": "external(claude) —— 高危域复核：逐条核对当前 diff 是否仍存在该问题",
+          "conclusion": "指控成立，已在本 PR 的后续提交修好（修法与读数见 rationale）"
+        }
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "统计不一致：提案称 241 行，index diff 为 13/13，JSON 记录 changedLines=0、fileCount=3，无统一度量源。",
+        "verdict": "dismissed",
+        "prosecution": "统计不一致：提案称 241 行，index diff 为 13/13，JSON 记录 changedLines=0、fileCount=3，无统一度量源。",
+        "defense": "与 i1③ 同源：三个数字量的是**不同的东西**。241 行 = 整个差量（`git diff --stat origin/main...HEAD`：4 文件 / 180 增 / 13 删）；13/13 = index.html 这一个文件的行级增删；changedLines=0 / fileCount=3 = 判据的**源码行**口径（本次差量无源码文件，唯一的 .json 是判定器自己的产物、被排除）。⇒ 不是同一量的三个矛盾读数，而是三个量各自有出处。「以 git diff --stat 作为唯一度量源」这条建议本身不可取：判据的 changedLines 是**故意**与整个差量分开统计的（`SELF_ARTIFACT_PATH` 的注释写明：判定器自产的产物会顶高规模与敏感命中两维），把它并成单一来源反而会让判定器把自己的输出算进自己的判定域。",
+        "rationale": "241 / 13-13 / changedLines=0 是三个不同口径（整个差量 / 单文件行级 / 源码行），各自有出处，不是矛盾。「统一成 git diff --stat 单一来源」会破坏判据刻意做的 SELF_ARTIFACT_PATH 排除 ⇒ 不采纳。可核：git diff --stat（整个差量）vs 判据的 codeExtensions + SELF_ARTIFACT_PATH。",
+        "externalReview": null
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "§12 设定 47 链接文字两两不同为硬约束，但未新增回归脚本；未来编辑可能破坏唯一性而无门禁。",
+        "verdict": "upheld",
+        "prosecution": "§12 设定 47 链接文字两两不同为硬约束，但未新增回归脚本；未来编辑可能破坏唯一性而无门禁。",
+        "defense": "指控的**问题成立**：把「两两不同」写成硬约束却不留机械闸，正是本 PR 记录里反复出现的那条教训的翻版（约束必须配可执行的检查，否则下次编辑就会重新破坏它）。本轮已写好可执行校验脚本 `.tmp-design-ui/check-design-nav.js`（三查：导航文字唯一性 / 锚点死链 / 屏 id 唯一），并已实测通过（47 链接 / 47 唯一文字 / 死链 0 / 屏 id 47 唯一）。**尚未挂进 CI**：按 AGENTS.md 的分层策略，「给 CI 新增一条 required check」与「改动 `scripts/check-*` 判据本体」都属**改「谁来守门」**，必须人工过目，不能由 agent 在本 PR 内夹带。⇒ 已就绪的是「脚本 + 规格书 §12 写明约束 + 本 PR 的实测读数」；「挂进 CI」作为**待人工过目的后续动作**如实留档，不假装已闭环。",
+        "rationale": "成立。已做：① 写好可执行校验脚本（三查：唯一性 / 死链 / 屏 id 唯一）并实测通过；② 规格书 §12 把约束写死。**残余（如实留档）**：脚本尚未挂进 CI —— 按 AGENTS.md，新增 required check / 改判据本体属改守门规则，须人工过目，不能夹带。已向用户提出三选一（新增独立门禁 / 并入 check-ui-wired / 只留脚本+规格书约束）。可核：脚本路径与实测输出；执行记录「未闭合」一节。",
+        "externalReview": null
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "`.ccg/reviews/` 文件名为随机哈希（`f532ad3cf...`），无生成日志、无模式文档，增加隐藏依赖。",
+        "verdict": "dismissed",
+        "prosecution": ".ccg/reviews/ 文件名为随机哈希（f532ad3cf...），无生成日志、无模式文档，增加隐藏依赖。",
+        "defense": "命名规则是**仓内既定机制**，不是本 PR 引入的：文件名 = 暂存差量的**内容寻址**（stagedDiffHash），由 scripts/ccg-review-decider.js 在 pre-commit 时生成，仓内 2200+ 份记录同一形态（可核：文件名长度固定 64 位十六进制，且每份的 `stagedDiffHash` 字段与文件名逐字相同）。改成可读文件名会破坏「记录 ↔ 差量」的内容寻址对应关系，而这个对应关系正是外部评审按差量取记录的依据（本轮深审入口就是靠它命中的）。「记录命名规则」这条建议的实质诉求（消除隐藏依赖）已由仓内既有的机制文档承担：判定器源码头部注释即规则说明，且本 PR 的执行记录与规格书都写明了记录与差量的对应关系。",
+        "rationale": "内容寻址命名是仓内既定机制（判定器生成，2200+ 份同形态），改成可读名会破坏「记录 ↔ 差量」对应关系，而该对应关系正是深审按差量取记录的依据。「消除隐藏依赖」的诉求已由判定器源码注释 + 本 PR 执行记录承担。可核：文件名 == 记录内 stagedDiffHash 字段；仓内 .ccg/reviews 记录形态一致。",
+        "externalReview": null
+      }
+    ],
+    "template": ".adversarial\\ccg-deep-86f8b485\\adjudication.json",
+    "note": "裁决已填写：5 条逐条 verdict（upheld=2 / dismissed=3）；本轮差量判定档为 SINGLE（引擎只派单模型）；critic 另出的 1 条 Info 级意见（i6）不列入待裁模板，已在执行记录 §四 写明处置",
+    "at": "2026-10-25T14:18:48.785Z",
+    "tier": "external",
+    "evidence": "delivery@3c87deab31b8bba3278480375dc808a7713101b5277ced2888953cefce13e721",
+    "closureNote": "Round 1（.adversarial/ccg-deep-86f8b485/，critic=claude 外部评审，6 条意见，其中 5 条进待裁模板、1 条 Info 另行处置）：逐条裁决完毕。i2 成立且已修——执行记录当时未给公开链接，读者无法独立核验「外部评审跑过」这件事；现已把 critic 原始输出逐字 + 逐条裁决发布为公开 PR 评论，并在执行记录 §四 引用该 URL。i4 成立且已做——规格书 §12 把「47 个链接文字两两不同」写成硬约束却无机械闸（本轮同一条教训的翻版）；已写好可执行校验脚本（导航文字唯一性 / 锚点死链 / 屏 id 唯一性）并实测通过（47 链接 / 47 唯一文字 / 死链 0 / 屏 id 唯一）；**残余如实留档**：脚本尚未挂进 CI —— 按 AGENTS.md，新增 required check / 改 scripts/check-* 判据本体都属改「谁来守门」，须人工过目，不能在本文内夹带，已向用户提出三选一（新增独立门禁 / 并入 check-ui-wired / 只留脚本 + 规格书约束）。i6 成立且已修（Info 级）——规格书文件名是 2026-10-24 而内容含 10-25 新增的 §12；已在文件头标注「修订：2026-10-25 修订（文件名沿用初版日期…）」，不改文件名以免牵动两处已入库的历史执行记录。i1 驳回——三个子项分属三件事：sha 挂父提交是 pre-commit 既定行为（判定记录写在父 sha 上，深审入口自己如此声明）；status=pending 入库是评审链的正常中间态且本轮已跑通外部评审并写回闭环；changedLines=0 是「只计源码行」口径下的正确值（本次差量全是文档资源，唯一的 .json 是判定器自己的产物、被 SELF_ARTIFACT_PATH 排除）。i3 驳回——241 行（整个差量）/ 13-13（index.html 单文件）/ changedLines=0（源码行）是三个不同口径，各自有出处，不是同一量的矛盾读数；「统一成 git diff --stat 单一来源」会破坏判据刻意做的 SELF_ARTIFACT_PATH 排除。i5 驳回（Info 级）——判定记录按内容寻址命名是仓内既定机制（2200+ 份同形态），改成可读名会破坏「记录 ↔ 差量」对应关系，而该对应关系正是深审按差量取记录的依据。本轮高危域 1 条（i2），externalReview 三格已填满（performedBy=claude / evidenceRef=公开 PR 评论 URL / reviewedAt=ISO）。完整裁决与取证坐标见 PR 公开评论与仓内执行记录 openspec/records/ui-design-nav-labels.md §四。"
+  }
+}

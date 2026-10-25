@@ -259,3 +259,146 @@ Agnes Video 快速渲染 / a11y 键盘可达性 / 飞影数字人声音克隆）
 若未先读定案文档，会重复发明并差点重做一件已被否决的事。
 **本刀能成立的理由不是「底稿说该拆」，而是「复评数据表明仓内原依据的两条前提都已变」**——
 这两句话必须分开，否则后人会把「复评通过」误读成「方案本来就没被否决过」。
+# PRD 追加章：CreateView 拆分第一刀 —— 配置档案域实现（2026-10-25 落地）
+
+> 本章是 `01-docs/PRD-CREATEVIEW-SPLIT-REVIEW-2026-10-25.md` 的**实现补充**：
+> §1–§6 是复评与第一刀**定案**（合并于 #4431）；本章是**已落地的实现**（合并于本 change）。
+> 定案章与本章若有出入，**以本章为准**，并在 §6.8 逐条写明偏差与原因。
+
+## 6.1 落点与形态
+
+| 项 | 落地值 |
+|---|---|
+| composable | `apps/desktop/src/views/video-creation/composables/useConfigProfiles.js`（373 行，< 499 硬上限） |
+| 测试 | `apps/desktop/src/views/CreateView.config-profile-composable.test.js`（501 行，24 例） |
+| 形态 | **实例级**：`useConfigProfiles(deps)` 每次调用返回独立对象，deps 由闭包捕获 |
+| 状态 | **全部留在壳的 `data()`**（18 个配置档案键 + `s2vActiveConfigProfile`）⇒ `data.size` **不变**（既有契约 `expect(parent.data.size).toBeGreaterThan(80)` 仍成立） |
+| 依赖 | 显式 deps **9 项**：`get` / `set` / `getDefaults` / `toast` / `pipelineName` / `isOrchestratedPipeline` / `cloneForIpc` / `applySnapshotObject` / `messages` |
+| 禁止项 | 未引入模块级单例、未引入 `window.__*` 全局兜底、未照抄既有三批 composable 的遗留形态 |
+
+⚠ **与既有三批 composable 的形态差异是刻意的**：既有（`useBgmLibrary` / `useTtsVoices` / `useBatchCreate`）是模块级单例，
+把「组件卸载」与「状态生命周期」解耦；本刀状态留壳 ⇒ 天然无此问题 ⇒ 不得引入。
+
+## 6.2 搬走 / 留壳清单
+
+**搬走 21 个方法**（域内专有）：`s2vConfigProfileDefaults` / `buildPipelineConfigSnapshot` / `s2vConfigProfileFormDirty` /
+`loadS2VConfigProfiles` / `openS2VConfigProfileSave` / `closeS2VConfigProfileSave` / `saveS2VConfigProfile` /
+`openS2VConfigProfileList` / `closeS2VConfigProfileList` / `s2vConfigProfileCanApply` / `requestApplyS2VConfigProfile` /
+`cancelApplyS2VConfigProfile` / `confirmApplyS2VConfigProfile` / `applyS2VConfigProfileSnapshot` /
+`startS2VConfigProfileRename` / `cancelS2VConfigProfileRename` / `saveS2VConfigProfileRename` /
+`requestS2VConfigProfileDelete` / `closeS2VConfigProfileDelete` / `confirmS2VConfigProfileDelete` / `formatS2VConfigProfileTime`
+
+**留壳 4 个方法（跨域共用，明确不动）**：
+
+| 留壳方法 | 留壳理由 |
+|---|---|
+| `_applyS2VSnapshotObject` | 与「恢复上次选项」历史域 `restoreS2VLastOptions` **共用** ⇒ 跨域过深；composable 经 `deps.applySnapshotObject` 调用它（编排型快照的整对象恢复通道） |
+| `normalizeS2VRestoredEnums` | 同上（被 `_applyS2VSnapshotObject` 两处调用） |
+| `restoreS2VLastOptions` | 历史域，非配置档案域 |
+| `_applyS2VSnapshot` | 只被 `_applyS2VSnapshotObject` 使用 ⇒ 随留壳侧一起不动，避免触碰历史域的恢复路径 |
+
+**壳侧代理 19 个**（过渡层）：模板调用 16 个 + 旧测试调用 2 个（`buildPipelineConfigSnapshot` / `applyS2VConfigProfileSnapshot`）
++ 路由套用 1 个（`loadS2VConfigProfiles`，被 `_applyConfigProfileFromRoute` 的 `loadProfiles` 回调使用）。
+形态统一为 `name(...args) { return this.configProfiles.name(...args) }` ⇒ **缺导出时是 TypeError（响亮）而非静默 undefined（哑）**。
+
+## 6.3 桥接两条兼容契约（定案 §2.3）与其落地方式
+
+| 契约 | 落地机制 | 锁在哪条用例 |
+|---|---|---|
+| ① 整体对象赋值（`vm.s2vConfigProfiles = [...]`）**整体替换** | `deps.set(key, value)` → `this[key] = value` → 走组件 proxy 的 set ⇒ 响应式整体替换 | 「桥接契约：原地变异返回同一引用…」 |
+| ② 原地变异（`vm.s2vConfigProfiles.push(x)`）**返回 ref/响应式对象本身**（非 spread 副本） | `deps.get(key)` → `this[key]` → 组件 proxy 的 get ⇒ 返回**响应式代理本身** | 同上（断言 `host.get(...)` 与 `host.state[...]` **同一引用** `toBe`） |
+| ③ Vue 3 中 ref 放进 `data()` 不会解包 ⇒ **禁止**把 composable ref 挂进 `data()` | 本刀**不搬状态** ⇒ 不存在 ref ⇒ 该禁令自动满足 | 「状态仍留在壳的 data()」 |
+
+⚠ **状态桥接与代理是两个独立机制**：状态桥接 = `get`/`set` 读写壳的响应式对象；代理 = 19 个同名方法转发到 composable 实例。
+
+## 6.4 数据校验（4 道校验 + 1 道并发守卫，逐字保持）
+
+| 校验 | 既有行为 | 实现落点 | 锁 |
+|---|---|---|---|
+| 名称非空 | `name.trim()` 为空 ⇒ toast「请输入配置名称」+ `return`（**不发请求**） | `saveS2VConfigProfile` | 用例 1（+ 变异 M1） |
+| 流水线已选 | `selectedPipeline?.name` 为空 ⇒ **静默** `return`（不发请求、不提示） | 同上 | 用例 2 |
+| 重名二次确认 | 同 `(pipelineId, name)` 已存在 ⇒ 置 `overwriteNeeded` + toast「已存在同名配置，再次点击保存将覆盖它」+ `return`；**第二次点击**才真覆盖（`overwrite: true`） | 同上 | 用例 3 |
+| 服务端同名判定 | `result.code === -2` 且 message 命中 `/同名\|已经存在\|already exists\|duplicate/i` ⇒ 同样进二次确认（**不当成普通失败**） | 同上 | 用例 4 |
+| 服务端其它失败 | ⇒ toast「配置保存失败，请稍后重试」（2600ms），`overwriteNeeded` 保持 false | 同上 | 用例 5 |
+| 并发守卫 | `s2vConfigProfileListRequestId` 单调递增；返回时 `requestId !== 当前值` ⇒ 丢弃过期结果。**三处都要判**：成功分支、错误分支、`finally`（清 loading） | `loadS2VConfigProfiles` | 用例 7（+ 变异 M2） |
+| 快照套用（逐项类型判定） | 数组/对象走深拷贝；其余**同 `typeof`** 才赋值；`undefined`/`null` 跳过 | `applyS2VConfigProfileSnapshot`（legacy 分支） | 用例 13 |
+
+## 6.5 流程（用户视角，6 条路径，搬移后逐字不变）
+
+1. **保存**：点「保存配置」→ 弹窗 → 输入名称 → 「保存」
+   - 名称为空 ⇒ 提示「请输入配置名称」（2200ms），停留弹窗
+   - 未选流水线 ⇒ **静默无提示、不请求**
+   - 重名 ⇒ 提示「已存在同名配置，再次点击保存将覆盖它」（2200ms）⇒ 需**再次点击**才覆盖
+   - 成功 ⇒ 提示「配置已保存」；失败 ⇒ 提示失败原因
+2. **列表**：「我的配置」⇒ 按 `updatedAt` 倒序；加载失败**保留旧列表** + 错误提示（`quiet` 模式不弹 toast）
+3. **套用**：「应用」⇒ **表单未脏时直接套用**（不弹确认）；表单已脏 ⇒ 二次确认（覆盖当前已调整的选项）⇒ 套用快照
+   - 不属于当前流水线 ⇒ 拒绝并提示「该配置属于其他流水线，无法在当前流水线应用」（2600ms）
+   - 确认瞬间流水线被切换 ⇒ 同样按跨流水线拒绝
+4. **重命名**：独立确认态（行内输入）⇒ 成功后按服务端返回的 `result.data` **整体替换**该列表项
+5. **删除**：独立确认弹窗 ⇒ 成功后从列表移除
+6. **路由套用**：URL 带 `configProfile` ⇒ 自动套用并提示「已应用配置」；无参数 ⇒ 不套用不提示
+   ⚠ 该路径**不由本 composable 实现**（由 `@/features/publish-destination/apply-config-profile-handoff` 承担），
+   但它**依赖** `loadS2VConfigProfiles` 与 `applyS2VConfigProfileSnapshot` 两个代理 ⇒ 故这两者必须留在壳上。
+
+## 6.6 交互逻辑与显示项：**零变更**
+
+本刀**不抽模板**（`CreateView.vue` 的 template 一行未改）⇒ 弹窗、按钮、`data-testid`、提示位置、toast 时长**全部不动**。
+新增 3 个 `data` 键为 **0**（`data.size` 不变）。
+
+## 6.7 提示文字落点（12 条，逐条列出）
+
+| 触发点 | locale key | 中文 | 英文 | 时长 |
+|---|---|---|---|---|
+| 名称为空 | `create.story2video.configProfile.nameRequired` | 请输入配置名称 | Enter a configuration name | 2200ms |
+| 重名（本地命中 / 服务端 -2） | `create.story2video.configProfile.duplicateName` | 已存在同名配置，再次点击保存将覆盖它 | A configuration with this name already exists. Click save again to overwrite it. | 2200ms |
+| 保存失败（业务错误码） | `create.story2video.configProfile.saveFailed` | 配置保存失败，请稍后重试 | Could not save the configuration. Please try again. | 2600ms |
+| 保存失败（异常兜底） | 无（裸文案） | 配置保存失败 | — | 2600ms |
+| 保存成功 | `create.story2video.configProfile.saved` | 配置已保存 | Configuration saved | **默认 1600ms** |
+| 跨流水线拒绝 | `create.story2video.configProfile.wrongPipeline` | 该配置属于其他流水线，无法在当前流水线应用 | This configuration belongs to another pipeline and cannot be applied here. | 2600ms |
+| 套用成功 | `create.story2video.configProfile.applied` | 已应用配置 | Configuration applied | **默认 1600ms** |
+| 重命名成功 | `create.story2video.configProfile.renamed` | 配置已重命名 | Configuration renamed | **默认 1600ms** |
+| 重命名失败（异常兜底） | 无（裸文案） | 重命名失败 | — | 2600ms |
+| 删除成功 | `create.story2video.configProfile.deleted` | 配置已删除 | Configuration deleted | **默认 1600ms** |
+| 删除失败（异常兜底） | 无（裸文案） | 删除失败 | — | 2600ms |
+| 列表加载失败（异常兜底） | 无（裸文案） | 配置列表加载失败 | — | 2200ms |
+
+⚠ **文案全部由 `deps.messages.*` 惰性提供（壳侧持有 zh/en 三元组）**，composable 内**零中文字面量**：
+① 渲染端硬编码中文门禁（`--cjk`）只扫**非测试**源文件 ⇒ 新文件若带中文会被判「新增硬编码」；
+② 惰性求值保证**语言切换后文案跟随**（不可在 `created()` 时算成常量）。
+
+## 6.8 与 design（已归档 change）§2–§9 的偏差订正
+
+| # | design 的说法 | 实测 / 落地 | 原因 |
+|---|---|---|---|
+| 1 | 「基线按 `file:line` 存储 ⇒ 搬走 245 行会让行号偏移 ⇒ **必须重生成** `locale-cjk-baseline.json`」 | **不需要重生成**。实测基线形态是 `file\|\|content`（2026-09-26 迁移过），**行号无关**；`--cjk` 判据只判「新增」⇒ 搬走的 239 条存量条目消失**不报红**。实测读数：基线 1330 / 当前 1091 / **无新增硬编码** | design 引用的是**迁移前**的旧形态 ⇒ 本条为**过时结论**，按实测订正 |
+| 2 | 「22 项 / 约 245 行」 | **21 个方法**搬走 + 4 个留壳；composable 373 行 | 口径差异：AST 口径的「22 项」与「方法数」不同源 |
+| 3 | 「提示 toast 2200ms」 | **部分提示无显式时长 ⇒ 用默认 1600ms**（`showS2VOptionsToast(text, durationMs = 1600)`）：`saved` / `applied` / `renamed` / `deleted` 四条 | 逐字保持既有行为（首版草稿误加了 2200ms，自查抓出并修正） |
+| 4 | 「套用 ⇒ 二次确认」 | **表单未脏时直接套用，不弹确认**（`requestApplyS2VConfigProfile` 里 `!s2vConfigProfileFormDirty()` 分支） | 既有实现如此 ⇒ 逐字保持，design 描述不完整 |
+| 5 | 「`_applyS2VSnapshot` 逐项比 `typeof` 判定」 | 该方法**只被 `_applyS2VSnapshotObject` 使用** ⇒ 与历史域共用 ⇒ **留壳**，不搬 | 跨域共用 ⇒ 搬走会触碰「恢复上次选项」路径（风险面从「中」升到「高」） |
+| 6 | 「每个代理方法登记『→ 计划删除 PR 编号』映射表」 | 本刀**未建立该映射表**（代理层整批撤除需另起 change） | 已如实登记为执行记录的「遗留」，不假装已闭合 |
+
+## 6.9 风险清单与处置
+
+| 风险 | 处置 |
+|---|---|
+| 代理清单 ⇄ composable return 清单**两份手工同步** ⇒ 漏导出 ⇒ 既有测试红（**已实测发生**：漏 `buildPipelineConfigSnapshot` ⇒ 4 条旧测试红） | 新增**结构锁 3 条**（代理数=19 / 代理 ⊆ return / return ⊆ 代理，读两侧源码比对）＋ 变异 M4 验证锁有牙齿 |
+| 新增叶子模块**单测全绿 ≠ 已接线** | 测试含**Part B 壳接线证明** 3 条（mount 真实 CreateView：代理转发、状态留壳、列表真打到 API 层） |
+| 新增测试文件**改变 vitest 分片分配** ⇒ 可能把「时限偏紧」的用例点着 | 新测试 24 例、耗时 ~0.3s（纯逻辑 + 1 次 mount）⇒ 影响面极小；仍需在 CI 观察 shard 分配 |
+| `data.size` 下限（`> 80`）被消耗 | 本刀**不抽状态** ⇒ `data.size` 不变 ⇒ 契约 `s2v-panel-contract.parent-keys.test.js` 5/5 绿 |
+| 文案被搬进新文件 ⇒ 触发 CJK 硬编码门禁 | 文案全部留在壳的 `deps.messages` ⇒ 新文件 CJK 命中 **0** ⇒ `--cjk` PASS |
+| 代理层残留在主干 ⇒ 长期债务 | 登记为遗留；撤除须另起 change，并与「代理残留数 ≤ 未完成步数」指标同步 |
+
+## 6.10 验收判据（全部为当场实测读数）
+
+| 判据 | 期望 | 实测 |
+|---|---|---|
+| `CreateView.vue` 行数 | 显著下降（targets 零容差 5656） | **5562 → 5361（净减 202）** |
+| 新 composable 行数 | < 500 | **373** |
+| 新测试行数 | < 1500 | **501** |
+| `data.size` | 不变（`> 80` 契约成立） | 不变；`s2v-panel-contract.parent-keys.test.js` **5/5 绿** |
+| 新测试 | 覆盖 4 校验 + 1 守卫 + 桥接 + 接线 + 结构锁 | **24/24 绿** |
+| 既有回归 | 零改动全绿 | **315/315 绿**（6 文件：CreateView.test.js / config-profile-handoff / s2v-panel-contract.parent-keys / pipeline-runtime / visual-mode / story-text-limit-wiring） |
+| 变异验证 | 注入缺陷必被抓住 | **4/4 全部抓住**（M1 名称校验 / M2 并发守卫 / M3 桥接同引用 / M4 结构锁），每步还原后基线绿 |
+| CJK 硬编码门禁 | 无新增 | **PASS**（基线 1330 / 当前 1091 / 无新增） |
+| 逐文件行数门禁 | 无新增超大文件 | **PASS**（`✅ 无新增超大文件，挂账清单与现实一致`） |
+| 界面变更 | 零变更（不抽模板） | template 一行未改 ⇒ 无像素基线需刷新 |

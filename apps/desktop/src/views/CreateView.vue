@@ -1014,8 +1014,6 @@ import {
   storeGetSetting, storeSetSetting,
   story2videoImportMedia, story2videoImportMediaPath, story2videoTranscribe, story2videoListProjects, story2videoGetThumbnail,
   story2videoDeleteProject,
-  story2videoConfigProfileList, story2videoConfigProfileCreate,
-  story2videoConfigProfileRename, story2videoConfigProfileDelete
 } from '@/api/publisher'
 import { bgmLibraryRefs, bgmLibraryMethods, setupBgmLibraryDeps } from './video-creation/composables/useBgmLibrary'
 import { ttsVoicesRefs, ttsVoicesComputeds, ttsVoicesMethods, setupTtsVoicesDeps } from './video-creation/composables/useTtsVoices'
@@ -1023,6 +1021,8 @@ import { ttsVoicesRefs, ttsVoicesComputeds, ttsVoicesMethods, setupTtsVoicesDeps
 // 与主进程 resolveProviderDefaultModel 逐项等价。
 import { resolveCapabilityDefaultModel } from './video-creation/composables/tts-voices-state'
 import { batchCreateRefs, batchCreateMethods, setupBatchCreateDeps } from './video-creation/composables/useBatchCreate'
+// 配置档案域 composable（CreateView 拆分第一刀）：实例级 + 显式 deps，状态留壳。
+import { useConfigProfiles } from './video-creation/composables/useConfigProfiles'
 // 数字人（avatar-spokesperson）目录：形象/音色选择
 import { avatarCatalogRefs, avatarCatalogComputeds, avatarCatalogMethods } from './video-creation/composables/useAvatarCatalog'
 // 数字人形象克隆（avatar-voice-clone）：上传照片/视频 → 长期可复用形象
@@ -1110,8 +1110,6 @@ import {
   S2V_PLATFORMS,
   S2V_RESTORE_ENUM_OPTIONS,
   S2V_RESTORE_OUTPUT_ENUM_OPTIONS,
-  pickS2VConfigProfileFields,
-  pickS2VOutputProfileFields,
   CATEGORY_LABELS,
   COST_LABELS,
   STABILITY_MAP,
@@ -2842,261 +2840,27 @@ export default {
         if (typeof value === defaultType) target[key] = value
       }
     },
-    // ─── 流水线「保存配置」：快照与应用（2026-08-28 s2v-pipeline-config-profiles）───
-    s2vConfigProfileDefaults() {
-      const defaults = (this.$options.data || (() => ({}))).call(this)
-      return {
-        s2vConfig: defaults.s2vConfig || {},
-        s2vOutputConfig: defaults.s2vOutputConfig || {},
-        legacy: {
-          inputMode: 'text',
-          selectedStyle: defaults.selectedStyle,
-          llmConfig: defaults.llmConfig || {},
-          budgetConfig: defaults.budgetConfig || {},
-          checkpointPolicy: defaults.checkpointPolicy,
-          storyboardMode: defaults.storyboardMode,
-          outputConfig: defaults.outputConfig || {},
-        },
-      }
-    },
-    buildPipelineConfigSnapshot() {
-      const now = new Date().toISOString()
-      if (this.isOrchestratedPipeline(this.selectedPipeline?.name)) {
-        return {
-          schemaVersion: 1,
-          capturedAt: now,
-          kind: 'orchestrated',
-          s2vConfig: pickS2VConfigProfileFields(this.s2vConfig),
-          s2vOutputConfig: pickS2VOutputProfileFields(this.s2vOutputConfig),
-          ui: { expandedGroups: Object.keys(this.s2vOpenSections).filter(key => this.s2vOpenSections[key] === true) },
-        }
-      }
-      return {
-        schemaVersion: 1,
-        capturedAt: now,
-        kind: 'legacy',
-        legacy: {
-          inputMode: this.inputMode,
-          selectedStyle: this.selectedStyle,
-          llmConfig: this.cloneForIpc(this.llmConfig),
-          budgetConfig: this.cloneForIpc(this.budgetConfig),
-          checkpointPolicy: this.checkpointPolicy,
-          storyboardMode: this.storyboardMode,
-          outputConfig: this.cloneForIpc(this.outputConfig),
-        },
-      }
-    },
-    s2vConfigProfileFormDirty() {
-      const defaults = this.s2vConfigProfileDefaults()
-      if (this.isOrchestratedPipeline(this.selectedPipeline?.name)) {
-        return JSON.stringify(this.s2vConfig) !== JSON.stringify(defaults.s2vConfig) ||
-          JSON.stringify(this.s2vOutputConfig) !== JSON.stringify(defaults.s2vOutputConfig)
-      }
-      const legacy = defaults.legacy
-      return this.inputMode !== legacy.inputMode ||
-        this.selectedStyle !== legacy.selectedStyle ||
-        JSON.stringify(this.llmConfig) !== JSON.stringify(legacy.llmConfig) ||
-        JSON.stringify(this.budgetConfig) !== JSON.stringify(legacy.budgetConfig) ||
-        this.checkpointPolicy !== legacy.checkpointPolicy ||
-        this.storyboardMode !== legacy.storyboardMode ||
-        JSON.stringify(this.outputConfig) !== JSON.stringify(legacy.outputConfig)
-    },
-    async loadS2VConfigProfiles({ quiet = false } = {}) {
-      const requestId = (this.s2vConfigProfileListRequestId || 0) + 1
-      this.s2vConfigProfileListRequestId = requestId
-      this.s2vConfigProfilesLoading = true
-      this.s2vConfigProfileError = ''
-      try {
-        const result = await story2videoConfigProfileList()
-        if (requestId !== this.s2vConfigProfileListRequestId) return
-        const data = result && result.code === 0 ? result.data : null
-        if (!Array.isArray(data)) throw new Error(result?.message || '配置列表加载失败')
-        this.s2vConfigProfiles = Array.isArray(data)
-          ? data.slice().sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt))
-          : data
-      } catch (error) {
-        if (requestId !== this.s2vConfigProfileListRequestId) return
-        this.s2vConfigProfileError = error?.message || '配置列表加载失败'
-        if (!quiet) this.showS2VOptionsToast(this.s2vConfigProfileError, 2200)
-      } finally {
-        if (requestId === this.s2vConfigProfileListRequestId) this.s2vConfigProfilesLoading = false
-      }
-    },
-    async openS2VConfigProfileSave() {
-      this.s2vConfigProfileOverwriteNeeded = false
-      this.s2vConfigProfileError = ''
-      await this.loadS2VConfigProfiles({ quiet: true })
-      this.s2vConfigProfileNameDraft = this.selectedPipeline?.name ? this.pipelineName(this.selectedPipeline.name) : ''
-      this.s2vConfigProfileDialogOpen = true
-    },
-    closeS2VConfigProfileSave() {
-      this.s2vConfigProfileDialogOpen = false
-      this.s2vConfigProfileListRequestId = (this.s2vConfigProfileListRequestId || 0) + 1
-      this.s2vConfigProfilesLoading = false
-      this.s2vConfigProfileNameDraft = ''
-      this.s2vConfigProfileOverwriteNeeded = false
-    },
-    async saveS2VConfigProfile() {
-      const name = String(this.s2vConfigProfileNameDraft || '').trim()
-      if (!name) {
-        this.showS2VOptionsToast(this.translateWithLocaleFallback('create.story2video.configProfile.nameRequired', '请输入配置名称', 'Enter a configuration name'), 2200)
-        return
-      }
-      const pipelineId = this.selectedPipeline?.name
-      if (!pipelineId) return
-      if (!this.s2vConfigProfileOverwriteNeeded) {
-        const duplicate = this.s2vConfigProfiles.find(p => p.pipelineId === pipelineId && p.name === name)
-        if (duplicate) {
-          this.s2vConfigProfileOverwriteNeeded = true
-          this.showS2VOptionsToast(this.translateWithLocaleFallback('create.story2video.configProfile.duplicateName', '已存在同名配置，再次点击保存将覆盖它', 'A configuration with this name already exists. Click save again to overwrite it.'), 2200)
-          return
-        }
-      }
-      const snapshot = this.buildPipelineConfigSnapshot()
-      try {
-        const result = await story2videoConfigProfileCreate({
-          pipelineId,
-          name,
-          snapshot: JSON.parse(JSON.stringify(snapshot)),
-          overwrite: this.s2vConfigProfileOverwriteNeeded,
-        })
-        if (!result || result.code !== 0) {
-          const duplicate = result?.code === -2 && /同名|已经存在|already exists|duplicate/i.test(String(result?.message || ''))
-          if (duplicate) {
-            this.s2vConfigProfileOverwriteNeeded = true
-            this.showS2VOptionsToast(this.translateWithLocaleFallback('create.story2video.configProfile.duplicateName', '已存在同名配置，再次点击保存将覆盖它', 'A configuration with this name already exists. Click save again to overwrite it.'), 2200)
-            return
-          }
-          this.showS2VOptionsToast(this.translateWithLocaleFallback('create.story2video.configProfile.saveFailed', '配置保存失败，请稍后重试', 'Could not save the configuration. Please try again.'), 2600)
-          return
-        }
-        this.s2vConfigProfiles = this.s2vConfigProfiles.filter(p => !(p.pipelineId === pipelineId && p.name === name))
-        this.s2vConfigProfiles.push(result.data)
-        this.closeS2VConfigProfileSave()
-        this.showS2VOptionsToast(this.translateWithLocaleFallback('create.story2video.configProfile.saved', '配置已保存', 'Configuration saved'))
-      } catch (error) {
-        this.showS2VOptionsToast(error?.message || '配置保存失败', 2600)
-      }
-    },
-    async openS2VConfigProfileList() {
-      this.s2vConfigProfileError = ''
-      this.s2vConfigProfileListOpen = true
-      await this.loadS2VConfigProfiles({ quiet: true })
-    },
-    closeS2VConfigProfileList() {
-      this.s2vConfigProfileListOpen = false
-      this.s2vConfigProfileListRequestId = (this.s2vConfigProfileListRequestId || 0) + 1
-      this.s2vConfigProfilesLoading = false
-      this.s2vConfigProfileRenamingId = ''
-    },
-    s2vConfigProfileCanApply(profile) {
-      return Boolean(profile && this.selectedPipeline?.name && profile.pipelineId === this.selectedPipeline.name)
-    },
-    async requestApplyS2VConfigProfile(profile) {
-      if (!this.s2vConfigProfileCanApply(profile)) {
-        this.showS2VOptionsToast(this.translateWithLocaleFallback('create.story2video.configProfile.wrongPipeline', '该配置属于其他流水线，无法在当前流水线应用', 'This configuration belongs to another pipeline and cannot be applied here.'), 2600)
-        return
-      }
-      if (!this.s2vConfigProfileFormDirty()) {
-        await this.confirmApplyS2VConfigProfile(profile)
-        return
-      }
-      this.s2vConfigProfileApplyTarget = this.cloneForIpc(profile)
-      this.s2vConfigProfileApplyPipelineId = this.selectedPipeline?.name || ''
-      this.s2vConfigProfileApplyDialogOpen = true
-    },
-    cancelApplyS2VConfigProfile() {
-      this.s2vConfigProfileApplyDialogOpen = false
-      this.s2vConfigProfileApplyTarget = null
-      this.s2vConfigProfileApplyPipelineId = ''
-    },
-    async confirmApplyS2VConfigProfile(profile) {
-      const target = profile || this.s2vConfigProfileApplyTarget
-      this.s2vConfigProfileApplyDialogOpen = false
-      this.s2vConfigProfileApplyTarget = null
-      const openedPipelineId = this.s2vConfigProfileApplyPipelineId
-      this.s2vConfigProfileApplyPipelineId = ''
-      if (!target) return
-      const currentPipelineId = this.selectedPipeline?.name || ''
-      if (target.pipelineId !== currentPipelineId || (openedPipelineId && openedPipelineId !== currentPipelineId)) {
-        this.showS2VOptionsToast(this.translateWithLocaleFallback('create.story2video.configProfile.wrongPipeline', '该配置属于其他流水线，无法在当前流水线应用', 'This configuration belongs to another pipeline and cannot be applied here.'), 2600)
-        return
-      }
-      const applied = await this.applyS2VConfigProfileSnapshot(target)
-      if (applied) {
-        this.s2vActiveConfigProfile = target.name || ''
-        this.showS2VOptionsToast(this.translateWithLocaleFallback('create.story2video.configProfile.applied', '已应用配置', 'Configuration applied'))
-      }
-    },
-    async applyS2VConfigProfileSnapshot(profile) {
-      const snapshot = profile && profile.snapshot
-      if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return false
-      if (snapshot.kind === 'legacy') {
-        const s = snapshot.legacy || {}
-        if (typeof s.inputMode === 'string' && ['text', 'images', 'audio', 'video'].includes(s.inputMode)) this.inputMode = s.inputMode
-        if (['guided', 'manual_all', 'auto_noncreative'].includes(s.checkpointPolicy)) this.checkpointPolicy = s.checkpointPolicy
-        if (['auto', 'creative', 'fidelity', 'hybrid'].includes(s.storyboardMode)) this.storyboardMode = s.storyboardMode
-        // 整对象快照语义：直接替换目标（_applyS2VSnapshot 只适合原地合并，不适配整对象恢复）
-        if (typeof s.selectedStyle === 'string' && STYLES.some(style => style.value === s.selectedStyle)) this.selectedStyle = s.selectedStyle
-        if (s.llmConfig && typeof s.llmConfig === 'object' && !Array.isArray(s.llmConfig)) this.llmConfig = JSON.parse(JSON.stringify(s.llmConfig))
-        if (s.budgetConfig && typeof s.budgetConfig === 'object' && !Array.isArray(s.budgetConfig)) this.budgetConfig = JSON.parse(JSON.stringify(s.budgetConfig))
-        if (s.outputConfig && typeof s.outputConfig === 'object' && !Array.isArray(s.outputConfig)) this.outputConfig = JSON.parse(JSON.stringify(s.outputConfig))
-        const budgetModes = ['observe', 'warn', 'cap']
-        if (!budgetModes.includes(this.budgetConfig.mode)) this.budgetConfig.mode = 'warn'
-        const fps = Number(this.outputConfig.fps)
-        this.outputConfig.fps = [24, 30, 60].includes(fps) ? fps : 30
-        if (!['mp4', 'webm'].includes(this.outputConfig.format)) this.outputConfig.format = 'mp4'
-        this.outputConfig.resolution = normalizeResolution(this.outputConfig.resolution, this.maxOutputResolution)
-        return true
-      }
-      return this._applyS2VSnapshotObject(snapshot)
-    },
-    startS2VConfigProfileRename(profile) {
-      this.s2vConfigProfileRenamingId = profile.id
-      this.s2vConfigProfileRenameDraft = profile.name
-    },
-    cancelS2VConfigProfileRename() {
-      this.s2vConfigProfileRenamingId = ''
-    },
-    async saveS2VConfigProfileRename() {
-      const id = this.s2vConfigProfileRenamingId
-      const name = String(this.s2vConfigProfileRenameDraft || '').trim()
-      if (!id || !name) return
-      try {
-        const result = await story2videoConfigProfileRename(id, name)
-        if (!result || result.code !== 0) { this.showS2VOptionsToast((result && result.message) || '重命名失败', 2600); return }
-        const index = this.s2vConfigProfiles.findIndex(p => p.id === id)
-        if (index >= 0) this.s2vConfigProfiles.splice(index, 1, result.data)
-        this.s2vConfigProfileRenamingId = ''
-        this.showS2VOptionsToast(this.translateWithLocaleFallback('create.story2video.configProfile.renamed', '配置已重命名', 'Configuration renamed'))
-      } catch (error) { this.showS2VOptionsToast(error?.message || '重命名失败', 2600) }
-    },
-    requestS2VConfigProfileDelete(profile) {
-      this.s2vConfigProfileDeleteTarget = profile
-      this.s2vConfigProfileDeleteDialogOpen = true
-    },
-    closeS2VConfigProfileDelete() {
-      this.s2vConfigProfileDeleteDialogOpen = false
-      this.s2vConfigProfileDeleteTarget = null
-    },
-    async confirmS2VConfigProfileDelete() {
-      const target = this.s2vConfigProfileDeleteTarget
-      this.s2vConfigProfileDeleteDialogOpen = false
-      this.s2vConfigProfileDeleteTarget = null
-      if (!target) return
-      try {
-        const result = await story2videoConfigProfileDelete(target.id)
-        if (!result || result.code !== 0) { this.showS2VOptionsToast((result && result.message) || '删除失败', 2600); return }
-        this.s2vConfigProfiles = this.s2vConfigProfiles.filter(p => p.id !== target.id)
-        this.showS2VOptionsToast(this.translateWithLocaleFallback('create.story2video.configProfile.deleted', '配置已删除', 'Configuration deleted'))
-      } catch (error) { this.showS2VOptionsToast(error?.message || '删除失败', 2600) }
-    },
-    formatS2VConfigProfileTime(ts) {
-      if (!Number.isFinite(Number(ts))) return ''
-      try {
-        return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(Number(ts)))
-      } catch (_) { return '' }
-    },
+    // ─── 配置档案域代理（CreateView 拆分第一刀）：逻辑在 composables/useConfigProfiles.js ───
+    // 代理层是过渡机制：每个方法登记「→ 计划删除 PR 编号」映射后逐个撤除。
+    loadS2VConfigProfiles(...args) { return this.configProfiles.loadS2VConfigProfiles(...args) },
+    openS2VConfigProfileSave(...args) { return this.configProfiles.openS2VConfigProfileSave(...args) },
+    closeS2VConfigProfileSave(...args) { return this.configProfiles.closeS2VConfigProfileSave(...args) },
+    saveS2VConfigProfile(...args) { return this.configProfiles.saveS2VConfigProfile(...args) },
+    openS2VConfigProfileList(...args) { return this.configProfiles.openS2VConfigProfileList(...args) },
+    closeS2VConfigProfileList(...args) { return this.configProfiles.closeS2VConfigProfileList(...args) },
+    s2vConfigProfileCanApply(...args) { return this.configProfiles.s2vConfigProfileCanApply(...args) },
+    requestApplyS2VConfigProfile(...args) { return this.configProfiles.requestApplyS2VConfigProfile(...args) },
+    cancelApplyS2VConfigProfile(...args) { return this.configProfiles.cancelApplyS2VConfigProfile(...args) },
+    confirmApplyS2VConfigProfile(...args) { return this.configProfiles.confirmApplyS2VConfigProfile(...args) },
+    applyS2VConfigProfileSnapshot(...args) { return this.configProfiles.applyS2VConfigProfileSnapshot(...args) },
+    startS2VConfigProfileRename(...args) { return this.configProfiles.startS2VConfigProfileRename(...args) },
+    cancelS2VConfigProfileRename(...args) { return this.configProfiles.cancelS2VConfigProfileRename(...args) },
+    saveS2VConfigProfileRename(...args) { return this.configProfiles.saveS2VConfigProfileRename(...args) },
+    requestS2VConfigProfileDelete(...args) { return this.configProfiles.requestS2VConfigProfileDelete(...args) },
+    closeS2VConfigProfileDelete(...args) { return this.configProfiles.closeS2VConfigProfileDelete(...args) },
+    confirmS2VConfigProfileDelete(...args) { return this.configProfiles.confirmS2VConfigProfileDelete(...args) },
+    formatS2VConfigProfileTime(...args) { return this.configProfiles.formatS2VConfigProfileTime(...args) },
+    buildPipelineConfigSnapshot(...args) { return this.configProfiles.buildPipelineConfigSnapshot(...args) },
     async _applyS2VSnapshotObject(snapshot, { applyUi = true } = {}) {
       if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return false
       this.s2vRestoring = true
@@ -5462,6 +5226,38 @@ export default {
       if (this._stageClockTimer) return
       this._stageClockTimer = setInterval(() => { this.stageClockTick += 1 }, 1000)
     },
+  },
+  created() {
+    // 配置档案域 composable（CreateView 拆分第一刀，ConfigProfile 域）：
+    // **实例级**（每次组件实例化一份，deps 由闭包捕获）+ **显式 deps**（不引入模块级单例 / window.__*）。
+    // 状态**留在壳的 data()**（键数不变）⇒ 桥接两条契约天然成立：
+    //   ① 整体赋值 vm.s2vConfigProfiles = [...] ⇒ set 整体替换；
+    //   ② 原地变异 vm.s2vConfigProfiles.push(x) ⇒ get 返回的正是响应式代理本身（非 spread 副本）。
+    // 面向用户的文案全部由 messages 惰性提供（zh/en 三元组留在壳侧，避免渲染端新增硬编码中文）。
+    this.configProfiles = useConfigProfiles({
+      get: (key) => this[key],
+      set: (key, value) => { this[key] = value },
+      getDefaults: () => (this.$options.data || (() => ({}))).call(this),
+      toast: (message, ms) => this.showS2VOptionsToast(message, ms),
+      pipelineName: (name) => this.pipelineName(name),
+      isOrchestratedPipeline: (name) => this.isOrchestratedPipeline(name),
+      cloneForIpc: (value) => this.cloneForIpc(value),
+      applySnapshotObject: (snapshot) => this._applyS2VSnapshotObject(snapshot),
+      messages: {
+        nameRequired: () => this.translateWithLocaleFallback('create.story2video.configProfile.nameRequired', '请输入配置名称', 'Enter a configuration name'),
+        duplicateName: () => this.translateWithLocaleFallback('create.story2video.configProfile.duplicateName', '已存在同名配置，再次点击保存将覆盖它', 'A configuration with this name already exists. Click save again to overwrite it.'),
+        saveFailed: () => this.translateWithLocaleFallback('create.story2video.configProfile.saveFailed', '配置保存失败，请稍后重试', 'Could not save the configuration. Please try again.'),
+        saveFailedRaw: () => '配置保存失败',
+        saved: () => this.translateWithLocaleFallback('create.story2video.configProfile.saved', '配置已保存', 'Configuration saved'),
+        wrongPipeline: () => this.translateWithLocaleFallback('create.story2video.configProfile.wrongPipeline', '该配置属于其他流水线，无法在当前流水线应用', 'This configuration belongs to another pipeline and cannot be applied here.'),
+        applied: () => this.translateWithLocaleFallback('create.story2video.configProfile.applied', '已应用配置', 'Configuration applied'),
+        renamed: () => this.translateWithLocaleFallback('create.story2video.configProfile.renamed', '配置已重命名', 'Configuration renamed'),
+        renameFailedRaw: () => '重命名失败',
+        deleted: () => this.translateWithLocaleFallback('create.story2video.configProfile.deleted', '配置已删除', 'Configuration deleted'),
+        deleteFailedRaw: () => '删除失败',
+        listLoadFailed: () => '配置列表加载失败',
+      },
+    })
   },
   async mounted() {
     // BGM 素材库 composable（拆分方案 v3 §2.2 第 2 步）：deps 注入跨域依赖，状态桥接见 computed。

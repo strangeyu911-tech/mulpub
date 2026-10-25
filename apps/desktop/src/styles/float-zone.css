@@ -1,0 +1,40 @@
+/* ============================================================================
+ * float-zone.css —— 悬浮操作浮标**几何区**（2026-10-25）
+ *
+ * 为什么单独一个文件，而不是并进 tokens.css：
+ *   tokens.css 已 499 行，离「行数债务熔断」的 500 行硬上限只差 1 行
+ *   （新代码不得引入超大文件，见 .github/scripts/check-max-lines.js）。
+ *   浮标几何是**交互几何**（位置/尺寸/间隙），不是配色/排版 token，
+ *   单独成文件既不挤占 tokens.css，也给它留了后续增长的余量。
+ *
+ * 语义：视口右下角被「fixed 定位浮标」占用的矩形。
+ *
+ * 事故现场（2026-10-25，数据页）：页面滚到底时右下角的「分析」按钮被
+ * 「回到顶部」浮标压住 ⇒ 按钮看得见一半、点不到。
+ * 旧规范（docs/desktop-ui-layout-spec.md §14）只协调了「浮标 vs 浮标」
+ * （UpdateNotification 右移 88px 避让 BackToTop），**从未协调「浮标 vs 内容」**
+ * ⇒ 这个洞一直在。
+ *
+ * 两条纪律：
+ *   ① 浮标几何只在这里定义一处。各浮标组件引用 token，不得各写各的数值
+ *      （「浮标之间不重叠」要成为可核对的契约，而不是彼此的巧合）。
+ *   ② 页面内容若会滚到浮标区，**必须**留出 --mp-float-safe-bottom 的下边距，
+ *      让「滚到底」时最后一行内容停在浮标区上方。
+ *
+ * ⚠️ 数值刻意与历史几何**逐字一致**（BackToTop 原为 right/bottom 24px + 44×44；
+ *    PublishProgressPanel 原为 bottom: calc(24px + 52px)）：换 token 的目的是
+ *    把几何变成可核对的契约，不是改版面 ⇒ 零视觉回归。
+ * ========================================================================== */
+
+:root {
+  --mp-float-zone-right: 24px;
+  --mp-float-zone-bottom: 24px;
+  --mp-float-zone-size: 44px;
+  /* 浮标之间的净间隙（叠放时两枚浮标不贴合、不重叠） */
+  --mp-float-zone-gap: 8px;
+  /* 叠放偏移 = 一枚浮标的高度 + 间隙 = 52px */
+  --mp-float-zone-stack-offset: calc(var(--mp-float-zone-size) + var(--mp-float-zone-gap));
+  /* 内容安全区：页面底部必须留出的净空。
+   * = 下边距 24 + 浮标 44 + 呼吸 16 = 84px */
+  --mp-float-safe-bottom: calc(var(--mp-float-zone-bottom) + var(--mp-float-zone-size) + 16px);
+}

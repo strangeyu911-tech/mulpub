@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="dash-page">
     <div class="cohere-page-header">
       <div>
         <div class="page-title">数据看板</div>
@@ -27,37 +27,43 @@
            宽度 —— 比下方内容区更宽，视觉上不专业。该位置关系由
            Dashboard.style-guard.test.js 的回归锁机械守住。 -->
 
-      <!-- 统计卡片网格 - 不规则布局 -->
+      <!-- KPI 行（2026-10-25 数据真实性修复）：四个数字各有一处出处，
+           取不到真值显示「—」而不是 0（旧实现全取自恒 0 占位记录，
+           且「已发布内容」与「发布统计·累计发布」自相矛盾）。
+           逐项口径见 PRD-DASHBOARD-TRUTHFUL-UI §3.3.1。 -->
       <div class="stats-grid">
         <!-- 大卡片：总发布 (占据 2 列) -->
         <div class="stat-card large">
           <div class="stat-decor" aria-hidden="true"></div>
           <div class="stat-icon"><el-icon><Promotion /></el-icon></div>
-          <div class="stat-value">{{ totalArticles }}</div>
+          <div class="stat-value" data-testid="kpi-published">{{ formatMetric(kpi.published) }}</div>
           <div class="stat-label">{{ t('dashboard.publishedContent') }}</div>
         </div>
 
-        <!-- 小卡片：阅读 -->
+        <!-- 小卡片：作品阅读（回采口径） -->
         <div class="stat-card">
           <div class="stat-icon"><el-icon><View /></el-icon></div>
-          <div class="stat-value">{{ totalViews > 10000 ? (totalViews / 10000).toFixed(1) + '万' : totalViews }}</div>
-          <div class="stat-label">{{ t('dashboard.totalViews') }}</div>
+          <div class="stat-value" data-testid="kpi-reads">{{ formatMetric(kpi.reads) }}</div>
+          <div class="stat-label">{{ t('dashboard.kpiReadLabel') }}</div>
         </div>
 
-        <!-- 小卡片：评论 -->
+        <!-- 小卡片：作品评论（回采口径） -->
         <div class="stat-card">
           <div class="stat-icon"><el-icon><ChatDotRound /></el-icon></div>
-          <div class="stat-value">{{ totalComments }}</div>
-          <div class="stat-label">{{ t('dashboard.totalComments') }}</div>
+          <div class="stat-value" data-testid="kpi-comments">{{ formatMetric(kpi.comments) }}</div>
+          <div class="stat-label">{{ t('dashboard.kpiCommentLabel') }}</div>
         </div>
 
-        <!-- 小卡片：粉丝 -->
+        <!-- 小卡片：账号粉丝（账号级口径；当前无采集源 ⇒ 「—」） -->
         <div class="stat-card">
           <div class="stat-icon"><el-icon><UserFilled /></el-icon></div>
-          <div class="stat-value">{{ totalFollowers > 10000 ? (totalFollowers / 10000).toFixed(1) + '万' : totalFollowers }}</div>
-          <div class="stat-label">{{ t('dashboard.totalFollowers') }}</div>
+          <div class="stat-value" data-testid="kpi-fans">{{ formatMetric(kpi.fans) }}</div>
+          <div class="stat-label">{{ t('dashboard.kpiFansLabel') }}</div>
         </div>
       </div>
+
+      <!-- 口径说明：告诉用户每个数字从哪来，以及为什么会出现「—」 -->
+      <p class="dash-kpi-note" data-testid="kpi-note">{{ t('dashboard.kpiNote') }}</p>
 
       <!-- 未登录门禁：发布统计/最近发布需登录后可见 -->
       <div v-if="statsLoginRequired" class="dashboard-login-gate" role="status" data-testid="dashboard-login-gate">
@@ -65,11 +71,10 @@
         <button class="gate-sign-in" type="button" data-testid="dashboard-sign-in" @click="signInFromGate">{{ t('dashboard.signInNow') }}</button>
       </div>
 
-      <!-- 发布统计 -->
+      <!-- 发布统计（2026-10-25 视觉统一：改用本页统一的 .dash-panel-title，
+           去掉本页独有的 .panel-header/.panel-title 两套类） -->
       <div v-if="statsData" class="cohere-card dash-mb-md stats-login-panel">
-        <div class="panel-header">
-          <div class="panel-title"><el-icon><TrendCharts /></el-icon> {{ t('dashboard.publishStatsTitle') }}</div>
-        </div>
+        <div class="dash-panel-title"><el-icon><TrendCharts /></el-icon> {{ t('dashboard.publishStatsTitle') }}</div>
         <div class="stats-grid-small">
           <div class="stat-card-mini success">
             <div class="stat-value-mini">{{ statsData.total }}</div>
@@ -107,7 +112,7 @@
             <div class="dash-trend-bar" 
                  :style="{
                    height: Math.max(4, (d.total / dailyMax) * 160) + 'px',
-                   background: d.total > 0 ? 'linear-gradient(to top, var(--lavender-primary), var(--lavender-accent))' : 'var(--color-border)',
+                   background: d.total > 0 ? 'var(--brand-gradient)' : 'var(--color-border)',
                    opacity: d.total > 0 ? 0.7 + (d.total / dailyMax) * 0.3 : 0.3
                  }"
                  :data-value="d.total">
@@ -168,48 +173,27 @@
         @upgrade="goToMemberCenter"
       />
 
-      <!-- 各平台数据 -->
+      <!-- 各平台数据（2026-10-25）：数据源与口径见 PlatformDataGrid.vue 头注 -->
       <div class="cohere-section-title dash-section-header">
-        <el-icon><DataLine /></el-icon> 
-        各平台数据
+        <el-icon><DataLine /></el-icon>
+        {{ t('dashboard.platformsTitle') }}
+        <span class="panel-subtitle">{{ t('dashboard.platformsSubtitle') }}</span>
       </div>
-      <EmptyState v-if="platformData.length === 0" 
-                  :title="$t('emptyStates.dashboard.title')" 
-                  :description="$t('emptyStates.dashboard.message')">
-        <template #icon><el-icon><DataLine /></el-icon></template>
-        <template #actions>
-          <button class="btn-primary" @click="refreshSync">立即同步</button>
-        </template>
-      </EmptyState>
-      <div v-else class="cohere-card-grid dash-grid-280">
-        <div v-for="item in platformData" :key="item.platform" class="cohere-card">
-          <div class="card-top">
-            <div class="card-icon"><img v-if="isPlatformIconUrl(platformIcon(item.platform))" :src="platformIcon(item.platform)" class="mp-platform-icon" :alt="platformName(item.platform)" width="24" height="24"><span v-else>{{ platformIcon(item.platform) }}</span></div>
-            <div class="card-info">
-              <div class="card-platform">{{ platformName(item.platform) }}</div>
-              <div v-if="!item.error" class="card-meta">
-                更新于 {{ formatTime(item.syncedAt) }}
-              </div>
-              <div v-else class="dash-fail-note">数据获取失败</div>
-            </div>
-          </div>
-          <div v-if="!item.error" class="card-stats">
-            <div class="stat-item"><span class="stat-num">{{ item.views ?? '-' }}</span><span class="stat-lbl">阅读</span></div>
-            <div class="stat-item"><span class="stat-num">{{ item.comments ?? '-' }}</span><span class="stat-lbl">评论</span></div>
-            <div class="stat-item"><span class="stat-num">{{ item.likes ?? '-' }}</span><span class="stat-lbl">点赞</span></div>
-            <div class="stat-item"><span class="stat-num">{{ item.followers ?? '-' }}</span><span class="stat-lbl">粉丝</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
+      <PlatformDataGrid :model="platformModel" @refresh="refreshSync" />
 
-    <!-- 内容基准比较 -->
-    <div class="cohere-section-title dash-mt-xl"><el-icon><DataLine /></el-icon> 内容基准比较</div>
-    <div class="dash-bench-row">
-      <input class="cohere-input dash-bench-input" v-model="benchmarkTitle" placeholder="输入文章标题进行基准比较..." @keyup.enter="doBenchmark" />
-      <button class="cohere-btn-primary" @click="doBenchmark" :disabled="!benchmarkTitle.trim()">分析</button>
+      <!-- 内容基准比较（2026-10-25 布局统一：**移进 .cohere-content 内部**）。
+           原先它挂在 .cohere-content **外面**，于是成为全页唯一没有水平 padding
+           （--space-xxl）的区块 ⇒ 标题、输入框、「分析」按钮与上方卡片左右不对齐。
+           这与 TrialBanner / DashboardExtraPanels 那次事故是**同款失效模式**
+           （Dashboard.style-guard.test.js 的注释里写的就是「放在外侧 ⇒ 丢 padding、
+           与下方卡片不对齐」），只是当时没有把本区块纳入守卫。 -->
+      <div class="cohere-section-title dash-mt-xl"><el-icon><DataLine /></el-icon> {{ t('dashboard.benchmarkTitle') }}</div>
+      <div class="dash-bench-row">
+        <input class="cohere-input dash-bench-input" data-testid="benchmark-input" v-model="benchmarkTitle" :placeholder="t('dashboard.benchmarkPlaceholder')" @keyup.enter="doBenchmark" />
+        <button class="cohere-btn-primary" @click="doBenchmark" :disabled="!benchmarkTitle.trim()">{{ t('dashboard.benchmarkAction') }}</button>
+      </div>
+      <BenchmarkChart v-if="benchmarkActiveTitle" :title="benchmarkActiveTitle" :key="benchmarkActiveTitle" />
     </div>
-    <BenchmarkChart v-if="benchmarkActiveTitle" :title="benchmarkActiveTitle" :key="benchmarkActiveTitle" />
   </div>
 </template>
 
@@ -229,12 +213,12 @@ import { usePlatformStore } from '@/stores/platforms'
 import { useAccountStore } from '@/stores/accounts'
 import { useIdentity } from '@/composables/useIdentity'
 import { isAuthGateResult } from '@/utils/auth-gate'
-import { getPlatformIconUrl, isPlatformIconUrl } from '@/composables/usePlatformIconUrl'
 import { formatDateTime } from '@/utils/datetime'
 import BenchmarkChart from '@/components/BenchmarkChart.vue'
 import PerformanceFlowPanel from '@/features/dashboard/PerformanceFlowPanel.vue'
 import DashboardLockedPanel from '@/features/dashboard/DashboardLockedPanel.vue'
 import DashboardExtraPanels from '@/features/dashboard/DashboardExtraPanels.vue'
+import PlatformDataGrid from '@/features/dashboard/PlatformDataGrid.vue'
 // 注意：这里**不要**再 import UpgradeModal。
 // 历史教训（fix-upgrade-payment-entry）：曾 import 它、也写了 4 处
 // @upgrade="showUpgradeModal = true"，但模板里从未渲染 <UpgradeModal>，
@@ -245,11 +229,13 @@ import { useRouter } from 'vue-router'
 import { useIdentityStore } from '@/stores/identity'
 import { hasFeatureOf, DASHBOARD_FULL_FEATURE } from '@/views/member-center/entitlement-gate'
 import { accountBatchCheckLogin, getQueueStatus, getQueueHistory } from '@/api/publisher'
-import { listPatternPerformance } from '@/api/knowledge-library'
+import { listPatternPerformance, performanceOverview } from '@/api/knowledge-library'
 import {
   toAccountHealthModel,
   toQueueStatusModel,
   toPatternBoardModel,
+  toKpiModel,
+  toPlatformDataModel,
   AUTH_GATE,
 } from '@/features/dashboard/dashboard-panels-model'
 
@@ -260,20 +246,21 @@ const router = useRouter()
 
 /**
  * 升级入口 → 会员中心。
- *
  * 为什么不是打开 UpgradeModal：正式包里那里只有「付费通道筹备中」，是死胡同；
- * 而会员中心有真实档位、真实价格（来自服务端 GET /api/v1/plans，与 plan-matrix.js
- * 同源）以及**服务端兑换码核销**（POST /api/v1/redeem）——那是当前唯一真实可用的
- * 开通渠道。用户点「升级解锁」应当到达能做事的地方。
- *
- * 在线支付仍未实现（需接支付平台 + 回调 + 商户资质），属独立立项，见
- * 01-docs/PRD-FIX-UPGRADE-PAYMENT-ENTRY-2026-10-17.md §5。
+ * 会员中心有真实档位、真实价格与服务端兑换码核销 —— 那是当前唯一真实可用的开通渠道。
+ * 在线支付仍未实现，属独立立项，见 PRD-FIX-UPGRADE-PAYMENT-ENTRY-2026-10-17 §5。
  */
 function goToMemberCenter () {
   router.push('/member-center')
 }
-const platformData = ref([])
+// sync:cached 的原始记录（2026-10-25 起**只**用于账号级指标「粉丝」，且只接受
+// 「可信」记录：既无 error、也无遗留占位标记 _note —— 判据单一实现见
+// features/dashboard/dashboard-panels-model.js 的 trustedSyncRows()。
+const platformSyncRows = ref([])
 const statsData = ref(null)
+// 作品互动回流总览（performance:overview）：作品级指标的**唯一**来源。
+// 与 PerformanceFlowPanel 各自取一次（同一 reloadToken 触发），口径相同。
+const perfOverview = ref(null)
 const recentPublishes = ref([])
 // 回流看板与页面共用同一个刷新入口：两个入口各自拉数据会拿到不同时刻的数字
 const metricsReloadToken = ref(0)
@@ -304,13 +291,30 @@ const queue = ref({ state: 'loading', running: 0, pending: 0, failed: 0, failedT
 const patternBoard = ref({ state: 'loading', rows: [] })
 
 function platformName (id) { return platformStore.getLabel(id) || id }
-function platformIcon (id) { return getPlatformIconUrl(id) || platformStore.getIcon(id) || '' }
 const formatTime = (iso) => formatDateTime(iso, { style: 'hour-minute' })
 
-const totalArticles = computed(() => platformData.value.filter(d => !d.error).reduce((s, d) => s + (d.articles || 0), 0))
-const totalViews = computed(() => platformData.value.filter(d => !d.error).reduce((s, d) => s + (d.views || 0), 0))
-const totalComments = computed(() => platformData.value.filter(d => !d.error).reduce((s, d) => s + (d.comments || 0), 0))
-const totalFollowers = computed(() => platformData.value.filter(d => !d.error).reduce((s, d) => s + (d.followers || 0), 0))
+/**
+ * KPI 数值格式化：**没有真值就显示「—」，不显示 0**。
+ * 「取不到」与「真的是 0」是两件事（PRD §3.3.3）。
+ */
+function formatMetric (value) {
+  // ⚠️ 判定必须是「类型 + 有限性」：Number(null) 与 Number('') 都是 0，
+  // 只判 isFinite 会把「没有这项数据」显示成假 0（本次要消灭的那类谎）。
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
+  return value > 10000 ? (value / 10000).toFixed(1) + '万' : value.toLocaleString('zh-CN')
+}
+
+// KPI 行与「各平台数据」区块的模型（口径定义见 dashboard-panels-model.js）
+const kpi = computed(() => toKpiModel({
+  stats: statsData.value,
+  perf: perfOverview.value,
+  syncRows: platformSyncRows.value,
+}))
+const platformModel = computed(() => toPlatformDataModel({
+  stats: statsData.value,
+  perf: perfOverview.value,
+  syncRows: platformSyncRows.value,
+}))
 
 const last14Days = computed(() => {
   if (!statsData.value || !statsData.value.daily) return []
@@ -335,15 +339,27 @@ const maxPlatformTotal = computed(() => {
   return Math.max(1, ...platformStats.value.map(p => p.total))
 })
 
+/**
+ * 「刷新数据」：重新拉本页**真正展示**的三路数据。
+ * 2026-10-25 变更：旧实现只 await `syncAll()`（那条链路恒返回 0 ⇒ 刷新的是假数据），
+ * 且它必然失败 ⇒ 每次点刷新都弹「平台同步失败」。
+ * 现在：三路真实数据并行刷新；`syncAll` 降级为尽力而为（失败不阻断、不弹错，
+ * 该 IPC 契约仍有 E2E 依赖）。详见 PRD §5.2。
+ */
 async function refreshSync () {
   if (!syncAll) return
   syncing.value = true
   try {
-    await syncAll()
+    await Promise.allSettled([
+      syncAll(),
+      loadStats(),
+      loadRecent(),
+      loadPerfOverview(),
+    ])
     await loadCached()
     metricsReloadToken.value += 1
   } catch (e) {
-    console.warn('Sync failed:', e.message)
+    console.warn('Refresh failed:', e.message)
     ElMessage.error(t('dashboard.syncFailed'))
   } finally {
     syncing.value = false
@@ -385,15 +401,10 @@ async function loadRecent () {
 
 /**
  * 账号健康度、发布队列、题材表现榜三路**并行**取数（dash-full-entitlement）。
- *
- * 纪律（对齐项目 QM-2「首屏不得串行阻塞」）：
- * ① 三路并行（Promise.allSettled），最坏耗时不是各项之和；
- * ② 单路失败只停该路，其余照常渲染；
- * ③ 题材榜未解锁时**根本不发起**请求（PRD §3.2.1）。
- *
- * 防重入：onMounted、watch(identityAuthenticated)、watch(hasDashboardFull)
- * 三个入口都会调它，而权益是异步下发的（挂载时常为 null，随后才到位），
- * 不加闸门会让同一批数据被取 3~5 次（实测题材榜 IPC 被调 5 次）。
+ * 纪律（QM-2 首屏不得串行阻塞）：三路 allSettled 并行；单路失败只停该路；
+ * 题材榜未解锁时**根本不发起**请求。
+ * 防重入：onMounted / watch(auth) / watch(权益) 三个入口都会调它，
+ * 而权益是异步下发的 ⇒ 不加闸门会让同一批数据被取 3~5 次（实测题材榜 5 次）。
  */
 // 题材榜单独一个入口：只有它受权益门控，与账号/队列解耦后，
 // 权益到位时不会把已取到的账号/队列数据再拉一遍（拆分前的实测：5 次 IPC）。
@@ -461,15 +472,37 @@ watch(identityAuthenticated, (authed) => {
 // 账号/队列不受套餐限制，权益到位不该让它们再取一遍。
 watch(hasDashboardFull, loadPatternBoard)
 
+/**
+ * 取 `sync:cached` 的原始记录。
+ * ⚠️ 这些记录**不直接进界面数字**（那条链路在主进程恒返回 0 占位值），
+ * 只作为账号级指标（粉丝）的候选来源，由模型层逐条判定可信度。
+ */
 async function loadCached () {
   const api = getApi()
   if (!api || !api.syncCached) return
   try {
     const res = await api.syncCached()
-    if (res.code === 0) platformData.value = res.data || []
+    if (res.code === 0) platformSyncRows.value = Array.isArray(res.data) ? res.data : []
   } catch (e) {
     console.warn('Load cached failed:', e.message)
     ElMessage.error(t('dashboard.loadCachedFailed'))
+  }
+}
+
+/**
+ * 取作品互动回流总览（performance:overview）：**作品级**指标的唯一来源。
+ * 取不到时保持 null ⇒ KPI 与平台卡片显示「—」而不是 0。
+ */
+async function loadPerfOverview () {
+  try {
+    const res = await performanceOverview({ windowDays: 30 })
+    if (isAuthGateResult(res)) {
+      perfOverview.value = null
+      return
+    }
+    if (res && res.code === 0) perfOverview.value = res.data
+  } catch (e) {
+    console.warn('Load performance overview failed:', e && e.message)
   }
 }
 
@@ -481,16 +514,33 @@ function doBenchmark () {
   benchmarkActiveTitle.value = benchmarkTitle.value.trim()
 }
 
-onMounted(() => { loadCached(); loadStats(); loadRecent(); loadNewPanels(); loadPatternBoard() })
+onMounted(() => {
+  loadCached()
+  loadStats()
+  loadRecent()
+  loadPerfOverview()
+  loadNewPanels()
+  loadPatternBoard()
+})
 </script>
 
 <style scoped>
-/* === 奶油·薰衣草配色系统 === */
+/* === 单一真源：品牌色一律取全局 token ===
+ * 旧写法在本页另起了一套紫（写死的亮色值，暗色下不切换）⇒ 同屏两种紫。
+ * 现在这四个变量只做别名，值全部指向全局 token；页面里的品牌紫一律走
+ * --primary / --brand-gradient。论证见 PRD-DASHBOARD-TRUTHFUL-UI §3.2。 */
 :global(:root) {
-  --lavender-primary: #7c5cbf;
-  --lavender-light: #f8f4ff;
-  --lavender-accent: #f472b6;
-  --deep-purple: #1e1b4b;
+  --lavender-primary: var(--primary);
+  --lavender-light: var(--color-bg-inset);
+  --lavender-accent: var(--primary);
+  --deep-purple: var(--color-text-strong);
+}
+
+/* 页面底部净空：右下角有 fixed 浮标（回到顶部），内容必须能滚到它上方。
+ * 事故现场（2026-10-25）：滚到底时「内容基准比较·分析」按钮被浮标压住，点不到。
+ * 见规范 §16 浮标安全区。 */
+.dash-page {
+  padding-bottom: var(--mp-float-safe-bottom);
 }
 
 /* === 统计卡片网格 - 不规则布局 === */
@@ -525,15 +575,6 @@ onMounted(() => { loadCached(); loadStats(); loadRecent(); loadNewPanels(); load
   box-shadow: none;
 }
 
-/* 深色模式覆盖（P4E 2026-10-09）：--deep-purple #1e1b4b 在 :global(:root)
- * 只定义了亮色值，暗色画布 #1a1a1e 上章节标题 1.09:1 不可读（contrast-audit
- * dashboard 1 处命中）。改用暗色提亮变体（同紫色相）。
- * 注意：--deep-purple 声明在 :global(:root)，若在此重声明变量需同作用域；
- * 直接覆盖消费元素颜色更稳（scoped 内对组件元素生效，不受注入顺序反超）。 */
-[data-theme='dark'] .dash-section-header {
-  color: var(--color-sidebar-accent);
-}
-
 .stat-card::before {
   content: '';
   position: absolute;
@@ -541,7 +582,7 @@ onMounted(() => { loadCached(); loadStats(); loadRecent(); loadNewPanels(); load
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, var(--lavender-primary), var(--lavender-accent));
+  background: var(--brand-gradient);
   opacity: 0;
   transition: opacity 0.3s cubic-bezier(0.33, 1, 0.68, 1);
 }
@@ -642,24 +683,6 @@ onMounted(() => { loadCached(); loadStats(); loadRecent(); loadNewPanels(); load
   animation: fadeInUp 0.6s cubic-bezier(0.33, 1, 0.68, 1) 0.1s backwards;
 }
 
-.panel-header {
-  margin-bottom: var(--space-md);
-  padding-bottom: var(--space-sm);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.panel-title {
-  font-weight: 600;
-  font-size: var(--font-size-md);
-  /* 2026-10-20 视觉系统升级：改用语义文字 token（亮/暗自动切换）。
-   * 旧的 var(--deep-purple) 是本文件 :global(:root) 里写死的**亮色值**，
-   * 暗色主题下不切换 ⇒ 深紫字压暗卡底 1.09:1 不可读（见同文件上方暗色覆盖注释）。 */
-  color: var(--color-text-strong);
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
 .panel-subtitle {
   font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
@@ -697,7 +720,11 @@ onMounted(() => { loadCached(); loadStats(); loadRecent(); loadNewPanels(); load
 .stat-value-mini {
   font-size: var(--font-size-xxl);
   font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
+  /* 与 .stat-value 同一套展示字族 + 等宽数字（tabular-nums）。
+   * 旧值 'JetBrains Mono', monospace —— 本机没装该字体，回退到系统等宽字体，
+   * 于是**同一页里两种数字字形**（上方大卡是无衬线、下面迷你卡是等宽衬线感）。 */
+  font-family: var(--font-family-ui-display);
+  font-variant-numeric: tabular-nums;
   margin-bottom: 4px;
 }
 
@@ -752,7 +779,7 @@ onMounted(() => { loadCached(); loadStats(); loadRecent(); loadNewPanels(); load
   transform: translateX(-50%);
   font-size: var(--font-size-xs);
   font-weight: 600;
-  color: var(--deep-purple);
+  color: var(--color-text-strong);
   opacity: 0;
   transition: opacity 0.3s cubic-bezier(0.33, 1, 0.68, 1);
 }
@@ -799,7 +826,7 @@ onMounted(() => { loadCached(); loadStats(); loadRecent(); loadNewPanels(); load
 
 .dash-dist-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--lavender-primary), var(--lavender-accent));
+  background: var(--brand-gradient);
   border-radius: var(--radius-full);
   transition: width 1.2s cubic-bezier(0.33, 1, 0.68, 1);
   animation: fillProgress 1.2s cubic-bezier(0.33, 1, 0.68, 1) forwards;
@@ -808,7 +835,7 @@ onMounted(() => { loadCached(); loadStats(); loadRecent(); loadNewPanels(); load
 
 .dash-dist-count {
   font-weight: 700;
-  color: var(--deep-purple);
+  color: var(--color-text-strong);
   min-width: 60px;
   text-align: right;
   font-size: var(--font-size-base);
@@ -820,7 +847,7 @@ onMounted(() => { loadCached(); loadStats(); loadRecent(); loadNewPanels(); load
   align-items: center;
   gap: var(--space-sm);
   margin-bottom: var(--space-lg);
-  color: var(--deep-purple);
+  color: var(--color-text-strong);
 }
 
 /* === 动画关键帧 === */
@@ -865,11 +892,26 @@ onMounted(() => { loadCached(); loadStats(); loadRecent(); loadNewPanels(); load
 .dash-stat-success { color: var(--color-success); }
 .dash-stat-danger { color: var(--color-danger); }
 .dash-panel { cursor: default; margin-bottom: var(--space-md); padding: 16px; }
-.dash-panel-title { font-weight: 600; font-size: var(--font-size-base); margin-bottom: var(--space-md); }
 .dash-fail-note { font-size: var(--font-size-xs); color: var(--color-danger); }
 .dash-grid-280 { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .dash-bench-row { display: flex; gap: var(--space-sm); margin-bottom: var(--space-md); align-items: center; }
 .dash-bench-input { flex: 1; font-size: var(--font-size-base); }
+
+/* KPI 口径说明行（2026-10-25）：告诉用户每个数字来自哪、为什么会出现「—」。
+ * 不做成 tooltip：口径是**长期事实**，藏在悬浮提示里等于没有。 */
+.dash-kpi-note {
+  margin: calc(var(--space-md) * -1 + var(--space-xs)) 0 var(--space-lg);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+/* 最近发布时间线圆点：与全站语义色对齐。
+ * 全局 .cohere-timeline-item.success::before 用的是写死绿 #22c55e，
+ * 而本页其它成功态用的是 --color-success（#34d399）⇒ 同屏两种绿。
+ * 这里在**本页**覆盖（不动全局，避免波及其它页面的像素基线）。 */
+.cohere-timeline-item.success::before { background: var(--color-success); }
+.cohere-timeline-item.danger::before { background: var(--color-danger); }
 
 /* === 未登录门禁条（发布统计/最近发布登录后可见时的占位提示）=== */
 .dashboard-login-gate {
@@ -897,7 +939,7 @@ onMounted(() => { loadCached(); loadStats(); loadRecent(); loadNewPanels(); load
   cursor: pointer;
   padding: 8px 18px;
   border-radius: var(--radius-pill);
-  background: var(--lavender-primary);
+  background: var(--primary);
   color: #fff;
   font-size: var(--font-size-sm);
   font-weight: 600;

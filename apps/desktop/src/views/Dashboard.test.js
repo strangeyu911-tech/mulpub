@@ -90,7 +90,30 @@ describe("DashboardView", () => {
         data: { total: 42, success: 38, failed: 4, successRate: 90.5, perPlatform: { wechat_mp: { total: 20 }, zhihu: { total: 22 } }, daily: [{ date: "2026-06-20", total: 3 }, { date: "2026-06-21", total: 5 }] }
       }),
       historyList: vi.fn().mockResolvedValue({ code: 0, data: { records: [{ id: "r1", title: "Test", platform: "wechat_mp", status: "success" }] } }),
-      syncCached: vi.fn().mockResolvedValue({ code: 0, data: [{ id: "p1", articles: 10, views: 500, comments: 20, followers: 100 }] }),
+      // sync:cached 记录**必须带 platform** 且没有 error/_note 才算「可信」（2026-10-25 口径）：
+      // 旧夹具 [{id:"p1", …}] 没有 platform，等于一条无法归属平台的记录，本来就不该进界面。
+      // 这条可信记录只贡献**账号级**指标（粉丝 100）；阅读/点赞/评论一律取回采口径。
+      syncCached: vi.fn().mockResolvedValue({ code: 0, data: [{ platform: "wechat_mp", articles: 10, views: 999, comments: 88, likes: 77, followers: 100 }] }),
+      // 作品互动回流总览（作品级指标的**唯一**来源）
+      performanceOverview: vi.fn().mockResolvedValue({
+        code: 0,
+        data: {
+          hasData: true,
+          windowDays: 30,
+          totals: { views: 500, likes: 20, comments: 10, favorites: 3, shares: 1, interactions: 34 },
+          trend: [],
+          byPlatform: [{ platform: "wechat_mp", contents: 2, views: 500, likes: 20, comments: 10, favorites: 3, shares: 1, interactions: 34 }],
+          health: {
+            trackedTotal: 2, covered: 2, coverage: 100,
+            byStatus: { pending: 0, ok: 2, failed: 0, unsupported: 0, untrackable: 0, manual: 0, other: 0 },
+            lastCapturedAt: "2026-10-20T09:00:00.000Z", neverRecrawled: false,
+          },
+          weekChange: null,
+          truncated: { tracked: false, snapshot: false },
+          limits: { tracked: 2000, snapshot: 20000 },
+          diagnostics: { orphanSnapshots: 0, orphanSnapshotsDb: 0, retreats: 0, invalidMetrics: 0, droppedUndated: 0, invalidTrackedRows: 0 },
+        },
+      }),
     };
   });
 
@@ -111,6 +134,64 @@ describe("DashboardView", () => {
     expect(text).toContain("500");
     expect(text).toContain("42");
     expect(text).toContain("90.5");
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // 数据真实性（2026-10-25）：本页曾把「恒 0 占位记录」当平台数据展示，
+  // 且「已发布内容」与「发布统计·累计发布」自相矛盾（0 vs 42）。
+  // 下面三条把新口径钉死：数字有出处、取不到显示「—」、遗留占位记录不得进界面。
+  // ────────────────────────────────────────────────────────────────────
+  it("KPI 行用真实来源：已发布内容 = 发布记录总数（不再与累计发布矛盾）", async () => {
+    const w = mount(DashboardView, { global: { plugins: [createPinia(), i18n] } });
+    await nextTick();
+    await new Promise(r => setTimeout(r, 10));
+    await nextTick();
+    expect(w.get('[data-testid="kpi-published"]').text()).toBe("42");
+    // 作品级指标取回采口径
+    expect(w.get('[data-testid="kpi-reads"]').text()).toBe("500");
+    expect(w.get('[data-testid="kpi-comments"]').text()).toBe("10");
+    // 账号级指标取可信同步记录
+    expect(w.get('[data-testid="kpi-fans"]').text()).toBe("100");
+  });
+
+  it("取不到真值的指标显示「—」而不是 0（zhihu 无回采也无账号级数据）", async () => {
+    const w = mount(DashboardView, { global: { plugins: [createPinia(), i18n] } });
+    await nextTick();
+    await new Promise(r => setTimeout(r, 10));
+    await nextTick();
+    expect(w.find('[data-testid="platform-card-zhihu"]').exists()).toBe(true);
+    expect(w.get('[data-testid="platform-zhihu-views"]').text()).toBe("—");
+    expect(w.get('[data-testid="platform-zhihu-fans"]').text()).toBe("—");
+    // 平台名与作品数仍要显示（发布记录口径是真实的）
+    expect(w.get('[data-testid="platform-zhihu-views"]').text()).not.toBe("0");
+  });
+
+  it("遗留占位记录（_note）不得进入界面数字（防假数据回潮）", async () => {
+    window.electronAPI.syncCached = vi.fn().mockResolvedValue({
+      code: 0,
+      data: [
+        { platform: "bilibili", articles: 0, views: 0, comments: 0, likes: 0, followers: 0, _note: "RPA 不可用" },
+        { platform: "douyin", error: "平台数据采集通道未接入", syncedAt: "2026-10-20T09:00:00.000Z" },
+      ],
+    });
+    const w = mount(DashboardView, { global: { plugins: [createPinia(), i18n] } });
+    await nextTick();
+    await new Promise(r => setTimeout(r, 10));
+    await nextTick();
+    expect(w.find('[data-testid="platform-card-bilibili"]').exists()).toBe(false);
+    expect(w.find('[data-testid="platform-card-douyin"]').exists()).toBe(false);
+    // 账号粉丝没有可信来源 ⇒ 「—」
+    expect(w.get('[data-testid="kpi-fans"]').text()).toBe("—");
+  });
+
+  it("源码层锁：不得再出现「用 ?? 兜底成 0/—」的假数据写法与硬编码品牌色", async () => {
+    const src = fs.readFileSync(path.resolve(__dirname, "Dashboard.vue"), "utf8");
+    // ① 旧的 `item.views ?? '-'` 写法：0 会原样通过 ?? ⇒ 假 0 仍然显示成数字
+    expect(src, "不得再用 ?? 把 0 当成「无数据」").not.toMatch(/\?\?\s*'-'/);
+    // ② 本页不得再写死第二套紫（单一真源 = 全局 token）
+    expect(src, "不得再写死 --lavender-* / --deep-purple 的字面量").not.toMatch(/--(lavender|deep-purple)[a-z-]*:\s*#/);
+    // ③ 底部必须给浮标留安全区（右下角「回到顶部」浮标）
+    expect(src, "缺少浮标安全区 --mp-float-safe-bottom").toContain("--mp-float-safe-bottom");
   });
 
   it("shows recent publishes", async () => {

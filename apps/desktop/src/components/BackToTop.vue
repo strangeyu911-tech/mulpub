@@ -165,15 +165,18 @@ onBeforeUnmount(() => {
 <style scoped>
 .back-to-top {
   position: fixed;
-  right: var(--spacing-6);
-  bottom: var(--spacing-6);
+  /* 几何一律取全局 token（--mp-float-zone-*）：浮标与页面内容的安全区、
+   * 浮标与浮标的叠放偏移都从同一处推导，避免各组件各写各的（2026-10-25）。
+   * ⚠️ 数值与改前逐字一致（right/bottom 24px、44×44）⇒ 零视觉回归。 */
+  right: var(--mp-float-zone-right);
+  bottom: var(--mp-float-zone-bottom);
   z-index: 1900; /* 低于 UiModal overlay / UpdateNotification(2000)，弹窗打开时被遮罩覆盖 */
 
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: var(--mp-float-zone-size);
+  height: var(--mp-float-zone-size);
   padding: 0;
   border: none;
   border-radius: var(--radius-lg);

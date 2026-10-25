@@ -13,10 +13,36 @@ export default {
     platformDistTitle: '平台分布',
     recentTitle: '最近发布',
     publishedContent: '已发布内容',
-    totalViews: '账号总阅读',
-    totalComments: '账号总评论',
-    totalFollowers: '账号总粉丝',
+    // ─── KPI 行（2026-10-25 数据真实性修复）─────────────────────────
+    // 口径写进标签：这三个数字不是同一套口径，不能都叫「账号总 X」。
+    //   · 作品阅读 / 作品评论 = 作品级（发布后自动回采的作品互动合计）
+    //   · 账号粉丝           = 账号级（平台粉丝数；当前版本未接入采集 ⇒ 显示「—」）
+    kpiReadLabel: '作品阅读',
+    kpiCommentLabel: '作品评论',
+    kpiFansLabel: '账号粉丝',
+    kpiNote: '作品阅读/评论为发布后回采口径（每篇取最近一次采集）；账号粉丝为平台账号级指标，当前版本未接入采集，故显示「—」而不是 0。',
+    // ─── 各平台数据（2026-10-25）───────────────────────────────────
+    platformsTitle: '各平台数据',
+    platformsSubtitle: '发布记录 + 作品回采',
+    platformsEmptyTitle: '还没有平台数据',
+    platformsEmptyDesc: '发布内容后，这里会按平台显示真实作品数与互动数据。',
+    platformsRefresh: '刷新数据',
+    platformMetricViews: '阅读',
+    platformMetricLikes: '点赞',
+    platformMetricComments: '评论',
+    platformMetricFans: '粉丝',
+    platformMetaArticles: (ctx) => '作品 ' + ctx.named('count'),
+    platformMetaContents: (ctx) => '已回采 ' + ctx.named('count') + ' 篇',
+    platformMetaLastCapture: (ctx) => '最近回采 ' + ctx.named('time'),
+    platformMetaNoCapture: '暂无回采数据',
+    platformMetaNone: '暂无数据',
     publishStatsTitle: '发布统计',
+    // 内容基准比较（2026-10-25）：原先是模板里的硬编码中文，未进 CJK 基线
+    // ⇒ 一旦本页被改动，check-locale-sync --cjk 就会把它判成「新增硬编码中文」而红。
+    // 顺带按仓库规则（用户可见文案必须走 locale）收口。
+    benchmarkTitle: '内容基准比较',
+    benchmarkPlaceholder: '输入文章标题进行基准比较...',
+    benchmarkAction: '分析',
     last14DaysHint: '最近 14 天',
     countUnit: (ctx) => ctx.named('count') + ' 篇',
     // ─── 套餐分级（dash-full-entitlement）─────────────────────────

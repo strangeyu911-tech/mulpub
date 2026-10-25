@@ -101,3 +101,55 @@ describe('数据同步 / 平台列表', () => {
     expect(platforms).toContain('wechat_mp')
   })
 })
+
+/**
+ * 假数据防线（2026-10-25，QM-5 回归保护）。
+ *
+ * 事故形态：`_rpaFetchStats()` 取不到真值时返回
+ * `{articles:0, views:0, comments:0, likes:0, followers:0, _note:'RPA 不可用'}`，
+ * 而它被 `_makeSyncResult()` 打上 `syncedAt: now` 写进缓存 ⇒
+ * 数据页显示成「0阅读 / 0评论 / 0点赞 / 0粉丝 · 更新于 10:51」——
+ * **看上去是刚采到的真数据，实际是常量 0**。
+ *
+ * 之所以必然发生：本服务跑在**主进程**（core/container.setup.js），
+ * 而两条取数通路用的 `window.electronAPI` / `ipcRenderer` **只存在于渲染进程**；
+ * 且 `rpa:fetchData` 这个 IPC 通道全仓没有任何 handler。
+ *
+ * ⇒ 判据：取不到真值时必须 **fail-loud**（抛错 → 转成带 error 的结果），
+ *   绝不能产出一个「看起来像真数据」的 0 值记录。
+ */
+describe('数据同步 / 假数据防线（2026-10-25）', () => {
+  test('取不到真值时抛错，不得返回一组 0', async () => {
+    const service = new DataSyncService(new MockStore())
+    // 主进程环境：window 不存在、ipcRenderer 不可用 ⇒ 必然落到兜底分支
+    await expect(
+      service._rpaFetchStats('douyin', 'https://creator.douyin.com/', '() => 1')
+    ).rejects.toThrow(/采集通道未接入/)
+  })
+
+  test('syncAll 的失败结果带 error，且不含任何 0 值指标', async () => {
+    const service = new DataSyncService(new MockStore())
+    const results = await service.syncAll()
+    expect(results.length).toBe(5)
+    for (const r of results) {
+      expect(r.error, `${r.platform} 应带 error`).toBeTruthy()
+      // 关键：不能出现「看起来是真数据」的 0
+      expect(r.views, `${r.platform} 不应带 views=0`).toBeUndefined()
+      expect(r.comments, `${r.platform} 不应带 comments=0`).toBeUndefined()
+      expect(r.likes, `${r.platform} 不应带 likes=0`).toBeUndefined()
+      expect(r.followers, `${r.platform} 不应带 followers=0`).toBeUndefined()
+      expect(r.articles, `${r.platform} 不应带 articles=0`).toBeUndefined()
+    }
+  })
+
+  test('失败结果不会被当成可信数据写进缓存（渲染端据此不显示数字）', async () => {
+    const store = new MockStore()
+    const service = new DataSyncService(store)
+    await service.syncAll()
+    const cached = service.getAllCachedData()
+    // 失败结果带 error ⇒ 渲染端的可信判据（无 error 且无遗留 _note 标记）会拒绝它
+    for (const row of cached) {
+      expect(row.error).toBeTruthy()
+    }
+  })
+})

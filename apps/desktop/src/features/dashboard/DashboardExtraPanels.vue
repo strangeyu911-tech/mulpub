@@ -1,7 +1,7 @@
 <template>
   <!-- 账号健康度（free 可见）：运营必需信息，不给足会让用户无法判断基本可用与否 -->
   <div class="cohere-card dash-extra-panel" data-testid="dashboard-account-health">
-    <div class="dash-extra-title">
+    <div class="dash-panel-title">
       <el-icon><UserFilled /></el-icon> {{ t('dashboard.accountHealthTitle') }}
     </div>
     <p v-if="accountHealth.state === 'auth'" class="dash-extra-note" data-testid="account-health-auth">
@@ -30,7 +30,7 @@
 
   <!-- 发布队列状态（free 可见） -->
   <div class="cohere-card dash-extra-panel" data-testid="dashboard-queue-status">
-    <div class="dash-extra-title">
+    <div class="dash-panel-title">
       <el-icon><Timer /></el-icon> {{ t('dashboard.queueTitle') }}
     </div>
     <p v-if="queue.state === 'auth'" class="dash-extra-note" data-testid="queue-auth">
@@ -57,7 +57,7 @@
   <!-- 题材表现榜（full 专属）：未解锁渲染锁区块占位，不发请求、不显示假数据 -->
   <DashboardLockedPanel v-if="!hasFull" name="pattern" :title="t('dashboard.patternTitle')" @upgrade="$emit('upgrade')" />
   <div v-else class="cohere-card dash-extra-panel" data-testid="dashboard-pattern-board">
-    <div class="dash-extra-title">
+    <div class="dash-panel-title">
       <el-icon><TrendCharts /></el-icon> {{ t('dashboard.patternTitle') }}
     </div>
     <p v-if="patternBoard.state === 'auth'" class="dash-extra-note" data-testid="pattern-auth">
@@ -125,15 +125,9 @@ const { t } = useI18n()
   margin-bottom: var(--space-md);
   padding: 16px;
 }
-/* 等价于 .dash-panel-title */
-.dash-extra-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs, 6px);
-  font-weight: 600;
-  font-size: var(--font-size-base);
-  margin-bottom: var(--space-md);
-}
+/* 面板标题不再自带一份副本：改用全局 .dash-panel-title（premium-design-system.css）。
+ * 此前本页是 .dash-extra-title（图标没有底座、字号/间距与父页面板不同），
+ * 与同一页的 .dash-panel-title 并排出现 ⇒ 「元素样式不统一」的一处来源。 */
 /* 等价于 .dash-panel-note */
 .dash-extra-note {
   font-size: var(--font-size-sm);
@@ -160,14 +154,17 @@ const { t } = useI18n()
   font-size: var(--font-size-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  background: rgba(124, 92, 191, .12);
+  /* 底色用「主色叠色」而不是写死的 rgba(124,92,191,.12)：
+   * 后者是**另一条紫**（与全局 --primary 不同源）且不随主题切换。
+   * color-mix 在亮/暗底上都自然过渡（与同文件既有约定一致）。 */
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
   color: var(--color-text-primary);
 }
-.dash-health-chip.ok { background: rgba(16, 185, 129, .12); color: var(--color-success); }
-.dash-health-chip.bad { background: rgba(239, 68, 68, .12); color: var(--color-danger); }
+.dash-health-chip.ok { background: color-mix(in srgb, var(--color-success) 12%, transparent); color: var(--color-success); }
+.dash-health-chip.bad { background: color-mix(in srgb, var(--color-danger) 12%, transparent); color: var(--color-danger); }
 .dash-health-chip.unknown { background: var(--color-border); color: var(--color-text-secondary); }
-.dash-health-chip.run { background: rgba(124, 92, 191, .12); color: var(--color-text-primary); }
-.dash-health-chip.pending { background: rgba(124, 92, 191, .12); color: var(--color-text-primary); }
+.dash-health-chip.run { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--color-text-primary); }
+.dash-health-chip.pending { background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--color-text-primary); }
 .dash-health-list {
   margin: 0;
   padding-left: 18px;

@@ -401,9 +401,9 @@ const workflowTests = [
   {
     name: 'dashboard-benchmark-title-reset', route: '/dashboard', baseline: 'dashboard',
     steps: [
-      { action: 'waitFor', selector: 'input[placeholder="输入文章标题进行基准比较..."]' },
-      { action: 'fill', selector: 'input[placeholder="输入文章标题进行基准比较..."]', value: '短视频增长方法' },
-      { action: 'fill', selector: 'input[placeholder="输入文章标题进行基准比较..."]', value: '' },
+      { action: 'waitFor', selector: '[data-testid="benchmark-input"]' },
+      { action: 'fill', selector: '[data-testid="benchmark-input"]', value: '短视频增长方法' },
+      { action: 'fill', selector: '[data-testid="benchmark-input"]', value: '' },
       { action: 'click', selector: '.page-title' },
       { action: 'screenshot', name: '清空基准标题后的数据看板' },
     ],

@@ -290,6 +290,18 @@ body {
   font-family: var(--font-family-ui-display);
   font-weight: 600;
   letter-spacing: -0.2px;
+  /* 面板标题的字号与下间距统一到**全局**（2026-10-25 数据页视觉统一）：
+   * 此前 Dashboard.vue 的 scoped 规则给本页面板定了 15px + 16px 下间距，
+   * 而子组件（PerformanceFlowPanel / DashboardExtraPanels）拿不到 scoped 规则
+   * ⇒ 同一页三种面板标题的行距/字号各不相同，且子组件标题紧贴内容。
+   * 提升到全局后，所有 .dash-panel-title（含子组件）共用同一套排版。 */
+  font-size: var(--font-size-base);
+  margin-bottom: var(--space-md);
+  /* 排版方式也统一：图标底座（26px 方片）+ 文字的间距由这里定，
+   * 各面板不再各自写 flex/gap（此前本页并存 inline 与 flex 两种排法）。 */
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
 }
 
 /* ---------------------------------------------------------------------------

@@ -206,8 +206,11 @@ const { cancelAutoCollapse } = usePublishProgressAutoCollapse({
    bottom 抬高避让 BackToTop 44px 按钮（PRD-PUBLISH-PROGRESS-UX §5.3） */
 .publish-progress-panel {
   position: fixed;
-  right: var(--spacing-6);
-  bottom: calc(var(--spacing-6) + 52px);
+  /* 浮标区几何取全局 token（--mp-float-zone-*）：与 BackToTop 同源，
+   * 「浮标叠放不重叠」成为可核对的契约而不是巧合。
+   * ⚠️ 数值与改前逐字一致（right 24px / bottom 24+52px）⇒ 零视觉回归。 */
+  right: var(--mp-float-zone-right);
+  bottom: calc(var(--mp-float-zone-bottom) + var(--mp-float-zone-stack-offset));
   z-index: 1950;
 
   display: flex;
@@ -335,8 +338,11 @@ const { cancelAutoCollapse } = usePublishProgressAutoCollapse({
 /* 最小化胶囊 */
 .publish-progress-pill {
   position: fixed;
-  right: var(--spacing-6);
-  bottom: calc(var(--spacing-6) + 52px);
+  /* 浮标区几何取全局 token（--mp-float-zone-*）：与 BackToTop 同源，
+   * 「浮标叠放不重叠」成为可核对的契约而不是巧合。
+   * ⚠️ 数值与改前逐字一致（right 24px / bottom 24+52px）⇒ 零视觉回归。 */
+  right: var(--mp-float-zone-right);
+  bottom: calc(var(--mp-float-zone-bottom) + var(--mp-float-zone-stack-offset));
   z-index: 1950;
 
   display: inline-flex;

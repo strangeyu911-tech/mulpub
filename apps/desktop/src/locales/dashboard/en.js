@@ -13,10 +13,38 @@ export default {
     platformDistTitle: 'Platform distribution',
     recentTitle: 'Recent publishes',
     publishedContent: 'Published content',
-    totalViews: 'Account views',
-    totalComments: 'Account comments',
-    totalFollowers: 'Account followers',
+    // ─── KPI row (2026-10-25 data-truthfulness fix) ──────────────────
+    // The label carries the metric scope: these three numbers are NOT the
+    // same scope, so they must not all be called "account X".
+    //   · Work views / Work comments = per-work (post-publish auto-recapture)
+    //   · Account followers         = account-level (not collected yet ⇒ "—")
+    kpiReadLabel: 'Work views',
+    kpiCommentLabel: 'Work comments',
+    kpiFansLabel: 'Account followers',
+    kpiNote: 'Work views/comments come from post-publish recapture (latest snapshot per post); account followers are account-level platform metrics that this version does not collect yet, so it shows "—" instead of 0.',
+    // ─── Platform data (2026-10-25) ────────────────────────────────
+    platformsTitle: 'Platform data',
+    platformsSubtitle: 'Publish records + work recapture',
+    platformsEmptyTitle: 'No platform data yet',
+    platformsEmptyDesc: 'After you publish, real per-platform post counts and engagement data will show up here.',
+    platformsRefresh: 'Refresh data',
+    platformMetricViews: 'Views',
+    platformMetricLikes: 'Likes',
+    platformMetricComments: 'Comments',
+    platformMetricFans: 'Followers',
+    platformMetaArticles: (ctx) => ctx.named('count') + ' posts',
+    platformMetaContents: (ctx) => ctx.named('count') + ' posts captured',
+    platformMetaLastCapture: (ctx) => 'last capture ' + ctx.named('time'),
+    platformMetaNoCapture: 'No recapture data yet',
+    platformMetaNone: 'No data',
     publishStatsTitle: 'Publishing stats',
+    // Content benchmark (2026-10-25): was hardcoded Chinese in the template and
+    // never entered the CJK baseline ⇒ touching this view made
+    // check-locale-sync --cjk flag it as newly hardcoded copy. Routed through
+    // the locale per the repo rule (user-facing copy must be localized).
+    benchmarkTitle: 'Content benchmark',
+    benchmarkPlaceholder: 'Enter an article title to benchmark...',
+    benchmarkAction: 'Analyze',
     last14DaysHint: 'Last 14 days',
     countUnit: (ctx) => ctx.named('count') + ' posts',
     // ─── Plan gating (dash-full-entitlement) ──────────────────────

@@ -218,8 +218,24 @@ class DataSyncService {
     } catch (err) {
       console.warn(`[DataSync] RPA fetch failed for ${platform}:`, errorMessage(err))
     }
-    // 兜底：返回缓存或空数据
-    return { articles: 0, views: 0, comments: 0, likes: 0, followers: 0, _note: 'RPA 不可用' }
+    // ⛔ 取不到真值 ⇒ **抛错**，绝不返回一组 0。
+    //
+    // 旧实现在这里返回 `{articles:0, views:0, comments:0, likes:0, followers:0, _note:'RPA 不可用'}`，
+    // 而它被 _makeSyncResult() 打上 `syncedAt: now` 写进缓存 ⇒
+    // 看板显示成「0阅读 / 0评论 / 0点赞 / 0粉丝 · 更新于 10:51」——
+    // **看上去是刚采到的真数据，实际是常量 0**（数据页 5 张平台卡全是这种假数据）。
+    //
+    // 更硬的事实：本服务跑在**主进程**（core/container.setup.js: new DataSyncService(store)），
+    // 而上面两条通路用的 window.electronAPI / ipcRenderer **只存在于渲染进程**
+    // ⇒ 在主进程里必然全部落空 ⇒ 必然走这个兜底 ⇒ 必然是 0。
+    // 且 `rpa:fetchData` 这个 IPC 通道**全仓没有任何 handler**（已 grep 确认）。
+    //
+    // 所以这里必须 fail-loud：抛出的错误会被 _syncOne 捕获并转成
+    // `{ platform, syncedAt, error }` —— 带 error 的记录**不可信**，
+    // 渲染端据此不显示任何数字（显示「—」并说明原因），而不是显示 0。
+    throw new Error(
+      `平台数据采集通道未接入（${platform}）：本版本未实现创作者后台数据采集，取不到真值`
+    )
   }
 
   async _sync_douyin () {

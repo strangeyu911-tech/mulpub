@@ -572,6 +572,10 @@ mainWindow.on('resize', () => {
 | 下偏移 | `var(--spacing-6)` = 24px | — |
 | 尺寸 | 44 × 44 px | — |
 
+> ⚠️ 2026-10-25 起，上面两个偏移与尺寸改由 **`--mp-float-zone-*` 系列 token** 承载（数值逐字不变，零视觉回归）。
+> 原因：本章原先只协调「浮标 vs 浮标」，**没有**协调「浮标 vs 页面内容」⇒ 数据页滚到底时
+> 右下角的「分析」按钮被浮标压住（点不到）。**内容侧的对齐要求见 §16 浮标安全区。**
+
 ### 14.3 显隐规则与滚动容器
 
 **显隐条件**（唯一条件，无页面白名单）：
@@ -716,6 +720,8 @@ mainWindow.on('resize', () => {
 | `apps/desktop/src/locales/zh.js` / `en.js` | `common.backToTop` 文案（成对） |
 | `apps/desktop/src/components/UpdateNotification.vue` | 右下角 toast 右偏移 16px → 88px（避让浮标） |
 | `01-docs/PRD-BACK-TO-TOP-BUTTON-2026-09-14.md` | 功能 PRD |
+| `docs/desktop-ui-layout-spec.md` §16 | 浮标安全区（内容侧对齐要求，2026-10-25 新增） |
+| `01-docs/PRD-DASHBOARD-TRUTHFUL-UI-2026-10-25.md` | 数据页浮标安全区 + 数据真实性 + 视觉统一的 PRD |
 
 ### 14.11 测试覆盖
 
@@ -762,3 +768,77 @@ mainWindow.on('resize', () => {
 ### 15.6 窄屏
 
 `@media (max-width: 720px)`：`.action-bar > div` 与 `.action-bar .btn-start` 整行宽；`.view-tab { flex: 1 0 auto }`（横向滚动优先于等分压缩，避免文案被挤截）。选择器必须带 `.action-bar` 限定抬到 (0,2,0)，不因样式表引入顺序而飘移。
+
+---
+
+## 16. 浮标安全区（2026-10-25 新增，PRD-DASHBOARD-TRUTHFUL-UI-2026-10-25）
+
+### 16.1 概述
+
+§14 定义了「回到顶部」浮标本身，但**只协调了「浮标 vs 浮标」**（§14.8：`UpdateNotification` 右移 88px 避让 `BackToTop`），**从未协调「浮标 vs 页面内容」**。
+
+事故现场（2026-10-25，数据页）：页面滚到底时，右下角的「分析」按钮被 `BackToTop` 浮标压住 —— 按钮只露出一个角，看得见、点不到。
+根因是几何上的：浮标是 `position: fixed`（right/bottom 24px、44×44），而文档流里落在视口右下角的内容**必然**在它下面。
+
+本章定义「浮标安全区」：**视口右下角被固定浮标占用的矩形**，以及两条纪律。
+
+### 16.2 几何 token（单一真源）
+
+定义于 `apps/desktop/src/styles/float-zone.css`（**单独成文件**，不并入 tokens.css ——
+后者已 498 行，离「行数债务熔断」的 500 行硬上限只差 2 行；浮标几何属交互几何、不是配色 token）。
+（亮暗同值 —— 它是几何，不是颜色。）
+
+| Token | 值 | 含义 |
+|-------|----|------|
+| `--mp-float-zone-right` | `24px` | 浮标区距视口右边 |
+| `--mp-float-zone-bottom` | `24px` | 浮标区距视口下边 |
+| `--mp-float-zone-size` | `44px` | 浮标本体尺寸 |
+| `--mp-float-zone-gap` | `8px` | 两枚浮标之间的净间隙 |
+| `--mp-float-zone-stack-offset` | `calc(size + gap)` = `52px` | 叠放浮标的偏移量 |
+| `--mp-float-safe-bottom` | `calc(bottom + size + 16px)` = `84px` | **内容安全区**：页面底部必须留出的净空 |
+
+⚠️ 数值与 2026-10-25 之前的历史几何**逐字一致**（`BackToTop` 原为 `right/bottom: var(--spacing-6)` + `44×44`；`PublishProgressPanel` 原为 `bottom: calc(var(--spacing-6) + 52px)`）⇒ 换 token 的目的是把几何变成**可核对的契约**，不是改版面（零视觉回归）。
+
+### 16.3 两条纪律
+
+| # | 纪律 | 违反后果 |
+|---|------|---------|
+| D1 | **浮标几何只在一处定义**：各浮标组件引用 `--mp-float-zone-*`，不得各写各的数值 | 各组件各写各的 ⇒ 「浮标之间不重叠」退化成巧合，改一个就会撞上另一个 |
+| D2 | **页面内容必须能滚出浮标区**：右下角有交互控件的页面，根节点（或滚动容器）必须留出 `padding-bottom: var(--mp-float-safe-bottom)` | 滚到底时最后一行被压住 ⇒ 控件点不到（D2 违反＝本次事故） |
+
+### 16.4 适用范围
+
+- **必须预留**：页面**最后一行**在右下角有可点元素（按钮/输入框/链接）的页面。
+- **不必预留**：页面末尾是纯文本/列表，或页面有独立的底部固定操作条（自带净空，如 `ResultView` 的 `.result-action-bar`）。
+- **推广节奏**：2026-10-25 先在数据页落地；全站推广见 PRD §9 P3-1。**推广时必须同步刷新受影响页面的像素基线**（§16.6）。
+
+### 16.5 浮标之间（补充 §14.8）
+
+| 浮层 | 位置 | z-index |
+|------|------|---------|
+| `PublishProgressPanel`（展开态 / 最小化胶囊） | `right: --mp-float-zone-right`；`bottom: calc(--mp-float-zone-bottom + --mp-float-zone-stack-offset)` | 1950 |
+| `BackToTop` | `right/bottom: --mp-float-zone-*` | 1900 |
+| `UpdateNotification` | `bottom: 16px; right: 88px`（历史值，贴底避让浮标） | 2000 |
+
+`BackToTop`（44px）与 `PublishProgressPanel`（偏移 52px）之间净空 8px ⇒ 不重叠；`UpdateNotification` 右移 88px ⇒ 与浮标横向不交叠。
+
+### 16.6 数据校验 / 回归锁
+
+| # | 判据 | 位置 |
+|---|------|------|
+| L1 | 数据页根节点引用 `--mp-float-safe-bottom` | `apps/desktop/src/views/Dashboard.test.js`（源码锁） |
+| L2 | `BackToTop` / `PublishProgressPanel` 的几何引用 `--mp-float-zone-*`（不得回退成字面量） | 源码锁（`BackToTop.test.js` + `Dashboard.test.js`） |
+| L3 | 改动页面外观后，像素基线必须与 **CI 同一次渲染**逐像素相等（0px 判据） | `scripts/check-baseline-freshness.js`（Gate 7b） |
+
+⚠️ L3 的实践含义：**本机截图不得入库**。数据页 2026-10-25 的外观变更，其基线必须取自 CI 的 `apps/desktop/tests/visual-testing/screenshots/` 产物。
+
+### 16.7 相关文件
+
+| 文件 | 职责 |
+|------|------|
+| `apps/desktop/src/styles/float-zone.css` | 浮标区几何 token（`--mp-float-zone-*` / `--mp-float-safe-bottom`） |
+| `apps/desktop/src/main.js` | 引入 `float-zone.css`（紧随 `tokens.css`） |
+| `apps/desktop/src/components/BackToTop.vue` | 引用浮标区 token |
+| `apps/desktop/src/components/PublishProgressPanel.vue` | 引用浮标区 token |
+| `apps/desktop/src/views/Dashboard.vue` | 数据页内容安全区（`.dash-page`） |
+| `01-docs/PRD-DASHBOARD-TRUTHFUL-UI-2026-10-25.md` | 功能 PRD（T1 章节） |

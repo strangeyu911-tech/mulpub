@@ -113,6 +113,83 @@ describe("Dashboard 样式源码守卫（PR #2075/#2114 事故回归保护）", 
     }
   });
 
+  // ────────────────────────────────────────────────────────────────────
+  // 2026-10-25：内容基准比较区块的**位置锁**（与 TrialBanner / DashboardExtraPanels 同款失效模式）
+  //
+  // 事故形态：内容基准比较区块原挂在 `.cohere-content` **外面**，于是它成为全页
+  // 唯一没有水平 padding（--space-xxl）的区块 ⇒ 标题、输入框、「分析」按钮
+  // 与上方卡片左右不对齐（同款失效模式在 TrialBanner 上真实发生过，见上文第 1 版注释）。
+  // 本次把它移进 `.cohere-content`，并加锁防回潮。
+  //
+  // 为什么单列一条：上一次只给 DashboardExtraPanels 上了锁，「守门面」漏了
+  // 同样挂在 content 外的其它区块 —— 锁的对象是**位置关系**，不是某个组件。
+  it("内容基准比较区块必须位于 .cohere-content 内部（丢水平 padding 回归保护）", () => {
+    const tpl = descriptor.template.content;
+    const contentIdx = tpl.indexOf('class="cohere-content"');
+    expect(contentIdx, "模板缺少 .cohere-content 容器").toBeGreaterThan(-1);
+    const benchIdx = tpl.indexOf("dash-bench-row");
+    expect(benchIdx, "模板缺少 .dash-bench-row（内容基准比较区块）").toBeGreaterThan(-1);
+    expect(
+      benchIdx,
+      "内容基准比较区块必须放在 .cohere-content 内部：放在外侧它会成为全页唯一没有水平" +
+        " padding（--space-xxl）的元素，标题/输入框/按钮与上方卡片左右不对齐" +
+        "（该失效模式在 TrialBanner 与 DashboardExtraPanels 上都真实发生过）"
+    ).toBeGreaterThan(contentIdx);
+
+    // 且必须在 .cohere-content 的**闭合**之前（嵌套而非同层后置）
+    const tags = [];
+    for (const m of tpl.matchAll(/<div\b/g)) tags.push({ i: m.index, t: "o" });
+    for (const m of tpl.matchAll(/<\/div>/g)) tags.push({ i: m.index, t: "c" });
+    tags.sort((a, b) => a.i - b.i || (a.t === "o" ? -1 : 1));
+    let depth = 0;
+    let closeIdx = -1;
+    for (const tag of tags) {
+      if (tag.t === "o") depth += 1;
+      else {
+        depth -= 1;
+        if (depth === 0 && tag.i > contentIdx) { closeIdx = tag.i; break; }
+      }
+    }
+    expect(closeIdx, "未找到 .cohere-content 的闭合标签").toBeGreaterThan(-1);
+    expect(
+      benchIdx,
+      "内容基准比较区块越过了 .cohere-content 的闭合标签（同层而非嵌套 → padding 不生效）"
+    ).toBeLessThan(closeIdx);
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // 2026-10-25：数据页的**浮标安全区**与**品牌色单一真源**回归锁
+  //
+  // ① 浮标安全区：右下角有 fixed 浮标（回到顶部），页面底部必须留出净空，
+  //    否则滚到底时最后一行内容被压住（2026-10-25 现场：分析按钮点不到）。
+  // ② 品牌色单一真源：本页曾写死第二套紫（--lavender-* / --deep-purple 的字面量），
+  //    与全局 --primary 并存且不随主题切换 ⇒ 同屏两种紫。
+  it("页面底部必须预留浮标安全区 --mp-float-safe-bottom", () => {
+    const tpl = descriptor.template.content;
+    const scopedCssAll = (descriptor.styles || [])
+      .filter((block) => block.scoped)
+      .map((block) => block.content)
+      .join("\n");
+    expect(
+      scopedCssAll,
+      "Dashboard.vue 的 scoped 样式必须引用 --mp-float-safe-bottom（浮标安全区）"
+    ).toContain("--mp-float-safe-bottom");
+    // 且必须真的作用在页面根节点上（不是只定义不用）
+    expect(tpl, "页面根节点缺少 .dash-page（安全区的落点）").toContain("dash-page");
+  });
+
+  it("本页不得写死第二套品牌色（单一真源 = 全局 token）", () => {
+    const scopedCssAll = (descriptor.styles || [])
+      .filter((block) => block.scoped)
+      .map((block) => block.content)
+      .join("\n");
+    const literals = scopedCssAll.match(/--(lavender|deep-purple)[a-z-]*:\s*#[0-9a-f]{3,8}/gi) || [];
+    expect(
+      literals,
+      `本页又写死了品牌色字面量（应为指向全局 token 的别名）：${literals.join(" | ")}`
+    ).toEqual([]);
+  });
+
   // CCG 评审 i4：hero 卡现在引用 --brand-gradient（暗色主题也必须有定义）。
   // 旧断言只查了「tokens.css 里有这个 token」，但**没查暗色块里有没有**——
   // 暗色下若缺定义，hero 卡会回退到无背景（白字压暗底 → 不可读）。
@@ -186,9 +263,12 @@ describe("Dashboard 样式源码守卫（PR #2075/#2114 事故回归保护）", 
   });
 
   it("阴影/表面 token 必须有全局定义（未定义 var → 声明失效卡隐形）", () => {
-    // 设计 token 合法定义源：tokens.css（唯一来源）+ cohere 全局文件（批次 6 起别名层已删除）
+    // 设计 token 合法定义源：tokens.css（配色/排版主源）+ cohere 全局文件
+    // + float-zone.css（2026-10-25 新增：浮标**几何** token 单独成文件，
+    //   因为 tokens.css 已 498 行、离「行数债务熔断」的 500 行硬上限只差 2 行，
+    //   而浮标几何是交互几何不是配色 token，塞进去会直接把该文件顶过上限）。
     const stylesDir = path.join(__dirname, "..", "styles");
-    const globalCss = ["tokens.css", "cohere-design-system.css"]
+    const globalCss = ["tokens.css", "cohere-design-system.css", "float-zone.css"]
       .map((f) => readFileSync(path.join(stylesDir, f), "utf8"))
       .join("\n");
     // 收集 scoped 块中引用的全部 var(--x)（排除带 fallback 的 var(--x, …) 可一并检查，从严：全部要求定义）

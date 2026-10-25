@@ -21,7 +21,7 @@ export default {
     kpiReadLabel: 'Work views',
     kpiCommentLabel: 'Work comments',
     kpiFansLabel: 'Account followers',
-    kpiNote: 'Work views/comments come from post-publish recapture (latest snapshot per post); account followers are account-level platform metrics that this version does not collect yet, so it shows "—" instead of 0.',
+    kpiNote: 'Work views/comments come from post-publish recapture (latest snapshot per post); account followers are account-level platform metrics (collected from the creator console) and show "—" instead of 0 when no real value is available.',
     // ─── Platform data (2026-10-25) ────────────────────────────────
     platformsTitle: 'Platform data',
     platformsSubtitle: 'Publish records + work recapture',
@@ -37,6 +37,20 @@ export default {
     platformMetaLastCapture: (ctx) => 'last capture ' + ctx.named('time'),
     platformMetaNoCapture: 'No recapture data yet',
     platformMetaNone: 'No data',
+    // ─── Account-level follower slot (2026-10-25, after the collection channel landed) ──
+    // Three-state discipline: a real value → the number; never collected → "—" + "not collected yet";
+    // collection failed → "—" + "unavailable (reason)" — **no state ever shows 0**.
+    // ⚠️ All three states carry the scope: followers are account-level while the other
+    //   three slots are per-work ⇒ the scope must stay visible in every state.
+    followersScope: 'Account-level',
+    followersAsOf: (ctx) => ctx.named('scope') + ' · as of ' + ctx.named('time'),
+    followersPending: (ctx) => ctx.named('scope') + ' · follower data not collected yet',
+    followersUnavailable: (ctx) => ctx.named('scope') + ' · follower data unavailable',
+    followersUnavailableReason: (ctx) => ctx.named('scope') + ' · follower data unavailable (' + ctx.named('reason') + ')',
+    // Failure reasons (readable wording for the main-process contract error codes)
+    followersReasonSelector: 'The platform page layout changed',
+    followersReasonNotReady: 'The platform page did not load in time',
+    followersReasonUnknown: 'The platform returned an unexpected result',
     publishStatsTitle: 'Publishing stats',
     // Content benchmark (2026-10-25): was hardcoded Chinese in the template and
     // never entered the CJK baseline ⇒ touching this view made

@@ -136,6 +136,64 @@ export function toPatternBoardModel(res, limit = 5) {
   return { state: READY, rows }
 }
 
+// ─── 账号级粉丝槽位（2026-10-25，PR #4455 采集通道接通后的上屏）──────
+/**
+ * 粉丝槽位的三态（**不新造第四态**，沿用本文件既有的三态纪律）：
+ *   ready   —— 拿到了账号级粉丝数（**可能是真实的 0**）
+ *   pending —— 这个平台**还没有**粉丝记录（还没采过 / 采到过但没这字段）
+ *   error   —— 采了但**失败**（选择器过期、页面没就绪、值不可解析…）
+ *
+ * 为什么必须把 pending 与 error 分开：两者界面上都是「—」，但含义相反 ——
+ * 「没采过」是正常状态，「采失败」需要用户（和开发）知道原因。
+ * 混同 ⇒ 用户以为功能坏了（与本文件顶部「把查询失败渲染成从未发布」同型）。
+ */
+export const FANS_READY = 'ready'
+export const FANS_PENDING = 'pending'
+export const FANS_ERROR = 'error'
+
+/**
+ * 失败原因 token（**每个 token 都必须在 locale 里有对应条目**）。
+ *
+ * ⚠️ 这份 token 清单与 locale 是一对「手工同步的清单」⇒ 必须有机械锁：
+ *   `PlatformDataGrid.test.js` 的「token ⇄ 文案」用例锁住（漏一条当场红）。
+ */
+export const FANS_REASON_SELECTOR = 'selector' // COLLECT_FIELD_MISSING：选择器没命中（平台改版）
+export const FANS_REASON_NOT_READY = 'not-ready' // COLLECT_NOT_READY：页面没在超时内就绪
+export const FANS_REASON_UNKNOWN = 'unknown' // 其它（含值不可解析、平台归属不符）
+
+/**
+ * 失败原因 token → locale 键。
+ *
+ * ⚠️ 这份映射与 locale 是一对「**手工同步的清单**」⇒ 必须有机械锁：
+ *   组件侧的单测里有一条双向用例（每个 token 都有文案、每条文案都被用到），
+ *   漏加一条当场红 —— 否则界面上会出现裸 token（如 `selector`）。
+ *
+ * ⇒ 放在本模块（而不是组件里）是为了让单测能直接 import 它：
+ *   组件里定义的常量，测试只能靠读源码正则去捞（脆）。
+ */
+export const FANS_REASON_LOCALE_KEYS = {
+  [FANS_REASON_SELECTOR]: 'dashboard.followersReasonSelector',
+  [FANS_REASON_NOT_READY]: 'dashboard.followersReasonNotReady',
+  [FANS_REASON_UNKNOWN]: 'dashboard.followersReasonUnknown',
+}
+
+/**
+ * 从失败消息里抽出原因 token。
+ *
+ * ⚠️ 主进程侧的失败消息形如「平台数据采集失败（douyin）：COLLECT_FIELD_MISSING / followers」
+ *   ⇒ 界面不能直接把这句话甩给用户（内部代号泄漏），也不能只说「失败」，
+ *   ⇒ 这里按**已知的契约错误码**归类，界面再按 token 选文案。
+ *
+ * @param {unknown} errorText
+ * @returns {string} FANS_REASON_* 之一
+ */
+export function fansReasonOf (errorText) {
+  const text = String((errorText && errorText.message) || errorText || '')
+  if (text.indexOf('COLLECT_FIELD_MISSING') >= 0) return FANS_REASON_SELECTOR
+  if (text.indexOf('COLLECT_NOT_READY') >= 0) return FANS_REASON_NOT_READY
+  return FANS_REASON_UNKNOWN
+}
+
 // ─── 各平台数据（2026-10-25 数据真实性修复）────────────────────────
 /**
  * 唯一真源：发布记录（`dashboard:stats`）+ 作品回采（`performance:overview`）。
@@ -206,8 +264,9 @@ export function toPlatformDataModel (input) {
     }
   }
 
-  // 可信 sync 记录：既没有 error，也没有遗留占位标记（判据见 trustedSyncRows）
-  const trustedSync = trustedSyncRows(syncRows)
+  // 可信 sync 记录：既没有 error，也没有遗留占位标记（判据见 partitionSyncRows）
+  // ⚠️ 失败记录**单独**取出来：它决定粉丝槽位是「失败」还是「没采过」。
+  const { trusted: trustedSync, failed: failedSync } = partitionSyncRows(syncRows)
   const syncFailed = syncRows.length - trustedSync.size
 
   // 平台全集 = 发布记录出现过的 ∪ 回采有数据的 ∪ sync 记录过的
@@ -225,6 +284,12 @@ export function toPlatformDataModel (input) {
     const statRow = perPlatformStats[platform]
     const perfRow = perfByPlatform.get(platform)
     const syncRow = trustedSync.get(platform)
+    const failedRow = failedSync.get(platform)
+    // 粉丝槽位的三态：拿到真值 → ready；采失败 → error；其余（没采过）→ pending。
+    const fansValue = metricOf(syncRow, 'followers')
+    const fansState = fansValue !== null
+      ? FANS_READY
+      : (failedRow ? FANS_ERROR : FANS_PENDING)
     return {
       platform,
       // 作品数：发布记录口径（累计发布）
@@ -237,7 +302,14 @@ export function toPlatformDataModel (input) {
       shares: metricOf(perfRow, 'shares'),
       interactions: metricOf(perfRow, 'interactions'),
       // 粉丝：账号级口径，只可能来自可信的 sync 记录
-      fans: metricOf(syncRow, 'followers'),
+      fans: fansValue,
+      // 粉丝槽位的三态与原因（界面据此区分「没采过」与「采失败」）
+      fansState,
+      fansReason: fansState === FANS_ERROR ? fansReasonOf(failedRow && failedRow.error) : null,
+      // 采集完成时刻（不是请求发起时刻）——界面显示「数据截至 {time}」
+      fansAsOf: syncRow && typeof syncRow.syncedAt === 'string' ? syncRow.syncedAt : null,
+      // 采集时绑定的账号（登录态是账号级的 ⇒ 知道是哪个账号采的）
+      fansAccountId: syncRow && typeof syncRow.accountId === 'string' ? syncRow.accountId : null,
       // 已回采作品数：说明「这个平台的数字覆盖了几篇」
       contents: perfRow ? numOrNull(perfRow.contents) : null,
       // 该平台是否拿到过账号级指标
@@ -312,14 +384,34 @@ export function toKpiModel (input) {
  *
  * 为什么单列一个函数：KPI 行与平台卡片都要用这条判据，
  * 两处各写一遍就会口径分裂（历史上「看板是另一条紫路径」就是这么来的）。
+ *
+ * ⚠️ 2026-10-25（PR #4455 上屏）：失败记录现在**也落缓存**了（主进程侧改的），
+ *   而失败记录**必须**与「没采过」区分开 ⇒ 判据从「一个出口」改成
+ *   `partitionSyncRows()` 的**两个出口**（trusted / failed），
+ *   判据本身**只有一份**（仍是同一条循环）⇒ 不会口径分裂。
  */
 function trustedSyncRows (syncRows) {
+  return partitionSyncRows(syncRows).trusted
+}
+
+/**
+ * 把 sync 记录分成「可信」与「失败」两堆（**一条判据、两个出口**）。
+ *
+ * - trusted：有 `platform`、无 `error`、无遗留 `_note` ⇒ 数字可以采信；
+ * - failed：有 `error` ⇒ 采过但失败 ⇒ 界面显示「—」**并给出原因**；
+ * - 遗留 `_note` 占位记录（恒 0）**两边都不进**（既不可信，也不是失败）。
+ *
+ * @param {Array<object>} syncRows
+ * @returns {{trusted: Map<string, object>, failed: Map<string, object>}}
+ */
+export function partitionSyncRows (syncRows) {
   const trusted = new Map()
+  const failed = new Map()
   for (const row of syncRows) {
     if (!row || typeof row.platform !== 'string' || !row.platform) continue
-    if (row.error) continue
     if (row._note) continue // 遗留占位记录（恒 0），不可信
+    if (row.error) { failed.set(row.platform, row); continue }
     trusted.set(row.platform, row)
   }
-  return trusted
+  return { trusted, failed }
 }

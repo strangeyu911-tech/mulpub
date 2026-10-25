@@ -16,6 +16,15 @@ import {
   toKpiModel,
   toPlatformDataModel,
   AUTH_GATE,
+  FANS_READY,
+  FANS_PENDING,
+  FANS_ERROR,
+  FANS_REASON_SELECTOR,
+  FANS_REASON_NOT_READY,
+  FANS_REASON_UNKNOWN,
+  FANS_REASON_LOCALE_KEYS,
+  partitionSyncRows,
+  fansReasonOf,
 } from './dashboard-panels-model'
 
 describe('toAccountHealthModel（账号健康度）', () => {
@@ -281,5 +290,106 @@ describe('toKpiModel（KPI 行）', () => {
       perf: null,
       syncRows: [{ platform: 'douyin', followers: 100, _note: 'RPA 不可用' }],
     }).fans).toBeNull()
+  })
+})
+
+// ─── 账号级粉丝三态（2026-10-25，PR-2 上屏）────────────────────────
+// 为什么必须分三态：「没采过」与「采失败」在界面上都是「—」，
+// 但含义相反 —— 混同 ⇒ 用户以为功能坏了（本文件顶部「把查询失败渲染成从未发布」同型）。
+describe('toPlatformDataModel（账号级粉丝三态）', () => {
+  it('采到真值 ⇒ ready + 采集时刻 + 账号归属', () => {
+    const m = toPlatformDataModel({
+      stats: { perPlatform: { douyin: { total: 3 } } },
+      perf: { byPlatform: [], health: {} },
+      syncRows: [{
+        platform: 'douyin',
+        followers: 12000,
+        syncedAt: '2026-10-25T10:00:00.000Z',
+        accountId: 'acct-1',
+      }],
+    })
+    const row = m.rows[0]
+    expect(row.fans).toBe(12000)
+    expect(row.fansState).toBe(FANS_READY)
+    expect(row.fansAsOf).toBe('2026-10-25T10:00:00.000Z')
+    expect(row.fansAccountId).toBe('acct-1')
+  })
+
+  it('⛔ 采失败 ⇒ error + 原因按错误码归类，粉丝值仍是 null（绝不回落成 0）', () => {
+    const m = toPlatformDataModel({
+      stats: { perPlatform: { douyin: { total: 3 } } },
+      perf: { byPlatform: [], health: {} },
+      syncRows: [{
+        platform: 'douyin',
+        error: '平台数据采集失败（douyin）：COLLECT_FIELD_MISSING / followers',
+        syncedAt: '2026-10-25T10:00:00.000Z',
+      }],
+    })
+    const row = m.rows[0]
+    expect(row.fans).toBeNull()
+    expect(row.fansState).toBe(FANS_ERROR)
+    expect(row.fansReason).toBe(FANS_REASON_SELECTOR)
+  })
+
+  it('⛔ 页面未就绪 ⇒ error + not-ready 原因', () => {
+    const m = toPlatformDataModel({
+      stats: { perPlatform: { douyin: { total: 3 } } },
+      perf: { byPlatform: [], health: {} },
+      syncRows: [{ platform: 'douyin', error: '平台数据采集超时（douyin）：COLLECT_NOT_READY' }],
+    })
+    expect(m.rows[0].fansReason).toBe(FANS_REASON_NOT_READY)
+  })
+
+  it('⛔ 未知错误码 ⇒ unknown 原因（不把原始错误码甩给界面）', () => {
+    const m = toPlatformDataModel({
+      stats: { perPlatform: { douyin: { total: 3 } } },
+      perf: { byPlatform: [], health: {} },
+      syncRows: [{ platform: 'douyin', error: '网络抖了一下' }],
+    })
+    const row = m.rows[0]
+    expect(row.fansState).toBe(FANS_ERROR)
+    expect(row.fansReason).toBe(FANS_REASON_UNKNOWN)
+  })
+
+  it('没采过 ⇒ pending（**不是** error：正常状态）', () => {
+    const m = toPlatformDataModel({
+      stats: { perPlatform: { douyin: { total: 3 } } },
+      perf: { byPlatform: [], health: {} },
+      syncRows: [],
+    })
+    const row = m.rows[0]
+    expect(row.fans).toBeNull()
+    expect(row.fansState).toBe(FANS_PENDING)
+    expect(row.fansReason).toBeNull()
+  })
+
+  it('⛔ 遗留占位记录（_note，恒 0 的历史垃圾）⇒ pending 而非 error（它不是一次失败）', () => {
+    const m = toPlatformDataModel({
+      stats: { perPlatform: { douyin: { total: 3 } } },
+      perf: { byPlatform: [], health: {} },
+      syncRows: [{ platform: 'douyin', followers: 0, _note: 'RPA 不可用' }],
+    })
+    const row = m.rows[0]
+    expect(row.fans).toBeNull()
+    expect(row.fansState).toBe(FANS_PENDING)
+  })
+
+  it('partitionSyncRows：一条判据、两个出口（trusted / failed）', () => {
+    const { trusted, failed } = partitionSyncRows([
+      { platform: 'a', followers: 1 },
+      { platform: 'b', error: 'boom' },
+      { platform: 'c', followers: 0, _note: 'RPA 不可用' },
+      { platform: '', followers: 5 },
+      null,
+    ])
+    expect([...trusted.keys()]).toEqual(['a'])
+    expect([...failed.keys()]).toEqual(['b'])
+  })
+
+  it('fansReasonOf：按已知的契约错误码归类，其余一律 unknown', () => {
+    expect(fansReasonOf('…COLLECT_FIELD_MISSING / followers')).toBe(FANS_REASON_SELECTOR)
+    expect(fansReasonOf('…COLLECT_NOT_READY')).toBe(FANS_REASON_NOT_READY)
+    expect(fansReasonOf('…COLLECT_VALUE_INVALID')).toBe(FANS_REASON_UNKNOWN)
+    expect(fansReasonOf(undefined)).toBe(FANS_REASON_UNKNOWN)
   })
 })

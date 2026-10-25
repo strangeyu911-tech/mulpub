@@ -20,7 +20,7 @@ export default {
     kpiReadLabel: '作品阅读',
     kpiCommentLabel: '作品评论',
     kpiFansLabel: '账号粉丝',
-    kpiNote: '作品阅读/评论为发布后回采口径（每篇取最近一次采集）；账号粉丝为平台账号级指标，当前版本未接入采集，故显示「—」而不是 0。',
+    kpiNote: '作品阅读/评论为发布后回采口径（每篇取最近一次采集）；账号粉丝为平台账号级指标（创作者后台采集），取不到真值时显示「—」而不是 0。',
     // ─── 各平台数据（2026-10-25）───────────────────────────────────
     platformsTitle: '各平台数据',
     platformsSubtitle: '发布记录 + 作品回采',
@@ -36,6 +36,20 @@ export default {
     platformMetaLastCapture: (ctx) => '最近回采 ' + ctx.named('time'),
     platformMetaNoCapture: '暂无回采数据',
     platformMetaNone: '暂无数据',
+    // ─── 账号级粉丝槽位（2026-10-25，采集通道接通后的上屏）──────────
+    // 三态纪律：拿到真值 → 数字；没采过 → 「—」+「尚未采集」；
+    // 采失败 → 「—」+「暂时无法获取（原因）」——**任何一态都不给 0**。
+    // ⚠️ 三态**都带口径**（scope）：粉丝是账号级指标，与同卡三个作品级指标不是一回事
+    //   ⇒ 口径标注必须一直看得见（只在有值时标 ⇒ 用户在失败时读不出口径）。
+    followersScope: '账号级',
+    followersAsOf: (ctx) => ctx.named('scope') + ' · 数据截至 ' + ctx.named('time'),
+    followersPending: (ctx) => ctx.named('scope') + ' · 尚未采集粉丝数据',
+    followersUnavailable: (ctx) => ctx.named('scope') + ' · 粉丝数据暂时无法获取',
+    followersUnavailableReason: (ctx) => ctx.named('scope') + ' · 粉丝数据暂时无法获取（' + ctx.named('reason') + '）',
+    // 失败原因（按主进程的契约错误码归类后的可读文案）
+    followersReasonSelector: '平台页面结构已变化',
+    followersReasonNotReady: '平台页面未能在超时内加载',
+    followersReasonUnknown: '平台返回异常',
     publishStatsTitle: '发布统计',
     // 内容基准比较（2026-10-25）：原先是模板里的硬编码中文，未进 CJK 基线
     // ⇒ 一旦本页被改动，check-locale-sync --cjk 就会把它判成「新增硬编码中文」而红。

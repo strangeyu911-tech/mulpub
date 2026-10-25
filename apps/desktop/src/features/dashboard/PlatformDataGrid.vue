@@ -33,7 +33,10 @@
       <!-- 指标区：四个槽位固定对齐（标签在上 / 数值在下）。
            任一指标取不到真值时显示「—」，**不显示 0**：
            「没有数据」与「真的是 0」是两件事，混同会让用户误判账号状态。
-           口径：阅读/点赞/评论 = 作品级（发布后回采）；粉丝 = 账号级（平台粉丝数）。 -->
+           口径：阅读/点赞/评论 = 作品级（发布后回采）；粉丝 = 账号级（平台粉丝数）。
+           ⇒ 粉丝的口径标注走**卡片副标题**（见 buildFansHint）：
+             「账号级 · …」在三个状态下都出现 ⇒ 四个槽位宽度保持等宽，
+             也不用新增字号（仓内门禁禁止 font-size 字面量）。 -->
       <dl class="dash-platform-metrics">
         <div v-for="metric in row.metrics" :key="metric.key" class="dash-platform-metric">
           <dt class="dash-platform-metric-label">{{ metric.label }}</dt>
@@ -89,6 +92,10 @@ import EmptyState from '@/components/EmptyState.vue'
 import { getPlatformIconUrl, isPlatformIconUrl } from '@/composables/usePlatformIconUrl'
 import { usePlatformStore } from '@/stores/platforms'
 import { formatDateTime } from '@/utils/datetime'
+import {
+  FANS_REASON_UNKNOWN,
+  FANS_REASON_LOCALE_KEYS,
+} from './dashboard-panels-model'
 
 const props = defineProps({
   /** toPlatformDataModel() 的输出：{ rows: [...] } */
@@ -139,9 +146,42 @@ function decorate (row) {
       { key: 'views', label: t('dashboard.platformMetricViews'), value: formatCount(row.views) },
       { key: 'likes', label: t('dashboard.platformMetricLikes'), value: formatCount(row.likes) },
       { key: 'comments', label: t('dashboard.platformMetricComments'), value: formatCount(row.comments) },
+      // 粉丝是**账号级**指标 ⇒ 口径标注走副标题（见 buildFansHint），槽位与其它三个等宽。
       { key: 'fans', label: t('dashboard.platformMetricFans'), value: formatCount(row.fans) },
     ],
   }
+}
+
+/**
+ * 粉丝槽位的三态提示（进卡片副标题）。
+ *
+ * - ready   → 「账号级 · 数据截至 {time}」（没有时间戳时只说「账号级」）
+ * - pending → 「账号级 · 尚未采集粉丝数据」
+ * - error   → 「账号级 · 粉丝数据暂时无法获取（{reason}）」
+ *
+ * ⛔ 三个状态**都带「账号级」**：粉丝是账号级指标，与同卡三个作品级指标不是一回事
+ *   ⇒ 口径标注必须一直看得见（只在 ready 时标 ⇒ 用户在 pending/error 时读不出口径）。
+ * ⚠️ reason 必须是**可读原因**（来自模型层按错误码归类的 token），
+ *   不能把主进程那句「平台数据采集失败（douyin）：COLLECT_FIELD_MISSING / followers」甩给用户。
+ *
+ * @param {object} row
+ * @returns {string}
+ */
+function buildFansHint (row) {
+  const scope = t('dashboard.followersScope')
+  if (row.fansState === 'ready') {
+    return row.fansAsOf
+      ? t('dashboard.followersAsOf', { scope, time: formatDateTime(row.fansAsOf, { style: 'hour-minute' }) })
+      : scope
+  }
+  if (row.fansState === 'error') {
+    const reasonKey = FANS_REASON_LOCALE_KEYS[row.fansReason] || FANS_REASON_LOCALE_KEYS[FANS_REASON_UNKNOWN]
+    const reason = t(reasonKey)
+    return reason
+      ? t('dashboard.followersUnavailableReason', { scope, reason })
+      : t('dashboard.followersUnavailable', { scope })
+  }
+  return t('dashboard.followersPending', { scope })
 }
 
 /**
@@ -164,6 +204,9 @@ function buildMeta (row) {
   } else if (hasArticles) {
     parts.push(t('dashboard.platformMetaNoCapture'))
   }
+  // 粉丝槽位的三态提示（账号级口径 ⇒ 与上面那条作品级回采时间不是一回事）
+  const fansHint = buildFansHint(row)
+  if (fansHint) parts.push(fansHint)
   if (parts.length === 0) parts.push(t('dashboard.platformMetaNone'))
   return parts.join(' · ')
 }

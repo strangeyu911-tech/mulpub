@@ -16,6 +16,14 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { createPinia } from 'pinia'
 import i18n from '@/i18n'
+import zhDashboard from '@/locales/dashboard/zh'
+import enDashboard from '@/locales/dashboard/en'
+import {
+  FANS_REASON_SELECTOR,
+  FANS_REASON_NOT_READY,
+  FANS_REASON_UNKNOWN,
+  FANS_REASON_LOCALE_KEYS,
+} from './dashboard-panels-model'
 
 vi.mock('@/stores/platforms', () => ({
   usePlatformStore: () => ({
@@ -127,5 +135,82 @@ describe('PlatformDataGrid 各平台数据', () => {
     const template = src.slice(0, src.indexOf('<script'))
     const visible = template.replace(/<!--[\s\S]*?-->/g, '')
     expect(visible.match(/[一-龥]/g) || [], '模板内残留中文字面量').toEqual([])
+  })
+})
+
+// ─── 账号级粉丝三态（2026-10-25，PR-2 上屏）────────────────────────
+// 三态纪律：拿到真值 → 数字；没采过 → 「—」+「尚未采集」；采失败 → 「—」+「暂时无法获取（原因）」。
+// **任何一态都不给 0**，且失败时给的是**可读原因**（不是内部错误码）。
+describe('PlatformDataGrid 账号级粉丝三态', () => {
+  const row = (extra) => ({
+    platform: 'douyin',
+    articles: 3,
+    views: 10,
+    likes: 2,
+    comments: 1,
+    fans: null,
+    contents: 2,
+    lastCapturedAt: '2026-10-20T09:00:00.000Z',
+    ...extra,
+  })
+
+  it('ready ⇒ 显示数字 + 副标题带「账号级」与「数据截至」', async () => {
+    const w = mountGrid({
+      rows: [row({ fans: 12000, fansState: 'ready', fansAsOf: '2026-10-25T10:00:00.000Z' })],
+    })
+    await nextTick()
+    expect(w.find('[data-testid="platform-douyin-fans"]').text()).toBe('12,000')
+    const meta = w.find('[data-testid="platform-meta"]').text()
+    expect(meta).toContain('账号级')
+    expect(meta).toContain('数据截至')
+  })
+
+  it('⛔ pending ⇒ 显示「—」+「尚未采集粉丝数据」（绝不显示 0）', async () => {
+    const w = mountGrid({ rows: [row({ fansState: 'pending' })] })
+    await nextTick()
+    expect(w.find('[data-testid="platform-douyin-fans"]').text()).toBe('—')
+    const meta = w.find('[data-testid="platform-meta"]').text()
+    expect(meta).toContain('尚未采集粉丝数据')
+    expect(w.text()).not.toContain('0粉丝')
+  })
+
+  it('⛔ error ⇒ 显示「—」+「粉丝数据暂时无法获取（可读原因）」，且不泄漏内部错误码', async () => {
+    const w = mountGrid({ rows: [row({ fansState: 'error', fansReason: 'selector' })] })
+    await nextTick()
+    expect(w.find('[data-testid="platform-douyin-fans"]').text()).toBe('—')
+    const meta = w.find('[data-testid="platform-meta"]').text()
+    expect(meta).toContain('粉丝数据暂时无法获取')
+    expect(meta).toContain('平台页面结构已变化')
+    // 内部错误码不得出现在界面上
+    expect(w.text()).not.toContain('COLLECT_FIELD_MISSING')
+    expect(w.text()).not.toContain('selector')
+  })
+
+  it('⛔ 三个状态都带「账号级」口径标注（粉丝与三个作品级指标不是一回事）', async () => {
+    for (const state of ['ready', 'pending', 'error']) {
+      const w = mountGrid({ rows: [row({ fansState: state, fans: state === 'ready' ? 100 : null, fansReason: 'selector' })] })
+      await nextTick()
+      const meta = w.find('[data-testid="platform-meta"]').text()
+      expect(meta, state).toContain('账号级')
+    }
+  })
+
+  it('⛔ 机械锁：每个失败原因 token 都有 zh/en 文案，且每条文案都被映射（漏一条当场红）', () => {
+    const tokens = [FANS_REASON_SELECTOR, FANS_REASON_NOT_READY, FANS_REASON_UNKNOWN]
+    const mapped = new Set()
+    for (const token of tokens) {
+      const key = FANS_REASON_LOCALE_KEYS[token]
+      expect(key, `token ${token} 没有映射`).toBeTruthy()
+      const short = key.replace(/^dashboard\./, '')
+      expect(zhDashboard[short], `zh 缺 ${short}`).toBeTruthy()
+      expect(enDashboard[short], `en 缺 ${short}`).toBeTruthy()
+      mapped.add(short)
+    }
+    // 反向：locale 里多余的 followersReason* 文案也要被映射（否则是永远用不到的死文案）
+    for (const key of Object.keys(zhDashboard)) {
+      if (key.startsWith('followersReason')) {
+        expect(mapped.has(key), `locale 里的 ${key} 没有任何 token 指向它`).toBe(true)
+      }
+    }
   })
 })

@@ -46,6 +46,9 @@ importers:
       depcheck:
         specifier: ^1.4.7
         version: 1.4.7
+      istanbul-lib-coverage:
+        specifier: 3.2.2
+        version: 3.2.2
       js-yaml:
         specifier: ^4.3.0
         version: 4.3.0

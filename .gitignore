@@ -290,6 +290,9 @@ scripts/*.js
 !scripts/import-platform-taxonomy.test.js
 # P1-1 平台指标矩阵转换器（ARCH-REUSE-INTEGRATION §4.2/§4.3）：需入库，非临时脚本
 !scripts/import-platform-metric-matrix.js
+# P3-1 分片覆盖率合并判定器（change: gate-coverage-shard-merge）：需入库，非临时脚本。
+# ⚠ 上面的 `scripts/*.js` 会把它静默忽略 ⇒ 漏这条 negation 的症状是「本地跑得通、提交里没有它」。
+!scripts/merge-coverage-shards.js
 screenshot_script*.js
 temp_debug.txt
 coverage/

@@ -21,6 +21,36 @@ const { generateShotVideo, resolveFilmVideoProvider, getFilmRunDir, getFilmMedia
 const { probeClip } = require('./film-render')
 const { PRODUCTION_BATCH_CONCURRENCY } = require('./production-runner')
 const { PRODUCTION_BATCH_SIZE } = require('./production-driver')
+const { readSaturation } = require('../adapters/_base/provider-saturation')
+
+/**
+ * 视频 provider 的**有效并发**（PRD §3.2.5.3 缺陷①，2026-10-25 实测落地）
+ *
+ * ## 为什么是 1，而且**恒定**（不是「饱和了才降」）
+ *
+ * M0 取证实测：视频 provider **近似互斥受理** ——
+ * 「成功提交之间的时间重叠率 **0/6**（近窗口）」、
+ * 「近 20 分钟 19 次 `generateVideo` 调用中，**11 次超时全部与其它请求时间重叠，0 次独自在途**」。
+ * ⇒ 批内并发 2 时，第二个请求**只是在 provider 队列里排队**，
+ *   而客户端等待上限是 120s ⇒ **第二个请求必然超时**。
+ * ⇒ 所以「饱和」不是偶发事件，而是**并发 2 时的必然结果** ⇒
+ *   「等饱和了再降并发」来不及：因是第一对并发请求就会制造幽灵请求。
+ * ⇒ 视频出片一律**单发**。
+ *
+ * ⚠ 与 `PRODUCTION_BATCH_CONCURRENCY`（=2，全量出片用）的关系：
+ *   本常量**只约束自动模式**的视频批次，不动生产 runner 的并发口径。
+ */
+const AUTO_VIDEO_EFFECTIVE_CONCURRENCY = 1
+
+/**
+ * 单批内**最多等待** provider 排空多久（毫秒）。
+ *
+ * ⚠ 与「预计排空时间」的关系：预计值可能很大（实测 102 条滞留 ≈ 45 分钟），
+ *   但**单批不能无限挂起** ⇒ 运行期等待封顶 5 分钟；
+ *   真实预计恢复时间照常显示给用户（面板文案用 `estimatedRecoveryMinutes`）。
+ * ⚠ 等待后**重新判定**：若已恢复 ⇒ 继续派发；若仍饱和 ⇒ 本镜不提交（可单独重生成）。
+ */
+const MAX_IN_RUN_DRAIN_WAIT_MS = 5 * 60 * 1000
 
 /**
  * 自动模式批次 runId（批次落点：<mediaRoot>/auto/<taskId>/…/b<N>）。
@@ -133,14 +163,67 @@ async function runAutoBatch (opts) {
   const refWarnings = []
   const byId = new Map((project.shots || []).map((s) => [String(s.shotId), s]))
   const queue = (batch.shotIds || []).map((shotId, i) => ({ shotId: String(shotId), i }))
+  const providerId = providerCfg.providerId
+  const onProviderStatus = typeof o.onProviderStatus === 'function' ? o.onProviderStatus : () => {}
+  const sleepFn = deps._testSleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+  // 单批内**只等一次**排空：等完仍饱和 ⇒ 余下各镜直接判「未提交」，
+  // 而不是每镜再等 5 分钟（12 镜 × 5 分钟 = 1 小时挂起，用户看不到任何进展）。
+  let saturationWaited = false
 
-  const report = (i, status, reason) => {
+  const report = (i, status, reason, errorCode) => {
     const shot = byId.get(String((batch.shotIds || [])[i]))
     if (shot) {
       shot.status = status === 'done' ? 'done' : 'failed'
       shot.error = status === 'done' ? null : (reason ? String(reason).slice(0, 500) : shot.error)
+      // ⚠ 机器可读原因码：前端据此出**成对提示文字**（zh/en），
+      //    而不是把后端中文字串直接渲染（那会让英文用户看到中文）。
+      if (status === 'done') shot.errorCode = null
+      else if (errorCode) shot.errorCode = errorCode
     }
     onShotProgress(i, status, reason)
+  }
+
+  /**
+   * 熔断闸：provider 饱和时**停止派发**，按「预计排空时间」等待。
+   * @returns {boolean} true = 可以派发；false = 本镜不提交（provider 仍饱和）
+   */
+  const gateOnProvider = async () => {
+    const sat = readSaturation(providerId)
+    if (!sat.saturated) {
+      onProviderStatus({ state: 'normal', pending: 0, estimatedRecoveryMinutes: 0 })
+      return true
+    }
+    // ⭐ 等待时长必须**至少覆盖「过期阈值」**：
+    //   熔断期间不派发 ⇒ 观测窗口不会新增记录 ⇒ 唯一的「恢复信号」是
+    //   **时间流逝让滞留请求过期**（服务端会自己把它们做完）。
+    //   ⇒ 若只等 `estimatedDrainMs`（可能只有 15s）而滞留还没过期 ⇒ 等完必然「仍饱和」
+    //   ⇒ 等待纯空转、剩余镜头全灭（2026-10-25 独立复核抓到的阻断缺陷）。
+    const waitMs = Math.min(
+      MAX_IN_RUN_DRAIN_WAIT_MS,
+      Math.max(0, sat.estimatedDrainMs, Number(sat.expiryMs) || 0)
+    )
+    if (!saturationWaited) {
+      saturationWaited = true
+      onProviderStatus({
+        state: 'tripped',
+        pending: sat.pendingEstimate,
+        estimatedRecoveryMinutes: sat.estimatedRecoveryMinutes,
+        waitMs,
+      })
+      if (waitMs > 0) await sleepFn(waitMs)
+    }
+    const after = readSaturation(providerId)
+    if (after.saturated) {
+      onProviderStatus({
+        state: 'saturated',
+        pending: after.pendingEstimate,
+        estimatedRecoveryMinutes: after.estimatedRecoveryMinutes,
+        waitMs: 0,
+      })
+      return false
+    }
+    onProviderStatus({ state: 'normal', pending: 0, estimatedRecoveryMinutes: 0 })
+    return true
   }
 
   const worker = async () => {
@@ -151,6 +234,11 @@ async function runAutoBatch (opts) {
       if (!shot || typeof shot.prompt !== 'string' || !shot.prompt.trim()) {
         if (log && typeof log.warn === 'function') log.warn('FilmAuto', 'shot ' + job.i + ' (' + job.shotId + ') failed: 提示词为空')
         report(job.i, 'failed', '未取到分镜提示词（项目文件中为空或分镜不存在）')
+        continue
+      }
+      // ★ 熔断闸：饱和 ⇒ 停止派发（等待 / 判未提交），**不重投同一请求**
+      if (!(await gateOnProvider())) {
+        report(job.i, 'failed', '服务商繁忙，本镜未提交（恢复后可单独重生成）', 'AUTO_PROVIDER_BUSY')
         continue
       }
       // D30：派发前计数（观测计数器；崩溃窗口差值由 auto-status 如实暴露）
@@ -174,7 +262,13 @@ async function runAutoBatch (opts) {
     }
   }
 
-  await Promise.all(Array.from({ length: Math.min(PRODUCTION_BATCH_CONCURRENCY, (batch.shotIds || []).length) }, worker))
+  // ★ 视频 provider 有效并发 = 1（串行受理 ⇒ 并发只会让第二个请求在队列里等超时）
+  const concurrency = Math.min(
+    AUTO_VIDEO_EFFECTIVE_CONCURRENCY,
+    PRODUCTION_BATCH_CONCURRENCY,
+    (batch.shotIds || []).length
+  )
+  await Promise.all(Array.from({ length: concurrency }, worker))
   // 批后以磁盘为真同步 + 参考警告合并 + 持久化（崩溃窗口由台账/磁盘双核兜底）
   syncProjectFromDisk({ project, batch, runDirOf })
   mergeWarnings(project, refWarnings)

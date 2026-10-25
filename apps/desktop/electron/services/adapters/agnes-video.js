@@ -29,10 +29,20 @@
 
 const { BaseAdapter } = require('./_base/base')
 const { ProviderError, ERROR_CODES, fromHttpStatus } = require('./_base/provider-error')
+const {
+  CLIENT_WAIT, CONNECT, classifyProviderTimeout, isConnectTimeout, isRetryableTimeout, timeoutKindOf,
+} = require('./_base/provider-timeout')
+const { recordSubmitOutcome } = require('./_base/provider-saturation')
 
 const DEFAULT_BASE_URL = 'https://apihub.agnes-ai.com/v1'
 const { fetchWithTimeout } = require('./_base/fetch-utils')
 const DEFAULT_TIMEOUT = 120000
+/**
+ * 视频提交的**专用**超时（默认 4 分钟）。
+ * ⚠ 理由与 agnes-multimodal.js 同款：串行 provider 上「提交」要排队
+ *   （M0 取证实测成功请求耗时最大 218.5s）⇒ 120s 会把慢请求变成「幽灵请求」。
+ */
+const DEFAULT_VIDEO_TIMEOUT = 240000
 
 const DEFAULT_MODEL = 'agnes-video-v2.0'
 
@@ -59,6 +69,18 @@ class AgnesVideoAdapter extends BaseAdapter {
   constructor(credentials, options = {}) {
     super(credentials, options)
     this.credentials.baseUrl = this.credentials.baseUrl || DEFAULT_BASE_URL
+    // ★ 视频提交的**专用超时**（兜底语义，不是覆盖）：
+    //   ① 用户**显式**配了 `timeout` ⇒ 视频也用它（用户的显式意图优先）；
+    //   ② 没配 ⇒ 视频用 `DEFAULT_VIDEO_TIMEOUT`（240s，覆盖实测最大服务时间 218.5s）。
+    // ⚠ 必须在通用默认值落盘**之前**算：`this.options` 与 `options` 是**同一个对象**
+    //   （BaseAdapter 直接持有引用）⇒ 下面那行 `this.options.timeout = ... || DEFAULT_TIMEOUT`
+    //   会把调用方的 options 也改掉 ⇒ 之后再读就分不清「用户配的」与「默认的」了。
+    // ⚠ 另一个坑：把视频超时当「覆盖」会顶掉用户显式配的 timeout
+    //   （仓内既有测试「fetch 挂起 → 有界超时 → ProviderError(TIMEOUT)」用 timeout:100 抓到了这一点）。
+    const explicitTimeout = Number(options.timeout)
+    this.options.videoTimeout = Number.isFinite(Number(options.videoTimeout)) && Number(options.videoTimeout) > 0
+      ? Number(options.videoTimeout)
+      : (Number.isFinite(explicitTimeout) && explicitTimeout > 0 ? explicitTimeout : DEFAULT_VIDEO_TIMEOUT)
     this.options.timeout = this.options.timeout || DEFAULT_TIMEOUT
     this.options.maxRetries = this.options.maxRetries || 2
     // 提交/查询重试退避（ms）：503 队列满载 / 429 限流时递增等待；测试可注入短退避。
@@ -97,10 +119,14 @@ class AgnesVideoAdapter extends BaseAdapter {
   async _request(path, opts = {}) {
     const url = this._url(path)
     const headers = { ...this._headers(), ...(opts.headers || {}) }
+    // ⚠ timeoutMs 是**我们自己的**预算，不是 fetch 的参数 ⇒ 必须从 opts 里摘出来
+    const { timeoutMs: timeoutOverride, ...restOpts } = opts
 
     try {
-      const timeoutMs = Number.isFinite(Number(this.options.timeout)) && Number(this.options.timeout) > 0 ? Number(this.options.timeout) : DEFAULT_TIMEOUT
-      const response = await fetchWithTimeout(url, { ...opts, headers }, timeoutMs)
+      const timeoutMs = Number.isFinite(Number(timeoutOverride)) && Number(timeoutOverride) > 0
+        ? Number(timeoutOverride)
+        : (Number.isFinite(Number(this.options.timeout)) && Number(this.options.timeout) > 0 ? Number(this.options.timeout) : DEFAULT_TIMEOUT)
+      const response = await fetchWithTimeout(url, { ...restOpts, headers }, timeoutMs)
 
       if (!response.ok) {
         let errorBody
@@ -124,14 +150,24 @@ class AgnesVideoAdapter extends BaseAdapter {
     } catch (e) {
       if (e instanceof ProviderError) throw e
       const msg = e.message || String(e)
-      if (msg.includes('ETIMEDOUT') || msg.includes('timeout') || msg.includes('aborted')) {
-        throw new ProviderError(ERROR_CODES.TIMEOUT, msg, { providerId: this.id })
+      // ★ 超时必须**分两类**（2026-10-25 实测，见 _base/provider-timeout.js）：
+      //   client-wait = 我们自己的 AbortController 放弃 ⇒ 服务端很可能仍在生成 ⇒ **不可立即重投**
+      //   connect     = 请求根本没到服务端 ⇒ 可重投
+      const kind = classifyProviderTimeout(e)
+      if (kind === CLIENT_WAIT) {
+        throw new ProviderError(ERROR_CODES.TIMEOUT, msg, { providerId: this.id, timeoutKind: CLIENT_WAIT })
       }
-      if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('network')) {
-        throw new ProviderError(ERROR_CODES.NETWORK_ERROR, msg, { providerId: this.id })
+      if (kind === CONNECT) {
+        const code = isConnectTimeout(e) ? ERROR_CODES.TIMEOUT : ERROR_CODES.NETWORK_ERROR
+        throw new ProviderError(code, msg, { providerId: this.id, timeoutKind: CONNECT })
       }
       throw new ProviderError(ERROR_CODES.NETWORK_ERROR, msg, { providerId: this.id })
     }
+  }
+
+  /** 视频提交专用超时（构造期已按「显式配置优先、否则 240s」定好） */
+  _videoTimeoutMs () {
+    return this.options.videoTimeout
   }
 
   /**
@@ -174,10 +210,12 @@ class AgnesVideoAdapter extends BaseAdapter {
     const backoffMs = this.options.retryBackoffMs
     let lastError = null
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const startedAt = Date.now()
       try {
         const resp = await this._request('/videos', {
           method: 'POST',
           body: JSON.stringify(body),
+          timeoutMs: this._videoTimeoutMs(),
         })
         const data = await resp.json()
 
@@ -193,10 +231,20 @@ class AgnesVideoAdapter extends BaseAdapter {
           )
         }
 
+        // ★ 提交成功：记「成功 + 本次提交耗时」⇒ 供饱和度模块估算队列排空时间
+        recordSubmitOutcome(this.id, 'ok', { durationMs: Date.now() - startedAt })
+
         return { taskId, model }
       } catch (error) {
         lastError = error
+        // ★ 记录失败结果（每次尝试都记）
+        const kind = (error instanceof ProviderError) && timeoutKindOf(error) === CLIENT_WAIT
+          ? CLIENT_WAIT
+          : 'other'
+        recordSubmitOutcome(this.id, kind, { durationMs: Date.now() - startedAt })
+        // ★ 客户端等待超时**不可立即重投**（服务端很可能仍在生成 ⇒ 重投 = 队列雪崩）
         const retryable = (error instanceof ProviderError) &&
+          isRetryableTimeout(error) &&
           (error.retryableHttp === true || error.code === ERROR_CODES.RATE_LIMITED ||
             error.code === ERROR_CODES.TIMEOUT || error.code === ERROR_CODES.NETWORK_ERROR)
         if (!retryable || attempt >= maxAttempts) break
@@ -235,7 +283,9 @@ class AgnesVideoAdapter extends BaseAdapter {
         break
       } catch (error) {
         lastError = error
+        // ⚠ 状态查询同样**不重投客户端等待超时**（服务端还在生成时重投查询只会加压）
         const retryable = (error instanceof ProviderError) &&
+          isRetryableTimeout(error) &&
           (error.retryableHttp === true || error.code === ERROR_CODES.RATE_LIMITED ||
             error.code === ERROR_CODES.TIMEOUT || error.code === ERROR_CODES.NETWORK_ERROR)
         if (!retryable || attempt >= 3) break

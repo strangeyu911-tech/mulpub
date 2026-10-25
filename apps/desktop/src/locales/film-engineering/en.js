@@ -92,6 +92,15 @@ export default {
       "colError": "Failure reason",
       "colActions": "Actions",
       "shotStatus": { "pending": "Pending", "running": "Generating", "done": "Done", "failed": "Failed" },
+      // ★ provider saturation / circuit-break (PRD §3.2.5.3). zh/en must stay paired (CI Gate 7).
+      "providerStatus": {
+        "saturated": "Provider is busy ({pending} requests queued); submissions paused; the queue is expected to drain in about {minutes} min (we keep retrying)",
+        "tripped": "Provider is busy ({pending} requests queued); submissions paused; the queue is expected to drain in about {minutes} min (we keep retrying)",
+        "recovered": "Provider recovered; resuming submissions"
+      },
+      "shotError": {
+        "AUTO_PROVIDER_BUSY": "This shot was not submitted (provider busy); you can regenerate it after recovery"
+      },
       "editShot": "Edit segment",
       "regenShot": "Regenerate",
       "composeBtn": "Compose final cut",

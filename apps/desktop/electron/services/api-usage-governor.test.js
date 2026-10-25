@@ -746,3 +746,52 @@ describe('requests 额度窗口的并发准入原子性（governor-quota-reserve
     expect(governance).toMatch(/this\._releaseTokenBudget\(reservations\)/)
   })
 })
+
+// ══════════════════════════════════════════════════════════════════════════
+// 客户端等待超时**不得**被 governor 当成 transient 重试（PRD §3.2.5.3 缺陷②）
+//
+// 为什么这条必须在 governor 层也锁：治理器的 `_executeWithRetry` 对 transient 会做有界重试，
+// 而**全量出片路径**（`video-gen.js` 的 `film_generate_videos` → `withModelBudget`）**经过** governor
+// ⇒ 只在适配器内部禁重投不够，governor 会把请求再投出去（= 队列雪崩）。
+// 自动模式路径（`auto-runner` → `manager.callAdapter` 直连）**不经过** governor。
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('governor · 客户端等待超时不重投（client_wait ≠ transient）', () => {
+  it('⭐ 带 timeoutKind=client-wait 的 TIMEOUT ⇒ 归 client_wait（不是 transient）', () => {
+    const err = new ProviderError(ERROR_CODES.TIMEOUT, 'This operation was aborted', { timeoutKind: 'client-wait' })
+    expect(classifyProviderFailure(err)).toBe('client_wait')
+    // ⚠ 普通 TIMEOUT（无类别）仍归 transient ——「分不清」时不能砍掉重试能力
+    expect(classifyProviderFailure(new ProviderError(ERROR_CODES.TIMEOUT, 'x'))).toBe('transient')
+    expect(classifyProviderFailure(new ProviderError(ERROR_CODES.NETWORK_ERROR, 'net down'))).toBe('transient')
+  })
+
+  it('⭐ governor 对 client_wait **只调用一次**（不重投）', async () => {
+    const g = new ApiUsageGovernor({})
+    g.setLimits('p:video:m', { maxConcurrent: 4, rpm: 1000, cooldownMs: 1000, retry429: 3 })
+    let calls = 0
+    const err = new ProviderError(ERROR_CODES.TIMEOUT, 'This operation was aborted', { timeoutKind: 'client-wait' })
+    await expect(
+      g.run({ type: 'video', providerId: 'p', model: 'm' }, async () => { calls++; throw err }),
+    ).rejects.toThrow('This operation was aborted')
+    expect(calls).toBe(1)
+  })
+
+  it('对照组：transient 错误仍会重投（证明上面那条不是「因为都只调一次」）', async () => {
+    vi.useFakeTimers()
+    const g = new ApiUsageGovernor({})
+    g.setLimits('p:video:m', { maxConcurrent: 4, rpm: 1000, cooldownMs: 1000, retry429: 3 })
+    let calls = 0
+    const err = new ProviderError(ERROR_CODES.NETWORK_ERROR, 'net down')
+    const p = g.run({ type: 'video', providerId: 'p', model: 'm' }, async () => { calls++; throw err })
+    // ⚠ **立刻**挂上 rejection 处理器：否则在「推进定时器 → 断言」这段窗口里，
+    //   promise 已经 reject 而没人接 ⇒ 变成 unhandled rejection ⇒ 整轮 exit 1
+    //   （症状：测试全绿，但 vitest 报 Errors 1 error、进程码非 0）。
+    const settled = p.then(() => null, (e) => e)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls).toBe(1)
+    await vi.advanceTimersByTimeAsync(2000)
+    const thrown = await settled
+    expect(String(thrown && thrown.message)).toBe('net down')
+    expect(calls).toBeGreaterThan(1)
+  })
+})

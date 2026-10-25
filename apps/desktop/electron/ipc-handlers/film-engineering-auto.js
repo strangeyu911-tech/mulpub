@@ -45,6 +45,8 @@ const {
   runProduction, loadLedger, resolveResumePlan, buildRenderManifest, PRODUCTION_BATCH_SIZE: DRIVER_BATCH_SIZE,
 } = require('../services/film-engineering/production-driver')
 const { getFilmMediaRoot } = require('../services/film-engineering/film-render')
+const { describeProviderStatus } = require('../services/film-engineering/provider-status')
+const { resetProviderSaturation } = require('../services/adapters/_base/provider-saturation')
 const { resolveFilmVideoProvider, FILM_ASPECTS, FILM_DURATIONS } = require('../services/film-engineering/video-gen')
 
 /** 单飞注册表（D28）：同一时刻只允许一个自动模式任务在跑 */
@@ -137,6 +139,9 @@ function registerAutoHandlers (ipcMain, deps) {
     return {
       taskId: project.taskId,
       doneCountOnDisk,
+      // ★ provider 运行态（PRD §3.2.5.3 缺陷③）：饱和时面板显示「服务商繁忙」，
+      //   而不是让用户只看到「失败」或「0/N」。
+      providerStatus: describeProviderStatus(project.providerId),
       runSeq: project.runSeq || 1,
       planId: project.planId,
       aspect: project.aspect,
@@ -271,6 +276,11 @@ function registerAutoHandlers (ipcMain, deps) {
     const params = payload || {}
     const pre = providerOrError()
     if (pre.error) return pre.error
+    // ★ **新任务开始时重置该 provider 的饱和度观测窗口**（独立复核抓到的阻断缺陷）：
+    //   观测窗口是**模块级**的 ⇒ 上一轮留下的「客户端超时」会让**新任务第一镜就判饱和**。
+    //   ⇒ 饱和度是「本次运行」的观测，任务边界即其生命周期边界。
+    //   ⚠ 真实积压不会因此消失：新任务第一次提交失败后会立刻重新累积 ⇒ 不漏判也不误伤。
+    try { resetProviderSaturation(pre.provider.providerId) } catch { /* 观测重置失败不阻断出片 */ }
     const taskIdRes = resolveTaskId(params.taskId)
     if (!taskIdRes.ok) return validationFail(taskIdRes.errorCode, taskIdRes.message)
     const taskId = taskIdRes.taskId
@@ -383,6 +393,8 @@ function registerAutoHandlers (ipcMain, deps) {
             deps: o,
             onShotProgress: ctx.onShotProgress,
             onDispatched: () => incrementProviderCalls(project),
+            // ★ provider 饱和/熔断状态 ⇒ 事件推给面板（PRD §3.2.5.3 缺陷③）
+            onProviderStatus: (status) => emitSafe({ type: 'production:provider-status', ...status }),
             persist: writeNow,
           }),
         })

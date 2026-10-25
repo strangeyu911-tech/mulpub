@@ -31,6 +31,19 @@ const finalPath = ref('')
 const finalUnavailable = ref('')
 const stopping = ref(false)
 const restored = ref(false)
+/**
+ * provider 运行态（PRD §3.2.5.3 缺陷③）。
+ *
+ * ⚠ 饱和（熔断）期间面板**不得**只显示「失败」或「0/N」⇒ 必须有一条
+ *   「服务商繁忙 + 预计恢复时间」的可见状态（否则用户只看到卡住不动）。
+ * ⚠ 数据源有两路，**事件优先、轮询兜底**（与进度同纪律）：
+ *   - 事件：`production:provider-status`（运行期实时）
+ *   - 轮询：`auto-status` 的 `providerStatus`（重开项目时可见）
+ */
+const providerStatus = ref(null)
+/** 瞬时提示（「服务商已恢复」）—— 5 秒后自动消失，不留历史痕迹 */
+const providerNotice = ref('')
+let providerNoticeTimer = null
 const LAST_TASK_KEY = 'film-auto:last-task-id'
 let unsubscribeAuto = null
 let unsubscribePipeline = null
@@ -108,6 +121,8 @@ async function refreshStatus () {
       batchIndex: progress.value.batchIndex,
       lastType: progress.value.lastType,
     }
+    // provider 运行态（轮询兜底：重开项目时也能看到「服务商繁忙」）
+    if (data.providerStatus) applyProviderStatus(data.providerStatus)
     const total = Number(data.totalCount) || 0
     const done = counters.closeDone // ⚠️ 收口判定**只认台账口径**（磁盘有片 ≠ 该镜成功）
     const shotsNow = Array.isArray(data.shots) ? data.shots : []
@@ -127,8 +142,37 @@ async function refreshStatus () {
   } catch { /* 轮询失败不改状态（下一轮重试） */ }
 }
 
+/**
+ * 应用 provider 运行态（事件 / 轮询两路共用一份口径）。
+ * @param {{state?:string, pending?:number, estimatedRecoveryMinutes?:number}} next
+ */
+function applyProviderStatus (next) {
+  if (!next || typeof next !== 'object') return
+  const state = String(next.state || 'normal')
+  const wasBusy = providerStatus.value && providerStatus.value.state && providerStatus.value.state !== 'normal'
+  providerStatus.value = {
+    state,
+    pending: Number(next.pending) || 0,
+    estimatedRecoveryMinutes: Number(next.estimatedRecoveryMinutes) || 0,
+  }
+  // 「恢复」提示只在**从繁忙回到正常**时给一次，且自动消失
+  if (state === 'normal' && wasBusy) {
+    providerNotice.value = 'filmEngineering.auto.providerStatus.recovered'
+    if (providerNoticeTimer) clearTimeout(providerNoticeTimer)
+    providerNoticeTimer = setTimeout(() => {
+      providerNotice.value = ''
+      providerNoticeTimer = null
+    }, 5000)
+  }
+}
+
 function applyAutoEvent (evt) {
   if (!evt || typeof evt !== 'object') return
+  // ★ provider 运行态事件（PRD §3.2.5.3）：先于进度处理，避免被后面的通用分支吞掉
+  if (evt.type === 'production:provider-status') {
+    applyProviderStatus(evt)
+    return
+  }
   progress.value = {
     // ⚠️ 事件口径只带台账 doneCount（无磁盘口径）⇒ 与当前显示值取 max，**不让进度回退**
     // （收口事件可能报一个比磁盘口径小的数 ⇒ 直接赋值会让进度条倒退）。
@@ -365,6 +409,9 @@ function resetAll () {
   composeRunId.value = ''
   composePercent.value = 0
   progress.value = { doneCount: 0, totalCount: 0, batchIndex: null, lastType: '' }
+  providerStatus.value = null
+  providerNotice.value = ''
+  if (providerNoticeTimer) { clearTimeout(providerNoticeTimer); providerNoticeTimer = null }
   stopPolling()
 }
 
@@ -387,9 +434,9 @@ onBeforeUnmount(() => {
 
   return {
     progress, composeRunId, composePercent, composePhase, composeError, finalPath, finalUnavailable,
-    stopping, restored,
+    stopping, restored, providerStatus, providerNotice,
     percent, stepIndex, stageList, shots, missingShots, canCompose, finalFileUrl, diskEstimateText, wallclockText,
-    refreshStatus, applyAutoEvent, startPolling, stopPolling, persistLastTask, readLastTask,
+    refreshStatus, applyAutoEvent, applyProviderStatus, startPolling, stopPolling, persistLastTask, readLastTask,
     stopRun, restoreLastTask, applyComposeSnapshot, compose, pollComposeRun, startComposePolling, stopComposePolling,
     openFinalFolder, saveFinalAs, openEditor, saveShotEdit, regenerateShot, resetAll,
   }

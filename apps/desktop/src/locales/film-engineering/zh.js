@@ -92,6 +92,16 @@ export default {
       "colError": "失败原因",
       "colActions": "操作",
       "shotStatus": { "pending": "待生成", "running": "生成中", "done": "已完成", "failed": "失败" },
+      // ★ provider 饱和/熔断（PRD §3.2.5.3 缺陷③）：饱和期间显示「服务商繁忙」，
+      //   而不是让用户只看到「失败」或「0/N」。zh/en 必须成对（CI Gate 7）。
+      "providerStatus": {
+        "saturated": "服务商繁忙（{pending} 个请求排队中），已暂停提交；队列预计 {minutes} 分钟排空，期间会持续重试",
+        "tripped": "服务商繁忙（{pending} 个请求排队中），已暂停提交；队列预计 {minutes} 分钟排空，期间会持续重试",
+        "recovered": "服务商已恢复，继续提交"
+      },
+      "shotError": {
+        "AUTO_PROVIDER_BUSY": "该镜未提交（服务商繁忙），恢复后可单独重生成"
+      },
       "editShot": "修改片段",
       "regenShot": "重新生成",
       "composeBtn": "收口合成成片",

@@ -20,6 +20,7 @@ global.__registerMock('../logger', { info: vi.fn(), warn: vi.fn(), error: vi.fn(
 const { AgnesMultimodalAdapter, AGNES_MULTIMODAL_MODELS, pickAspectRatio, pickSeconds } = require('./agnes-multimodal')
 const { PRESET_PROVIDERS, PRESET_RATE_LIMITS } = require('../model-provider-seeds')
 const { ProviderError, ERROR_CODES } = require('./_base/provider-error')
+const { readSaturation, resetAllProviderSaturation } = require('./_base/provider-saturation')
 
 // ─── fetch mock 工具 ───
 function createFetchResponse(body, status = 200, headers = {}) {
@@ -495,5 +496,111 @@ describe('AgnesMultimodalAdapter — Agnes-AI 多模态（中国站）', () => {
       expect(PROVIDER_LIMITS['agnes-multimodal']).toBeDefined()
       expect(PROVIDER_LIMITS['agnes-multimodal'].rpm).toBe(20)
     })
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════
+// 视频提交的「超时分类 + 不重投」守卫（PRD §3.2.5.3 缺陷①②，2026-10-25）
+//
+// ⚠ 错误对象照抄**沙箱 Node 实跑出来的真实形态**：
+//   客户端等待超时 ⇒ DOMException，name='AbortError'、code=20、无 cause
+//   连接层失败     ⇒ TypeError('fetch failed')，真码在 cause.code
+// ⇒ 用「理想形态」的 fixture 会让这些锁失去意义。
+// ══════════════════════════════════════════════════════════════════════════
+
+/** 真实形态：客户端等待超时（我们的 AbortController 放弃） */
+function makeClientWaitAbort () {
+  const e = new Error('This operation was aborted')
+  e.name = 'AbortError'
+  e.code = 20
+  return e
+}
+
+/** 真实形态：连接层失败（undici 把真错误放进 cause，e.message 只是 "fetch failed"） */
+function makeConnectFailure (code) {
+  const e = new TypeError('fetch failed')
+  const cause = new Error(code)
+  cause.code = code
+  e.cause = cause
+  return e
+}
+
+describe('AgnesMultimodalAdapter — 视频提交的超时分类与重投纪律', () => {
+  let originalFetch
+
+  beforeEach(() => {
+    originalFetch = global.fetch
+    resetAllProviderSaturation()
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    vi.clearAllMocks()
+  })
+
+  it('⭐ 客户端等待超时（AbortError）⇒ 只发 1 次请求，不重投', async () => {
+    const fetchMock = vi.fn(async () => { throw makeClientWaitAbort() })
+    global.fetch = fetchMock
+    const adapter = new AgnesMultimodalAdapter(
+      { id: 'agnes-multimodal', apiKey: 'sk-test' },
+      { maxVideoAttempts: 6, retryBackoffMs: [1, 1, 1, 1, 1] }
+    )
+
+    await expect(adapter.generateVideo({ prompt: 'p' })).rejects.toMatchObject({
+      code: ERROR_CODES.TIMEOUT,
+      context: { timeoutKind: 'client-wait' },
+    })
+    // ⭐ 核心断言：**一次**请求（不是 6 次）⇒ 不会往 provider 队列里灌幽灵请求
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('连接层失败（ECONNREFUSED）⇒ 会重投（请求根本没到服务端，重投是安全的）', async () => {
+    const fetchMock = vi.fn(async () => { throw makeConnectFailure('ECONNREFUSED') })
+    global.fetch = fetchMock
+    const adapter = new AgnesMultimodalAdapter(
+      { id: 'agnes-multimodal', apiKey: 'sk-test' },
+      { maxVideoAttempts: 3, retryBackoffMs: [1, 1, 1] }
+    )
+
+    await expect(adapter.generateVideo({ prompt: 'p' })).rejects.toMatchObject({
+      code: ERROR_CODES.NETWORK_ERROR,
+      context: { timeoutKind: 'connect' },
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('⭐ 客户端等待超时会进饱和度观测窗口（连续 3 次 ⇒ 判饱和）', async () => {
+    global.fetch = vi.fn(async () => { throw makeClientWaitAbort() })
+    const adapter = new AgnesMultimodalAdapter(
+      { id: 'agnes-multimodal', apiKey: 'sk-test' },
+      { maxVideoAttempts: 1, retryBackoffMs: [1] }
+    )
+
+    for (let i = 0; i < 3; i++) {
+      await expect(adapter.generateVideo({ prompt: 'p' })).rejects.toBeTruthy()
+    }
+    const s = readSaturation('agnes-multimodal')
+    expect(s.consecutiveClientTimeouts).toBe(3)
+    expect(s.saturated).toBe(true)
+    expect(s.pendingEstimate).toBe(3)
+    // 排空估计必须**随滞留数增长**（不是固定退避）
+    expect(s.estimatedDrainMs).toBe(3 * s.avgServiceMs)
+  })
+
+  it('提交成功也进观测窗口（成功耗时是排空估计的样本来源）', async () => {
+    const fetchMock = createFetchMock([createFetchResponse({ video_id: 'vid-ok' })])
+    global.fetch = fetchMock
+    const adapter = new AgnesMultimodalAdapter({ id: 'agnes-multimodal', apiKey: 'sk-test' })
+    await adapter.generateVideo({ prompt: 'p' })
+    const s = readSaturation('agnes-multimodal')
+    expect(s.saturated).toBe(false)
+    expect(s.avgServiceMs).toBeGreaterThan(0)
+  })
+
+  it('视频提交走**视频专用超时**（默认 4 分钟，覆盖实测最大服务时间 218.5s）', () => {
+    const adapter = new AgnesMultimodalAdapter({ id: 'agnes-multimodal', apiKey: 'sk-test' })
+    expect(adapter._videoTimeoutMs()).toBe(240000)
+    const custom = new AgnesMultimodalAdapter({ id: 'agnes-multimodal', apiKey: 'sk-test' }, { videoTimeout: 90000 })
+    expect(custom._videoTimeoutMs()).toBe(90000)
   })
 })

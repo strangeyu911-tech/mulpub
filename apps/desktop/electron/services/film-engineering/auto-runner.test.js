@@ -392,3 +392,197 @@ describe('auto-runner · 磁盘为真的已落盘计数（面板进度用）', (
     expect(countShotsOnDisk({ runSeq: 1, shots: [{ shotId: 'a' }] }, { _testRunDir: runDirOf })).toBe(0)
   })
 })
+
+// ══════════════════════════════════════════════════════════════════════════
+// 视频 provider 的并发/熔断守卫（PRD §3.2.5.3 缺陷①②③，2026-10-25）
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('auto-runner · 视频 provider 的有效并发与饱和熔断', () => {
+  const { recordSubmitOutcome, resetProviderSaturation } = require('../adapters/_base/provider-saturation')
+
+  beforeEach(() => {
+    resetProviderSaturation('minimax')
+  })
+
+  it('⭐ 有效并发 = 1：同一时刻在途请求数不超过 1（串行受理的 provider）', async () => {
+    const root = tmpRoot()
+    let inFlight = 0
+    let maxInFlight = 0
+    const project = makeProject(4)
+    const batch = { runId: 'auto/auto-1/b0', shotIds: project.shots.map((s) => s.shotId) }
+    const gen = async ({ shot, index, runDir }) => {
+      inFlight++
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      // ⚠ 必须给一个真实的时间窗，否则并发请求可能「碰巧」不重叠 ⇒ 用例退化成恒真
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      inFlight--
+      const p = path.join(runDir, shotFileName(index))
+      fs.writeFileSync(p, 'FAKE')
+      return { index, shotId: shot.shotId, success: true, path: p }
+    }
+    await runAutoBatch({
+      batch, project, aiGenerator: fakeAiGenerator(), log: null,
+      deps: { _testGenerateShotVideo: gen, _testRunDir: (runId) => path.join(root, runId) },
+      onShotProgress: () => {},
+    })
+    expect(maxInFlight).toBe(1)
+  })
+
+  it('⭐ 饱和 ⇒ 停止派发 + 暴露预计恢复时间 + 本镜判「未提交」并带 errorCode', async () => {
+    // 灌满观测窗口：连续 3 次客户端等待超时 ⇒ 判饱和
+    for (let i = 0; i < 3; i++) recordSubmitOutcome('minimax', 'client-wait')
+    const root = tmpRoot()
+    let calls = 0
+    const project = makeProject(3)
+    const batch = { runId: 'auto/auto-1/b0', shotIds: project.shots.map((s) => s.shotId) }
+    const statuses = []
+    let slept = 0
+    await runAutoBatch({
+      batch, project, aiGenerator: fakeAiGenerator(), log: null,
+      deps: {
+        _testGenerateShotVideo: async () => { calls++; return { success: true } },
+        _testRunDir: (runId) => path.join(root, runId),
+        _testSleep: async (ms) => { slept += ms },
+      },
+      onShotProgress: () => {},
+      onProviderStatus: (s) => statuses.push(s),
+    })
+    // ⭐ 一次都不派发（熔断生效）
+    expect(calls).toBe(0)
+    expect(project.shots.every((s) => s.status === 'failed')).toBe(true)
+    expect(project.shots[0].errorCode).toBe('AUTO_PROVIDER_BUSY')
+    // ⭐ 面板能拿到「预计恢复时间」（> 0 ⇒ 不是写死的 0）
+    const tripped = statuses.find((s) => s.state === 'tripped')
+    expect(tripped).toBeTruthy()
+    expect(tripped.pending).toBe(3)
+    expect(tripped.estimatedRecoveryMinutes).toBeGreaterThan(0)
+    // ⭐ 等的是「按队列长度推导」的时间，不是固定常数
+    expect(slept).toBeGreaterThan(0)
+  })
+
+  it('未饱和 ⇒ 正常派发，且 provider 状态为 normal', async () => {
+    const root = tmpRoot()
+    let calls = 0
+    const project = makeProject(2)
+    const batch = { runId: 'auto/auto-1/b0', shotIds: project.shots.map((s) => s.shotId) }
+    const statuses = []
+    await runAutoBatch({
+      batch, project, aiGenerator: fakeAiGenerator(), log: null,
+      deps: {
+        _testGenerateShotVideo: async ({ shot, index, runDir }) => {
+          calls++
+          const p = path.join(runDir, shotFileName(index))
+          fs.writeFileSync(p, 'FAKE')
+          return { index, shotId: shot.shotId, success: true, path: p }
+        },
+        _testRunDir: (runId) => path.join(root, runId),
+      },
+      onShotProgress: () => {},
+      onProviderStatus: (s) => statuses.push(s),
+    })
+    expect(calls).toBe(2)
+    expect(project.shots.every((s) => s.status === 'done')).toBe(true)
+    expect(statuses.every((s) => s.state === 'normal')).toBe(true)
+  })
+})
+
+// ⚠️ 上一组用例只锁住了「饱和 ⇒ 停止派发」，**没有**锁住「等待后重新判定 ⇒ 恢复 ⇒ 继续派发」
+//    （独立复核用变异验证发现：把 `const after = readSaturation(...)` 换成 `const after = sat`
+//      ⇒ 全部 23 个用例仍绿 ⇒ 该分支当时**无任何测试覆盖**）。
+// ⇒ 下面这条专门锁它。
+
+describe('auto-runner · 熔断后的「重新判定」分支', () => {
+  const { recordSubmitOutcome, resetProviderSaturation } = require('../adapters/_base/provider-saturation')
+
+  beforeEach(() => {
+    resetProviderSaturation('minimax')
+  })
+
+  it('⭐ 等待期间 provider 恢复 ⇒ 重新判定为「不饱和」⇒ 继续派发（而不是把整批判未提交）', async () => {
+    // 入口饱和：连续 3 次客户端等待超时
+    for (let i = 0; i < 3; i++) recordSubmitOutcome('minimax', 'client-wait')
+
+    const root = tmpRoot()
+    let calls = 0
+    const project = makeProject(3)
+    const batch = { runId: 'auto/auto-1/b0', shotIds: project.shots.map((s) => s.shotId) }
+    const statuses = []
+    await runAutoBatch({
+      batch, project, aiGenerator: fakeAiGenerator(), log: null,
+      deps: {
+        _testGenerateShotVideo: async ({ shot, index, runDir }) => {
+          calls++
+          const p = path.join(runDir, shotFileName(index))
+          fs.writeFileSync(p, 'FAKE')
+          return { index, shotId: shot.shotId, success: true, path: p }
+        },
+        _testRunDir: (runId) => path.join(root, runId),
+        // ★ 等待期间 provider 恢复：窗口里补成功记录 ⇒ 超时率降到阈值以下 ⇒ 不再饱和
+        //   （3 次超时 / 7 条 = 43% < 50% ⇒ 率判据不再命中）
+        _testSleep: async () => {
+          for (let i = 0; i < 4; i++) recordSubmitOutcome('minimax', 'ok', { durationMs: 26600 })
+        },
+      },
+      onShotProgress: () => {},
+      onProviderStatus: (s) => statuses.push(s),
+    })
+    // ⭐ 恢复后**必须继续派发**（这正是「重新判定」分支的价值）
+    expect(calls).toBe(3)
+    expect(project.shots.every((s) => s.status === 'done')).toBe(true)
+    expect(statuses.some((s) => s.state === 'normal')).toBe(true)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════
+// 熔断等待后**能真的恢复**（2026-10-25 独立复核抓到的阻断缺陷）
+//
+// 原设计：熔断等待期间不派发 ⇒ 观测窗口不新增记录 ⇒ 等待后重新判定**永远**是「仍饱和」
+// ⇒ 等待纯空转 ⇒ 剩余镜头全灭 ⇒ 恢复提示永不出现。
+// ⇒ 修法：滞留请求会**过期**（服务端会自己做完）⇒ 等待到过期阈值后重新判定 ⇒ 已恢复。
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('auto-runner · 熔断等待后能恢复', () => {
+  const { recordSubmitOutcome, resetProviderSaturation } = require('../adapters/_base/provider-saturation')
+
+  beforeEach(() => {
+    resetProviderSaturation('minimax')
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('⭐ 入口饱和 ⇒ 等待到滞留过期 ⇒ 重新判定为「已恢复」⇒ 继续派发（不需要外部补成功记录）', async () => {
+    vi.useFakeTimers()
+    for (let i = 0; i < 3; i++) recordSubmitOutcome('minimax', 'client-wait')
+
+    const root = tmpRoot()
+    let calls = 0
+    let slept = 0
+    const project = makeProject(3)
+    const batch = { runId: 'auto/auto-1/b0', shotIds: project.shots.map((s) => s.shotId) }
+    const statuses = []
+    await runAutoBatch({
+      batch, project, aiGenerator: fakeAiGenerator(), log: null,
+      deps: {
+        _testGenerateShotVideo: async ({ shot, index, runDir }) => {
+          calls++
+          const p = path.join(runDir, shotFileName(index))
+          fs.writeFileSync(p, 'FAKE')
+          return { index, shotId: shot.shotId, success: true, path: p }
+        },
+        _testRunDir: (runId) => path.join(root, runId),
+        // ⭐ 模拟真实等待：推进假时钟 ⇒ 滞留请求「过期」
+        _testSleep: async (ms) => { slept += ms; await vi.advanceTimersByTimeAsync(ms) },
+      },
+      onShotProgress: () => {},
+      onProviderStatus: (s) => statuses.push(s),
+    })
+    // ⭐ 等待确实发生了，且**等到了过期阈值**（≥ 53.2s）
+    expect(slept).toBeGreaterThanOrEqual(53200)
+    // ⭐ 恢复后继续派发（而不是把整批判「未提交」）
+    expect(calls).toBe(3)
+    expect(project.shots.every((s) => s.status === 'done')).toBe(true)
+    expect(statuses.some((s) => s.state === 'normal')).toBe(true)
+  })
+})

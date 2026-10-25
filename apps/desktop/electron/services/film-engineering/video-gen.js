@@ -334,12 +334,18 @@ function registerFilmVideoStages (pipelineEngine) {
         const manager = providerCfg.manager
         const governor = pipelineEngine.governor
         const provider = typeof manager.getProvider === 'function' ? manager.getProvider(providerCfg.providerId) : null
+        // ★ 视频 provider 的**有效并发默认 = 1**（PRD §3.2.5.3 缺陷①，2026-10-25 实测订正）：
+        //   实测该 provider **近似互斥受理**（成功提交之间的时间重叠率 0/6）
+        //   ⇒ 并发 2 时第二个请求只是在 provider 队列里**排队** ⇒ 必然撞客户端等待上限
+        //   ⇒ 变成「客户端放弃、服务端仍在生成」的**幽灵请求** ⇒ 队列雪崩。
+        //   ⚠ 与自动模式（`auto-runner.js` 的 AUTO_VIDEO_EFFECTIVE_CONCURRENCY）**同口径**。
+        //   ⇒ 需要并发的 provider 可显式配 `stage.options.videoConcurrency` 覆盖（默认安全值 1）。
         const requestedConcurrency = Number(stage && stage.options && stage.options.videoConcurrency) > 0
-          ? Number(stage.options.videoConcurrency) : 2
+          ? Number(stage.options.videoConcurrency) : 1
         results = await mapWithModelBudget({
           items: shots,
           requestedConcurrency,
-          fallbackConcurrency: 2,
+          fallbackConcurrency: 1,
           type: 'video',
           providerId: providerCfg.providerId,
           provider,

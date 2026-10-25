@@ -466,6 +466,8 @@ class ApiUsageGovernor {
           await sleep(jitter(cooldown / 3) * attempt)
           continue
         }
+        // ⚠️ 'client_wait'（客户端等待超时：我们放弃等待，服务端很可能仍在生成）**故意不进**下面的
+        //   transient 分支 ⇒ 不重试、直落尾部 throw（重投 = 同一条串行通道再加一个请求 ⇒ 队列雪崩）。
         if (cls === 'transient') {
           if (attempt >= TRANSIENT_RETRIES) {
             this._notify('transient-retry-exhausted', {

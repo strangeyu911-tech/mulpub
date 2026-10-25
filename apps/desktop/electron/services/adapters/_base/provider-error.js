@@ -284,6 +284,13 @@ function classifyProviderFailure(error) {
     return 'rate'
   }
   if (statusCode === 402 || code === ERROR_CODES.QUOTA_EXCEEDED) return 'quota'
+  // ★ **客户端等待超时**（我们自己放弃等待 ⇒ 服务端很可能仍在生成）⇒ 归独立类别，
+  //   **不当作 transient**：governor 对 transient 会做有界重试 ⇒ 重投 = 在同一条串行通道上
+  //   再加一个请求 ⇒ 队列雪崩（实测：单镜最多往队列里投 78 个请求）。
+  //   ⚠ 只有带 `timeoutKind='client-wait'` 的才算；普通 TIMEOUT（无类别）仍归 transient
+  //   ——「分不清」时不能砍掉重试能力。
+  const timeoutKind = error.timeoutKind || (error.context && error.context.timeoutKind)
+  if (timeoutKind === 'client-wait') return 'client_wait'
   if (code === ERROR_CODES.TIMEOUT || code === ERROR_CODES.NETWORK_ERROR) return 'transient'
   if (code === ERROR_CODES.CONTENT_POLICY) return 'content_policy'
   // HTTP 5xx（500/502/503/504）：上游服务端瞬时故障，短退避重试（2026-08-30 复盘）。

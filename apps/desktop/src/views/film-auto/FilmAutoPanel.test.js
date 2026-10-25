@@ -13,7 +13,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: (k, p) => (p ? k + ':' + JSON.stringify(p) : k) }),
+  // ⚠ 译文**存在**时必须与 key **可区分**：面板的 `shotErrorText` 用
+  //   `translated !== key` 判断「有没有译文」（没有 ⇒ 回落后端原文）。
+  //   若 mock 对缺失的 key 也返回 key（vue-i18n 的真实行为），则
+  //   「有译文」与「无译文」在测试里长得一模一样 ⇒ 这条分支永远测不到。
+  // ⇒ 给 shotError 命名空间一个可区分的译文标记。
+  useI18n: () => ({
+    t: (k, p) => (p
+      ? k + ':' + JSON.stringify(p)
+      : (String(k).startsWith('filmEngineering.auto.shotError.') ? '译文<' + k + '>' : k)),
+  }),
 }))
 
 vi.mock('element-plus', () => ({
@@ -606,6 +615,81 @@ describe('FilmAutoPanel · 方法论接入状态（F-I）', () => {
   it('没有方法论上下文时**不渲染**该分区（老 kit 兼容）', async () => {
     const w = await previewWith(undefined)
     expect(w.find('[data-testid="fa-methodology"]').exists()).toBe(false)
+    w.unmount()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════
+// provider 饱和（熔断）期间的**可观测**（PRD §3.2.5.3 ⑧⑨⑩）
+//
+// 独立复核发现：此前 provider 状态这条链路**没有任何前端测试**（变异打不红 = 无覆盖）。
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('FilmAutoPanel · provider 饱和态可见', () => {
+  it('⭐ 饱和 ⇒ 面板显示「服务商繁忙 + 排队数 + 预计恢复时间」；未提交镜头显示成对文案', async () => {
+    const api = makeApi({
+      autoStart: vi.fn(async () => ({ code: 0, data: { started: true, doneCount: 0, totalCount: 12, renderManifest: null } })),
+      autoStatus: vi.fn(async () => ({ code: 0, data: {
+        exists: true, taskId: 'auto-1', running: true, doneCount: 0, totalCount: 12,
+        shots: [{
+          index: 0, shotId: 'auto-000', prompt: 'P0', seconds: 5, status: 'failed',
+          error: '服务商繁忙，本镜未提交（恢复后可单独重生成）',
+          errorCode: 'AUTO_PROVIDER_BUSY',
+        }],
+        providerStatus: { state: 'saturated', pending: 3, estimatedRecoveryMinutes: 2 },
+      } })),
+    })
+    const w = mountPanel(api)
+    w.vm.form.script = '第1场\n剧情'
+    await w.vm.runPlan()
+    w.vm.confirmed = true
+    await w.vm.startRun()
+    await flushPromises()
+
+    // ① 事件路径（运行期实时）
+    w.vm.applyAutoEvent({ type: 'production:provider-status', state: 'saturated', pending: 3, estimatedRecoveryMinutes: 2 })
+    await flushPromises()
+    expect(w.vm.providerStatus.state).toBe('saturated')
+    expect(w.vm.providerStatus.pending).toBe(3)
+    expect(w.vm.providerStatus.estimatedRecoveryMinutes).toBe(2)
+
+    // ② 提示行真的渲染出来了，且带排队数与预计恢复时间
+    const hint = w.find('[data-testid="fa-provider-status"]')
+    expect(hint.exists()).toBe(true)
+    expect(hint.text()).toContain('filmEngineering.auto.providerStatus.saturated')
+    expect(hint.text()).toContain('"pending":3')
+    expect(hint.text()).toContain('"minutes":2')
+
+    // ③ 轮询路径（重开项目时可见）：auto-status 的 providerStatus 也要进面板
+    await w.vm.refreshStatus()
+    await flushPromises()
+    expect(w.vm.providerStatus.state).toBe('saturated')
+
+    // ④ 未提交镜头的错误列走 **errorCode + 成对文案**，不是后端中文原文
+    const cells = w.findAll('td').map((td) => td.text()).join('|')
+    // ⚠ 走 errorCode 查**成对译文**（而不是把后端中文原文直接渲染）
+    expect(cells).toContain('译文<filmEngineering.auto.shotError.AUTO_PROVIDER_BUSY>')
+    expect(cells).not.toContain('服务商繁忙，本镜未提交')
+    w.unmount()
+  })
+
+  it('未饱和 ⇒ 不显示「服务商繁忙」提示', async () => {
+    const api = makeApi({
+      autoStart: vi.fn(async () => ({ code: 0, data: { started: true, doneCount: 0, totalCount: 12, renderManifest: null } })),
+      autoStatus: vi.fn(async () => ({ code: 0, data: {
+        exists: true, taskId: 'auto-1', running: true, doneCount: 0, totalCount: 12, shots: [],
+        providerStatus: { state: 'normal', pending: 0, estimatedRecoveryMinutes: 0 },
+      } })),
+    })
+    const w = mountPanel(api)
+    w.vm.form.script = '第1场\n剧情'
+    await w.vm.runPlan()
+    w.vm.confirmed = true
+    await w.vm.startRun()
+    await flushPromises()
+    await w.vm.refreshStatus()
+    await flushPromises()
+    expect(w.find('[data-testid="fa-provider-status"]').exists()).toBe(false)
     w.unmount()
   })
 })

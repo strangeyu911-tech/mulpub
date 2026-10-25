@@ -410,3 +410,67 @@ describe('pickFilmFrameCount：12 秒档映射', () => {
     expect(pickFilmFrameCount(30)).toBe(441)
   })
 })
+
+// ══════════════════════════════════════════════════════════════════════════
+// 视频出片的**有效并发默认 = 1**（PRD §3.2.5.3 缺陷①，2026-10-25 独立复核抓到的阻断缺陷）
+//
+// 实测：视频 provider **近似互斥受理**（成功提交之间的时间重叠率 0/6）
+// ⇒ 并发 2 时第二个请求只是在 provider 队列里**排队** ⇒ 必然撞客户端等待上限
+// ⇒ 变成「客户端放弃、服务端仍在生成」的**幽灵请求** ⇒ 队列雪崩。
+// ⇒ 默认并发必须降为 1（与自动模式 `AUTO_VIDEO_EFFECTIVE_CONCURRENCY` 同口径；
+//   需要并发的 provider 可显式配 `stage.options.videoConcurrency` 覆盖）。
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('film_generate_videos - 有效并发默认 = 1', () => {
+  it('⭐ 同一时刻在途的视频提交数 ≤ 1（默认配置下）', async () => {
+    const executors = new Map()
+    const calls = []
+    let inFlight = 0
+    let maxInFlight = 0
+    const manager = {
+      getDefault: (type) => (type === 'video'
+        ? { id: 'mock-video', config: { models: ['mv-1'], capability_models: { video: 'mv-1' } } }
+        : null),
+      getProvider: () => ({ id: 'mock-video' }),
+      callAdapter: async (providerId, method, payload) => {
+        calls.push({ providerId, method, payload })
+        if (method === 'generateVideo') {
+          inFlight++
+          maxInFlight = Math.max(maxInFlight, inFlight)
+          // ⚠ 必须给一个真实的异步窗口，否则并发请求可能「碰巧」不重叠 ⇒ 用例退化成恒真
+          await new Promise((r) => setTimeout(r, 5))
+          inFlight--
+          return { code: 0, data: { taskId: 'task-' + calls.length } }
+        }
+        if (method === 'getVideoStatus') return { code: 0, data: { status: 'completed', videoUrl: 'mock://video' } }
+        return { code: -1, message: 'unknown method' }
+      },
+    }
+    const engine = {
+      stageExecutor: { register (type, fn) { executors.set(type, fn) } },
+      registerStageExecutor (type, fn) { this.stageExecutor.register(type, fn); return { success: true } },
+      container: { get: (k) => (k === 'aiGenerator' ? { _modelProviderManager: manager } : null) },
+      aiGenerator: { _modelProviderManager: manager },
+      log: { info () {}, warn () {}, error () {}, notify () {} },
+      serviceBus: { optimizeVideoPromptsBatch: async () => { throw new Error('CONTRACT VIOLATION') } },
+      _executors: executors,
+    }
+    registerFilmVideoStages(engine)
+    const fn = executors.get(FILM_VIDEO_STAGE_TYPES.GENERATE_VIDEOS)
+    const shots = [makeShot(0), makeShot(1), makeShot(2), makeShot(3)]
+    await fn({
+      runId: 'run-conc',
+      stage: { name: 'generate_videos', type: FILM_VIDEO_STAGE_TYPES.GENERATE_VIDEOS, options: {} },
+      params: { aspect: '16x9', seconds: 5 },
+      context: {
+        selectedShots: shots,
+        cost_confirmation: { confirmed: true, confirmedAt: new Date().toISOString() },
+      },
+      serviceBus: engine.serviceBus,
+      onProgress: () => {},
+      _testSleep: async () => {},
+      _testDownload: async (url, dest) => { fs.writeFileSync(dest, 'fake-mp4') },
+    })
+    expect(maxInFlight).toBe(1)
+  })
+})

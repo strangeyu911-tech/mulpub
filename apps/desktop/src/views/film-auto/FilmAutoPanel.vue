@@ -199,12 +199,28 @@ const {
 
 const {
   progress, composeRunId, composePercent, composePhase, composeError, finalPath, finalUnavailable,
-  stopping, restored,
+  stopping, restored, providerStatus, providerNotice,
   percent, stepIndex, stageList, shots, missingShots, canCompose, finalFileUrl, diskEstimateText, wallclockText,
   refreshStatus, applyAutoEvent, startPolling, stopPolling, persistLastTask, readLastTask,
   stopRun, restoreLastTask, applyComposeSnapshot, compose, pollComposeRun, startComposePolling, stopComposePolling,
   openFinalFolder, saveFinalAs, openEditor, saveShotEdit, regenerateShot, resetAll,
 } = useFilmAutoRun({ feApi, t, props, phase, project, plan, busy, errorText, errorCode, form, editingShotIndex, fail, unwrap })
+
+/**
+ * 逐镜失败原因（PRD §3.2.5.3 缺陷③）。
+ *
+ * ⚠ 优先用**机器可读原因码**查成对提示文字（zh/en）；
+ *   查不到才回落后端原文（后端 error 字段是中文直写，英文用户会看到中文）。
+ */
+function shotErrorText (s) {
+  const code = s && s.errorCode
+  if (code) {
+    const key = 'filmEngineering.auto.shotError.' + code
+    const translated = t(key)
+    if (translated && translated !== key) return translated
+  }
+  return (s && s.error) || ''
+}
 
 defineExpose({
   form, plan, project, phase, busy, errorText, errorCode, confirmed, overwriteExisting, editingShotIndex,
@@ -212,7 +228,7 @@ defineExpose({
   runPlan, startRun, fail, unwrap,
   characterRefs, sceneRefs, uploadingKind, pickRefFile, uploadRefFile, readAsDataUrl, removeCharRef, removeSceneRef,
   progress, composeRunId, composePercent, composePhase, composeError, finalPath, finalUnavailable,
-  stopping, restored, percent, stepIndex, stageList, shots, missingShots, canCompose, finalFileUrl,
+  stopping, restored, providerStatus, providerNotice, percent, stepIndex, stageList, shots, missingShots, canCompose, finalFileUrl,
   diskEstimateText, wallclockText, refreshStatus, applyAutoEvent, startPolling, stopPolling,
   persistLastTask, readLastTask, stopRun, restoreLastTask, applyComposeSnapshot, compose,
   openFinalFolder, saveFinalAs, openEditor, saveShotEdit, regenerateShot, resetAll,
@@ -402,6 +418,16 @@ defineExpose({
       </div>
       <p class="fa-hint" data-testid="fa-run-hint">{{ t('filmEngineering.auto.runHint') }}</p>
 
+      <!-- ★ provider 饱和/熔断（PRD §3.2.5.3 缺陷③）：
+           饱和期间**不得**只让用户看到「失败」或「0/N」⇒ 显式显示「服务商繁忙 + 预计恢复时间」。
+           恢复后提示自动消失（不留历史痕迹）。 -->
+      <p
+        v-if="providerStatus && providerStatus.state && providerStatus.state !== 'normal'"
+        class="fa-hint"
+        data-testid="fa-provider-status"
+      >{{ t('filmEngineering.auto.providerStatus.' + providerStatus.state, { pending: providerStatus.pending || 0, minutes: providerStatus.estimatedRecoveryMinutes || 0 }) }}</p>
+      <p v-if="providerNotice" class="fa-hint" data-testid="fa-provider-notice">{{ t(providerNotice) }}</p>
+
       <table v-if="shots.length" class="fa-shots" data-testid="fa-shots">
         <thead>
           <tr>
@@ -415,7 +441,7 @@ defineExpose({
           <tr v-for="s in shots" :key="s.shotId" :data-testid="'fa-shot-' + s.shotId">
             <td>{{ s.shotId }}</td>
             <td :data-testid="'fa-shot-status-' + s.shotId">{{ t('filmEngineering.auto.shotStatus.' + (s.status || 'pending')) }}</td>
-            <td class="fa-shot-error">{{ s.error || '' }}</td>
+            <td class="fa-shot-error">{{ shotErrorText(s) }}</td>
             <td>
               <el-button size="small" link :data-testid="'fa-edit-' + s.shotId" @click="openEditor(s.index)">{{ t('filmEngineering.auto.editShot') }}</el-button>
               <el-button size="small" link :data-testid="'fa-regen-' + s.shotId" @click="regenerateShot(s.index)">{{ t('filmEngineering.auto.regenShot') }}</el-button>

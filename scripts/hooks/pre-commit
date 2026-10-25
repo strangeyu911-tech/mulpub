@@ -144,6 +144,26 @@ fi
 # CCG 未安装时 scripts/ccg-gate.js 自身告警跳过并返回 0，不会阻断提交。
 # 临时豁免：SKIP_CCG_GATE=1 git commit
 if [ -f "scripts/ccg-gate.js" ]; then
+    RECORD_PATHSPEC=':(glob).ccg/reviews/*.json'
+    rev_tmp="${TMPDIR:-/tmp}/mp-ccg-reviews-$$"
+    # ⚠️ 候选域必须收窄到「本次门禁**新产生**的记录」——快照必须在门禁**之前**拍。
+    # 拍在门禁之后等于把门禁刚写的记录也算进基线，差集恒为空、auto-stage 静默失效
+    # （2026-10-25 实测踩过：文件生成了但 staged=0，且钩子无任何报错）。
+    # 2026-10-25 实测（另一例）：PR #4395 夹带了 3 个快照，其中 .ccg/reviews/8a221675….json
+    # 的 sha 字段指向 b642881c（rebase 前的 merge-base = 他人提交）。
+    # 修法：门禁前拍一份**未跟踪侧**快照，门禁后再扫一次，只 stage 差集。
+    # 只拍未跟踪侧是成本与语义的折中：modified 侧的记录已经在 index 里（有人 add 过），
+    # 把它们 stage 进本次提交不构成「夹带他人未提交产物」；少拍一侧也让
+    # reviews 相关 git 调用保持旧版的 3 次（scenario16 的预算锁不被打穿）。
+    # 快照扫描失败时降级为旧语义（收全集）并出声：不静默降级，也不因快照失败就丢弃全部记录。
+    before_untracked="$rev_tmp.bu"
+    if git ls-files --others --exclude-standard -z -- "$RECORD_PATHSPEC" 2>/dev/null | tr '\0' '\n' | LC_ALL=C sort -u > "$before_untracked"; then
+        snapshot_ok=1
+    else
+        snapshot_ok=0
+        : > "$before_untracked"
+        echo "   [reviews] 门禁前快照失败，本轮降级为盘上全集语义（可能夹带他人会话遗留记录）"
+    fi
     node scripts/ccg-gate.js || exit 1
     # 判定记录自动入库（防 .ccg/reviews 未跟踪堆积的根治）：
     # ccg-review-decider.js 把 layer=diff 记录写到 <cwd>/.ccg/reviews/<sha>.json，
@@ -165,11 +185,13 @@ if [ -f "scripts/ccg-gate.js" ]; then
     # 而旧形态的 shell glob 不跨 /。不加魔法则候选域是旧集合的超集，违反 spec「恰好等于旧集合」那条 MUST。
     # 批量 add 走 stdin + NUL：绕开 Windows CreateProcess 约 32k 命令行上限，并兼容含空格/中文的文件名。
     # 契约见 openspec/changes/fix-precommit-reviews-spawn-storm/；回归锁 scripts/hooks/pre-commit.test.sh scenario16
-    RECORD_PATHSPEC=':(glob).ccg/reviews/*.json'
+    # RECORD_PATHSPEC 已在门禁前快照处定义一次（check-precommit-spawn-budget.js 的段锚点
+    # 要求它恰好命中一次，重复定义会判 SELF_FAULT —— 2026-10-25 实测红过）。
+    rev_tmp="${TMPDIR:-/tmp}/mp-ccg-reviews-$$"
+    # ⚠️ 候选域必须收窄到「本次门禁**新产生**的记录」，不能是盘上全集。
     # 两次扫描各自落一个临时清单，**不吞 stderr**：旧写法带 2>/dev/null 会把「index 损坏 / 扫描失败」
     # 压成「没记录要暂存」，于是判定记录无声滞留未跟踪区 —— 那正是 #3396 要消除的形态，且比逐文件
     # 老写法更隐蔽（老写法逐条尝试时 git 的报错会露出来）。失败必须点名，且不静默跳过。
-    rev_tmp="${TMPDIR:-/tmp}/mp-ccg-reviews-$$"
     scan_untracked_ok=1
     scan_modified_ok=1
     git ls-files --others --exclude-standard -z -- "$RECORD_PATHSPEC" > "$rev_tmp.u" || scan_untracked_ok=0
@@ -189,6 +211,19 @@ if [ -f "scripts/ccg-gate.js" ]; then
     fi
     # --exclude-standard 与「.ccg 是否被 ignore」耦合：若将来把 .ccg 加入 .gitignore 作无界增长治理，
     # 本段就不再 stage 判定记录。该语义由 scenario15 钉住（未跟踪记录必须入库），改动会当场变红而非静默。
+    # 候选域 = 本次未跟踪扫描结果 **减去** 门禁前的快照（comm -23：只在左侧出现的行）。
+    # modified 侧不做差集（见上方快照处的成本/语义说明）。
+    # 快照失败（snapshot_ok=0）时差集退化为全集，与上面那条降级告警配对。
+    if [ "$snapshot_ok" = 1 ]; then
+        tr '\0' '\n' < "$rev_tmp.u" | LC_ALL=C sort -u > "$rev_tmp.u.sorted"
+        mv "$rev_tmp.u.sorted" "$rev_tmp.u"
+        # 只保留"门禁后出现、门禁前不存在"的行；NUL 化回 git add 的输入格式
+        comm -23 "$rev_tmp.u" "$before_untracked" | tr '\n' '\0' > "$rev_tmp.u.new" && mv "$rev_tmp.u.new" "$rev_tmp.u"
+        n_new=$(( $(tr -cd '\0' < "$rev_tmp.u" | wc -c) + $(tr -cd '\0' < "$rev_tmp.m" | wc -c) ))
+        if [ "$n_new" -gt 0 ]; then
+            echo "   [reviews] 本次门禁新产生 $n_new 条判定记录，纳入暂存（他人会话遗留的记录不动）"
+        fi
+    fi
     if [ -s "$rev_tmp.u" ] || [ -s "$rev_tmp.m" ]; then
         # 走 stdin+NUL：不经 argv，绕开 Windows CreateProcess 约 32k 命令行上限，且兼容含空格/中文文件名
         if ! { [ "$scan_untracked_ok" = 1 ] && [ -s "$rev_tmp.u" ] && cat "$rev_tmp.u"; [ "$scan_modified_ok" = 1 ] && [ -s "$rev_tmp.m" ] && cat "$rev_tmp.m"; } \
@@ -204,7 +239,7 @@ if [ -f "scripts/ccg-gate.js" ]; then
             echo "   [reviews] 回退完成，共逐条暂存 $n_rev 个文件"
         fi
     fi
-    rm -f "$rev_tmp.u" "$rev_tmp.m"
+    rm -f "$rev_tmp.u" "$rev_tmp.m" "$before_untracked"
 fi
 echo "=== Pre-commit 检查完成 ==="
 exit 0

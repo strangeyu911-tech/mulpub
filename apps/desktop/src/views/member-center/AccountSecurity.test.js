@@ -105,4 +105,45 @@ describe('member-center/AccountSecurity', () => {
     const wrapper = await mountAccountSecurity()
     expect(wrapper.text()).toContain('PC-A')
   })
+
+  // ── 当前设备标记（P1-4 + C1-13）────────────────────────────────
+  describe('当前设备标记（is_current，弃用 index===0）', () => {
+    beforeEach(() => {
+      memberCtx.sessions = [
+        { id: 1, deviceId: 'dev-1', deviceName: '办公室电脑', is_current: false, lastSeenAt: '2026-10-24T00:00:00Z' },
+        { id: 2, deviceId: 'dev-2', deviceName: '我的笔记本', is_current: true, lastSeenAt: '2026-10-24T00:00:00Z' },
+      ]
+    })
+
+    it('is_current=true 的那行显示「当前设备」徽章（不管它在第几位）', async () => {
+      const wrapper = await mountAccountSecurity()
+      const rows = wrapper.findAll('.member-center-list-item')
+      expect(rows[0].text()).not.toContain('memberCenter.currentDevice')
+      expect(rows[1].text()).toContain('memberCenter.currentDevice')
+    })
+
+    it('顺序翻转后徽章跟着 is_current 走（证明不再依赖位置）', async () => {
+      memberCtx.sessions = [...memberCtx.sessions].reverse()
+      const wrapper = await mountAccountSecurity()
+      const rows = wrapper.findAll('.member-center-list-item')
+      // 翻转后第一行是 is_current=true
+      expect(rows[0].text()).toContain('memberCenter.currentDevice')
+      expect(rows[1].text()).not.toContain('memberCenter.currentDevice')
+    })
+
+    it('全 false（合法态）→ 不标任何行，且显示「未识别当前设备」中性提示', async () => {
+      memberCtx.sessions = memberCtx.sessions.map((s) => ({ ...s, is_current: false }))
+      const wrapper = await mountAccountSecurity()
+      const rows = wrapper.findAll('.member-center-list-item')
+      rows.forEach((r) => expect(r.text()).not.toContain('memberCenter.currentDevice'))
+      expect(wrapper.find('[data-testid="member-center-current-device-unknown"]').exists()).toBe(true)
+    })
+
+    it('字段缺失（旧数据/异常响应）→ 全 false 处理，不崩也不猜', async () => {
+      memberCtx.sessions = [{ id: 1, deviceId: 'dev-1', deviceName: '办公室电脑' }]
+      const wrapper = await mountAccountSecurity()
+      const rows = wrapper.findAll('.member-center-list-item')
+      expect(rows[0].text()).not.toContain('memberCenter.currentDevice')
+    })
+  })
 })

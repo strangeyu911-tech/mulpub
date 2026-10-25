@@ -33,10 +33,28 @@
             <span class="member-center-list-title">{{ session.deviceName || session.deviceId || t('memberCenter.unknownDevice') }}</span>
             <span class="member-center-list-meta">{{ t('memberCenter.lastSeen') }}：{{ formatTimestamp(session.lastSeenAt || session.createdAt) }}</span>
           </div>
-          <span v-if="index === 0" class="member-center-status-badge">{{ t('memberCenter.currentDevice') }}</span>
+          <!--
+            当前设备徽章（P1-4 + C1-13）：以主进程按 X-Device-Id 比对后下发的
+            is_current 为准，**不再用 index === 0 猜服务端返回顺序**——
+            服务端一旦改排序（按最近活跃等），位置猜测就会把徽章指向别人的设备。
+          -->
+          <span v-if="session.is_current" class="member-center-status-badge" data-testid="member-center-current-device">{{ t('memberCenter.currentDevice') }}</span>
         </li>
       </ul>
-      <div v-else class="member-center-empty">
+      <!--
+        合法态提示（C1-13）：没有一行被标为当前设备（当前设备未 upsert 或不在列表）
+        时给出中性说明。**不回退顺序猜测**——那等于把刚修掉的 bug 请回来。
+        注意它必须是独立的 v-if：列表本身常显（用户仍要看到全部设备），
+        写成 ul 的 v-else-if 会永远不生效。
+      -->
+      <p
+        v-if="memberStore.sessions.length && !hasCurrentDevice"
+        class="member-center-empty-hint"
+        data-testid="member-center-current-device-unknown"
+      >
+        {{ t('memberCenter.currentDeviceUnknown') }}
+      </p>
+      <div v-else-if="!memberStore.sessions.length" class="member-center-empty">
         <p class="member-center-empty-hint">{{ t('memberCenter.sessionsEmptyHint') }}</p>
       </div>
       <!-- P0-5：错误本地化展示（修复前模板不渲染 error ⇒ 点击后静默无反馈） -->
@@ -71,6 +89,9 @@ const revoking = ref(false)
 const revokeResult = ref(null)
 const avatarInitial = computed(() => avatarInitialOf(displayName.value))
 const statusLabel = computed(() => statusLabelOf(t, status.value))
+// 是否有一行被主进程标为当前设备。列表非空但全 false 是**合法态**
+// （当前设备未 upsert 或不在返回列表），模板据此显示中性提示而不是猜。
+const hasCurrentDevice = computed(() => memberStore.sessions.some((s) => s && s.is_current === true))
 
 // 未知码/空值兜底为通用失败文案，绝不透裸码。
 const memberErrorKey = computed(() => (memberStore.error ? resolveMemberErrorKey(memberStore.error) : ''))

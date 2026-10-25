@@ -215,3 +215,102 @@ describe('identity:redeem-code IPC 边界', () => {
     )
   })
 })
+
+
+describe('identity:sessions is_current 归一化', () => {
+  /**
+   * 为什么必须有这一层（方案 P1-4 + 评审 C1-13）：
+   * 渲染层原先用 `index === 0` 判「当前设备」——那是**猜服务端返回顺序**。
+   * 服务端一旦改排序（比如改成按最近活跃），徽章就指向别人的设备。
+   * 主进程每次都带 X-Device-Id（entitlementService.deviceId）上行，
+   * 服务端也拿得到这个头，所以在这里按 device_id 比对打标是唯一不靠猜的做法。
+   *
+   * C1-13 边界：is_current 全 false 是**合法态**（当前设备未 upsert 或不在列表），
+   * 渲染层此时显示「未识别当前设备」中性态，**禁止回退顺序猜测**。
+   */
+  function createSessionHandlers({ sessions, deviceId, responseSessions }) {
+    const registerIdentityHandlers = require('./identity')
+    const handlers = {}
+    const payload = responseSessions === undefined ? { sessions } : responseSessions
+    const memberApiService = { request: vi.fn(async () => payload) }
+    const authService = {
+      getState: () => ({ status: 'authenticated', user: { sub: 'sub-1' } }),
+      memberApiService,
+      // entitlementService.deviceId 是主进程自己的设备标识（X-Device-Id 的来源）
+      entitlementService: { deviceId },
+    }
+    registerIdentityHandlers(
+      { handle: (channel, handler) => { handlers[channel] = handler } },
+      { authService },
+    )
+    return { handlers, memberApiService, event: { senderFrame: { url: 'app://localhost/index.html' } } }
+  }
+
+  it('按 device_id 命中本机 deviceId → 该行 is_current=true，其余 false', async () => {
+    const { handlers, event } = createSessionHandlers({
+      deviceId: 'device-self',
+      sessions: [
+        { id: 1, device_id: 'device-other', device_name: '办公室电脑' },
+        { id: 2, device_id: 'device-self', device_name: '我的笔记本' },
+      ],
+    })
+    const res = await handlers['identity:sessions'](event)
+    expect(res.code).toBe(0)
+    expect(res.data.sessions.map((s) => s.is_current)).toEqual([false, true])
+  })
+
+  it('本机 deviceId 不在列表 → 全 false（合法态，不得回退顺序猜测）', async () => {
+    const { handlers, event } = createSessionHandlers({
+      deviceId: 'device-self',
+      sessions: [{ id: 1, device_id: 'device-other', device_name: '办公室电脑' }],
+    })
+    const res = await handlers['identity:sessions'](event)
+    expect(res.data.sessions.every((s) => s.is_current === false)).toBe(true)
+    // 关键：不得因为"没有命中"就把第一行标成当前设备
+    expect(res.data.sessions[0].is_current).toBe(false)
+  })
+
+  it('列表顺序变化不影响标记（按 id 比对，不按位置）', async () => {
+    const { handlers, event } = createSessionHandlers({
+      deviceId: 'device-self',
+      sessions: [
+        { id: 9, device_id: 'device-self', device_name: '我的笔记本' },
+        { id: 1, device_id: 'device-other', device_name: '办公室电脑' },
+      ],
+    })
+    const res = await handlers['identity:sessions'](event)
+    expect(res.data.sessions[0].is_current).toBe(true)
+    expect(res.data.sessions[1].is_current).toBe(false)
+  })
+
+  it('deviceId 缺失/为空 → 全 false，不抛异常', async () => {
+    const { handlers, event } = createSessionHandlers({
+      deviceId: '',
+      sessions: [{ id: 1, device_id: 'device-self', device_name: '我的笔记本' }],
+    })
+    const res = await handlers['identity:sessions'](event)
+    expect(res.data.sessions[0].is_current).toBe(false)
+  })
+
+  it('sessions 不是数组 → 原样透传，不做归一化（不把契约破坏读成空列表）', async () => {
+    const { handlers, event } = createSessionHandlers({
+      deviceId: 'device-self',
+      sessions: null,
+      responseSessions: { sessions: 'not-an-array' },
+    })
+    const res = await handlers['identity:sessions'](event)
+    expect(res.data).toEqual({ sessions: 'not-an-array' })
+  })
+
+  it('其他会员通道不受影响（只有 sessions 归一化）', async () => {
+    const { handlers, event, memberApiService } = createSessionHandlers({
+      deviceId: 'device-self',
+      sessions: [{ id: 1, device_id: 'device-self' }],
+      responseSessions: { markers: [] },
+    })
+    await handlers['identity:notifications'](event)
+    expect(memberApiService.request).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '/api/v1/me/notifications' }),
+    )
+  })
+})

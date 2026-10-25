@@ -272,17 +272,22 @@ scenario14() {
 scenario15() {
     new_repo
     declare_branch main
-    # fixture 需要 scripts/ccg-gate.js 存在，钩子的 CCG 块（含 stage 循环）才会执行；
-    # SKIP_CCG_GATE=1 让真门禁快速通过，stage 循环在门禁之后无条件跑。
+    # fixture 需要 scripts/ccg-gate.js 存在，钩子的 CCG 块（含 stage 逻辑）才会执行。
+    # mock 门禁**在执行时**写一条判定记录 —— 模拟 ccg-review-decider.js 的真实行为
+    # （门禁跑的时候才产生记录）。2026-10-25 起语义收窄为「只 stage 本次门禁产生的」，
+    # 因此不能再把记录预置在盘上（那会被当成他人遗留而不 stage）。
     cat > "$TMP/repo/scripts/ccg-gate.js" <<'EOF'
+const fs = require('fs');
+const path = require('path');
+const dir = path.join(process.cwd(), '.ccg', 'reviews');
+fs.mkdirSync(dir, { recursive: true });
+fs.writeFileSync(path.join(dir, 'deadbeef00000000000000000000000000000000.json'), '{"sha":"placeholder"}');
 process.exit(0);
 EOF
-    # 门禁通过（wrapper exit 0）后钩子应 stage 未跟踪的 .ccg/reviews 记录
-    mkdir -p "$TMP/repo/.ccg/reviews"
-    echo '{"sha":"placeholder"}' > "$TMP/repo/.ccg/reviews/deadbeef00000000000000000000000000000000.json"
-    echo "hello" > "$TMP/repo/docs.md"
-    git -C "$TMP/repo" add docs.md
-    if SKIP_CCG_GATE=1 git -C "$TMP/repo" commit -q -m "scenario15 record-autostage" 2>"$TMP/err.log"; then
+    mkdir -p "$TMP/repo/apps/desktop/src"
+    printf 'hello\n' > "$TMP/repo/apps/desktop/src/a.js"
+    git -C "$TMP/repo" add apps/desktop/src/a.js
+    if git -C "$TMP/repo" commit -q -m "scenario15 record-autostage" 2>"$TMP/err.log"; then
         ok "scenario15 commit-passed"
     else
         bad "scenario15 应通过（记录 stage 不应阻断提交）：$(head -5 "$TMP/err.log" | tr '\n' ' ')"
@@ -295,7 +300,7 @@ EOF
         bad "scenario15 判定记录未入库（仍在未跟踪区）—— 自动 stage 未生效"
     fi
     # 已跟踪且无改动的记录不应被重复 add（幂等性：二次提交不夹带）
-    if SKIP_CCG_GATE=1 git -C "$TMP/repo" commit -q --allow-empty -m "scenario15 second" 2>"$TMP/err.log"; then
+    if git -C "$TMP/repo" commit -q --allow-empty -m "scenario15 second" 2>"$TMP/err.log"; then
         local staged
         staged="$(git -C "$TMP/repo" show --name-only --format= HEAD | grep -c '.ccg/reviews' || true)"
         if [ "$staged" = "0" ]; then
@@ -350,10 +355,24 @@ EOF
 process.exit(0);
 GEOF
         mkdir -p "$TMP/repo/.ccg/reviews"
-        for ((i = 1; i <= n; i++)); do printf '{"i":%d}\n' "$i" > "$TMP/repo/.ccg/reviews/r$i.json"; done
+        # 2026-10-25 语义收窄：候选域 = 门禁**本次产生**的记录（差集）。
+        # 因此不能再把 r*.json 预置在盘上（那会被当作他人遗留而不 stage），
+        # 改为让 mock 门禁在执行时写出来 —— 与真实 ccg-review-decider.js 同构。
+        cat > "$TMP/repo/scripts/ccg-gate-gen.js" <<GEOF2
+const fs = require('fs');
+const path = require('path');
+const dir = path.join(process.cwd(), '.ccg', 'reviews');
+fs.mkdirSync(dir, { recursive: true });
+for (let i = 1; i <= $n; i++) {
+  fs.writeFileSync(path.join(dir, 'r' + i + '.json'), JSON.stringify({ i }) + '\\n');
+}
+process.exit(0);
+GEOF2
+        # 用生成器临时替换门禁：跑完再换回 exit(0) 版本，供后续断言使用
+        cp "$TMP/repo/scripts/ccg-gate-gen.js" "$TMP/repo/scripts/ccg-gate.js"
         printf 'hello\n' > "$TMP/repo/docs.md"
         "$real_git" -C "$TMP/repo" add docs.md
-        if ! ( cd "$TMP/repo" && PATH="$shim:$PATH" SKIP_CCG_GATE=1 bash .git/hooks/pre-commit >/dev/null ) 2>"$TMP/err.log"; then
+        if ! ( cd "$TMP/repo" && PATH="$shim:$PATH" bash .git/hooks/pre-commit >/dev/null ) 2>"$TMP/err.log"; then
             printf 'COMMIT_FAIL\n'
             return 1
         fi
@@ -441,31 +460,40 @@ scenario17() {
     real_git="$(command -v git)"
     new_repo
     declare_branch main
+    # mock 门禁在执行时写"未跟踪 + 特殊文件名 + 非 json + 嵌套子目录"四类候选，
+    # 真实复现 ccg-review-decider.js 的产生时机（2026-10-25 起未跟踪侧只收差集）。
     cat > "$TMP/repo/scripts/ccg-gate.js" <<'GEOF'
+const fs = require('fs');
+const path = require('path');
+const root = process.cwd();
+const dir = path.join(root, '.ccg', 'reviews');
+fs.mkdirSync(dir, { recursive: true });
+fs.mkdirSync(path.join(dir, 'inner'), { recursive: true });
+fs.writeFileSync(path.join(dir, 'u1.json'), '{"u":1}');
+fs.writeFileSync(path.join(dir, 'u2.json'), '{"u":2}');
+fs.writeFileSync(path.join(dir, 'u3.json'), '{"u":3}');
+fs.writeFileSync(path.join(dir, 'with space 和中文.json'), '{"a":1}');
+fs.writeFileSync(path.join(dir, 'keep.md'), 'brief');
+fs.writeFileSync(path.join(dir, 'inner', 'nu.json'), '{"u":9}');
 process.exit(0);
 GEOF
     mkdir -p "$TMP/repo/.ccg/reviews"
+    # modified 侧：提交前已跟踪、门禁前被改动 ⇒ 仍应进候选（它们在 index 里，不属"他人未提交产物"）
     for i in 1 2; do printf '{"m":%d}\n' "$i" > "$TMP/repo/.ccg/reviews/m$i.json"; done
     for i in 1 2 3 4 5; do printf '{"c":%d}\n' "$i" > "$TMP/repo/.ccg/reviews/c$i.json"; done
-    printf 'brief\n' > "$TMP/repo/.ccg/reviews/keep.md"
-    # 嵌套子目录成员：旧形态的 shell glob 取不到它们（* 不跨 /），新形态若用裸 pathspec 会取到
+    # 嵌套子目录成员（已跟踪）：用于验证 pathspec 的 * 不跨 /
     mkdir -p "$TMP/repo/.ccg/reviews/inner"
     printf '{"n":1}\n' > "$TMP/repo/.ccg/reviews/inner/nm.json"
     printf '{"n":2}\n' > "$TMP/repo/.ccg/reviews/inner/nc.json"
-    printf '{"a":1}\n' > "$TMP/repo/.ccg/reviews/with space 和中文.json"
     printf 'base\n' > "$TMP/repo/docs.md"
     git -C "$TMP/repo" add -A
-    if ! git -C "$TMP/repo" commit -q -m "scenario17 base" 2>"$TMP/err.log"; then
+    if ! git -C "$TMP/repo" commit -q --no-verify -m "scenario17 base" 2>"$TMP/err.log"; then
         bad "scenario17 基线提交失败：$(head -3 "$TMP/err.log" | tr '\n' ' ')"
         return
     fi
     for i in 1 2; do printf '{"m":%d,"dirty":1}\n' "$i" > "$TMP/repo/.ccg/reviews/m$i.json"; done
-    printf 'brief changed\n' > "$TMP/repo/.ccg/reviews/keep.md"
-    printf '{"a":2}\n' > "$TMP/repo/.ccg/reviews/with space 和中文.json"
-    for i in 1 2 3; do printf '{"u":%d}\n' "$i" > "$TMP/repo/.ccg/reviews/u$i.json"; done
     printf '{"n":1,"dirty":1}\n' > "$TMP/repo/.ccg/reviews/inner/nm.json"
-    printf '{"u":9}\n' > "$TMP/repo/.ccg/reviews/inner/nu.json"
-    if ! ( cd "$TMP/repo" && SKIP_CCG_GATE=1 bash .git/hooks/pre-commit >/dev/null ) 2>"$TMP/err.log"; then
+    if ! ( cd "$TMP/repo" && bash "$HOOK_SRC" >/dev/null ) 2>"$TMP/err.log"; then
         bad "scenario17 钩子执行失败：$(head -3 "$TMP/err.log" | tr '\n' ' ')"
         return
     fi
@@ -498,8 +526,10 @@ GEOF
         *'和中文.json'*) ok "scenario17 odd-filename-staged-atomically" ;;
         *) bad "scenario17 含空格/中文的记录未入库（NUL 分隔或引用形态被破坏）" ;;
     esac
-    # 嵌套成员必须整类排除：裸 pathspec 的 * 跨 /，会把 inner/*.json 纳入候选，
-    # 使新形态成为旧集合的超集（spec「恰好等于旧集合」那条 MUST 被静默扩大）。
+    # 嵌套成员必须整类排除：pathspec 的 :(glob)* 不跨 /，inner/*.json 不在候选域里。
+    # 2026-10-25 一度把这条改成"门禁产生的嵌套记录也应入库"——实测失败后确认原断言才对：
+    # 候选域由 pathspec 形状决定，与"谁产生"无关；要收嵌套成员得改 pathspec，
+    # 那会顺带把域扩大成旧 shell glob 的超集，违反 spec「恰好等于旧集合」。
     case "$actual" in
         *'inner/'*) bad "scenario17 把子目录里的 json 纳入候选（pathspec 的 * 跨了 /，域比旧 shell glob 大）" ;;
         *) ok "scenario17 nested-out-of-domain" ;;
@@ -530,14 +560,19 @@ EOF
 
     new_repo
     declare_branch main
+    # 2026-10-25 起未跟踪侧只收差集 ⇒ 记录必须由门禁产生，不能预置在盘上
     cat > "$TMP/repo/scripts/ccg-gate.js" <<'GEOF'
+const fs = require('fs');
+const path = require('path');
+const dir = path.join(process.cwd(), '.ccg', 'reviews');
+fs.mkdirSync(dir, { recursive: true });
+for (const i of [1, 2, 3]) fs.writeFileSync(path.join(dir, 'v' + i + '.json'), '{"u":' + i + '}');
 process.exit(0);
 GEOF
-    mkdir -p "$TMP/repo/.ccg/reviews"
-    for i in 1 2 3; do printf '{"u":%d}\n' "$i" > "$TMP/repo/.ccg/reviews/v$i.json"; done
-    printf 'hello\n' > "$TMP/repo/docs.md"
-    git -C "$TMP/repo" add docs.md
-    out="$( ( cd "$TMP/repo" && PATH="$shim:$PATH" SKIP_CCG_GATE=1 bash .git/hooks/pre-commit ) 2>&1 )"
+    mkdir -p "$TMP/repo/apps/desktop/src"
+    printf 'hello\n' > "$TMP/repo/apps/desktop/src/a.js"
+    git -C "$TMP/repo" add apps/desktop/src/a.js
+    out="$( ( cd "$TMP/repo" && PATH="$shim:$PATH" bash .git/hooks/pre-commit ) 2>&1 )"
     # 正控：注入确实打中了那一次批量调用，且回退分支真的逐条走了一遍。
     # 两条都取自 shim 日志（钩子会抑制批量调用的 stderr，取输出必然恒不命中）。
     if grep -q -- '--pathspec-from-file' "$TMP/git18.log"; then
@@ -672,19 +707,25 @@ EOF
         : > "$TMP/git20.log"
         new_repo
         declare_branch main
-        cat > "$TMP/repo/scripts/ccg-gate.js" <<'GEOF'
+        # mock 门禁在执行时写 n 条新记录（2026-10-25 起未跟踪侧只收差集）
+        cat > "$TMP/repo/scripts/ccg-gate.js" <<GEOF
+const fs = require('fs');
+const path = require('path');
+const dir = path.join(process.cwd(), '.ccg', 'reviews');
+fs.mkdirSync(dir, { recursive: true });
+for (let i = 1; i <= $n; i++) fs.writeFileSync(path.join(dir, 'new' + i + '.json'), '{"u":' + i + '}');
 process.exit(0);
 GEOF
         mkdir -p "$TMP/repo/.ccg/reviews"
         for i in $(seq 1 200); do printf '{"c":%d}\n' "$i" > "$TMP/repo/.ccg/reviews/c$i.json"; done
-        printf 'hello\n' > "$TMP/repo/docs.md"
+        mkdir -p "$TMP/repo/apps/desktop/src"
+        printf 'hello\n' > "$TMP/repo/apps/desktop/src/a.js"
         git -C "$TMP/repo" add -A
-        if ! git -C "$TMP/repo" commit -q -m "scenario20 base" 2>"$TMP/err.log"; then
+        if ! git -C "$TMP/repo" commit -q --no-verify -m "scenario20 base" 2>"$TMP/err.log"; then
             bad "scenario20 基线提交失败：$(head -3 "$TMP/err.log" | tr '\n' ' ')"
             return 1
         fi
-        for i in $(seq 1 "$n"); do printf '{"u":%d}\n' "$i" > "$TMP/repo/.ccg/reviews/new$i.json"; done
-        if ! ( cd "$TMP/repo" && PATH="$shim:$PATH" SKIP_CCG_GATE=1 bash .git/hooks/pre-commit >/dev/null ) 2>"$TMP/err.log"; then
+        if ! ( cd "$TMP/repo" && PATH="$shim:$PATH" bash .git/hooks/pre-commit >/dev/null ) 2>"$TMP/err.log"; then
             bad "scenario20 钩子执行失败：$(head -3 "$TMP/err.log" | tr '\n' ' ')"
             return 1
         fi
@@ -713,6 +754,72 @@ GEOF
         bad "scenario20 回退未补齐记录（staged ${S1:-unset}/${S2:-unset} 期望 1/2）"
     fi
 }
+# 场景 21：自动暂存不得夹带**他人会话遗留**的判定记录（跨会话污染锁）
+#   为什么单独一条：scenario15/16/17/20 都把"盘上所有未跟踪/已改动的 .ccg/reviews/*.json"
+#   当作候选全集，那在单会话下是对的；但共享根与 N 个 worktree 共用同一个 .ccg 目录视图时，
+#   **别人刚生成、还没提交的记录**会出现在我的 `git ls-files --others` 里，被无差别 stage
+#   进我的提交 —— 我的 PR 于是夹带了别人的评审产物。
+#   实测证据（2026-10-25）：PR #4395 夹带 3 个快照，其中
+#   `.ccg/reviews/8a221675….json` 的 sha 字段指向 `b642881c`（rebase 前的 merge-base，
+#   即他人提交），另两个才是我自己的。
+#   修法：门禁开始前先对候选域拍一份快照，跑完后只 stage **差集**（本次门禁新产生的），
+#   盘上既有的他人记录原样留着不碰。
+scenario21() {
+    local real_git actual
+    real_git="$(command -v git)"
+    new_repo
+    declare_branch main
+    cat > "$TMP/repo/scripts/ccg-gate.js" <<'GEOF'
+process.exit(0);
+GEOF
+    mkdir -p "$TMP/repo/.ccg/reviews"
+    # 必须是**代码文件**修改：钩子对"未检测到代码文件修改"会提前跳过质量节拍检查，
+    # 那样永远走不到 CCG stage 块，本场景会退化成装饰判据（2026-10-25 实测：
+    # 用 docs.md 时 hook-output 明确打印"未检测到代码文件修改，跳过"）。
+    mkdir -p "$TMP/repo/apps/desktop/src"
+    printf 'hello\n' > "$TMP/repo/apps/desktop/src/a.js"
+    git -C "$TMP/repo" add apps/desktop/src/a.js
+    # base 提交走 --no-verify：否则 base 那次钩子就会把他人遗留记录 stage 进去，
+    # 使它变成"受跟踪且干净"，第二轮钩子扫不到 —— 本场景会假绿。
+    if ! git -C "$TMP/repo" commit -q --no-verify -m "scenario21 base" 2>"$TMP/err.log"; then
+        bad "scenario21 基线提交失败：$(head -3 "$TMP/err.log" | tr '\n' ' ')"
+        return
+    fi
+    # 他人会话遗留：**未跟踪**，且在 base 之后才出现（模拟别的 worktree/会话
+    # 在我这次提交之前刚生成、还没人 git add）。
+    printf '{"other":1}\n' > "$TMP/repo/.ccg/reviews/other-session.json"
+    printf '{"other":2}\n' > "$TMP/repo/.ccg/reviews/other-session2.json"
+    printf 'hello2\n' > "$TMP/repo/apps/desktop/src/a.js"
+    git -C "$TMP/repo" add apps/desktop/src/a.js
+    if ! ( cd "$TMP/repo" && SKIP_CCG_GATE=1 bash "$HOOK_SRC" >"$TMP/hook.out" 2>&1 ); then
+        bad "scenario21 钩子执行失败：$(head -3 "$TMP/err.log" | tr '\n' ' ')"
+        return
+    fi
+    # 自检：必须真的走到了 CCG stage 块，否则下面的"未夹带"是假绿
+    if ! grep -q '\[reviews\]\|=== Pre-commit 检查完成 ===' "$TMP/hook.out"; then
+        bad "scenario21 钩子未走到 CCG stage 块（hook-output: $(tr '\n' ' ' < "$TMP/hook.out" | head -c 200)）——夹具失真，先修夹具"
+        return
+    fi
+    # 只看 .ccg/reviews 这一层的暂存：用户自己 add 的代码文件本来就该在暂存区，
+    # 把它算进来会让"不夹带"这条永远红（2026-10-25 首版断言就是这样失真的）。
+    actual="$(cd "$TMP/repo" && "$real_git" -c core.quotePath=false diff --cached --name-only | grep '.ccg/reviews' | LC_ALL=C sort | tr '\n' '|')"
+    echo "  [scenario21] hook-output: $(tr '\n' ' ' < "$TMP/hook.out" | head -c 400)"
+    echo "  [scenario21] staged-reviews=$actual"
+    # ① 他人遗留不得被夹带（本场景主判据）
+    case "$actual" in
+        *'other-session'*) bad "scenario21 夹带了他人会话遗留的判定记录 —— 跨会话污染复现" ;;
+        *) ok "scenario21 others-record-not-carried" ;;
+    esac
+    # ② 门禁本次未产生新记录（fixture 是 no-op）⇒ .ccg/reviews 层暂存应为空。
+    #    这条同时反证候选域已收窄到"本次差集"；正向（新记录必须入库）由
+    #    scenario15/16/17/20 守，本条只守"不夹带"。
+    if [ -z "$actual" ]; then
+        ok "scenario21 no-new-record-nothing-staged"
+    else
+        bad "scenario21 门禁未产生新记录却在 .ccg/reviews 层有暂存（$actual）——候选域没收窄到本次差集"
+    fi
+}
+
 scenario1
 scenario2
 scenario3
@@ -733,6 +840,7 @@ scenario17
 scenario18
 scenario19
 scenario20
+scenario21
 
 echo "----"
 echo "结果: PASS=$PASS FAIL=$FAIL"

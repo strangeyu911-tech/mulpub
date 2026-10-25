@@ -4,6 +4,33 @@ function safeError(error) {
   return error && typeof error.code === 'string' ? error.code : 'IDENTITY_OPERATION_FAILED'
 }
 
+/**
+ * 设备会话的「当前设备」标记（方案 P1-4 + 评审 C1-13）。
+ *
+ * 为什么不能留给渲染层：原先渲染层用 `index === 0` 判当前设备，那是**猜服务端
+ * 返回顺序**——服务端一旦改排序（按最近活跃、按创建时间…），徽章就指向别人的设备。
+ * 主进程每个会员请求都带 X-Device-Id（entitlementService.deviceId），服务端拿得到，
+ * 所以在这里按 device_id 比对打标是唯一不靠猜的做法。
+ *
+ * C1-13 边界：**全 false 是合法态**（当前设备未 upsert 或不在返回列表）。
+ * 此时渲染层显示「未识别当前设备」中性态；本函数**绝不**回退成"标第一行"——
+ * 那等于把刚修掉的顺序猜测又请回来。
+ *
+ * 契约防御：sessions 不是数组时原样返回，不把契约破坏读成空列表
+ * （空列表会让 UI 说"你没有其他设备"，而真相是响应形状变了）。
+ */
+function markCurrentSession(data, deviceId) {
+  if (!data || !Array.isArray(data.sessions)) return data
+  const self = typeof deviceId === 'string' && deviceId ? deviceId : ''
+  return {
+    ...data,
+    sessions: data.sessions.map((row) => {
+      if (!row || typeof row !== 'object') return row
+      return { ...row, is_current: self !== '' && row.device_id === self }
+    }),
+  }
+}
+
 function registerIdentityHandlers(ipcMain, deps = {}) {
   const authService = deps.authService
   ipcMain.handle('identity:get-state', withSenderCheck(async () => {
@@ -51,13 +78,22 @@ function registerIdentityHandlers(ipcMain, deps = {}) {
       const body = method && method !== 'GET'
         ? { code: payload && typeof payload.code === 'string' ? payload.code : '' }
         : undefined
-      return { code: 0, data: await memberApiService.request({ subject, path: apiPath, method, body }) }
+      const response = await memberApiService.request({ subject, path: apiPath, method, body })
+      // 归一化钩子（当前只用于设备会话的 is_current 打标）：放在 IPC 边界做，
+      // 渲染层因此永远拿不到"需要猜顺序"的原始列表。normalize 抛错时
+      // **原样返回**，不让一个打标失败把整条读通道变成错误响应。
+      const data = typeof options.normalize === 'function'
+        ? (() => { try { return options.normalize(response, authService.entitlementService && authService.entitlementService.deviceId) } catch { return response } })()
+        : response
+      return { code: 0, data }
     } catch (error) {
       return { code: EC.AUTH_ERROR, message: safeError(error) }
     }
   })
   // 通道名必须以字面量出现在 ipcMain.handle( 中：tests/ipc-contract.test.js 按字面量静态扫描 preload↔handler 合同，循环变量注册不可见。
-  ipcMain.handle('identity:sessions', memberApiHandler('/api/v1/me/sessions'))
+  // 注意：不显式传 method —— memberApiService 默认按 ME_API_PATHS 的首个方法（GET）解析，
+  // 传了会让 payload 多出 method/body 两个键，改变既有 IPC 响应形状。
+  ipcMain.handle('identity:sessions', memberApiHandler('/api/v1/me/sessions', undefined, { normalize: markCurrentSession }))
   ipcMain.handle('identity:sessions-revoke-others', memberApiHandler('/api/v1/me/sessions/revoke-others'))
   ipcMain.handle('identity:notifications', memberApiHandler('/api/v1/me/notifications'))
   ipcMain.handle('identity:notifications-mark-read', memberApiHandler('/api/v1/me/notifications/read'))

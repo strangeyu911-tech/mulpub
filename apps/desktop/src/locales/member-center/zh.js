@@ -173,6 +173,7 @@ export default {
     revokeOthers: '退出其他设备',
     revokingOthers: '正在退出其他设备...',
     currentDevice: '当前设备',
+    currentDeviceUnknown: '未能识别当前设备。列表仅显示服务端已记录的设备。',
     unknownDevice: '未知设备',
     lastSeen: '最近活动',
     messagesTitle: '通知消息',

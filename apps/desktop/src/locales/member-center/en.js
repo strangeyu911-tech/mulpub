@@ -174,6 +174,7 @@ export default {
     revokeOthers: 'Sign out other devices',
     revokingOthers: 'Signing out other devices...',
     currentDevice: 'This device',
+    currentDeviceUnknown: 'Current device not identified. The list only shows devices recorded by the server.',
     unknownDevice: 'Unknown device',
     lastSeen: 'Last active',
     messagesTitle: 'Notifications',

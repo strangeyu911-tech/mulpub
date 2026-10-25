@@ -1,0 +1,117 @@
+{
+  "sha": "9bdc5e7ca7fcf7addf7fb3846faa60cdb85ce4f2",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 0 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 36,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 2,
+    "docSensitiveContentSample": [
+      "| 05 | 账号矩阵 | `/accounts` | 青蓝 · 单行 | 按平台分组；授权健康度 |",
+      "| 05 | 账号矩阵 | `/accounts` | 青蓝 · 单行 | 按平台分组 · 授权健康度 |"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "cb1bc741ea205ba514c80d6661f61cd4c2c6e3aa81d4e9108e9a0d3593869df9",
+  "decidedAt": "2026-10-25T05:30:03.957Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "claude",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": ".ccg/reviews JSON sha (9bdc5e7ca...) does not match proposal head (b2ab444...); review targets wrong commit.",
+        "verdict": "dismissed",
+        "prosecution": ".ccg/reviews 的 JSON 里记的 sha（9bdc5e7ca…）与提案头部的 head（b2ab444…）不一致，评审针对的是错误的提交。",
+        "defense": "记录里的 sha 正是**父提交**（9bdc5e7ca… == HEAD^，已实测），这是 pre-commit 的既定行为：判定记录在提交**之前**生成，此刻新提交还不存在，只能挂父提交上——深审入口自己打印「判定记录写在父 sha 上——这是预期行为」，且 `stagedDiffHash`（cb1bc741…，内容寻址，= 文件名）正是被评差量的身份键。仓内全部 2200 份已跟踪记录同一形态。反证：若按指控把 sha 改成 head，会让「判定记录 ↔ 被评差量」的对应关系断链（而差量身份在 stagedDiffHash 上）。",
+        "rationale": "sha 与 head 不同是**设计如此**，不是错配：记录生成于提交前，只能记父 sha；被评差量由 stagedDiffHash 标识。可核：判定的 sha == `git rev-parse HEAD^`，且深审入口输出「判定记录写在父 sha 上——这是预期行为」。",
+        "externalReview": null
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "deepReview.required=true, status=pending, performedBy=null creates unfulfilled mandatory blocking gate with no reviewer assigned.",
+        "verdict": "upheld",
+        "prosecution": "deepReview.required=true 但 status=pending、performedBy=null，形成了一个没有任何评审人认领的、必然阻塞的强制门禁。",
+        "defense": "这是**评审尚未写回**时的中间态，不是提交进去的状态：判定记录由 pre-commit 自动生成（`required=true` 表示「需要评审」），真正的评审由 deep-review.sh 跑外部后端产出，本轮已跑通（critic=claude，8 条问题）。本轮评审已结束，引擎把记录写成 `status=self_play_pending` 并留下裁决模板等待逐条填写——按仓内既有出口，写回后 status/tier/performedBy/findings/evidence/closureNote 会一并补齐，欠账门禁只查 mode===dual 的记录。",
+        "rationale": "指控的**事实**成立（提交瞬间确实是一格空门禁），但这是流程的正常中间态且本轮已闭环：外部评审已跑（8 条意见），裁决已逐条填写，记录已写回为 `status=self_play_resolved` / `tier=external` / `performedBy=claude` / `findings`（7 条含 prosecution-defense-verdict-rationale）/`evidence=delivery@<sha256>`（仓内 scripts/lib/ccg-delivery-digest.js 算，与判据侧同源）。可核：`node scripts/check-pr-exec-record.js --base=origin/main --mode=enforce` 的 TIER-COVERAGE 行显示 external=1。",
+        "externalReview": null
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": ".ccg/reviews claims changedLines=0/fileCount=36 but proposal reports 3259 lines changed with massive HTML additions; metrics broken.",
+        "verdict": "dismissed",
+        "prosecution": ".ccg/reviews 声称 changedLines=0 / fileCount=36，而提案报的是 3259 行改动（含大量 HTML 新增），指标自相矛盾，像是编造的。",
+        "defense": "两个数字量的是**不同的东西**，不是同一量的两个值：`stats.changedLines` 只统计**源码行**（判据的 `codeExtensions` 白名单：.js/.ts/.vue/.json/.yaml…），文档与资源（.md/.html/.svg/.png）不计入复杂度；而提案头部的「变更规模」按**整个差量**统计。实测本次改动的 37 个文件按扩展名是 {.json:1, .md:2, .html:1, .png:33}，其中唯一的「源码类」文件是判定器自己的产物 `.ccg/reviews/*.json`，而它按 `SELF_ARTIFACT_PATH` 被整条排除（判定器自产的产物不计入自己的判定域）。⇒ codeFileCount=0 / changedLines=0 是**正确口径**，不是编造。可核：`scripts/ccg-review-decider.js` 的 `RULES.codeExtensions` 与 `SELF_ARTIFACT_PATH` 两处注释同源。",
+        "rationale": "3259 与 0 是两套统计口径（整个差量 vs 源码行），不是同一量的矛盾读数；本次改动全是文档与资源，按判据口径源码行确为 0。可核：实测 37 个改动文件的扩展名分布 + 判据的 codeExtensions / SELF_ARTIFACT_PATH。",
+        "externalReview": null
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "Retrospective admits 45 vs 47 screenshot discrepancy and 4 screens shared 2 IDs; self-check failed before submission.",
+        "verdict": "upheld",
+        "prosecution": "复盘自述 45 vs 47 的截图差异、以及 4 个屏共用 2 个 id，说明提交前自检是失败的，而这样的东西不该直接提交。",
+        "defense": "指控的事实**属实且已如实写进复盘**（这正是本 PR 特意把它写下来的原因）：补稿过程中确实踩了「批量替换跨连字符边界 ⇒ 屏 id 撞车 ⇒ 后者覆盖前者 ⇒ 截图静默从 47 变 45」这个坑。但两点必须说清：① 那是**过程中**的中间态，最终提交前已修掉（33 个屏 id 全部唯一、47 张截图齐）；② 正因为这次踩坑，本 PR 反而**加了一道路机械闸**——产物级自检四项（类名全部有定义 / 每屏有 caption / 每屏有 Hero 配置 / **屏 id 全部唯一**），打在最终 index.html 上而不是源文件上。这条建议的实质（把 id 唯一性与截图数变成自动检查）已被采纳并落地。",
+        "rationale": "事实属实（中间态确实出现过 45 vs 47），且建议的实质已被采纳：① 修掉 id 撞车（33 个 id 全部唯一）；② 新增产物级自检（含屏 id 唯一性这一项，它正是当初漏掉的那一项）；③ 复盘如实保留这段经历（规格书 §9.3 与执行记录「七、本轮踩到的三个真问题」）。可核：`.tmp-design-ui/verify-product.js` 的四项检查 + `check-nav-dup.js` + 实测 47 张截图。",
+        "externalReview": null
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "index.html uses scattered inline style attributes instead of CSS classes, reducing editability of 47-screen layout.",
+        "verdict": "dismissed",
+        "prosecution": "index.html 大量使用零散的行内 style 属性而不是 CSS 类，47 屏布局的可编辑性因此下降。",
+        "defense": "这是**原稿既有的形态**，不是本轮引入的风格：新屏沿用同一套写法是为了与已合并的 14 屏保持一致，改一半反而会让稿内两套风格并存。更重要的是行内 style 在本稿里承担了**具体的**职责：它标的是「一次性布局」（某屏特有的栅格列数、某个数字的字号、某条进度条的宽度），这些是内容数据而不是可复用组件——把它们提成类反而要造几十个只出现一次的类。可复用的东西已经都在类里：85 个 CSS 变量（令牌）、`.card` / `.btn` / `.chip` / `.stat` / `.g-ico` 等组件、本轮补的 10 个布局类（`.cfg-row` / `.stage-grid` / `.auto-err` / `.lnk` …）。「把行内样式全部提类」是一次覆盖 47 屏的重构，属改交付形态，须人工过目。",
+        "rationale": "行内 style 是原稿既有形态且标的是一次性布局数据（不是可复用组件）；可复用部分已全部类化（85 变量 + 组件类 + 本轮补的 10 个布局类）。全量提类属覆盖 47 屏的重构、改交付形态，按 AGENTS.md 须人工过目 ⇒ 本次不做。",
+        "externalReview": null
+      }
+    ],
+    "template": ".adversarial\\ccg-deep-b2ab4441\\adjudication.json",
+    "note": "裁决已填写：5 条逐条 verdict（upheld=2 / dismissed=3）；本轮差量判定档为 SINGLE（引擎只派单模型），高危域 0 条；critic 另出的 3 条 Info 级意见（i6/i7/i8）不列入待裁模板，已在执行记录 §四 逐条写明处置",
+    "at": "2026-10-25T05:51:27.233Z",
+    "tier": "external",
+    "evidence": "delivery@62693feec8a2043028bba5a944b3d75b50bf0d149e11c0b05906ced61976280a",
+    "closureNote": "Round 1（.adversarial/ccg-deep-b2ab4441/，critic=claude 外部评审，8 条意见，其中 5 条进待裁模板、3 条 Info 另行处置）：逐条裁决完毕。i2 成立且已闭合——外部评审已跑通（8 条意见），裁决已逐条填写，本记录写回为 status=self_play_resolved / tier=external / performedBy=claude / findings（含 5 条 prosecution-defense-verdict-rationale）/ evidence=delivery@<sha256>（仓内 scripts/lib/ccg-delivery-digest.js 算，与判据侧同源）；写回后 check-pr-exec-record.js 的 TIER-COVERAGE 行显示 external=1、external-unverified=0。i4 成立且已落地——评审指出「45 vs 47 截图」与「4 屏共用 2 个 id」的中间态属实（已如实写进复盘），建议的实质（把 id 唯一性与截图数变成自动检查）已采纳：新增产物级自检四项（类名全部有定义 / 每屏有 caption / 每屏有 Hero 配置 / 屏 id 全部唯一），打在最终 index.html 上而非源文件上。i7（Info）成立并已修——把截图体积的实测读数写进交付文档（47 张 @1440×900、仓内合计 18.07 MB、单张 165 KB~582 KB、平均 384 KB）；「自动化体积预算门禁」属改守门规则，本次不做、如实留作后续。i1 驳回——判定记录里的 sha == 父提交（已实测 git rev-parse HEAD^），是 pre-commit 的既定行为（判定记录写在父 sha 上，深审入口自己如此声明），被评差量由 stagedDiffHash（内容寻址）标识。i3 驳回——3259 与 0 是两套统计口径（整个差量 vs 源码行）：本次改动全是文档与资源（实测 37 个文件 = {.json:1,.md:2,.html:1,.png:33}），唯一「源码类」文件是判定器自己的产物（被 SELF_ARTIFACT_PATH 排除）⇒ codeFileCount=0 是正确口径，不是编造。i5 驳回——行内 style 是原稿既有形态且标的是一次性布局数据；可复用部分已全部类化（85 个 CSS 变量 + 组件类 + 本轮补的 10 个布局类）；全量提类属覆盖 47 屏的重构、改交付形态，须人工过目。i6（Info）驳回——后端名由判定器与 scripts/ccg-review-backends.list 决定，本 PR 未改判定器、未新增硬编码。i8（Info）驳回——实测 47 个导航链接文字全部唯一（状态屏标题带「· 空态」等后缀）；同编号是「同一页面的不同状态」的有意设计。本轮高危域 0 条（引擎 requiresExternalReview 为空）⇒ 无需 externalReview 三格。完整裁决与取证坐标见 PR 公开评论与仓内执行记录 openspec/records/ui-design-full.md §四。"
+  }
+}

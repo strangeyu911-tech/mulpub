@@ -587,6 +587,19 @@ html.glass-indigo{   /* 靛蓝：单一靛紫（推荐） */
 @media (prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
 }
+
+/* ── 新增屏用到的布局类（由真实视图源码的类名映射而来，最小定义，只用既有令牌）── */
+.cfg-row{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.cfg-item{min-width:0}
+.notice{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:12px;background:var(--ink-100);font-size:12px;color:var(--ink-700)}
+.auto-err{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:12px;background:#F9ECEC;font-size:12px;color:var(--st-err)}
+.ws-body{display:flex;flex-direction:column}
+.lnk{background:none;border:none;padding:0;cursor:pointer;font-size:12px;color:var(--ink-700);text-decoration:underline;text-underline-offset:2px}
+.lnk-danger{color:var(--st-err)}
+.stage-grid{display:grid;gap:10px;grid-template-columns:repeat(3,1fr)}
+.stage-card{border:1px solid var(--ink-200);border-radius:12px;padding:12px}
+.stage-head{display:flex;align-items:center;gap:8px}
+
 </style>
 </head>
 <body>
@@ -615,6 +628,39 @@ html.glass-indigo{   /* 靛蓝：单一靛紫（推荐） */
     <a href="#s-comments">11 私信评论</a>
     <a href="#s-member">12 会员中心</a>
     <a href="#s-overlays">13 弹窗与浮层</a>
+      <a href="#s-automation">20 自动化任务</a>
+    <a href="#s-automation-empty">20 自动化任务</a>
+    <a href="#s-automation-error">20 自动化任务</a>
+    <a href="#s-copy-library">21 文案库</a>
+    <a href="#s-copy-library-empty">21 文案库</a>
+    <a href="#s-rewrite">22 一键改写</a>
+    <a href="#s-rewrite-error">22 一键改写</a>
+    <a href="#s-model-providers">23 模型服务</a>
+    <a href="#s-model-providers-empty">23 模型服务</a>
+    <a href="#s-cloud-publish">24 云端发布</a>
+    <a href="#s-viral-analysis">25 爆款分析</a>
+    <a href="#s-library">26 项目库</a>
+    <a href="#s-library-loading">26 项目库</a>
+    <a href="#s-library-error">26 项目库</a>
+    <a href="#s-knowledge-base">27 知识库</a>
+    <a href="#s-prompt-eval">28 提示词评测</a>
+    <a href="#s-performance-insights">29 表现洞察</a>
+    <a href="#s-podcast">30 播客频道</a>
+    <a href="#s-podcast-empty">30 播客频道</a>
+    <a href="#s-keywords">31 关键词监测</a>
+    <a href="#s-publish-history">32 发布记录</a>
+    <a href="#s-publish-history-empty">32 发布记录</a>
+    <a href="#s-create-result">33 成片结果</a>
+    <a href="#s-create-result-empty">33 成片结果</a>
+    <a href="#s-intelligence">34 内容情报</a>
+    <a href="#s-auto-pipeline">35 自动流水线</a>
+    <a href="#s-auto-pipeline-error">35 自动流水线</a>
+    <a href="#s-video-clone">36 视频克隆</a>
+    <a href="#s-film-engineering">37 影视工程</a>
+    <a href="#s-film-classic">37 影视工程</a>
+    <a href="#s-board">38 制作看板</a>
+    <a href="#s-contact-sheet">39 联系表</a>
+    <a href="#s-replay">40 回放时间轴</a>
   </nav>
 </header>
 
@@ -2818,6 +2864,2354 @@ html.glass-indigo{   /* 靛蓝：单一靛紫（推荐） */
   <div class="caption"><b>13</b><span>弹窗与浮层</span><i>Hero 在浮层里的三种形态</i></div>
 </section>
 
+<section class="screen" id="s-automation">
+  <div class="frame">
+    <div class="app" data-nav="home" data-tab="自动化" data-url="自动化">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>自动化任务</h2>
+              <div class="sub">按触发条件自动跑发布与采集流水线 · 4 个任务</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">任务日志</button><button class="btn btn-p">新建任务</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-b" style="padding:11px 14px;display:flex;align-items:center;gap:9px">
+              <i class="g-ico g-warn">△</i>
+              <span style="font-size:12px;color:var(--ink-700)">自动任务与手动发布会争抢同一队列：当前有 <b>2</b> 个任务在跑，手动发布可能被延后。</span>
+              <span class="chip chip-line" style="margin-left:auto">查看排队</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">任务</div>
+              <div class="card-sub">失败策略：中止 = 停整条流水线；跳过 = 继续下一目标</div>
+              <div class="more" style="margin-left:auto"><span class="chip chip-line">全部启用</span></div>
+            </div>
+            <div class="card-b" style="padding-top:8px">
+              <table class="tbl">
+                <thead><tr>
+                  <th>名称</th><th>触发条件</th><th>动作</th><th>失败策略</th><th>上次运行</th><th style="width:150px">操作</th>
+                </tr></thead>
+                <tbody>
+                  <tr>
+                    <td><label class="cfg-row" style="display:flex;align-items:center;gap:8px">
+                      <input type="checkbox" checked />
+                      <span style="font-size:12.5px;font-weight:700">每日自动发布到头条号</span>
+                    </label></td>
+                    <td><span class="chip chip-line">应用启动</span> <span class="chip chip-line">每日 09:00</span></td>
+                    <td style="font-size:12px;color:var(--ink-600)">发布流水线</td>
+                    <td style="font-size:12px;color:var(--ink-600)">跳过<span class="meta">（2 次重试）</span></td>
+                    <td><i class="g-ico g-run">●</i> <span style="font-size:12px;margin-left:5px">运行中</span>
+                      <span class="meta" style="display:block">—</span>
+                      
+                    </td>
+                    <td><button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">立即运行</button>
+                      <button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">编辑</button>
+                      <button class="lnk lnk lnk-danger" style="background:none;border:none;cursor:pointer;color:var(--st-err);font-size:12px">删除</button></td>
+                  </tr>
+                  <tr>
+                    <td><label class="cfg-row" style="display:flex;align-items:center;gap:8px">
+                      <input type="checkbox" checked />
+                      <span style="font-size:12.5px;font-weight:700">小红书笔记监控</span>
+                    </label></td>
+                    <td><span class="chip chip-line">每 30 分钟</span></td>
+                    <td style="font-size:12px;color:var(--ink-600)">采集 → 生成</td>
+                    <td style="font-size:12px;color:var(--ink-600)">中止<span class="meta">（3 次重试）</span></td>
+                    <td><i class="g-ico g-ok">✓</i> <span style="font-size:12px;margin-left:5px">已完成</span>
+                      <span class="meta" style="display:block">08:12</span>
+                      
+                    </td>
+                    <td><button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">立即运行</button>
+                      <button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">编辑</button>
+                      <button class="lnk lnk lnk-danger" style="background:none;border:none;cursor:pointer;color:var(--st-err);font-size:12px">删除</button></td>
+                  </tr>
+                  <tr>
+                    <td><label class="cfg-row" style="display:flex;align-items:center;gap:8px">
+                      <input type="checkbox" checked />
+                      <span style="font-size:12.5px;font-weight:700">知乎盐选专栏更新</span>
+                    </label></td>
+                    <td><span class="chip chip-line">每周一 10:00</span></td>
+                    <td style="font-size:12px;color:var(--ink-600)">发布流水线</td>
+                    <td style="font-size:12px;color:var(--ink-600)">跳过</td>
+                    <td><i class="g-ico g-fail">!</i> <span style="font-size:12px;margin-left:5px">失败</span>
+                      <span class="meta" style="display:block">昨天 10:00</span>
+                      <div class="auto-err" style="font-size:11px;color:var(--st-err);margin-top:3px">授权过期：需重新登录知乎</div>
+                    </td>
+                    <td><button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">立即运行</button>
+                      <button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">编辑</button>
+                      <button class="lnk lnk lnk-danger" style="background:none;border:none;cursor:pointer;color:var(--st-err);font-size:12px">删除</button></td>
+                  </tr>
+                  <tr>
+                    <td><label class="cfg-row" style="display:flex;align-items:center;gap:8px">
+                      <input type="checkbox"  />
+                      <span style="font-size:12.5px;font-weight:700">视频号定时发布</span>
+                    </label></td>
+                    <td><span class="chip chip-line">每日 18:00</span></td>
+                    <td style="font-size:12px;color:var(--ink-600)">发布流水线</td>
+                    <td style="font-size:12px;color:var(--ink-600)">中止<span class="meta">（1 次重试）</span></td>
+                    <td><i class="g-ico g-idle">○</i> <span style="font-size:12px;margin-left:5px">已停用</span>
+                      <span class="meta" style="display:block">10-21 18:00</span>
+                      
+                    </td>
+                    <td><button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">立即运行</button>
+                      <button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">编辑</button>
+                      <button class="lnk lnk lnk-danger" style="background:none;border:none;cursor:pointer;color:var(--st-err);font-size:12px">删除</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>20</b><span>自动化任务</span><i>触发条件 · 失败策略 · 队列争抢提示</i></div>
+</section>
+<section class="screen" id="s-automation-empty">
+  <div class="frame">
+    <div class="app" data-nav="home" data-tab="自动化" data-url="自动化">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>自动化任务</h2>
+              <div class="sub">按触发条件自动跑发布与采集流水线</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">任务日志</button><button class="btn btn-p">新建任务</button></div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <div class="card-b" style="padding:34px 24px;text-align:center">
+              <div style="display:flex;justify-content:center;margin-bottom:12px"><i class="g-ico g-idle" style="font-size:22px">○</i></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ink-900)">还没有自动化任务</div>
+              <div style="font-size:12px;color:var(--ink-500);margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.7">任务可以按「应用启动 / 每日定时 / 每周定时」自动触发发布或采集流水线。第一个任务建议从「每日 09:00 自动发布」开始。</div>
+              <div style="margin-top:14px"><button class="btn btn-p">新建任务</button></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>20</b><span>自动化任务 · 空态</span><i>一个任务都没有 · 引导到第一个每日定时任务</i></div>
+</section>
+<section class="screen" id="s-automation-error">
+  <div class="frame">
+    <div class="app" data-nav="home" data-tab="自动化" data-url="自动化">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>自动化任务</h2>
+              <div class="sub">按触发条件自动跑发布与采集流水线</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">任务日志</button><button class="btn btn-p">新建任务</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-b" style="padding:12px 14px;display:flex;align-items:center;gap:9px">
+              <i class="g-ico g-fail">!</i>
+              <div>
+                <div style="font-size:12.5px;font-weight:700;color:var(--st-err)">任务配置读不到</div>
+                <div style="font-size:11.5px;color:var(--ink-500);margin-top:2px">「读不到」与「没有任务」是两件事 —— 配置可能存在但当前不可读，先重试再决定是否重建。</div>
+              </div>
+              <button class="btn btn-sm btn-g" style="margin-left:auto">重试读取</button>
+            </div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <div class="card-b" style="padding:34px 24px;text-align:center">
+              <div style="display:flex;justify-content:center;margin-bottom:12px"><i class="g-ico g-fail" style="font-size:22px">!</i></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ink-900)">无法读取任务配置</div>
+              <div style="font-size:12px;color:var(--ink-500);margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.7">本地任务配置文件不可读（可能正被其他进程占用或已损坏）。为避免误删既有任务，本页不显示任何任务，请先重试。</div>
+              <div style="margin-top:14px"><button class="btn btn-p">重试读取</button></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>20</b><span>自动化任务 · 失败态</span><i>真源不可读 · 与「没有任务」区分开</i></div>
+</section>
+<section class="screen" id="s-copy-library">
+  <div class="frame">
+    <div class="app" data-nav="library" data-tab="文案库" data-url="文案库">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>文案库</h2>
+              <div class="sub">已发布过的稿件与选题 · 28 条 · 可直接复用</div>
+            </div>
+            <div class="ph-actions"><div class="input" style="width:200px;height:32px"><span style="color:var(--ink-400)">⌕</span><span class="ph" style="margin-left:7px">搜索文案</span></div><button class="btn btn-g">按平台筛选</button><button class="btn btn-p">新建文案</button></div>
+          </div>
+
+          <div class="grid g4" style="margin-bottom:14px">
+            <div class="stat"><div class="stat-n">28</div><div class="stat-l">文案总数</div><div class="stat-d up">+6 本周</div></div>
+            <div class="stat"><div class="stat-n">5</div><div class="stat-l">来源平台</div></div>
+            <div class="stat"><div class="stat-n">11.2w</div><div class="stat-l">累计阅读</div><div class="stat-d up">+2.4w</div></div>
+            <div class="stat"><div class="stat-n">3</div><div class="stat-l">待校对</div><div class="stat-d down">今天</div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">最近文案</div>
+              <div class="card-sub">按平台分组 · 点击可复制全文</div>
+              <div class="more" style="margin-left:auto"><span class="chip chip-line">按时间</span><span class="chip chip-line" style="margin-left:6px">按阅读</span></div>
+            </div>
+            <div class="card-b" style="padding-top:10px">
+              <table class="tbl">
+                <thead><tr><th>标题</th><th>来源平台</th><th>存档日期</th><th>阅读</th><th style="width:110px">状态</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><span style="font-size:12.5px;font-weight:600">「AI 工具降本」的 5 个真实案例</span></td>
+                    <td><span class="chip chip-line">公众号</span></td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-24</td>
+                    <td class="num" style="font-size:12px">3,842</td>
+                    <td><i class="g-ico g-ok">✓</i> <span style="font-size:11.5px;margin-left:5px">可直接用</span></td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-size:12.5px;font-weight:600">独立站 SEO 流水线复盘</span></td>
+                    <td><span class="chip chip-line">公众号</span></td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-23</td>
+                    <td class="num" style="font-size:12px">2,106</td>
+                    <td><i class="g-ico g-ok">✓</i> <span style="font-size:11.5px;margin-left:5px">可直接用</span></td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-size:12.5px;font-weight:600">本周爆款选题清单（10 条）</span></td>
+                    <td><span class="chip chip-line">小红书</span></td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-24</td>
+                    <td class="num" style="font-size:12px">5,930</td>
+                    <td><i class="g-ico g-run">●</i> <span style="font-size:11.5px;margin-left:5px">生成中</span></td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-size:12.5px;font-weight:600">SaaS 定价页改写 A/B 结果</span></td>
+                    <td><span class="chip chip-line">知乎</span></td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-22</td>
+                    <td class="num" style="font-size:12px">1,274</td>
+                    <td><i class="g-ico g-ok">✓</i> <span style="font-size:11.5px;margin-left:5px">可直接用</span></td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-size:12.5px;font-weight:600">播客第 12 期文案（未校对）</span></td>
+                    <td><span class="chip chip-line">播客</span></td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-24</td>
+                    <td class="num" style="font-size:12px">—</td>
+                    <td><i class="g-ico g-warn">△</i> <span style="font-size:11.5px;margin-left:5px">待校对</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>21</b><span>文案库</span><i>稿件归档 · 复用 · 按平台分组</i></div>
+</section>
+<section class="screen" id="s-copy-library-empty">
+  <div class="frame">
+    <div class="app" data-nav="library" data-tab="文案库" data-url="文案库">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>文案库</h2>
+              <div class="sub">已发布过的稿件与选题 · 可直接复用</div>
+            </div>
+            <div class="ph-actions"><div class="input" style="width:200px;height:32px"><span style="color:var(--ink-400)">⌕</span><span class="ph" style="margin-left:7px">搜索文案</span></div><button class="btn btn-g">按平台筛选</button><button class="btn btn-p">新建文案</button></div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <div class="card-b" style="padding:34px 24px;text-align:center">
+              <div style="display:flex;justify-content:center;margin-bottom:12px"><i class="g-ico g-idle" style="font-size:22px">○</i></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ink-900)">没有匹配的文案</div>
+              <div style="font-size:12px;color:var(--ink-500);margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.7">当前筛选条件下没有结果。库里有 28 条文案 —— 试试放宽平台筛选，或清空搜索词。</div>
+              <div style="margin-top:14px"><button class="btn btn-p">清空筛选条件</button></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>21</b><span>文案库 · 筛选后为空</span><i>与「库里没有」区分开 · 给回退动作</i></div>
+</section>
+<section class="screen" id="s-rewrite">
+  <div class="frame">
+    <div class="app" data-nav="library" data-tab="一键改写" data-url="一键改写">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>一键改写</h2>
+              <div class="sub">把已有稿件改写成目标平台的口吻 · 保留原意</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">改写历史</button><button class="btn btn-p">开始改写</button></div>
+          </div>
+
+          <div class="grid g-2-1">
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">原文</div>
+                <div class="card-sub">粘贴或从文案库选一篇</div>
+                <div class="more" style="margin-left:auto"><span class="chip chip-line">从文案库选</span></div>
+              </div>
+              <div class="card-b" style="padding-top:12px">
+                <div class="editor" style="min-height:190px">
+                  <p>做独立站这半年，我们踩过的最大的坑不是流量，而是<b>把 AI 生成的内容直接发出去</b>。搜索引擎现在能一眼看出哪些段落是机器写的，读者也能。结果就是：内容发得越多，权重掉得越快。</p>
+                  <p>我们后来改了做法：先用 AI 扩写选题和结构，再人工把每段都重写一遍。这个动作多花 20 分钟，但完播率和搜索排名完全不是一个量级。</p>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+                  <span class="hint">286 字</span>
+                  <span class="hint">目标平台</span>
+                  <div class="seg" style="margin-left:4px">
+                    <button type="button" class="on">公众号</button><button type="button">知乎</button><button type="button">小红书</button><button type="button">头条</button>
+                  </div>
+                  <span style="margin-left:auto;font-size:11.5px;color:var(--ink-400)">改写后预计 340 字</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">改写策略</div>
+                <div class="card-sub">影响口吻与结构</div>
+              </div>
+              <div class="card-b" style="padding-top:12px">
+                <div class="cfg-row">
+                  <span class="label">口吻</span>
+                  <div class="seg"><button type="button" class="on">经验分享</button><button type="button">干货清单</button><button type="button">故事化</button></div>
+                </div>
+                <div class="cfg-row">
+                  <span class="label">爆款角度</span>
+                  <span class="chip chip-line">踩坑复盘</span><span class="chip chip-line">成本对比</span><span class="chip">+ 添加</span>
+                </div>
+                <div class="cfg-row">
+                  <span class="label">关键词</span>
+                  <span class="chip chip-line">独立站</span><span class="chip chip-line">SEO</span><span class="chip">+ 添加</span>
+                </div>
+                <div class="cfg-row">
+                  <span class="label">保留</span>
+                  <div class="seg"><button type="button" class="on">原意</button><button type="button">原数据</button><button type="button">原句式</button></div>
+                </div>
+                <div style="margin-top:14px;padding:11px 13px;border-radius:12px;background:var(--ink-100)">
+                  <div style="font-size:11.5px;color:var(--ink-600);line-height:1.7">
+                    预计消耗 <b>1</b> 次改写额度（本月剩 18 次）。改写只改口吻与结构，<b>不编造事实</b>；原文里的数字与结论会原样保留。
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>22</b><span>一键改写</span><i>原文 + 策略配置 · 口径与保留项写清</i></div>
+</section>
+<section class="screen" id="s-rewrite-error">
+  <div class="frame">
+    <div class="app" data-nav="library" data-tab="一键改写" data-url="一键改写">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>一键改写</h2>
+              <div class="sub">把已有稿件改写成目标平台的口吻 · 保留原意</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">改写历史</button><button class="btn btn-p">开始改写</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-b" style="padding:12px 14px;display:flex;align-items:center;gap:9px">
+              <i class="g-ico g-fail">!</i>
+              <div>
+                <div style="font-size:12.5px;font-weight:700;color:var(--st-err)">改写失败</div>
+                <div style="font-size:11.5px;color:var(--ink-500);margin-top:2px">上游模型返回空结果，本次未消耗额度。原文与策略都已保留，改完直接重试即可。</div>
+              </div>
+              <button class="btn btn-sm btn-p" style="margin-left:auto">重试改写</button>
+            </div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <div class="card-b" style="padding:34px 24px;text-align:center">
+              <div style="display:flex;justify-content:center;margin-bottom:12px"><i class="g-ico g-fail" style="font-size:22px">!</i></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ink-900)">这次没能改写出来</div>
+              <div style="font-size:12px;color:var(--ink-500);margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.7">原文 286 字已保留在左侧（未清空），策略选择也还在。可以直接重试；如果连续失败，去「模型服务」确认默认模型是否可用。</div>
+              <div style="margin-top:14px"><button class="btn btn-p">重试改写</button></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>22</b><span>一键改写 · 失败态</span><i>失败不丢原文 · 不消耗额度</i></div>
+</section>
+<section class="screen" id="s-model-providers">
+  <div class="frame">
+    <div class="app" data-nav="data" data-tab="模型服务" data-url="模型服务">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>模型服务</h2>
+              <div class="sub">5 个服务商 · 4 个可用 · 1 个连不上</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">批量测速</button><button class="btn btn-p">添加服务商</button></div>
+          </div>
+
+          <div class="seg" style="margin-bottom:12px">
+            <button type="button" class="on">已配置 4</button><button type="button">全部 5</button><button type="button">本地模型</button><button type="button">按能力</button>
+          </div>
+
+          <div class="card" style="margin-bottom:14px">
+            <div class="card-b" style="padding:11px 14px;display:flex;align-items:center;gap:14px">
+              <span style="font-size:11.5px;color:var(--ink-500)">服务商</span>
+              <span class="chip chip-line on">全部</span><span class="chip chip-line">文本</span><span class="chip chip-line">图像</span>
+              <span class="chip chip-line">视频</span><span class="chip chip-line">语音</span>
+              <span style="margin-left:auto;font-size:11.5px;color:var(--ink-400)">按能力过滤</span>
+            </div>
+          </div>
+
+          <div class="grid g2" style="margin-bottom:14px">
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">Claude</div>
+                <div class="card-sub">anthropic</div>
+                <div class="more" style="margin-left:auto"><i class="g-ico g-ok">✓</i></div>
+              </div>
+              <div class="card-b" style="padding-top:11px">
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:9px">
+                  <span class="mono" style="font-size:12.5px;font-weight:700">claude-sonnet-5</span>
+                  <span style="font-size:11px;color:var(--ink-400);margin-left:auto">2.4s</span>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
+                  <span class="chip chip-line">文本</span><span class="chip chip-line">图像</span><span class="chip chip-line">视频</span>
+                </div>
+                <div style="font-size:11px;color:var(--ink-500);display:flex;align-items:center;gap:6px">
+                  已连 12 天
+                </div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <button class="btn btn-sm btn-g">测速</button>
+                  <button class="btn btn-sm btn-g">编辑</button>
+                  <button class="btn btn-sm btn-g" style="color:var(--st-err)">删除</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">GPT-4o</div>
+                <div class="card-sub">openai</div>
+                <div class="more" style="margin-left:auto"><i class="g-ico g-ok">✓</i></div>
+              </div>
+              <div class="card-b" style="padding-top:11px">
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:9px">
+                  <span class="mono" style="font-size:12.5px;font-weight:700">gpt-4o-2026-08</span>
+                  <span style="font-size:11px;color:var(--ink-400);margin-left:auto">1.1s</span>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
+                  <span class="chip chip-line">文本</span><span class="chip chip-line">图像</span>
+                </div>
+                <div style="font-size:11px;color:var(--ink-500);display:flex;align-items:center;gap:6px">
+                  已连 30 天
+                </div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <button class="btn btn-sm btn-g">测速</button>
+                  <button class="btn btn-sm btn-g">编辑</button>
+                  <button class="btn btn-sm btn-g" style="color:var(--st-err)">删除</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">即梦 Seedance</div>
+                <div class="card-sub">volcengine</div>
+                <div class="more" style="margin-left:auto"><i class="g-ico g-ok">✓</i></div>
+              </div>
+              <div class="card-b" style="padding-top:11px">
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:9px">
+                  <span class="mono" style="font-size:12.5px;font-weight:700">seedance-1.0-pro</span>
+                  <span style="font-size:11px;color:var(--ink-400);margin-left:auto">18.2s</span>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
+                  <span class="chip chip-line">视频</span>
+                </div>
+                <div style="font-size:11px;color:var(--ink-500);display:flex;align-items:center;gap:6px">
+                  已连 3 天
+                </div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <button class="btn btn-sm btn-g">测速</button>
+                  <button class="btn btn-sm btn-g">编辑</button>
+                  <button class="btn btn-sm btn-g" style="color:var(--st-err)">删除</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">通义万相</div>
+                <div class="card-sub">alibaba</div>
+                <div class="more" style="margin-left:auto"><i class="g-ico g-idle">○</i></div>
+              </div>
+              <div class="card-b" style="padding-top:11px">
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:9px">
+                  <span class="mono" style="font-size:12.5px;font-weight:700">wanx-v1</span>
+                  <span style="font-size:11px;color:var(--ink-400);margin-left:auto">—</span>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
+                  <span class="chip chip-line">文本</span><span class="chip chip-line">图像</span>
+                </div>
+                <div style="font-size:11px;color:var(--ink-500);display:flex;align-items:center;gap:6px">
+                  未测速
+                </div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <button class="btn btn-sm btn-g">测速</button>
+                  <button class="btn btn-sm btn-g">编辑</button>
+                  <button class="btn btn-sm btn-g" style="color:var(--st-err)">删除</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">本地 Ollama</div>
+                <div class="card-sub">ollama</div>
+                <div class="more" style="margin-left:auto"><i class="g-ico g-fail">!</i></div>
+              </div>
+              <div class="card-b" style="padding-top:11px">
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:9px">
+                  <span class="mono" style="font-size:12.5px;font-weight:700">qwen3-32b</span>
+                  <span style="font-size:11px;color:var(--ink-400);margin-left:auto">超时</span>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
+                  <span class="chip chip-line">文本</span>
+                </div>
+                <div style="font-size:11px;color:var(--ink-500);display:flex;align-items:center;gap:6px">
+                  <span style="color:var(--st-err)">连不上 11434</span>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <button class="btn btn-sm btn-g">测速</button>
+                  <button class="btn btn-sm btn-g">编辑</button>
+                  <button class="btn btn-sm btn-g" style="color:var(--st-err)">删除</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>23</b><span>模型服务</span><i>服务商卡片 · 能力筛选 · 测速与删除</i></div>
+</section>
+<section class="screen" id="s-model-providers-empty">
+  <div class="frame">
+    <div class="app" data-nav="data" data-tab="模型服务" data-url="模型服务">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>模型服务</h2>
+              <div class="sub">尚未配置任何服务商</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">批量测速</button><button class="btn btn-p">添加服务商</button></div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <div class="card-b" style="padding:34px 24px;text-align:center">
+              <div style="display:flex;justify-content:center;margin-bottom:12px"><i class="g-ico g-idle" style="font-size:22px">○</i></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ink-900)">还没有配置模型服务</div>
+              <div style="font-size:12px;color:var(--ink-500);margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.7">视频创作与一键改写都需要至少一个可用的文本模型。添加服务商后填入 API Key 即可；也可以配置本地模型走 Ollama。</div>
+              <div style="margin-top:14px"><button class="btn btn-p">添加服务商</button></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>23</b><span>模型服务 · 空态</span><i>一个都没配 · 引导到添加服务商</i></div>
+</section>
+<section class="screen" id="s-cloud-publish">
+  <div class="frame">
+    <div class="app" data-nav="publish" data-tab="云端发布" data-url="云端发布">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>云端发布</h2>
+              <div class="sub">把任务交给云端集群跑 · 本机不必常开</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">云端用量</button><button class="btn btn-p">提交任务</button></div>
+          </div>
+
+          <div class="grid g-2-1">
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">任务参数</div>
+                <div class="card-sub">提交后由云端执行，本机可关闭</div>
+              </div>
+              <div class="card-b" style="padding-top:12px">
+                <div class="cfg-item" style="margin-bottom:11px">
+                  <div class="label">稿件标题</div>
+                  <div class="input" style="width:100%;height:32px"><span style="color:var(--ink-400)">输入标题</span></div>
+                </div>
+                <div class="cfg-item" style="margin-bottom:11px">
+                  <div class="label">正文</div>
+                  <div class="editor" style="min-height:78px;font-size:12px;color:var(--ink-400)">粘贴正文，或从文案库选一篇</div>
+                </div>
+                <div class="cfg-item" style="margin-bottom:11px">
+                  <div class="label">目标平台</div>
+                  <div class="cfg-row">
+                    <span class="chip">微信公众号</span><span class="chip">知乎</span><span class="chip chip-line">小红书</span><span class="chip chip-line">+ 添加</span>
+                  </div>
+                </div>
+                <div class="cfg-item" style="margin-bottom:11px">
+                  <div class="label">发布时间</div>
+                  <div class="seg"><button type="button">立即</button><button type="button" class="on">定时</button><button type="button">周期</button></div>
+                </div>
+                <div class="cfg-item">
+                  <div class="label">定时时间</div>
+                  <div class="input" style="width:180px;height:32px"><span>2026-10-26 09:00</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">云端任务</div>
+                <div class="card-sub">最近 7 天</div>
+              </div>
+              <div class="card-b" style="padding-top:10px">
+                <table class="tbl">
+                  <thead><tr><th>任务</th><th>状态</th><th>时间</th></tr></thead>
+                  <tbody>
+                    <tr><td style="font-size:12px">工具降本 5 案例</td>
+                      <td><i class="g-ico g-ok">✓</i><span style="font-size:11.5px;margin-left:4px">完成</span></td>
+                      <td style="font-size:11.5px;color:var(--ink-500)">昨天 18:02</td></tr>
+                    <tr><td style="font-size:12px">独立站 SEO 复盘</td>
+                      <td><i class="g-ico g-run">●</i><span style="font-size:11.5px;margin-left:4px">执行中</span></td>
+                      <td style="font-size:11.5px;color:var(--ink-500)">18:00</td></tr>
+                    <tr><td style="font-size:12px">播客第 12 期</td>
+                      <td><i class="g-ico g-fail">!</i><span style="font-size:11.5px;margin-left:4px">失败</span></td>
+                      <td style="font-size:11.5px;color:var(--ink-500)">10-22 09:00</td></tr>
+                  </tbody>
+                </table>
+                <div style="margin-top:11px;padding:10px 12px;border-radius:11px;background:var(--ink-100);font-size:11px;color:var(--ink-600);line-height:1.7">
+                  云端执行会消耗 <b>云端额度</b>（本月剩 42 次），与本机额度分开计算。
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>24</b><span>云端发布</span><i>参数表单 + 云端任务列表 · 额度分开算</i></div>
+</section>
+<section class="screen" id="s-viral-analysis">
+  <div class="frame">
+    <div class="app" data-nav="viral" data-tab="爆款分析" data-url="爆款分析">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>爆款分析</h2>
+              <div class="sub">拆解一条内容为什么会火 · 给出可照抄的结构</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">历史报告</button><button class="btn btn-p">开始分析</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-b" style="padding:12px 14px;display:flex;align-items:center;gap:11px">
+              <div>
+                <div class="label" style="margin-bottom:5px">平台</div>
+                <div class="seg"><button type="button" class="on">小红书</button><button type="button">抖音</button><button type="button">视频号</button></div>
+              </div>
+              <div style="flex:1;margin-left:8px">
+                <div class="label" style="margin-bottom:5px">内容链接</div>
+                <div class="input" style="width:100%;height:32px"><span style="color:var(--ink-400)">粘贴小红书分享链接</span></div>
+              </div>
+              <button class="btn btn-p" style="margin-top:18px">分析</button>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-h">
+              <div class="card-t">热门标签</div>
+              <div class="card-sub">点选后作为对照维度</div>
+            </div>
+            <div class="card-b" style="padding-top:11px">
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <span class="chip chip-line">#独立站</span><span class="chip chip-line">#AI工具</span><span class="chip chip-line">#降本</span>
+                <span class="chip chip-line">#踩坑</span><span class="chip chip-line">#效率工具</span><span class="chip chip-line">#副业</span>
+                <span class="chip">+ 自定义</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-h">
+              <div class="card-t">因子得分</div>
+              <div class="card-sub">满分 100 · 低于 45 的是拖后腿的因子</div>
+              <div class="more" style="margin-left:auto"><span class="chip chip-line">保存为模板</span></div>
+            </div>
+            <div class="card-b" style="padding-top:12px">
+              <div style="margin-bottom:13px">
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+                  <span style="font-size:12.5px;font-weight:700">开头 3 秒</span>
+                  <span style="font-size:11px;color:var(--ink-400)">钩子强度</span>
+                  <span class="num" style="font-size:13px;font-weight:800;margin-left:auto">82</span>
+                  <span class="chip chip-line" style="margin-left:4px">高</span>
+                </div>
+                <div style="height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                  <div style="height:100%;width:82%;border-radius:99px;background:var(--st-ok)"></div>
+                </div>
+              </div>
+              <div style="margin-bottom:13px">
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+                  <span style="font-size:12.5px;font-weight:700">信息密度</span>
+                  <span style="font-size:11px;color:var(--ink-400)">每屏信息量</span>
+                  <span class="num" style="font-size:13px;font-weight:800;margin-left:auto">64</span>
+                  <span class="chip chip-line" style="margin-left:4px">中</span>
+                </div>
+                <div style="height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                  <div style="height:100%;width:64%;border-radius:99px;background:var(--ink-400)"></div>
+                </div>
+              </div>
+              <div style="margin-bottom:13px">
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+                  <span style="font-size:12.5px;font-weight:700">情绪强度</span>
+                  <span style="font-size:11px;color:var(--ink-400)">用词情绪</span>
+                  <span class="num" style="font-size:13px;font-weight:800;margin-left:auto">71</span>
+                  <span class="chip chip-line" style="margin-left:4px">高</span>
+                </div>
+                <div style="height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                  <div style="height:100%;width:71%;border-radius:99px;background:var(--st-ok)"></div>
+                </div>
+              </div>
+              <div style="margin-bottom:13px">
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+                  <span style="font-size:12.5px;font-weight:700">结构清晰</span>
+                  <span style="font-size:11px;color:var(--ink-400)">分段与要点</span>
+                  <span class="num" style="font-size:13px;font-weight:800;margin-left:auto">58</span>
+                  <span class="chip chip-line" style="margin-left:4px">中</span>
+                </div>
+                <div style="height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                  <div style="height:100%;width:58%;border-radius:99px;background:var(--ink-400)"></div>
+                </div>
+              </div>
+              <div style="margin-bottom:13px">
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+                  <span style="font-size:12.5px;font-weight:700">结尾引导</span>
+                  <span style="font-size:11px;color:var(--ink-400)">互动引导</span>
+                  <span class="num" style="font-size:13px;font-weight:800;margin-left:auto">45</span>
+                  <span class="chip chip-line" style="margin-left:4px">低</span>
+                </div>
+                <div style="height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                  <div style="height:100%;width:45%;border-radius:99px;background:var(--st-warn)"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>25</b><span>爆款分析</span><i>链接输入 · 热门标签 · 因子得分条</i></div>
+</section>
+<section class="screen" id="s-library">
+  <div class="frame">
+    <div class="app" data-nav="library" data-tab="项目库" data-url="项目库">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>项目库</h2>
+              <div class="sub">4 个项目 · 素材、稿件与成片都在这里</div>
+            </div>
+            <div class="ph-actions"><div class="input" style="width:190px;height:32px"><span style="color:var(--ink-400)">⌕</span><span class="ph" style="margin-left:7px">搜索项目</span></div><button class="btn btn-p">新建项目</button></div>
+          </div>
+
+          <div class="grid g2" style="margin-bottom:14px">
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">独立站 SEO 流水线</div>
+                <div class="more" style="margin-left:auto"><i class="g-ico g-run">●</i></div>
+              </div>
+              <div class="card-b" style="padding-top:11px">
+                <div style="font-size:12px;color:var(--ink-500)">12 个镜头 · 3 篇稿件</div>
+                <div style="display:flex;align-items:center;gap:9px;margin-top:10px">
+                  <span style="font-size:11.5px;color:var(--ink-400)">更新于 10-24</span>
+                  <span class="chip chip-line" style="margin-left:auto">视频创作中</span>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <button class="btn btn-sm btn-g">打开</button>
+                  <button class="btn btn-sm btn-g">制作看板</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">AI 工具降本专题</div>
+                <div class="more" style="margin-left:auto"><i class="g-ico g-ok">✓</i></div>
+              </div>
+              <div class="card-b" style="padding-top:11px">
+                <div style="font-size:12px;color:var(--ink-500)">8 个镜头 · 已发布 5 篇</div>
+                <div style="display:flex;align-items:center;gap:9px;margin-top:10px">
+                  <span style="font-size:11.5px;color:var(--ink-400)">更新于 10-21</span>
+                  <span class="chip chip-line" style="margin-left:auto">已发布</span>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <button class="btn btn-sm btn-g">打开</button>
+                  <button class="btn btn-sm btn-g">制作看板</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">播客第 12 期</div>
+                <div class="more" style="margin-left:auto"><i class="g-ico g-idle">○</i></div>
+              </div>
+              <div class="card-b" style="padding-top:11px">
+                <div style="font-size:12px;color:var(--ink-500)">草稿 · 素材 4 条</div>
+                <div style="display:flex;align-items:center;gap:9px;margin-top:10px">
+                  <span style="font-size:11.5px;color:var(--ink-400)">更新于 10-19</span>
+                  <span class="chip chip-line" style="margin-left:auto">草稿</span>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <button class="btn btn-sm btn-g">打开</button>
+                  <button class="btn btn-sm btn-g">制作看板</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">双十一选品清单</div>
+                <div class="more" style="margin-left:auto"><i class="g-ico g-fail">!</i></div>
+              </div>
+              <div class="card-b" style="padding-top:11px">
+                <div style="font-size:12px;color:var(--ink-500)">封面 6 张 · 素材 18 条</div>
+                <div style="display:flex;align-items:center;gap:9px;margin-top:10px">
+                  <span style="font-size:11.5px;color:var(--ink-400)">更新于 10-12</span>
+                  <span class="chip chip-line" style="margin-left:auto">缺授权</span>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:11px">
+                  <button class="btn btn-sm btn-g">打开</button>
+                  <button class="btn btn-sm btn-g">制作看板</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>26</b><span>项目库</span><i>项目卡 · 状态字形 · 入口到制作看板</i></div>
+</section>
+<section class="screen" id="s-library-loading">
+  <div class="frame">
+    <div class="app" data-nav="library" data-tab="项目库" data-url="项目库">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>项目库</h2>
+              <div class="sub">正在读取项目…</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-p">新建项目</button></div>
+          </div>
+
+          <div class="grid g2">
+            <div class="card">
+              <div class="card-b" style="padding:14px">
+                <div style="height:13px;width:56%;border-radius:6px;background:var(--ink-100)"></div>
+                <div style="height:10px;width:78%;border-radius:6px;background:var(--ink-100);margin-top:9px"></div>
+                <div style="height:10px;width:34%;border-radius:6px;background:var(--ink-100);margin-top:9px"></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-b" style="padding:14px">
+                <div style="height:13px;width:56%;border-radius:6px;background:var(--ink-100)"></div>
+                <div style="height:10px;width:78%;border-radius:6px;background:var(--ink-100);margin-top:9px"></div>
+                <div style="height:10px;width:34%;border-radius:6px;background:var(--ink-100);margin-top:9px"></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-b" style="padding:14px">
+                <div style="height:13px;width:56%;border-radius:6px;background:var(--ink-100)"></div>
+                <div style="height:10px;width:78%;border-radius:6px;background:var(--ink-100);margin-top:9px"></div>
+                <div style="height:10px;width:34%;border-radius:6px;background:var(--ink-100);margin-top:9px"></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-b" style="padding:14px">
+                <div style="height:13px;width:56%;border-radius:6px;background:var(--ink-100)"></div>
+                <div style="height:10px;width:78%;border-radius:6px;background:var(--ink-100);margin-top:9px"></div>
+                <div style="height:10px;width:34%;border-radius:6px;background:var(--ink-100);margin-top:9px"></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>26</b><span>项目库 · 加载态</span><i>骨架卡占位 · 与空态区分</i></div>
+</section>
+<section class="screen" id="s-library-error">
+  <div class="frame">
+    <div class="app" data-nav="library" data-tab="项目库" data-url="项目库">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>项目库</h2>
+              <div class="sub">项目索引读不到</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-p">新建项目</button></div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <div class="card-b" style="padding:34px 24px;text-align:center">
+              <div style="display:flex;justify-content:center;margin-bottom:12px"><i class="g-ico g-fail" style="font-size:22px">!</i></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ink-900)">读不到项目索引</div>
+              <div style="font-size:12px;color:var(--ink-500);margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.7">本地索引文件不可读（可能正被其他进程占用或已损坏）。为避免误判为「没有项目」，本页不显示任何项目卡，请先重试。</div>
+              <div style="margin-top:14px"><button class="btn btn-p">重试读取</button></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>26</b><span>项目库 · 失败态</span><i>读不到 ≠ 没有项目</i></div>
+</section>
+<section class="screen" id="s-knowledge-base">
+  <div class="frame">
+    <div class="app" data-nav="data" data-tab="知识库" data-url="知识库">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>知识库</h2>
+              <div class="sub">跨平台可复用的知识条目 · 31 条</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">导出</button><button class="btn btn-p">导入</button></div>
+          </div>
+
+          <div class="seg" style="margin-bottom:12px">
+            <button type="button" class="on">全部 31</button><button type="button">公众号 14</button><button type="button">小红书 8</button><button type="button">知乎 5</button><button type="button">播客 4</button>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">条目</div>
+              <div class="card-sub">导入支持 Markdown / Word / 纯文本</div>
+              <div class="more" style="margin-left:auto"><div class="input" style="width:180px;height:28px"><span style="color:var(--ink-400)">⌕</span><span class="ph" style="margin-left:6px">搜索</span></div></div>
+            </div>
+            <div class="card-b" style="padding-top:10px">
+              <table class="tbl">
+                <thead><tr><th>标题</th><th>来源平台</th><th>入库日期</th><th>阅读</th><th style="width:110px">状态</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><span style="font-size:12.5px;font-weight:600">AI 工具降本 5 案例</span></td>
+                    <td><span class="chip chip-line">公众号</span></td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-24</td>
+                    <td class="num" style="font-size:12px">3,842</td>
+                    <td><i class="g-ico g-ok">✓</i> <span style="font-size:11.5px;margin-left:5px">可引用</span></td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-size:12.5px;font-weight:600">独立站 SEO 流水线</span></td>
+                    <td><span class="chip chip-line">公众号</span></td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-23</td>
+                    <td class="num" style="font-size:12px">2,106</td>
+                    <td><i class="g-ico g-ok">✓</i> <span style="font-size:11.5px;margin-left:5px">可引用</span></td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-size:12.5px;font-weight:600">本周爆款选题清单</span></td>
+                    <td><span class="chip chip-line">小红书</span></td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-24</td>
+                    <td class="num" style="font-size:12px">5,930</td>
+                    <td><i class="g-ico g-run">●</i> <span style="font-size:11.5px;margin-left:5px">生成中</span></td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-size:12.5px;font-weight:600">SaaS 定价页改写</span></td>
+                    <td><span class="chip chip-line">知乎</span></td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-22</td>
+                    <td class="num" style="font-size:12px">1,274</td>
+                    <td><i class="g-ico g-ok">✓</i> <span style="font-size:11.5px;margin-left:5px">可引用</span></td>
+                  </tr>
+                  <tr>
+                    <td><span style="font-size:12.5px;font-weight:600">播客第 12 期文案</span></td>
+                    <td><span class="chip chip-line">播客</span></td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-24</td>
+                    <td class="num" style="font-size:12px">—</td>
+                    <td><i class="g-ico g-warn">△</i> <span style="font-size:11.5px;margin-left:5px">待校对</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>27</b><span>知识库</span><i>标签页 + 条目表 · 导入导出</i></div>
+</section>
+<section class="screen" id="s-prompt-eval">
+  <div class="frame">
+    <div class="app" data-nav="data" data-tab="提示词评测" data-url="提示词评测">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>提示词评测</h2>
+              <div class="sub">跑过的提示词版本与效果对比</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">导出报告</button><button class="btn btn-p">新建评测</button></div>
+          </div>
+
+          <div class="seg" style="margin-bottom:12px">
+            <button type="button" class="on">记录 18</button><button type="button">统计</button><button type="button">提示词库</button>
+          </div>
+
+          <div class="grid g4" style="margin-bottom:14px">
+            <div class="stat"><div class="stat-n">18</div><div class="stat-l">评测记录</div><div class="stat-d up">+5 本周</div></div>
+            <div class="stat"><div class="stat-n">82%</div><div class="stat-l">平均通过率</div><div class="stat-d up">+4%</div></div>
+            <div class="stat"><div class="stat-n">2.1s</div><div class="stat-l">平均耗时</div><div class="stat-d up">-0.3s</div></div>
+            <div class="stat"><div class="stat-n">1</div><div class="stat-l">失败用例</div><div class="stat-d down">看详情</div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">评测记录</div>
+              <div class="card-sub">按时间倒序</div>
+            </div>
+            <div class="card-b" style="padding-top:10px">
+              <table class="tbl">
+                <thead><tr><th>名称</th><th>提示词版本</th><th>用例</th><th>通过率</th><th>耗时</th><th style="width:100px">结果</th></tr></thead>
+                <tbody>
+                  <tr><td style="font-size:12.5px;font-weight:600">小红书标题 A/B</td>
+                    <td class="mono" style="font-size:11.5px">v3.2</td><td style="font-size:12px">24</td>
+                    <td class="num" style="font-size:12px">92%</td><td class="num" style="font-size:12px">1.8s</td>
+                    <td><i class="g-ico g-ok">✓</i><span style="font-size:11.5px;margin-left:4px">通过</span></td></tr>
+                  <tr><td style="font-size:12.5px;font-weight:600">公众号正文改写</td>
+                    <td class="mono" style="font-size:11.5px">v2.0</td><td style="font-size:12px">18</td>
+                    <td class="num" style="font-size:12px">78%</td><td class="num" style="font-size:12px">2.4s</td>
+                    <td><i class="g-ico g-warn">△</i><span style="font-size:11.5px;margin-left:4px">有 4 例未过</span></td></tr>
+                  <tr><td style="font-size:12.5px;font-weight:600">选题雷达打分</td>
+                    <td class="mono" style="font-size:11.5px">v1.4</td><td style="font-size:12px">12</td>
+                    <td class="num" style="font-size:12px">58%</td><td class="num" style="font-size:12px">3.1s</td>
+                    <td><i class="g-ico g-fail">!</i><span style="font-size:11.5px;margin-left:4px">失败</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>28</b><span>提示词评测</span><i>视图 tabs + 统计卡 + 记录表</i></div>
+</section>
+<section class="screen" id="s-performance-insights">
+  <div class="frame">
+    <div class="app" data-nav="data" data-tab="表现洞察" data-url="表现洞察">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>表现洞察</h2>
+              <div class="sub">跨平台横向对比 · 结论先行</div>
+            </div>
+            <div class="ph-actions"><div class="seg"><button type="button" class="on">近 30 天</button><button type="button">近 7 天</button><button type="button">自定义</button></div><button class="btn btn-g">刷新</button><button class="btn btn-p">重算指标</button></div>
+          </div>
+
+          <div class="grid g4" style="margin-bottom:14px">
+            <div class="stat"><div class="stat-n">23.9w</div><div class="stat-l">总曝光</div><div class="stat-d up">+21%</div></div>
+            <div class="stat"><div class="stat-n">4,182</div><div class="stat-l">总阅读</div><div class="stat-d up">+14%</div></div>
+            <div class="stat"><div class="stat-n">1,046</div><div class="stat-l">总互动</div><div class="stat-d up">赞藏评</div></div>
+            <div class="stat"><div class="stat-n">312</div><div class="stat-l">新增关注</div><div class="stat-d up">+26%</div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">平台 × 账号</div>
+              <div class="card-sub">分数 = 曝光与互动的加权；低于 60 说明有短板</div>
+              <div class="more" style="margin-left:auto"><span class="chip chip-line">全部平台</span></div>
+            </div>
+            <div class="card-b" style="padding-top:10px">
+              <table class="tbl">
+                <thead><tr><th>平台 / 账号</th><th>曝光</th><th>阅读</th><th>赞</th><th>藏</th><th>评</th><th style="width:150px">分数</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><div style="display:flex;align-items:center;gap:8px">
+                      <span style="font-size:12.5px;font-weight:600">微信公众号</span>
+                      <span style="font-size:11px;color:var(--ink-400)">技术编辑部</span>
+                    </div></td>
+                    <td class="num" style="font-size:12px">18.2w</td>
+                    <td class="num" style="font-size:12px">4,102</td>
+                    <td class="num" style="font-size:12px">486</td>
+                    <td class="num" style="font-size:12px">212</td>
+                    <td class="num" style="font-size:12px">1,080</td>
+                    <td><div style="display:flex;align-items:center;gap:8px">
+                      <div style="flex:1;height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                        <div style="height:100%;width:88%;border-radius:99px;background:var(--st-ok)"></div>
+                      </div>
+                      <span class="num" style="font-size:12px;font-weight:700">88</span>
+                    </div></td>
+                  </tr>
+                  <tr>
+                    <td><div style="display:flex;align-items:center;gap:8px">
+                      <span style="font-size:12.5px;font-weight:600">知乎</span>
+                      <span style="font-size:11px;color:var(--ink-400)">产品笔记</span>
+                    </div></td>
+                    <td class="num" style="font-size:12px">11.9w</td>
+                    <td class="num" style="font-size:12px">2,860</td>
+                    <td class="num" style="font-size:12px">371</td>
+                    <td class="num" style="font-size:12px">164</td>
+                    <td class="num" style="font-size:12px">742</td>
+                    <td><div style="display:flex;align-items:center;gap:8px">
+                      <div style="flex:1;height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                        <div style="height:100%;width:81%;border-radius:99px;background:var(--st-ok)"></div>
+                      </div>
+                      <span class="num" style="font-size:12px;font-weight:700">81</span>
+                    </div></td>
+                  </tr>
+                  <tr>
+                    <td><div style="display:flex;align-items:center;gap:8px">
+                      <span style="font-size:12.5px;font-weight:600">小红书</span>
+                      <span style="font-size:11px;color:var(--ink-400)">生活方式号</span>
+                    </div></td>
+                    <td class="num" style="font-size:12px">6.4w</td>
+                    <td class="num" style="font-size:12px">3,120</td>
+                    <td class="num" style="font-size:12px">298</td>
+                    <td class="num" style="font-size:12px">421</td>
+                    <td class="num" style="font-size:12px">1,206</td>
+                    <td><div style="display:flex;align-items:center;gap:8px">
+                      <div style="flex:1;height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                        <div style="height:100%;width:76%;border-radius:99px;background:var(--ink-400)"></div>
+                      </div>
+                      <span class="num" style="font-size:12px;font-weight:700">76</span>
+                    </div></td>
+                  </tr>
+                  <tr>
+                    <td><div style="display:flex;align-items:center;gap:8px">
+                      <span style="font-size:12.5px;font-weight:600">哔哩哔哩</span>
+                      <span style="font-size:11px;color:var(--ink-400)">视频号组</span>
+                    </div></td>
+                    <td class="num" style="font-size:12px">4.1w</td>
+                    <td class="num" style="font-size:12px">1,204</td>
+                    <td class="num" style="font-size:12px">186</td>
+                    <td class="num" style="font-size:12px">92</td>
+                    <td class="num" style="font-size:12px">318</td>
+                    <td><div style="display:flex;align-items:center;gap:8px">
+                      <div style="flex:1;height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                        <div style="height:100%;width:64%;border-radius:99px;background:var(--ink-400)"></div>
+                      </div>
+                      <span class="num" style="font-size:12px;font-weight:700">64</span>
+                    </div></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>29</b><span>表现洞察</span><i>平台 × 账号对比 · 分数条 + 短板</i></div>
+</section>
+<section class="screen" id="s-podcast">
+  <div class="frame">
+    <div class="app" data-nav="data" data-tab="播客频道" data-url="播客频道">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>播客频道</h2>
+              <div class="sub">1 个频道 · 3 集 · 托管在第三方</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">托管设置</button><button class="btn btn-p">新建单集</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-h">
+              <div class="card-t">频道</div>
+              <div class="card-sub">RSS 地址与同步状态</div>
+            </div>
+            <div class="card-b" style="padding-top:12px">
+              <div class="grid g-2-1">
+                <div>
+                  <div class="label" style="margin-bottom:6px">频道名称</div>
+                  <div class="input" style="width:100%;height:32px"><span>独立站从 0 到 1</span></div>
+                </div>
+                <div>
+                  <div class="label" style="margin-bottom:6px">RSS 地址</div>
+                  <div class="input" style="width:100%;height:32px"><span class="mono" style="font-size:11px">https://feeds.example.com/podcast/1</span></div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;margin-top:13px;padding-top:12px;border-top:1px solid var(--ink-200)">
+                <i class="g-ico g-ok">✓</i>
+                <span style="font-size:12px;color:var(--ink-700)">托管正常 · 上次同步 2 小时前</span>
+                <span class="chip chip-line" style="margin-left:auto">立即同步</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">单集</div>
+              <div class="card-sub">3 集 · 第 12 集待发布</div>
+            </div>
+            <div class="card-b" style="padding-top:10px">
+              <table class="tbl">
+                <thead><tr><th>标题</th><th>计划时间</th><th style="width:130px">状态</th><th style="width:150px">操作</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td style="font-size:12.5px;font-weight:600">第 12 期 · 独立站从 0 到 1</td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-26 08:00</td>
+                    <td><i class="g-ico g-idle">○</i> <span style="font-size:11.5px;margin-left:5px">待发布</span></td>
+                    <td><button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">编辑</button>
+                      <button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">删除</button></td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:12.5px;font-weight:600">第 11 期 · 独立站从 0 到 1</td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-19 08:00</td>
+                    <td><i class="g-ico g-ok">✓</i> <span style="font-size:11.5px;margin-left:5px">已发布</span></td>
+                    <td><button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">编辑</button>
+                      <button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">删除</button></td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:12.5px;font-weight:600">第 10 期 · 工具选型的坑</td>
+                    <td style="font-size:12px;color:var(--ink-500)">10-12 08:00</td>
+                    <td><i class="g-ico g-ok">✓</i> <span style="font-size:11.5px;margin-left:5px">已发布</span></td>
+                    <td><button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">编辑</button>
+                      <button class="lnk" style="background:none;border:none;cursor:pointer;color:var(--ink-700);font-size:12px">删除</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>30</b><span>播客频道</span><i>频道配置 + 托管状态 + 单集列表</i></div>
+</section>
+<section class="screen" id="s-podcast-empty">
+  <div class="frame">
+    <div class="app" data-nav="data" data-tab="播客频道" data-url="播客频道">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>播客频道</h2>
+              <div class="sub">1 个频道 · 还没有单集</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">托管设置</button><button class="btn btn-p">新建单集</button></div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <div class="card-b" style="padding:34px 24px;text-align:center">
+              <div style="display:flex;justify-content:center;margin-bottom:12px"><i class="g-ico g-idle" style="font-size:22px">○</i></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ink-900)">还没有单集</div>
+              <div style="font-size:12px;color:var(--ink-500);margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.7">单集由「文案 + 音频」组成：先写好文案并生成口播稿，再上传或录制音频，最后排期发布到 RSS。</div>
+              <div style="margin-top:14px"><button class="btn btn-p">新建单集</button></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>30</b><span>播客频道 · 空态</span><i>频道在但没单集 · 引导建单集</i></div>
+</section>
+<section class="screen" id="s-keywords">
+  <div class="frame">
+    <div class="app" data-nav="topics" data-tab="关键词监测" data-url="关键词监测">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>关键词监测</h2>
+              <div class="sub">持续监测关键词讨论热度变化，异常飙升时自动通知</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">通知设置</button><button class="btn btn-p">添加关键词</button></div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">监测中的关键词</div>
+              <div class="card-sub">5 个 · 每 30 分钟采样一次</div>
+            </div>
+            <div class="card-b" style="padding-top:10px">
+              <table class="tbl">
+                <thead><tr><th>关键词</th><th>今日提及</th><th>较昨日</th><th style="width:170px">趋势</th><th style="width:150px">状态</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td style="font-size:12.5px;font-weight:600">独立站</td>
+                    <td class="num" style="font-size:12px">2,340</td>
+                    <td class="num" style="font-size:12px;color:var(--st-ok)">+18%</td>
+                    <td><div style="height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                      <div style="height:100%;width:97.5%;border-radius:99px;background:var(--st-warn)"></div>
+                    </div></td>
+                    <td><i class="g-ico g-run">●</i> <span style="font-size:11.5px;margin-left:5px">连续上升 3 天</span></td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:12.5px;font-weight:600">AI 降本</td>
+                    <td class="num" style="font-size:12px">1,860</td>
+                    <td class="num" style="font-size:12px;color:var(--st-ok)">+42%</td>
+                    <td><div style="height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                      <div style="height:100%;width:77.5%;border-radius:99px;background:var(--st-warn)"></div>
+                    </div></td>
+                    <td><i class="g-ico g-run">●</i> <span style="font-size:11.5px;margin-left:5px">连续上升 5 天</span></td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:12.5px;font-weight:600">小红书 笔记</td>
+                    <td class="num" style="font-size:12px">980</td>
+                    <td class="num" style="font-size:12px;color:var(--st-err)">-6%</td>
+                    <td><div style="height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                      <div style="height:100%;width:40.833333333333336%;border-radius:99px;background:var(--ink-300)"></div>
+                    </div></td>
+                    <td><i class="g-ico g-idle">○</i> <span style="font-size:11.5px;margin-left:5px">回落</span></td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:12.5px;font-weight:600">SEO 流水线</td>
+                    <td class="num" style="font-size:12px">640</td>
+                    <td class="num" style="font-size:12px;color:var(--st-ok)">+9%</td>
+                    <td><div style="height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                      <div style="height:100%;width:26.666666666666668%;border-radius:99px;background:var(--ink-300)"></div>
+                    </div></td>
+                    <td><i class="g-ico g-ok">✓</i> <span style="font-size:11.5px;margin-left:5px">平稳</span></td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:12.5px;font-weight:600">播客 变现</td>
+                    <td class="num" style="font-size:12px">410</td>
+                    <td class="num" style="font-size:12px;color:var(--st-ok)">+22%</td>
+                    <td><div style="height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                      <div style="height:100%;width:17.083333333333332%;border-radius:99px;background:var(--ink-300)"></div>
+                    </div></td>
+                    <td><i class="g-ico g-ok">✓</i> <span style="font-size:11.5px;margin-left:5px">平稳</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>31</b><span>关键词监测</span><i>热度采样 · 飙升自动通知</i></div>
+</section>
+<section class="screen" id="s-publish-history">
+  <div class="frame">
+    <div class="app" data-nav="publish" data-tab="发布记录" data-url="发布记录">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>发布记录</h2>
+              <div class="sub">全部投递历史 · 128 条 · 近 30 天</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">导出</button><button class="btn btn-p">批量操作</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-b" style="padding:11px 14px;display:flex;align-items:center;gap:10px">
+              <div class="input" style="width:230px;height:30px"><span style="color:var(--ink-400)">⌕</span><span class="ph" style="margin-left:7px">搜标题 / 账号</span></div>
+              <span class="chip chip-line on">全部平台</span><span class="chip chip-line">全部状态</span><span class="chip chip-line">近 30 天</span>
+              <span style="margin-left:auto;font-size:11.5px;color:var(--ink-400)">已选 0 条</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">记录</div>
+              <div class="card-sub">128 条 · 失败 2 条</div>
+            </div>
+            <div class="card-b" style="padding-top:10px">
+              <table class="tbl">
+                <thead><tr><th style="width:34px"></th><th>稿件</th><th>平台 / 账号</th><th>时间</th><th>阅读</th><th>赞</th><th>藏</th><th>评</th><th style="width:100px">状态</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><input type="checkbox" /></td>
+                    <td><span style="font-size:12.5px;font-weight:600">工具降本 5 案例</span></td>
+                    <td><span class="chip chip-line">微信公众号</span><span style="font-size:11px;color:var(--ink-400);margin-left:6px">技术编辑部</span></td>
+                    <td style="font-size:11.5px;color:var(--ink-500)">10-24 09:12</td>
+                    <td class="num" style="font-size:12px">4,102</td>
+                    <td class="num" style="font-size:12px">486</td>
+                    <td class="num" style="font-size:12px">212</td>
+                    <td class="num" style="font-size:12px">1,080</td>
+                    <td><i class="g-ico g-ok">✓</i><span style="font-size:11.5px;margin-left:4px">已完成</span></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox" /></td>
+                    <td><span style="font-size:12.5px;font-weight:600">独立站 SEO 复盘</span></td>
+                    <td><span class="chip chip-line">知乎</span><span style="font-size:11px;color:var(--ink-400);margin-left:6px">产品笔记</span></td>
+                    <td style="font-size:11.5px;color:var(--ink-500)">10-24 08:40</td>
+                    <td class="num" style="font-size:12px">2,860</td>
+                    <td class="num" style="font-size:12px">371</td>
+                    <td class="num" style="font-size:12px">164</td>
+                    <td class="num" style="font-size:12px">742</td>
+                    <td><i class="g-ico g-ok">✓</i><span style="font-size:11.5px;margin-left:4px">已完成</span></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox" /></td>
+                    <td><span style="font-size:12.5px;font-weight:600">本周选题清单</span></td>
+                    <td><span class="chip chip-line">小红书</span><span style="font-size:11px;color:var(--ink-400);margin-left:6px">生活方式号</span></td>
+                    <td style="font-size:11.5px;color:var(--ink-500)">10-23 19:05</td>
+                    <td class="num" style="font-size:12px">3,120</td>
+                    <td class="num" style="font-size:12px">298</td>
+                    <td class="num" style="font-size:12px">421</td>
+                    <td class="num" style="font-size:12px">1,206</td>
+                    <td><i class="g-ico g-run">●</i><span style="font-size:11.5px;margin-left:4px">投递中</span></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox" /></td>
+                    <td><span style="font-size:12.5px;font-weight:600">播客第 12 期文案</span></td>
+                    <td><span class="chip chip-line">视频号</span><span style="font-size:11px;color:var(--ink-400);margin-left:6px">视频号组</span></td>
+                    <td style="font-size:11.5px;color:var(--ink-500)">10-23 18:00</td>
+                    <td class="num" style="font-size:12px">—</td>
+                    <td class="num" style="font-size:12px">—</td>
+                    <td class="num" style="font-size:12px">—</td>
+                    <td class="num" style="font-size:12px">—</td>
+                    <td><i class="g-ico g-fail">!</i><span style="font-size:11.5px;margin-left:4px">失败</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>32</b><span>发布记录</span><i>搜索 + 筛选 + 批量操作 · 指标列</i></div>
+</section>
+<section class="screen" id="s-publish-history-empty">
+  <div class="frame">
+    <div class="app" data-nav="publish" data-tab="发布记录" data-url="发布记录">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>发布记录</h2>
+              <div class="sub">全部投递历史 · 128 条</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">导出</button><button class="btn btn-p">批量操作</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-b" style="padding:11px 14px;display:flex;align-items:center;gap:10px">
+              <div class="input" style="width:230px;height:30px"><span style="color:var(--ink-400)">⌕</span><span class="ph" style="margin-left:7px">搜标题 / 账号</span></div>
+              <span class="chip chip-line on">小红书</span><span class="chip chip-line on">失败</span><span class="chip chip-line">近 7 天</span>
+              <span style="margin-left:auto;font-size:11.5px;color:var(--ink-400)">已选 0 条</span>
+            </div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <div class="card-b" style="padding:34px 24px;text-align:center">
+              <div style="display:flex;justify-content:center;margin-bottom:12px"><i class="g-ico g-idle" style="font-size:22px">○</i></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ink-900)">没有符合条件的记录</div>
+              <div style="font-size:12px;color:var(--ink-500);margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.7">当前筛选（小红书 · 失败 · 近 7 天）下没有结果。历史里有 128 条记录 —— 放宽平台或时间范围试试。</div>
+              <div style="margin-top:14px"><button class="btn btn-p">清空筛选条件</button></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>32</b><span>发布记录 · 筛选后为空</span><i>与「没有记录」区分 · 给回退动作</i></div>
+</section>
+<section class="screen" id="s-create-result">
+  <div class="frame">
+    <div class="app" data-nav="create" data-tab="成片结果" data-url="成片结果">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>成片结果</h2>
+              <div class="sub">独立站 SEO 流水线 · 第 7 镜 / 共 12 镜</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">重新生成</button><button class="btn btn-p">下载成片</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-b" style="padding:12px 14px;display:flex;align-items:center;gap:11px">
+              <i class="g-ico g-run">●</i>
+              <div>
+                <div style="font-size:12.5px;font-weight:700">画面生成中 · 第 7 镜</div>
+                <div style="font-size:11.5px;color:var(--ink-500);margin-top:2px">预计还需 3 分钟。已完成的 6 镜可以先看。</div>
+              </div>
+              <div style="margin-left:auto;width:180px;height:6px;border-radius:99px;background:var(--ink-100);overflow:hidden">
+                <div style="height:100%;width:58%;border-radius:99px;background:var(--ink-900)"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-h">
+              <div class="card-t">预览</div>
+              <div class="card-sub">第 7 镜 · 16:9 · 6 秒</div>
+              <div class="more" style="margin-left:auto"><span class="chip chip-line">上一镜</span><span class="chip chip-line" style="margin-left:6px">下一镜</span></div>
+            </div>
+            <div class="card-b" style="padding-top:12px">
+              <div style="aspect-ratio:16/9;border-radius:14px;background:linear-gradient(140deg,#2B3350,#4B5680);display:grid;place-items:center;color:rgba(255,255,255,.8);font-size:13px">
+                正在生成第 7 镜画面…（已渲染 6 / 12 镜）
+              </div>
+              <div style="margin-top:12px">
+                <div class="label" style="margin-bottom:7px">修剪区间</div>
+                <div style="height:6px;border-radius:99px;background:var(--ink-100);position:relative">
+                  <div style="position:absolute;left:12%;right:8%;top:-3px;height:12px;border-radius:99px;background:var(--ink-900)"></div>
+                  <span style="position:absolute;left:12%;top:-4px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                  <span style="position:absolute;right:8%;top:-4px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-top:7px;font-size:11px;color:var(--ink-400)">
+                  <span>00:00.8</span><span>入点</span><span>出点</span><span>00:05.2</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">旁白</div>
+              <div class="card-sub">TTS 生成 · 12 段</div>
+            </div>
+            <div class="card-b" style="padding-top:12px">
+              <div style="display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:11px;background:var(--ink-100);margin-bottom:9px">
+                <i class="g-ico g-ok">✓</i>
+                <span style="font-size:12px;color:var(--ink-700)">全部 12 段旁白已生成 · 合计 1 分 48 秒</span>
+                <span class="chip chip-line" style="margin-left:auto">试听</span>
+              </div>
+              <div style="font-size:11.5px;color:var(--ink-500);line-height:1.8">
+                旁白与画面是<b>分别生成</b>的：改旁白不需要重出画面，改画面不会动旁白时间轴。
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>33</b><span>成片结果</span><i>生成进度 · 修剪区间 · 旁白分离</i></div>
+</section>
+<section class="screen" id="s-create-result-empty">
+  <div class="frame">
+    <div class="app" data-nav="create" data-tab="成片结果" data-url="成片结果">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>成片结果</h2>
+              <div class="sub">还没有可预览的成片</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-p">去视频创作</button></div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <div class="card-b" style="padding:34px 24px;text-align:center">
+              <div style="display:flex;justify-content:center;margin-bottom:12px"><i class="g-ico g-idle" style="font-size:22px">○</i></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ink-900)">还没有成片</div>
+              <div style="font-size:12px;color:var(--ink-500);margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.7">成片结果页要等一个视频项目跑完才有内容。先去「视频创作」建一个项目，或从项目库打开一个已有项目。</div>
+              <div style="margin-top:14px"><button class="btn btn-p">去视频创作</button></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>33</b><span>成片结果 · 空态</span><i>没有项目时不给假预览</i></div>
+</section>
+<section class="screen" id="s-intelligence">
+  <div class="frame">
+    <div class="app" data-nav="data" data-tab="内容情报" data-url="内容情报">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>内容情报</h2>
+              <div class="sub">从已发布内容里找出可复用的结论</div>
+            </div>
+            <div class="ph-actions"><div class="input" style="width:200px;height:32px"><span style="color:var(--ink-400)">⌕</span><span class="ph" style="margin-left:7px">搜内容</span></div><button class="btn btn-p">重新分析</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-b" style="padding:12px 14px;display:flex;align-items:center;gap:11px">
+              <div>
+                <div class="label" style="margin-bottom:5px">分析来源</div>
+                <div class="seg"><button type="button" class="on">我的全部内容</button><button type="button">仅公众号</button><button type="button">仅知乎</button><button type="button">指定账号</button></div>
+              </div>
+              <span style="margin-left:auto;font-size:11.5px;color:var(--ink-400)">已分析 128 条 · 最近 30 天</span>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-h">
+              <div class="card-t">高价值结论</div>
+              <div class="card-sub">按复用价值排序</div>
+            </div>
+            <div class="card-b" style="padding-top:8px">
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:12.5px;font-weight:600">AI 工具降本 5 个真实案例</div>
+                  <div style="display:flex;align-items:center;gap:7px;margin-top:4px">
+                    <span class="chip chip-line">公众号 · 技术编辑部</span>
+                    <span style="font-size:11px;color:var(--ink-400)">10-24</span>
+                  </div>
+                </div>
+                <div style="text-align:right">
+                  <div class="num" style="font-size:12px;color:var(--ink-600)">3,842 阅读</div>
+                  <div style="font-size:10.5px;color:var(--ink-400);margin-top:2px">稳定</div>
+                </div>
+                <div style="width:56px;text-align:right">
+                  <div class="num" style="font-size:16px;font-weight:800">92</div>
+                  <div style="font-size:10px;color:var(--ink-400)">复用分</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:12.5px;font-weight:600">独立站 SEO 流水线复盘</div>
+                  <div style="display:flex;align-items:center;gap:7px;margin-top:4px">
+                    <span class="chip chip-line">知乎 · 产品笔记</span>
+                    <span style="font-size:11px;color:var(--ink-400)">10-23</span>
+                  </div>
+                </div>
+                <div style="text-align:right">
+                  <div class="num" style="font-size:12px;color:var(--ink-600)">2,106 阅读</div>
+                  <div style="font-size:10.5px;color:var(--ink-400);margin-top:2px">稳定</div>
+                </div>
+                <div style="width:56px;text-align:right">
+                  <div class="num" style="font-size:16px;font-weight:800">88</div>
+                  <div style="font-size:10px;color:var(--ink-400)">复用分</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:12.5px;font-weight:600">本周爆款选题清单（10 条）</div>
+                  <div style="display:flex;align-items:center;gap:7px;margin-top:4px">
+                    <span class="chip chip-line">小红书 · 生活方式号</span>
+                    <span style="font-size:11px;color:var(--ink-400)">10-24</span>
+                  </div>
+                </div>
+                <div style="text-align:right">
+                  <div class="num" style="font-size:12px;color:var(--ink-600)">5,930 阅读</div>
+                  <div style="font-size:10.5px;color:var(--ink-400);margin-top:2px">增长中</div>
+                </div>
+                <div style="width:56px;text-align:right">
+                  <div class="num" style="font-size:16px;font-weight:800">76</div>
+                  <div style="font-size:10px;color:var(--ink-400)">复用分</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:12.5px;font-weight:600">SaaS 定价页改写 A/B 结果</div>
+                  <div style="display:flex;align-items:center;gap:7px;margin-top:4px">
+                    <span class="chip chip-line">知乎 · 产品笔记</span>
+                    <span style="font-size:11px;color:var(--ink-400)">10-22</span>
+                  </div>
+                </div>
+                <div style="text-align:right">
+                  <div class="num" style="font-size:12px;color:var(--ink-600)">1,274 阅读</div>
+                  <div style="font-size:10.5px;color:var(--ink-400);margin-top:2px">稳定</div>
+                </div>
+                <div style="width:56px;text-align:right">
+                  <div class="num" style="font-size:16px;font-weight:800">64</div>
+                  <div style="font-size:10px;color:var(--ink-400)">复用分</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">可复用标签</div>
+              <div class="card-sub">点选后写进新稿件的关键词</div>
+            </div>
+            <div class="card-b" style="padding-top:11px">
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <span class="chip">独立站</span><span class="chip">AI 工具</span><span class="chip">降本</span>
+                <span class="chip chip-line">踩坑</span><span class="chip chip-line">SEO</span><span class="chip chip-line">效率</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>34</b><span>内容情报</span><i>来源切换 · 结论列表 · 复用分</i></div>
+</section>
+<section class="screen" id="s-auto-pipeline">
+  <div class="frame">
+    <div class="app" data-nav="create" data-tab="自动流水线" data-url="自动流水线">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>自动流水线</h2>
+              <div class="sub">从选题到成片一条龙 · 中途可停</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">历史任务</button><button class="btn btn-p">开始运行</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-h">
+              <div class="card-t">运行参数</div>
+              <div class="card-sub">每一步都可单独重跑</div>
+            </div>
+            <div class="card-b" style="padding-top:12px">
+              <div class="cfg-row" style="margin-bottom:11px">
+                <div class="label" style="width:88px">选题方向</div>
+                <div class="input" style="flex:1"><span>AI 工具降本</span></div>
+              </div>
+              <div class="cfg-row" style="margin-bottom:11px">
+                <div class="label" style="width:88px">目标平台</div>
+                <div class="cfg-row" style="flex:1;gap:7px">
+                  <span class="chip chip-line on">公众号</span><span class="chip chip-line on">知乎</span><span class="chip chip-line">小红书</span>
+                </div>
+              </div>
+              <div class="cfg-row" style="margin-bottom:11px">
+                <div class="label" style="width:88px">时长</div>
+                <div class="input" style="width:140px"><span>60 秒</span></div>
+                <div class="input" style="width:140px;margin-left:9px"><span>12 镜</span></div>
+              </div>
+              <div class="cfg-row">
+                <div class="label" style="width:88px">口吻</div>
+                <div class="input" style="width:140px"><span>经验分享</span></div>
+                <span style="font-size:11.5px;color:var(--ink-400);margin-left:11px">预计消耗 12 次画面额度</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">阶段进度</div>
+              <div class="card-sub">4 / 6 完成 · 运行中 2 分 14 秒</div>
+              <div class="more" style="margin-left:auto"><span class="chip chip-line">停止</span></div>
+            </div>
+            <div class="card-b" style="padding-top:12px">
+              <div class="stage-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+                <div class="stage-card" style="border:1px solid var(--ink-200);border-radius:12px;padding:12px">
+                  <div class="stage-head" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <i class="g-ico g-ok">✓</i>
+                    <span style="font-size:12.5px;font-weight:700">选题</span>
+                    <span class="num" style="font-size:11.5px;color:var(--ink-500);margin-left:auto">100%</span>
+                  </div>
+                  <div style="height:5px;border-radius:99px;background:var(--ink-100);overflow:hidden;margin-bottom:7px">
+                    <div style="height:100%;width:100%;border-radius:99px;background:var(--st-ok)"></div>
+                  </div>
+                  <div style="font-size:11px;color:var(--ink-500)">已定：AI 工具降本 5 案例</div>
+                </div>
+                <div class="stage-card" style="border:1px solid var(--ink-200);border-radius:12px;padding:12px">
+                  <div class="stage-head" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <i class="g-ico g-ok">✓</i>
+                    <span style="font-size:12.5px;font-weight:700">脚本</span>
+                    <span class="num" style="font-size:11.5px;color:var(--ink-500);margin-left:auto">100%</span>
+                  </div>
+                  <div style="height:5px;border-radius:99px;background:var(--ink-100);overflow:hidden;margin-bottom:7px">
+                    <div style="height:100%;width:100%;border-radius:99px;background:var(--st-ok)"></div>
+                  </div>
+                  <div style="font-size:11px;color:var(--ink-500)">7 段 · 1 分 48 秒</div>
+                </div>
+                <div class="stage-card" style="border:1px solid var(--ink-200);border-radius:12px;padding:12px">
+                  <div class="stage-head" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <i class="g-ico g-ok">✓</i>
+                    <span style="font-size:12.5px;font-weight:700">分镜</span>
+                    <span class="num" style="font-size:11.5px;color:var(--ink-500);margin-left:auto">100%</span>
+                  </div>
+                  <div style="height:5px;border-radius:99px;background:var(--ink-100);overflow:hidden;margin-bottom:7px">
+                    <div style="height:100%;width:100%;border-radius:99px;background:var(--st-ok)"></div>
+                  </div>
+                  <div style="font-size:11px;color:var(--ink-500)">12 镜</div>
+                </div>
+                <div class="stage-card" style="border:1px solid var(--ink-200);border-radius:12px;padding:12px">
+                  <div class="stage-head" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <i class="g-ico g-run">●</i>
+                    <span style="font-size:12.5px;font-weight:700">画面</span>
+                    <span class="num" style="font-size:11.5px;color:var(--ink-500);margin-left:auto">58%</span>
+                  </div>
+                  <div style="height:5px;border-radius:99px;background:var(--ink-100);overflow:hidden;margin-bottom:7px">
+                    <div style="height:100%;width:58%;border-radius:99px;background:var(--ink-900)"></div>
+                  </div>
+                  <div style="font-size:11px;color:var(--ink-500)">第 7 镜生成中</div>
+                </div>
+                <div class="stage-card" style="border:1px solid var(--ink-200);border-radius:12px;padding:12px">
+                  <div class="stage-head" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <i class="g-ico g-idle">○</i>
+                    <span style="font-size:12.5px;font-weight:700">配音</span>
+                    <span class="num" style="font-size:11.5px;color:var(--ink-500);margin-left:auto">0%</span>
+                  </div>
+                  <div style="height:5px;border-radius:99px;background:var(--ink-100);overflow:hidden;margin-bottom:7px">
+                    <div style="height:100%;width:0%;border-radius:99px;background:var(--ink-200)"></div>
+                  </div>
+                  <div style="font-size:11px;color:var(--ink-500)">等待画面完成</div>
+                </div>
+                <div class="stage-card" style="border:1px solid var(--ink-200);border-radius:12px;padding:12px">
+                  <div class="stage-head" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <i class="g-ico g-idle">○</i>
+                    <span style="font-size:12.5px;font-weight:700">成片</span>
+                    <span class="num" style="font-size:11.5px;color:var(--ink-500);margin-left:auto">0%</span>
+                  </div>
+                  <div style="height:5px;border-radius:99px;background:var(--ink-100);overflow:hidden;margin-bottom:7px">
+                    <div style="height:100%;width:0%;border-radius:99px;background:var(--ink-200)"></div>
+                  </div>
+                  <div style="font-size:11px;color:var(--ink-500)">等待配音完成</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>35</b><span>自动流水线</span><i>参数面板 + 六阶段进度网格</i></div>
+</section>
+<section class="screen" id="s-auto-pipeline-error">
+  <div class="frame">
+    <div class="app" data-nav="create" data-tab="自动流水线" data-url="自动流水线">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>自动流水线</h2>
+              <div class="sub">从选题到成片一条龙 · 中途可停</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">历史任务</button><button class="btn btn-p">开始运行</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-b" style="padding:12px 14px;display:flex;align-items:center;gap:9px">
+              <i class="g-ico g-fail">!</i>
+              <div>
+                <div style="font-size:12.5px;font-weight:700;color:var(--st-err)">「画面」阶段失败</div>
+                <div style="font-size:11.5px;color:var(--ink-500);margin-top:2px">第 7 镜连续 3 次生成失败（上游模型超时）。前 6 镜已生成，可从这一步重跑，不消耗已完成部分的额度。</div>
+              </div>
+              <button class="btn btn-sm btn-p" style="margin-left:auto">重跑这一步</button>
+            </div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <div class="card-b" style="padding:34px 24px;text-align:center">
+              <div style="display:flex;justify-content:center;margin-bottom:12px"><i class="g-ico g-fail" style="font-size:22px">!</i></div>
+              <div style="font-size:14px;font-weight:700;color:var(--ink-900)">流水线停在了「画面」这一步</div>
+              <div style="font-size:12px;color:var(--ink-500);margin-top:6px;max-width:440px;margin-left:auto;margin-right:auto;line-height:1.7">已完成的 3 个阶段（选题 / 脚本 / 分镜）与 6 个镜头都保留着。修好模型服务后可以直接「重跑这一步」；也可以「整条重跑」重来一次。</div>
+              <div style="margin-top:14px"><button class="btn btn-p">重跑这一步</button></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>35</b><span>自动流水线 · 失败态</span><i>停在哪一步就说清 · 已完成部分不丢</i></div>
+</section>
+<section class="screen" id="s-video-clone">
+  <div class="frame">
+    <div class="app" data-nav="create" data-tab="视频克隆" data-url="视频克隆">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>视频克隆</h2>
+              <div class="sub">用自己的口播片段生成数字人视频</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">克隆记录</button><button class="btn btn-p">开始克隆</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-h">
+              <div class="card-t">配置档案</div>
+              <div class="card-sub">音色与形象的可复用组合</div>
+            </div>
+            <div class="card-b" style="padding-top:12px">
+              <div class="grid g2" style="gap:11px">
+                <div style="border:1px solid var(--ink-200);border-radius:13px;padding:13px">
+                  <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">
+                    <span class="avatar" style="width:30px;height:30px;font-size:11px">E2</span>
+                    <div><div style="font-size:12.5px;font-weight:700">E2E 用户 · 默认</div>
+                      <div style="font-size:11px;color:var(--ink-400);margin-top:2px">音色 E2E-主 · 形象 半身</div></div>
+                    <i class="g-ico g-ok">✓</i>
+                  </div>
+                  <div style="display:flex;gap:7px;flex-wrap:wrap">
+                    <span class="chip chip-line">已录 3 段</span><span class="chip chip-line">时长 12 秒</span>
+                  </div>
+                </div>
+                <div style="border:1px solid var(--ink-200);border-radius:13px;padding:13px">
+                  <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">
+                    <span class="avatar" style="width:30px;height:30px;font-size:11px;background:var(--ink-400)">播</span>
+                    <div><div style="font-size:12.5px;font-weight:700">播客音色</div>
+                      <div style="font-size:11px;color:var(--ink-400);margin-top:2px">音色 播客-男 · 形象 特写</div></div>
+                    <i class="g-ico g-warn">△</i>
+                  </div>
+                  <div style="display:flex;gap:7px;flex-wrap:wrap">
+                    <span class="chip chip-line">已录 1 段</span><span class="chip chip-line" style="color:var(--st-warn)">素材不足 20 秒</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">本次克隆</div>
+              <div class="card-sub">选择档案 + 填文本</div>
+            </div>
+            <div class="card-b" style="padding-top:12px">
+              <div class="label" style="margin-bottom:6px">口播文本</div>
+              <div class="editor" style="min-height:82px;font-size:12px;color:var(--ink-400)">输入要克隆成视频的口播文本…</div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:11px">
+                <span class="hint">0 字</span>
+                <span style="font-size:11.5px;color:var(--ink-400)">预计成片 8 秒</span>
+                <span style="font-size:11.5px;color:var(--ink-400);margin-left:auto">消耗 1 次克隆额度（本月剩 6 次）</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>36</b><span>视频克隆</span><i>配置档案 + 口播文本 · 素材不足要提示</i></div>
+</section>
+<section class="screen" id="s-film-engineering">
+  <div class="frame">
+    <div class="app" data-nav="create" data-tab="影视工程" data-url="影视工程">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>影视工程</h2>
+              <div class="sub">长视频的镜头、旁白与成片编排</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">导入素材</button><button class="btn btn-p">新建工程</button></div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">影视工程</div>
+              <div class="card-sub">2 个工程 · 一个在跑</div>
+              <div class="more" style="margin-left:auto">
+                <span class="chip chip-line on">工作台</span><span class="chip chip-line" style="margin-left:6px">经典模式</span>
+              </div>
+            </div>
+            <div class="card-b" style="padding-top:12px">
+              <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:11px">
+                <div style="border:1px solid var(--ink-200);border-radius:13px;padding:13px">
+                  <div style="display:flex;align-items:center;gap:9px;margin-bottom:9px">
+                    <i class="g-ico g-run">●</i>
+                    <div style="font-size:12.5px;font-weight:700">长视频 · 自动化</div>
+                    <span style="font-size:11px;color:var(--ink-400);margin-left:auto">12 镜 · 3 段</span>
+                  </div>
+                  <div style="height:5px;border-radius:99px;background:var(--ink-100);overflow:hidden;margin-bottom:8px">
+                    <div style="height:100%;width:58%;border-radius:99px;background:var(--ink-900)"></div>
+                  </div>
+                  <div style="font-size:11px;color:var(--ink-500)">第 7 镜生成中 · 预计 3 分钟</div>
+                </div>
+                <div style="border:1px solid var var(--ink-200);border:1px solid var(--ink-200);border-radius:13px;padding:13px">
+                  <div style="display:flex;align-items:center;gap:9px;margin-bottom:9px">
+                    <i class="g-ico g-idle">○</i>
+                    <div style="font-size:12.5px;font-weight:700">产品介绍片 · 草稿</div>
+                    <span style="font-size:11px;color:var(--ink-400);margin-left:auto">8 镜 · 2 段</span>
+                  </div>
+                  <div style="font-size:11px;color:var(--ink-500)">从未运行 · 预计消耗 8 次额度</div>
+                </div>
+              </div>
+              <div style="margin-top:12px;padding:11px 13px;border-radius:12px;background:var(--ink-100);font-size:11px;color:var(--ink-600);line-height:1.7">
+                <b>工作台</b>按「工程 → 镜头 → 状态」看整体进度；<b>经典模式</b>逐镜精细调节（分镜、配音、修剪区间）。两者操作的是同一份数据。
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>37</b><span>影视工程 · 工作台</span><i>工程级进度 · 与经典模式同数据</i></div>
+</section>
+<section class="screen" id="s-film-classic">
+  <div class="frame">
+    <div class="app" data-nav="create" data-tab="影视工程" data-url="影视工程">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>影视工程 · 经典模式</h2>
+              <div class="sub">逐镜调节：分镜、配音与修剪区间</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">回工作台</button><button class="btn btn-p">生成成片</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-h">
+              <div class="card-t">镜头 7 / 12</div>
+              <div class="card-sub">长视频 · 自动化</div>
+              <div class="more" style="margin-left:auto"><span class="chip chip-line">上一镜</span><span class="chip chip-line" style="margin-left:6px">下一镜</span></div>
+            </div>
+            <div class="card-b" style="padding-top:12px">
+              <div style="aspect-ratio:16/9;border-radius:14px;background:linear-gradient(140deg,#2B3350,#4B5680);display:grid;place-items:center;color:rgba(255,255,255,.8);font-size:13px">
+                第 7 镜画面（生成中）
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:13px">
+                <div>
+                  <div class="label" style="margin-bottom:6px">分镜提示</div>
+                  <div class="editor" style="min-height:74px;font-size:11.5px;color:var(--ink-600)">特写桌面上的电脑屏幕，屏幕上是流量曲线；自然光从左侧窗户进来</div>
+                </div>
+                <div>
+                  <div class="label" style="margin-bottom:6px">旁白</div>
+                  <div class="editor" style="min-height:74px;font-size:11.5px;color:var(--ink-600)">那半年我们最大的坑，不是流量。</div>
+                </div>
+              </div>
+              <div style="margin-top:13px">
+                <div class="label" style="margin-bottom:7px">修剪区间</div>
+                <div style="height:6px;border-radius:99px;background:var(--ink-100);position:relative">
+                  <div style="position:absolute;left:14%;right:10%;top:-3px;height:12px;border-radius:99px;background:var(--ink-900)"></div>
+                  <span style="position:absolute;left:14%;top:-4px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                  <span style="position:absolute;right:10%;top:-4px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-top:7px;font-size:11px;color:var(--ink-400)">
+                  <span>00:00.8</span><span>入点</span><span>出点</span><span>00:05.2</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">本镜状态</div>
+              <div class="card-sub">画面与旁白分别生成</div>
+            </div>
+            <div class="card-b" style="padding-top:11px">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:11px;background:var(--ink-100);margin-bottom:8px">
+                <i class="g-ico g-run">●</i><span style="font-size:12px;color:var(--ink-700)">画面生成中 · 预计 40 秒</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:11px;background:var(--ink-100)">
+                <i class="g-ico g-ok">✓</i><span style="font-size:12px;color:var(--ink-700)">旁白已生成 · 4.2 秒</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>37</b><span>影视工程 · 经典模式</span><i>逐镜：分镜 / 旁白 / 修剪区间</i></div>
+</section>
+<section class="screen" id="s-board">
+  <div class="frame">
+    <div class="app" data-nav="library" data-tab="制作看板" data-url="制作看板">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>独立站 SEO 流水线</h2>
+              <div class="sub">12 镜 · 4 已完成 · 1 生成中</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">回放时间轴</button><button class="btn btn-p">联系表</button></div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-b" style="padding:12px 14px;display:flex;align-items:center;gap:12px">
+              <span style="font-size:11.5px;color:var(--ink-500)">阶段</span>
+              <div style="display:flex;align-items:center;gap:7px;flex:1">
+                <span class="chip chip-line" style="border-color:var(--st-ok);color:var(--st-ok)">脚本 完成</span>
+                <span style="color:var(--ink-300)">—</span>
+                <span class="chip chip-line on">分镜 4/12</span>
+                <span style="color:var(--ink-300)">—</span>
+                <span class="chip chip-line">画面 待开始</span>
+                <span style="color:var(--ink-300)">—</span>
+                <span class="chip chip-line">成片 待开始</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid g-2-1">
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">镜头</div>
+                <div class="card-sub">按顺序执行 · 点开可调</div>
+              </div>
+              <div class="card-b" style="padding-top:11px">
+                <div class="stage-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+                  <div style="border:1px solid var(--ink-200);border-radius:12px;padding:11px">
+                    <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+                      <span class="mono mono" style="font-size:11px;color:var(--ink-400)">01</span>
+                      <i class="g-ico g-ok">✓</i>
+                    </div>
+                    <div style="font-size:12px;font-weight:600;line-height:1.5">开场 · 桌面全景</div>
+                    <div style="font-size:10.5px;color:var(--ink-400);margin-top:5px">2 条</div>
+                  </div>
+                  <div style="border:1px solid var(--ink-200);border-radius:12px;padding:11px">
+                    <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+                      <span class="mono mono" style="font-size:11px;color:var(--ink-400)">02</span>
+                      <i class="g-ico g-ok">✓</i>
+                    </div>
+                    <div style="font-size:12px;font-weight:600;line-height:1.5">特写 · 屏幕上的曲线</div>
+                    <div style="font-size:10.5px;color:var(--ink-400);margin-top:5px">1 条</div>
+                  </div>
+                  <div style="border:1px solid var(--ink-200);border-radius:12px;padding:11px">
+                    <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+                      <span class="mono mono" style="font-size:11px;color:var(--ink-400)">03</span>
+                      <i class="g-ico g-ok">✓</i>
+                    </div>
+                    <div style="font-size:12px;font-weight:600;line-height:1.5">中景 · 敲键盘</div>
+                    <div style="font-size:10.5px;color:var(--ink-400);margin-top:5px">3 条</div>
+                  </div>
+                  <div style="border:1px solid var(--ink-200);border-radius:12px;padding:11px">
+                    <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+                      <span class="mono mono" style="font-size:11px;color:var(--ink-400)">04</span>
+                      <i class="g-ico g-ok">✓</i>
+                    </div>
+                    <div style="font-size:12px;font-weight:600;line-height:1.5">图表 · 流量对比</div>
+                    <div style="font-size:10.5px;color:var(--ink-400);margin-top:5px">2 条</div>
+                  </div>
+                  <div style="border:1px solid var(--ink-200);border-radius:12px;padding:11px">
+                    <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+                      <span class="mono mono" style="font-size:11px;color:var(--ink-400)">05</span>
+                      <i class="g-ico g-run">●</i>
+                    </div>
+                    <div style="font-size:12px;font-weight:600;line-height:1.5">过渡 · 拉远</div>
+                    <div style="font-size:10.5px;color:var(--ink-400);margin-top:5px">生成中</div>
+                  </div>
+                  <div style="border:1px solid var(--ink-200);border-radius:12px;padding:11px">
+                    <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+                      <span class="mono mono" style="font-size:11px;color:var(--ink-400)">06</span>
+                      <i class="g-ico g-idle">○</i>
+                    </div>
+                    <div style="font-size:12px;font-weight:600;line-height:1.5">结尾 · 正面口播</div>
+                    <div style="font-size:10.5px;color:var(--ink-400);margin-top:5px">待生成</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-h">
+                <div class="card-t">工程信息</div>
+              </div>
+              <div class="card-b" style="padding-top:11px">
+                <div style="font-size:11.5px;color:var(--ink-500);line-height:1.9">
+                  创建于 10-24 09:12<br>
+                  12 镜 · 60 秒 · 16:9<br>
+                  4 段旁白 · 1 分 48 秒<br>
+                  预计再耗 <b>8</b> 次画面额度
+                </div>
+                <div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--ink-200)">
+                  <div class="label" style="margin-bottom:7px">最近事件</div>
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <div style="display:flex;gap:8px"><span class="mono" style="font-size:10.5px;color:var(--ink-400)">09:41</span><span style="font-size:11.5px;color:var(--ink-600)">第 5 镜开始生成</span></div>
+                    <div style="display:flex;gap:8px"><span class="mono" style="font-size:10.5px;color:var(--ink-400)">09:38</span><span style="font-size:11.5px;color:var(--ink-600)">第 4 镜已通过</span></div>
+                    <div style="display:flex;gap:8px"><span class="mono" style="font-size:10.5px;color:var(--ink-400)">09:35</span><span style="font-size:11.5px;color:var(--ink-600)">分镜确认</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>38</b><span>制作看板</span><i>阶段指示 + 镜头网格 + 事件流</i></div>
+</section>
+<section class="screen" id="s-contact-sheet">
+  <div class="frame">
+    <div class="app" data-nav="library" data-tab="联系表" data-url="联系表">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>联系表</h2>
+              <div class="sub">逐镜挑版本 · 12 镜 · 1 镜需重出</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">回看板</button><button class="btn btn-p">确认选用</button></div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">镜头与版本</div>
+              <div class="card-sub">每镜可多出几条候选，勾一条选用</div>
+            </div>
+            <div class="card-b" style="padding-top:8px">
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono mono" style="font-size:11px;color:var(--ink-400);width:22px">01</span>
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:12.5px;font-weight:600">开场 · 桌面全景</div>
+                  <div style="font-size:11px;color:var(--ink-400);margin-top:3px">2 条 · 1 选用</div>
+                  
+                </div>
+                <i class="g-ico g-ok">✓</i>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span class="chip" style="background:var(--st-ok);color:#fff">已选用</span>
+                  
+                  
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono mono" style="font-size:11px;color:var(--ink-400);width:22px">02</span>
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:12.5px;font-weight:600">特写 · 屏幕上的曲线</div>
+                  <div style="font-size:11px;color:var(--ink-400);margin-top:3px">1 条 · 1 选用</div>
+                  
+                </div>
+                <i class="g-ico g-ok">✓</i>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span class="chip" style="background:var(--st-ok);color:#fff">已选用</span>
+                  
+                  
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono mono" style="font-size:11px;color:var(--ink-400);width:22px">03</span>
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:12.5px;font-weight:600">中景 · 敲键盘</div>
+                  <div style="font-size:11px;color:var(--ink-400);margin-top:3px">3 条 · 1 选用</div>
+                  
+                </div>
+                <i class="g-ico g-ok">✓</i>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span class="chip" style="background:var(--st-ok);color:#fff">已选用</span>
+                  
+                  
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono mono" style="font-size:11px;color:var(--ink-400);width:22px">04</span>
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:12.5px;font-weight:600">图表 · 流量对比</div>
+                  <div style="font-size:11px;color:var(--ink-400);margin-top:3px">2 条 · 0 选用</div>
+                  <div style="font-size:11px;color:var(--st-err);margin-top:3px">两条画面都糊了，需要重出</div>
+                </div>
+                <i class="g-ico g-fail">!</i>
+                <div style="display:flex;gap:6px;align-items:center">
+                  
+                  <button class="btn btn-sm btn-g">重出</button>
+                  
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono mono" style="font-size:11px;color:var(--ink-400);width:22px">05</span>
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:12.5px;font-weight:600">过渡 · 拉远</div>
+                  <div style="font-size:11px;color:var(--ink-400);margin-top:3px">生成中</div>
+                  
+                </div>
+                <i class="g-ico g-run">●</i>
+                <div style="display:flex;gap:6px;align-items:center">
+                  
+                  
+                  
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono mono" style="font-size:11px;color:var(--ink-400);width:22px">06</span>
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:12.5px;font-weight:600">结尾 · 正面口播</div>
+                  <div style="font-size:11px;color:var(--ink-400);margin-top:3px">待生成</div>
+                  
+                </div>
+                <i class="g-ico g-idle">○</i>
+                <div style="display:flex;gap:6px;align-items:center">
+                  
+                  
+                  <span class="chip chip-line">待生成</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>39</b><span>联系表</span><i>逐镜挑版本 · 失败镜给重出入口</i></div>
+</section>
+<section class="screen" id="s-replay">
+  <div class="frame">
+    <div class="app" data-nav="library" data-tab="回放时间轴" data-url="回放时间轴">
+      <div class="main">
+        <div class="ws">
+          <div class="ph">
+            <div>
+              <h2>回放时间轴</h2>
+              <div class="sub">长视频 · 自动化 · 60 秒</div>
+            </div>
+            <div class="ph-actions"><button class="btn btn-g">回看板</button><button class="btn btn-p">导出时间轴</div>
+          </div>
+
+          <div class="card" style="margin-bottom:12px">
+            <div class="card-b" style="padding:16px 16px 20px">
+              <div style="height:6px;border-radius:99px;background:var(--ink-100);position:relative;margin-bottom:20px">
+                <div style="position:absolute;left:0;right:0;top:-3px;height:12px;border-radius:99px;background:linear-gradient(90deg,var(--st-ok) 0%,var(--st-ok) 58%,var(--ink-200) 58%)"></div>
+                <span style="position:absolute;left:58%;top:-5px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.24)"></span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-400)">
+                <span>00:00</span><span>00:15</span><span>00:30</span><span>00:45</span><span>01:00</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div class="card-t">片段</div>
+              <div class="card-sub">6 段 · 已生成 4 段</div>
+            </div>
+            <div class="card-b" style="padding-top:8px">
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono" style="font-size:11px;color:var(--ink-400);width:46px">00:00</span>
+                <div style="flex:1;font-size:12.5px;font-weight:600">开场 · 桌面全景</div>
+                <span class="num" style="font-size:11.5px;color:var(--ink-500)">4.2s</span>
+                <i class="g-ico g-ok">✓</i>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono" style="font-size:11px;color:var(--ink-400);width:46px">00:04</span>
+                <div style="flex:1;font-size:12.5px;font-weight:600">特写 · 屏幕上的曲线</div>
+                <span class="num" style="font-size:11.5px;color:var(--ink-500)">2.8s</span>
+                <i class="g-ico g-ok">✓</i>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono" style="font-size:11px;color:var(--ink-400);width:46px">00:07</span>
+                <div style="flex:1;font-size:12.5px;font-weight:600">中景 · 敲键盘</div>
+                <span class="num" style="font-size:11.5px;color:var(--ink-500)">3.6s</span>
+                <i class="g-ico g-ok">✓</i>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono" style="font-size:11px;color:var(--ink-400);width:46px">00:11</span>
+                <div style="flex:1;font-size:12.5px;font-weight:600">图表 · 流量对比</div>
+                <span class="num" style="font-size:11.5px;color:var(--ink-500)">5.1s</span>
+                <i class="g-ico g-warn">△</i>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono" style="font-size:11px;color:var(--ink-400);width:46px">00:16</span>
+                <div style="flex:1;font-size:12.5px;font-weight:600">过渡 · 拉远</div>
+                <span class="num" style="font-size:11.5px;color:var(--ink-500)">—</span>
+                <i class="g-ico g-run">●</i>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--ink-100)">
+                <span class="mono" style="font-size:11px;color:var(--ink-400);width:46px">00:21</span>
+                <div style="flex:1;font-size:12.5px;font-weight:600">结尾 · 正面口播</div>
+                <span class="num" style="font-size:11.5px;color:var(--ink-500)">—</span>
+                <i class="g-ico g-idle">○</i>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>40</b><span>回放时间轴</span><i>时间轴 + 片段列表 · 未生成段也占位</i></div>
+</section>
+
+
 <script>
 /* ─────────────────────────────────────────────────────────────
    Hero 系统注入：每个页面按语义选色族 + 尺寸，插在页头下方
@@ -2900,7 +5294,173 @@ html.glass-indigo{   /* 靛蓝：单一靛紫（推荐） */
       { i:'flame', l:'视频生成', n:'42',  u:'/60 次', t:'剩余 18 次' },
       { i:'users', l:'账号上限', n:'8',   u:'/20 个', t:'剩余 12 个' },
       { i:'clock', l:'套餐到期', n:'11',  u:'天',   t:'2026-11-03 自动续费' }]}
-  };
+,
+    's-automation': { fam:'indigo', size:'hero-sm', kpis:[
+      { i:'clock', l:'运行中', n:'1', u:'个', t:'小红书采集' },
+      { i:'check', l:'今日完成', n:'6', u:'次', t:'较昨日 +2' },
+      { i:'alert', l:'失败', n:'1', u:'个', t:'知乎授权过期' },
+      { i:'users', l:'启用任务', n:'3', u:'/4', t:'1 个已停用' }]},
+    's-automation-empty': { fam:'indigo', size:'hero-sm', kpis:[
+      { i:'clock', l:'运行中', n:'0', u:'个', t:'—' },
+      { i:'check', l:'今日完成', n:'0', u:'次', t:'—' },
+      { i:'alert', l:'失败', n:'0', u:'个', t:'—' },
+      { i:'users', l:'启用任务', n:'0', u:'/0', t:'尚未创建' }]},
+    's-automation-error': { fam:'indigo', size:'hero-sm', kpis:[
+      { i:'clock', l:'运行中', n:'—', u:'个', t:'状态未知' },
+      { i:'check', l:'今日完成', n:'—', u:'次', t:'状态未知' },
+      { i:'alert', l:'读取失败', n:'1', u:'条', t:'本地配置不可读' },
+      { i:'users', l:'启用任务', n:'—', t:'状态未知' }]},
+    's-copy-library': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'doc', l:'文案总数', n:'28', u:'条', t:'本周 +6' },
+      { i:'layers', l:'来源平台', n:'5', u:'个', t:'公众号为主' },
+      { i:'eye', l:'累计阅读', n:'11.2', u:'w', t:'较上周 +2.4w' },
+      { i:'alert', l:'待校对', n:'3', u:'条', t:'含 1 条播客稿' }]},
+    's-copy-library-empty': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'doc', l:'文案总数', n:'28', u:'条', t:'库里实际有' },
+      { i:'layers', l:'当前筛选', n:'0', u:'条', t:'条件过窄' },
+      { i:'eye', l:'累计阅读', n:'11.2', u:'w', t:'较上周 +2.4w' },
+      { i:'alert', l:'待校对', n:'3', u:'条', t:'含 1 条播客稿' }]},
+    's-rewrite': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'doc', l:'原文', n:'286', u:'字', t:'公众号成稿' },
+      { i:'spark', l:'今日改写', n:'4', u:'篇', t:'较昨日 +1' },
+      { i:'flame', l:'剩余额度', n:'18', u:'次', t:'本月' },
+      { i:'check', l:'采纳率', n:'76', u:'%', t:'近 30 天' }]},
+    's-rewrite-error': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'doc', l:'原文', n:'286', u:'字', t:'已保留' },
+      { i:'spark', l:'今日改写', n:'3', u:'篇', t:'本次失败未计' },
+      { i:'flame', l:'剩余额度', n:'18', u:'次', t:'本次未消耗' },
+      { i:'alert', l:'失败', n:'1', u:'次', t:'上游返回空结果' }]},
+    's-model-providers': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'layers', l:'已配置', n:'4', u:'个', t:'共 5 个可用' },
+      { i:'check', l:'可用', n:'4', u:'个', t:'1 个连不上' },
+      { i:'clock', l:'平均延迟', n:'1.8', u:'s', t:'文本模型' },
+      { i:'alert', l:'异常', n:'1', u:'个', t:'本地 Ollama 超时' }]},
+    's-model-providers-empty': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'layers', l:'已配置', n:'0', u:'个', t:'尚未添加' },
+      { i:'check', l:'可用', n:'0', u:'个', t:'—' },
+      { i:'clock', l:'平均延迟', n:'—', t:'—' },
+      { i:'alert', l:'异常', n:'0', u:'个', t:'—' }]},
+    's-cloud-publish': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'send', l:'云端任务', n:'3', u:'个', t:'近 7 天' },
+      { i:'check', l:'完成', n:'1', u:'个', t:'成功率 67%' },
+      { i:'alert', l:'失败', n:'1', u:'个', t:'标题被平台拒' },
+      { i:'flame', l:'云端额度', n:'42', u:'次', t:'本月剩余' }]},
+    's-viral-analysis': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'eye', l:'已分析', n:'36', u:'条', t:'近 30 天' },
+      { i:'flame', l:'最高因子分', n:'82', u:'分', t:'开头 3 秒' },
+      { i:'spark', l:'今日热点', n:'9', u:'个', t:'已选 3 个' },
+      { i:'check', l:'模板可复用', n:'4', u:'套', t:'已保存' }]},
+    's-library': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'doc', l:'项目', n:'4', u:'个', t:'本月 +1' },
+      { i:'image', l:'素材', n:'42', u:'条', t:'跨 4 个项目' },
+      { i:'check', l:'已发布', n:'5', u:'篇', t:'近 30 天' },
+      { i:'alert', l:'缺授权', n:'1', u:'个', t:'封面用到受限素材' }]},
+    's-library-loading': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'doc', l:'项目', n:'—', u:'个', t:'读取中' },
+      { i:'image', l:'素材', n:'—', u:'条', t:'读取中' },
+      { i:'check', l:'已发布', n:'—', u:'篇', t:'读取中' },
+      { i:'clock', l:'耗时', n:'0.4', u:'s', t:'本地索引' }]},
+    's-library-error': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'doc', l:'项目', n:'—', u:'个', t:'状态未知' },
+      { i:'image', l:'素材', n:'—', u:'条', t:'状态未知' },
+      { i:'check', l:'已发布', n:'—', u:'篇', t:'状态未知' },
+      { i:'alert', l:'读取失败', n:'1', u:'条', t:'本地索引不可读' }]},
+    's-knowledge-base': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'doc', l:'条目', n:'31', u:'条', t:'本周 +8' },
+      { i:'layers', l:'来源平台', n:'4', u:'个', t:'公众号为主' },
+      { i:'eye', l:'累计阅读', n:'13.1', u:'w', t:'较上周 +1.9w' },
+      { i:'alert', l:'待校对', n:'4', u:'条', t:'需人工确认' }]},
+    's-prompt-eval': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'doc', l:'评测记录', n:'18', u:'条', t:'本周 +5' },
+      { i:'check', l:'平均通过率', n:'82', u:'%', t:'较上周 +4%' },
+      { i:'clock', l:'平均耗时', n:'2.1', u:'s', t:'较上周 -0.3s' },
+      { i:'alert', l:'失败用例', n:'1', u:'个', t:'选题雷达 v1.4' }]},
+    's-performance-insights': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'eye', l:'总曝光', n:'23.9', u:'w', t:'较上期 +21%' },
+      { i:'doc', l:'总阅读', n:'4,182', t:'较上期 +14%' },
+      { i:'heart', l:'互动', n:'1,046', t:'赞藏评合计' },
+      { i:'users', l:'新增关注', n:'312', t:'较上期 +26%' }]},
+    's-podcast': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'layers', l:'频道', n:'1', u:'个', t:'第三方托管' },
+      { i:'doc', l:'单集', n:'3', u:'集', t:'第 12 集待发布' },
+      { i:'check', l:'已发布', n:'2', u:'集', t:'累计 1.2w 收听' },
+      { i:'clock', l:'上次同步', n:'2', u:'小时前', t:'正常' }]},
+    's-podcast-empty': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'layers', l:'频道', n:'1', u:'个', t:'第三方托管' },
+      { i:'doc', l:'单集', n:'0', u:'集', t:'尚未创建' },
+      { i:'check', l:'已发布', n:'0', u:'集', t:'—' },
+      { i:'clock', l:'上次同步', n:'2', u:'小时前', t:'正常' }]},
+    's-keywords': { fam:'magenta', size:'hero-sm', kpis:[
+      { i:'spark', l:'监测词', n:'5', u:'个', t:'每 30 分钟采样' },
+      { i:'flame', l:'异常飙升', n:'2', u:'个', t:'已发通知' },
+      { i:'doc', l:'今日提及', n:'6.2', u:'k', t:'较昨日 +14%' },
+      { i:'check', l:'正常', n:'3', u:'个', t:'无异常' }]},
+    's-publish-history': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'doc', l:'记录', n:'128', u:'条', t:'近 30 天' },
+      { i:'check', l:'成功率', n:'98', u:'%', t:'近 7 天' },
+      { i:'eye', l:'累计阅读', n:'4.2', u:'w', t:'较上期 +14%' },
+      { i:'alert', l:'失败', n:'2', u:'条', t:'授权失效 1' }]},
+    's-publish-history-empty': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'doc', l:'记录', n:'128', u:'条', t:'库里实际有' },
+      { i:'check', l:'当前筛选', n:'0', u:'条', t:'条件过窄' },
+      { i:'eye', l:'累计阅读', n:'4.2', u:'w', t:'较上期 +14%' },
+      { i:'alert', l:'失败', n:'2', u:'条', t:'全库累计' }]},
+    's-create-result': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'image', l:'已生成镜头', n:'6', u:'/12', t:'第 7 镜生成中' },
+      { i:'clock', l:'预计完成', n:'3', u:'分钟', t:'当前第 7 镜' },
+      { i:'spark', l:'旁白段', n:'12', u:'段', t:'全部已生成' },
+      { i:'flame', l:'剩余额度', n:'18', u:'次', t:'本月' }]},
+    's-create-result-empty': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'image', l:'已生成镜头', n:'0', u:'/0', t:'尚未创建' },
+      { i:'clock', l:'预计完成', n:'—', t:'—' },
+      { i:'spark', l:'旁白段', n:'0', u:'段', t:'—' },
+      { i:'flame', l:'剩余额度', n:'18', u:'次', t:'本月' }]},
+    's-intelligence': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'doc', l:'已分析', n:'128', u:'条', t:'近 30 天' },
+      { i:'spark', l:'高价值结论', n:'12', u:'条', t:'可复用' },
+      { i:'eye', l:'覆盖阅读', n:'13.1', u:'w', t:'较上周 +1.9w' },
+      { i:'check', l:'复用标签', n:'26', u:'个', t:'自动提取' }]},
+    's-auto-pipeline': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'layers', l:'阶段', n:'4', u:'/6', t:'画面生成中' },
+      { i:'clock', l:'已运行', n:'2:14', t:'预计还需 3 分钟' },
+      { i:'image', l:'已生成镜头', n:'7', u:'/12', t:'第 7 镜' },
+      { i:'flame', l:'剩余额度', n:'18', u:'次', t:'预计再耗 5 次' }]},
+    's-auto-pipeline-error': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'layers', l:'阶段', n:'3', u:'/6', t:'停在画面' },
+      { i:'clock', l:'已运行', n:'4:02', t:'已中止' },
+      { i:'image', l:'已生成镜头', n:'6', u:'/12', t:'已保留' },
+      { i:'alert', l:'失败', n:'1', u:'处', t:'第 7 镜超时' }]},
+    's-video-clone': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'layers', l:'配置档案', n:'2', u:'个', t:'1 个素材不足' },
+      { i:'clock', l:'克隆时长', n:'8', u:'秒', t:'本次预计' },
+      { i:'check', l:'已用克隆', n:'4', u:'次', t:'本月' },
+      { i:'flame', l:'剩余额度', n:'6', u:'次', t:'本月' }]},
+    's-film-engineering': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'layers', l:'工程', n:'2', u:'个', t:'1 个在跑' },
+      { i:'image', l:'已生成镜头', n:'7', u:'/20', t:'跨 2 个工程' },
+      { i:'clock', l:'预计完成', n:'3', u:'分钟', t:'当前工程' },
+      { i:'flame', l:'剩余额度', n:'18', u:'次', t:'本月' }]},
+    's-film-classic': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'image', l:'当前镜头', n:'7', u:'/12', t:'生成中' },
+      { i:'clock', l:'预计完成', n:'40', u:'秒', t:'画面' },
+      { i:'spark', l:'旁白', n:'4.2', u:'秒', t:'已生成' },
+      { i:'layers', l:'工程', n:'1', u:'个', t:'长视频' }]},
+    's-board': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'layers', l:'镜头', n:'4', u:'/12', t:'1 个生成中' },
+      { i:'image', l:'已生成', n:'4', u:'镜', t:'共 60 秒' },
+      { i:'spark', l:'旁白', n:'4', u:'段', t:'1 分 48 秒' },
+      { i:'flame', l:'剩余额度', n:'18', u:'次', t:'预计再耗 8 次' }]},
+    's-contact-sheet': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'image', l:'候选版本', n:'8', u:'条', t:'12 镜' },
+      { i:'check', l:'已选用', n:'3', u:'镜', t:'可生成成片' },
+      { i:'clock', l:'生成中', n:'1', u:'镜', t:'第 5 镜' },
+      { i:'alert', l:'需重出', n:'1', u:'镜', t:'第 4 镜' }]},
+    's-replay': { fam:'teal', size:'hero-sm', kpis:[
+      { i:'clock', l:'总时长', n:'60', u:'秒', t:'12 镜' },
+      { i:'check', l:'已生成', n:'4', u:'段', t:'21.7 秒' },
+      { i:'image', l:'生成中', n:'1', u:'段', t:'第 5 镜' },
+      { i:'alert', l:'待重出', n:'1', u:'段', t:'第 4 镜' }]}
+    };
   function heroHtml(cfg) {
     var row = cfg.size === 'hero-sm';
     var kpis = cfg.kpis.map(function (k) {

@@ -28,9 +28,14 @@ describe('本地 Provider 桩：路由特征串与提示词常量同源（机械
     path.join(__dirname, '../electron/services/explainer/explainer-preprod-stages.js'), 'utf8')
   const prodSrc = fs.readFileSync(
     path.join(__dirname, '../electron/services/explainer/explainer-prod-stages.js'), 'utf8')
+  // ⚠ 2026-10-25：scenes 阶段的提示词被抽到独立模块（`explainer-scene-plan-prompt.js`）
+  //   ⇒ **守卫的扫描域必须跟着搬家**，否则特征串「你是视频分镜师」扫不到 ⇒ 假红。
+  //   ⇒ **凡是「把提示词常量搬到新文件」，本守卫的扫描域都要同步加。**
+  const scenePlanPromptSrc = fs.readFileSync(
+    path.join(__dirname, '../electron/services/explainer/explainer-scene-plan-prompt.js'), 'utf8')
   const shotSrc = fs.readFileSync(
     path.join(__dirname, '../electron/services/explainer/explainer-shot-language.js'), 'utf8')
-  const allSrc = preprodSrc + '\n' + prodSrc
+  const allSrc = preprodSrc + '\n' + prodSrc + '\n' + scenePlanPromptSrc
 
   it('桩的 STAGE_ROUTES 每一项都能在阶段提示词源码里找到（漏改即红）', () => {
     for (const route of STAGE_ROUTES) {

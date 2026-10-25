@@ -28,6 +28,8 @@
 
 'use strict'
 
+const os = require('os')
+const path = require('path')
 const { emitStageStart, emitStageComplete } = require('../stage-progress')
 const { getDefaultLlmConfig, callDefaultLlm } = require('./llm-call')
 const {
@@ -63,10 +65,24 @@ const {
   sampleFrames,
   measureLoudness,
 } = require('./explainer-media-probe')
+const { buildProgrammaticAssets } = require('./explainer-programmatic-assets')
+const {
+  MAX_SCENES,
+  buildScenePlanPrompt,
+  fallbackScenes,
+  parseScenesArray,
+} = require('./explainer-scene-plan-prompt')
 
-const MAX_SCENES = 30
-const DEFAULT_SCENE_DURATION = 6
-const MIN_SCENE_TEXT_LENGTH = 4
+
+/**
+ * 程序化素材的默认落盘目录。
+ *
+ * ⚠ 放在 `os.tmpdir()` 下（与成片、素材其它产物的落点一致）
+ *   ⇒ **不进版本控制**、重启即清、不会污染工作区。
+ */
+function defaultProgrammaticOutputDir () {
+  return path.join(os.tmpdir(), 'multi-publish', 'explainer', 'programmatic-assets')
+}
 
 /**
  * 把场景与 script 的章节按**时间区间重叠**关联。
@@ -109,64 +125,6 @@ function sceneNarrationText (scene, sectionLink) {
 }
 
 /** 组装 scenes 阶段的结构化提示词：要求 LLM 产**结构化**镜头语言 */
-function buildScenePlanPrompt (script, options = {}) {
-  return {
-    system: [
-      '你是视频分镜师。把旁白文案拆分为若干视频场景，输出严格的 JSON。',
-      '输出格式：{"scenes": [{"id": "scene-1", "type": "broll", "description": "画面主体与动作的一句话描述",',
-      '"duration": 6, "script_section_id": "对应旁白章节 id", "shot_intent": "这一镜为什么存在",',
-      '"shot_language": {"shot_size": "medium", "camera_movement": "static", "lens_mm": 50,',
-      '"lighting_key": "natural", "depth_of_field": "medium", "color_temperature": "neutral"},',
-      '"texture_keywords": ["clean"]}]}',
-      '字段说明：type 只能是 ' + [
-        'talking_head', 'broll', 'animation', 'character_scene', 'diagram',
-        'text_card', 'transition', 'generated', 'screen_recording',
-      ].join(' | ') + ' 之一；',
-      'shot_size ∈ extreme_wide|wide|medium_wide|medium|medium_close|close_up|extreme_close_up|over_shoulder|insert|establishing；',
-      'camera_movement ∈ static|pan_left|pan_right|tilt_up|tilt_down|dolly_in|dolly_out|tracking_left|tracking_right|crane_up|crane_down|handheld|steadicam|whip_pan|orbital|zoom_in|zoom_out|rack_focus；',
-      'lens_mm ∈ 14|24|35|50|85|135|200；',
-      'lighting_key ∈ high_key|low_key|natural|golden_hour|blue_hour|tungsten_warm|neon|silhouette|rim_lit|volumetric|overcast_soft；',
-      'depth_of_field ∈ shallow|medium|deep；color_temperature ∈ cool|neutral|warm|mixed。',
-      '不要输出 markdown 代码块标记，不要任何解释文字。场景数量不超过 ' + MAX_SCENES + ' 个。',
-    ].join('\n'),
-    user: '旁白文案（每段前标注章节 id）：\n' + String(script || '').trim(),
-  }
-}
-
-/** 行级兜底：把旁白文案按段落拆成场景（LLM 解析失败时保证流水线可继续） */
-function fallbackScenes (script, options = {}) {
-  const duration = Number(options.duration)
-  const sceneDuration = Number.isFinite(duration) && duration >= 1 ? duration : DEFAULT_SCENE_DURATION
-  const blocks = String(script || '')
-    .split(/\n\s*\n|\r?\n/)
-    .map(block => block.trim())
-    .filter(block => block.length >= MIN_SCENE_TEXT_LENGTH)
-  if (blocks.length === 0) return null
-  return blocks.slice(0, MAX_SCENES).map((text, index) => ({
-    id: 'scene-' + (index + 1),
-    type: 'broll',
-    description: '以纪实风格呈现「' + text.slice(0, 40) + '」的解说画面，构图清晰，光线自然。',
-    duration: sceneDuration,
-  }))
-}
-
-/** 从 LLM 输出里抽出场景数组（容忍围栏 / 说明文字） */
-function parseScenesArray (text) {
-  const parsed = parseJsonArtifact(text)
-  if (Array.isArray(parsed)) return parsed
-  if (parsed && Array.isArray(parsed.scenes)) return parsed.scenes
-  const source = String(text || '')
-  const start = source.indexOf('[')
-  const end = source.lastIndexOf(']')
-  if (start !== -1 && end > start) {
-    try {
-      const candidate = JSON.parse(source.slice(start, end + 1))
-      if (Array.isArray(candidate)) return candidate
-    } catch (error) { /* fallthrough */ }
-  }
-  return null
-}
-
 module.exports = {
   MAX_SCENES,
   linkScenesToSections,
@@ -433,10 +391,19 @@ function createAssetsExecutor (pipelineEngine) {
       return inner
     }
 
+    // ⚠ **程序化素材生产**（PRD §19.4.4）
+    //   场景在 `required_assets[]` 里声明了「这一镜要示意图 / 代码片段」⇒ 这里真的把它产出来。
+    //   ⚠ **做在 `buildAssetManifest` 之前** ⇒ 程序化资产会一起进 manifest（type 取上游枚举里的
+    //   `diagram` / `code_snippet`）⇒ 既有 `SCENE_WITHOUT_ASSET` 判据允许它**替代** AI 生图。
+    const programmatic = await buildProgrammaticAssets(resolveSceneSource(context).scenes, {
+      outputDir: options.programmaticOutputDir || defaultProgrammaticOutputDir(),
+    })
+
     const manifest = buildAssetManifest(inner.output, {
       scenePlan: asObject(context.scene_plan),
       imageStyle: options.imageStyle,
       sourceTool: innerOptions.imageProvider || 'title-card',
+      programmaticAssets: programmatic.assets,
     })
     const validation = validateArtifact('asset_manifest', manifest)
     if (!validation.ok) {
@@ -446,6 +413,8 @@ function createAssetsExecutor (pipelineEngine) {
       }
     }
     const issues = checkAssetManifestCriteria(manifest, { scenePlan: asObject(context.scene_plan) })
+    // ⚠ 程序化素材的降级/失败**必须可见**（不静默）
+    issues.push(...programmatic.issues)
     return { success: true, output: manifest, issues }
   }
 }

@@ -134,10 +134,25 @@ function buildAssetsIndex (manifest) {
     const sceneId = asText(obj.scene_id)
     const assetPath = asText(obj.path)
     if (!sceneId || !assetPath) continue
-    if (!index[sceneId]) index[sceneId] = { imagePath: '', images: [] }
+    if (!index[sceneId]) {
+      index[sceneId] = { imagePath: '', images: [], programmaticPath: '', programmaticType: '', codeSnippetText: '' }
+    }
     if (asText(obj.type) === 'image') {
       index[sceneId].images.push(assetPath)
       if (!index[sceneId].imagePath) index[sceneId].imagePath = assetPath
+      continue
+    }
+    // ⚠ **程序化素材**（PRD §19.4.6）：`diagram` / `code_snippet`
+    //   ⇒ 它是**视觉主体**（优先于 AI 生图），AI 生图降为背景层。
+    //   `code_snippet` 还要带上**代码正文**（资产描述里）⇒ compose 才能给出终端打字机步骤。
+    if (obj.type === 'diagram' || obj.type === 'code_snippet') {
+      if (!index[sceneId].programmaticPath) {
+        index[sceneId].programmaticPath = assetPath
+        index[sceneId].programmaticType = asText(obj.type)
+      }
+      if (obj.type === 'code_snippet' && !index[sceneId].codeSnippetText) {
+        index[sceneId].codeSnippetText = asText(obj.prompt)
+      }
     }
   }
   return index

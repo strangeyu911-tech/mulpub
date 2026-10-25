@@ -140,18 +140,29 @@ function buildScenePlan (raw, ctx = {}) {
     const textures = asArray(obj.texture_keywords).map(t => asText(t)).filter(Boolean)
     if (textures.length) scene.texture_keywords = textures
 
-    const requiredAssets = asArray(obj.required_assets)
-      .map(a => {
-        const ao = asObject(a)
-        const at = asText(ao.type)
-        const asrc = asText(ao.source)
-        return {
-          type: at,
-          description: asText(ao.description),
-          source: ['generate', 'source', 'provided', 'record'].includes(asrc) ? asrc : 'generate',
-        }
+    // ⚠ **素材需求声明**（上游 `required_assets`）：`{type, description, source}`
+    //   - `type` 与 `description` **都必填**（上游 schema 的 required）⇒ 缺任一 ⇒ **丢弃并登记**
+    //     （不把脏声明带进 scene_plan：下游会拿它去判 cut type 与生产素材）
+    //   - `type` 是**自由 string**（上游允许未来扩展）⇒ **不把未知 type 判死**，
+    //     由下游 `resolveProgrammaticRequests` 登记「本版未实现」⇒ 降级可见
+    const rawRequiredAssets = asArray(obj.required_assets)
+    const requiredAssets = []
+    for (const raw of rawRequiredAssets) {
+      const ao = asObject(raw)
+      const at = asText(ao.type)
+      const asrc = asText(ao.source)
+      const description = asText(ao.description)
+      if (!at || !description) {
+        issues.push(makeIssue('PROGRAMMATIC_REQUEST_INVALID',
+          '场景「' + scene.id + '」有一条素材声明缺 type 或 description，已丢弃', 'warn'))
+        continue
+      }
+      requiredAssets.push({
+        type: at,
+        description,
+        source: ['generate', 'source', 'provided', 'record'].includes(asrc) ? asrc : 'generate',
       })
-      .filter(a => a.description)
+    }
     if (requiredAssets.length) scene.required_assets = requiredAssets
 
     // 文字场景强制 text_card（上游铁律：AI 生图会编造文字）
@@ -287,6 +298,12 @@ function buildAssetManifest (raw, ctx = {}) {
   const assets = []
   const prompts = {}
   let totalCost = 0
+  // ⚠ 已有程序化素材的场景 id（程序化资产可**替代** AI 生图 ⇒ 不算「没有资产」）
+  const programmaticSceneIds = new Set(
+    asArray(ctx.programmaticAssets)
+      .map(a => asText(asObject(a).scene_id))
+      .filter(Boolean)
+  )
 
   scenes.forEach((item, index) => {
     const obj = asObject(item)
@@ -330,8 +347,7 @@ function buildAssetManifest (raw, ctx = {}) {
     const videoPath = asText(obj.videoPath)
     if (videoPath && !imagePath) {
       assets.push({
-        id: 'asset-' + sceneId + '-video',
-        type: 'video',
+        id: 'asset-' + sceneId + '-video',        type: 'video',
         path: videoPath,
         source_tool: sourceTool,
         scene_id: sceneId,
@@ -341,7 +357,10 @@ function buildAssetManifest (raw, ctx = {}) {
       })
     }
 
-    if (!imagePath && !audioPath && !videoPath) {
+    // ⚠ **「这一镜有资产吗」必须把程序化素材算进去**（PRD §19.4.4）
+    //   程序化资产（diagram / code_snippet）**可以替代** AI 生图
+    //   ⇒ 否则会误报「场景没有任何资产」⇒ 该镜被 error 级判据拦下 ⇒ 白做。
+    if (!imagePath && !audioPath && !videoPath && !programmaticSceneIds.has(sceneId)) {
       issues.push(makeIssue('SCENE_WITHOUT_ASSET', '场景「' + sceneId + '」没有任何可用资产路径', 'error'))
     }
     if (text) {
@@ -349,6 +368,37 @@ function buildAssetManifest (raw, ctx = {}) {
     }
   })
 
+  // ⚠ **程序化素材登记**（PRD §19.4.5）
+  //   上游 `asset_manifest.assets[].type` 枚举**本来就含** `diagram` / `code_snippet`
+  //   ⇒ 这里**不扩 schema**（P1 的 sha256 门禁不受影响）。
+  //   ⚠ 登记在**场景循环之外**：程序化素材由 assets 阶段单独生产（`buildProgrammaticAssets`），
+  //   它的 scene_id 由生产侧保证对得上 ⇒ 既有 `ASSET_SCENE_ID_UNKNOWN` 判据会兜住错配。
+  const programmaticAssets = asArray(ctx.programmaticAssets)
+  for (const raw of programmaticAssets) {
+    const obj = asObject(raw)
+    const id = asText(obj.id)
+    const path = asText(obj.path)
+    const sceneId = asText(obj.scene_id)
+    const type = asText(obj.type)
+    if (!id || !path || !sceneId || !type) {
+      issues.push(makeIssue('PROGRAMMATIC_ASSET_INVALID',
+        '有一条程序化素材缺 id/path/scene_id/type，已忽略（id=' + (id || '?') + '）', 'error'))
+      continue
+    }
+    assets.push({
+      id,
+      type,
+      path,
+      source_tool: asText(obj.source_tool) || type,
+      scene_id: sceneId,
+      prompt: asText(obj.prompt),
+      cost_usd: 0,
+      resolution: asText(obj.resolution),
+    })
+  }
+
+  // ⚠ 成本求和放在**所有**资产登记之后 ⇒ `total_cost_usd` 与各资产之和天然自洽
+  //   （既有 `TOTAL_COST_MISMATCH` 判据会兜住不一致）
   for (const asset of assets) totalCost += asNumber(asset.cost_usd, 0)
 
   const manifest = {

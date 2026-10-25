@@ -92,7 +92,14 @@
         "clean",
         "documentary"
       ],
-      "shot_intent": "推进「拖延是情绪问题」这一论点"
+      "shot_intent": "推进「拖延是情绪问题」这一论点",
+      "required_assets": [
+        {
+          "type": "diagram_gen",
+          "description": "即时奖励回路、长期计划回路、认知重评",
+          "source": "generate"
+        }
+      ]
     },
     {
       "id": "scene-5",

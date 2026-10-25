@@ -42,7 +42,7 @@ const { promisify } = require('util')
 const execFileAsync = promisify(execFile)
 
 const { findFfmpeg } = require('./media-tool-paths')
-const { buildDrawtextFontOption } = require('./font-resolver')
+const { buildDrawtextFontOption, buildFontconfigEnv, resolveContentCjkFont } = require('./font-resolver')
 
 /**
  * 标题安全区边距（占画幅宽度的比例）。
@@ -397,6 +397,10 @@ async function renderTitleCard (options) {
         maxBuffer: 4 * 1024 * 1024,
         // stdin 显式关闭：不给它，ffmpeg 若去读 stdin 就会一直等（见上）。
         stdio: ['ignore', 'pipe', 'pipe'],
+        // ⚠ 注入 fontconfig：Windows runner **没有系统 fontconfig 配置**
+        //   ⇒ 带 `:alpha=` 的 drawtext 会让 ffmpeg 初始化失败（`Cannot load default config file`）
+        //   ⇒ 退出码非 0 ⇒ 渲染失败。给一份最小 fonts.conf 即可（与 sharp 侧同一份生成逻辑）。
+        env: { ...process.env, ...buildFontconfigEnv({ fontFile: resolveContentCjkFont().fontFile }) },
       })
       if (!fs.existsSync(opts.outputPath)) throw new Error('ffmpeg 未产出文件')
       const stat = fs.statSync(opts.outputPath)

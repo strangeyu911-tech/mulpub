@@ -43,6 +43,7 @@
 'use strict'
 
 const { asText, asArray, asObject, asNumber } = require('./explainer-artifacts')
+const { applyProgrammaticAsset } = require('./explainer-programmatic-cut')
 // ⚠ 字幕切分**复用仓内单源**（`story2video-segmentation` 的离线分句，规则读 subtitle-rules.json）
 //   ⇒ 不在本片另造一套分句规则。
 const { splitTextToSubtitles } = require('../story2video-segmentation')
@@ -272,6 +273,14 @@ function buildCut (scene, options = {}) {
     default:
       break
   }
+
+  // ⚠ **程序化素材的消费**（PRD §19.4.6）
+  //   ⚠ **必须放在 switch 之后**：`anime_scene` 分支会**覆写** `cut.images`/`cut.particles`
+  //   ⚠ **另一个必须放后面的原因**：`cut.source` 在合成器里只是**媒体兜底分支**
+  //   ⇒ **卡片类组件会抢先匹配** ⇒ 素材在盘上却**全程不上屏**（E2E 实测踩到）
+  //   ⇒ 详见 explainer-programmatic-cut.js。
+  applyProgrammaticAsset(cut, obj, options)
+
   return cut
 }
 
@@ -358,6 +367,9 @@ function buildRemotionProps (input = {}) {
       narration,
       imagePath: asText(assets.imagePath),
       imagePaths: asArray(assets.images),
+      programmaticPath: asText(assets.programmaticPath),
+      programmaticType: asText(assets.programmaticType),
+      codeSnippetText: asText(assets.codeSnippetText),
     })
 
     // 开场第一镜若是纯文字卡 ⇒ 当作**开场大标题**（对齐上游 demo：第 0 镜是 hero_title）

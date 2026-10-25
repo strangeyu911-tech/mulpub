@@ -323,6 +323,38 @@ function buildFontconfigForSharp (opts = {}) {
   }
 }
 
+/**
+ * 给 **ffmpeg**（drawtext）用的 fontconfig 环境变量。
+ *
+ * ⚠ **为什么 ffmpeg 也需要它**（2026-10-25 实测，Windows CI runner）：
+ *   Windows 上**没有系统 fontconfig 配置** ⇒ ffmpeg 的 drawtext 初始化 libass/fontconfig 时
+ *   报 `Fontconfig error: Cannot load default config file: No such file: (null)` ⇒ **退出码非 0**。
+ *   ⇒ 带 `:alpha=` 的 drawtext 尤其如此（alpha 合成路径要走 fontconfig 的字体选择）。
+ *   ⇒ 而**不带 alpha** 的 drawtext 在同一台 runner 上能过 ⇒ 这条红**与调用方无关**，
+ *   取决于 filtergraph 里有没有 alpha。
+ *
+ * ⚠ 复用 `buildFontconfigForSharp`（同一份最小 fonts.conf 生成逻辑 ⇒ **单一真源**）：
+ *   它已经处理了「系统字体目录也要进 `<dir>`，否则西文变豆腐块」「路径统一正斜杠」「XML 实体转义」
+ *   「配置文件本身要 ASCII 安全」四件事。
+ *
+ * ⚠ **字体解析不出来时返回空对象** ⇒ 调用方行为与之前完全一致（不改变失败形态）。
+ *
+ * @param {object} [opts]
+ * @param {string} [opts.fontFile] 解析到的字体文件（决定 `<dir>`）
+ * @param {string} [opts.tmpRoot] 临时根目录
+ * @returns {object} env 片段（可直接展开进 spawn 的 env）
+ */
+function buildFontconfigEnv (opts = {}) {
+  const fontFile = String(opts.fontFile || '')
+  const fontDir = opts.fontDir || (fontFile ? path.dirname(fontFile) : '')
+  const conf = buildFontconfigForSharp({ tmpRoot: opts.tmpRoot, fontDir })
+  if (!conf || conf.injected !== true || !conf.fontconfigFile) return {}
+  return {
+    FONTCONFIG_FILE: conf.fontconfigFile,
+    FONTCONFIG_PATH: path.dirname(conf.fontconfigFile),
+  }
+}
+
 module.exports = {
   resolveContentCjkFont,
   warnFontFallback,
@@ -336,4 +368,5 @@ module.exports = {
   bundledFontCandidates,
   SYSTEM_FONT_CANDIDATES,
   buildFontconfigForSharp,
+  buildFontconfigEnv,
 }

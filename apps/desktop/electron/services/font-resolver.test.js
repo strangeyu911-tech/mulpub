@@ -382,6 +382,35 @@ describe('font-resolver — 自包含中文字体解析', () => {
     })
   })
 
+  // 2026-10-25：Windows CI runner **没有系统 fontconfig 配置** ⇒ ffmpeg 的 drawtext 初始化失败
+  //   （`Fontconfig error: Cannot load default config file`）⇒ 带 `:alpha=` 的 drawtext 尤其如此。
+  // ⇒ ffmpeg 侧也要注入最小 fonts.conf（与 sharp 侧同一份生成逻辑 ⇒ 单一真源）。
+  describe('契约⑫：ffmpeg 侧也要注入 fontconfig（Windows 无系统配置 ⇒ drawtext 初始化失败）', () => {
+    const { buildFontconfigEnv } = require('./font-resolver')
+
+    it('给了字体文件 ⇒ 返回 FONTCONFIG_FILE / FONTCONFIG_PATH，且文件真实存在', () => {
+      const tmp = fs.mkdtempSync(path.join(realTmp, 'fc-env-'))
+      const fontDir = path.join(tmp, 'fonts')
+      try {
+        fs.mkdirSync(fontDir, { recursive: true })
+        fs.writeFileSync(path.join(fontDir, 'SmileySans-Oblique.otf'), 'x')
+        const env = buildFontconfigEnv({ tmpRoot: tmp, fontFile: path.join(fontDir, 'SmileySans-Oblique.otf') })
+        expect(env.FONTCONFIG_FILE).toBeTruthy()
+        expect(fs.existsSync(env.FONTCONFIG_FILE)).toBe(true)
+        expect(env.FONTCONFIG_PATH).toBeTruthy()
+        // 配置里必须包含字体目录，否则字体注入整体失效
+        expect(fs.readFileSync(env.FONTCONFIG_FILE, 'utf8')).toContain('fonts')
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true })
+      }
+    })
+
+    it('★ 字体解析不出来 ⇒ 返回空对象（不改变调用方的失败形态）', () => {
+      const env = buildFontconfigEnv({ tmpRoot: realTmp, fontFile: '' })
+      expect(env).toEqual({})
+    })
+  })
+
   // QM-6 评审 i3（2026-10-16）：`isFfmpegFontPathSafe` 刻意放行 `:`，理由只写在注释里 ——
   // 这是一个**跨模块口头契约**（resolver 放行 ⇒ 引擎必须转义）。口头契约会随一侧改动静默失效，
   // 故在此把它锁成可执行判据：两侧对同一路径的结论必须一致。

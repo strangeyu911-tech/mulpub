@@ -5290,3 +5290,256 @@ publish   → publish_log                                  ← P2b
   非媒体字段不动 / 缺失如实登记 / 不改入参 / 媒体键清单与上游一致）。
 
 
+
+## 19. 程序化素材：让场景能声明素材需求，并让声明真的被生产出来（explainer-programmatic-assets，2026-10-25）
+
+### 19.1 目标与范围
+
+P1（§15）/ P2a（§16）/ P2b（§17）把**产物契约**对齐上游；P5a（§18）把**画面**对齐上游
+（Remotion 程序化动画）。
+
+但 P5a 留了一个**空洞**：它的 cut type 判定把「素材声明」放在**第一优先级**
+（`scene.required_assets[].type` ⇒ 权威），而**真实流水线里场景从来不带素材声明**
+⇒ 那条判据**从来没生效过** ⇒ 实际一直靠「文本线索 + 叙事兜底」在猜。
+
+本节（P5b）补上这条链：
+
+```
+scenes 阶段提示词扩（要求 LLM 声明 required_assets）
+  ⇒ scene_plan.required_assets[{type, description, source}]   ← 上游 schema 本来就允许
+  ⇒ assets 阶段：按声明调用程序化素材生成器 ⇒ 产出 PNG（diagram / code_snippet）
+  ⇒ asset_manifest：登记 type='diagram' | 'code_snippet'  ← 上游 schema 的 type 枚举本来就允许
+  ⇒ compose 阶段：cut 消费程序化素材（视觉主体 / 终端打字机）
+```
+
+**本节范围**：素材**声明**（提示词 + 归一化）+ **两种程序化素材的生产**（`diagram_gen` / `code_snippet`）
++ **全链路接线**（assets → manifest → compose）+ **降级登记**。
+
+**不在本节范围**：`math_animate`（需 Manim）、`music_gen`（需音乐 provider）、
+`video_selector`（视频素材）⇒ 逐条如实登记（见 §19.4.7）；审批门（P3）、动态尺寸（P5c）、
+EP 编排（P4）、其余工具（P6）。
+
+### 19.2 上游依据（权威事实）
+
+| 事实 | 出处 |
+|---|---|
+| 上游 assets 阶段 `optional_tools: video_selector, math_animate, diagram_gen, code_snippet, music_gen` ⇒ 这几个就是「程序化素材」的来源 | `pipeline_defs/animated-explainer.yaml` |
+| 上游 `edit_decisions.audio.narration.segments[].asset_id` 指向 asset_manifest 的 `id` ⇒ **引用式**资产模型 | `schemas/artifacts/edit_decisions.schema.json` |
+| 上游 `asset_manifest.assets[].type` 枚举**已含** `diagram` / `code_snippet` / `animation` / `music` / `sfx` / `video` | `schemas/artifacts/asset_manifest.schema.json` |
+| 上游 `scene_plan.scenes[].required_assets[]` = `{type, description, source}`（`type` 是**自由 string**） | `schemas/artifacts/scene_plan.schema.json` |
+| 上游 assets 阶段把工具产物登记进 asset_manifest，`edit` 阶段按 `asset_id` 引用 | `skills/pipelines/explainer/asset-director.md` |
+
+### 19.3 本轮调研到的三个关键事实（决定落点）
+
+| # | 事实 | 证据 | 对落点的影响 |
+|---|---|---|---|
+| ① | **桌面端到 Python 工具没有活通路**：`serviceBus.callPythonSkill()` 打的是 `POST /api/skills/<name>`，而 Python 后端**没有任何 `/api/skills/*` 路由**（`server.py` 的路由清单里没有；`ToolRegistry` 也从未被挂到 HTTP 上） | `apps/desktop/electron/services/service-bus.js:120`（`/api/skills/`）vs `packages/python-backend/src/server.py`（无该路由） | ⇒ **不能靠「调 Python 侧那四个工具」实现**（注册≠注入≠生效的又一例） |
+| ② | **Python 侧那四个工具本身是完整实现**（`math_animate.py` 269 行真跑 ManimCE；`diagram_gen.py` 288 行 Mermaid/Graphviz/Cairo；`code_snippet.py` 192 行 Pygments+Pillow） | `packages/python-backend/src/multi_publish/video_creation/providers/image/` | ⇒ 它们是**可复用的实现**，但**依赖三个外部二进制**（`manim` / `@mermaid-js/mermaid-cli` / `pygments`+`pillow`）⇒ **用户机器装不齐 ⇒ 功能不可达** |
+| ③ | **桌面端已有一条同类先例且已合入**：`title-card-renderer.js`（441 行，ffmpeg drawtext/drawbox 出图，字体走 `font-resolver` 单一真源） | PR #4359 | ⇒ **程序化出图的落点应是桌面端主进程**（Node + ffmpeg），与既有先例同构 |
+
+**⇒ 落点决策**：本节的程序化素材生成器落在**桌面端主进程**（Node + ffmpeg），
+**不新增外部二进制依赖**（manim / mermaid-cli / pygments 全部不需要）⇒
+**用户机器开箱可用**，且与 `title-card-renderer` 同构（同一套字体真源、同一套 ffmpeg 解析口径）。
+
+> ⚠ **与上游的关系要说清楚**：本节是**等价物**而非**逐字搬运**。
+> 上游用「Manim/Mermaid/Pygments 三个外部二进制」产素材；本节用「ffmpeg drawtext/drawbox」产素材。
+> **理由是可达性**：上游那套依赖在本仓用户机器上装不齐 ⇒ 照搬会让功能**名义存在、实际不可达**
+> （这正是「注册≠注入≠生效」家族）。**产物形态与引用模型与上游一致**（进 asset_manifest、按 scene_id 关联）。
+
+### 19.4 功能逻辑
+
+#### 19.4.1 场景素材声明（`required_assets`）
+
+**产出方**：scenes 阶段的 LLM（提示词扩）。
+**归一化**：`buildScenePlan` 已有的 `required_assets` 透传逻辑（`explainer-prod-artifacts.js:155`）保留不动。
+
+**`type` 的取值词表**（= 上游 assets 工具集，**自由 string ⇒ 不用改 schema**）：
+
+| type | 语义 | 本节是否实现 |
+|---|---|---|
+| `image_selector` | 需要 AI 生图 | ✅ 已有（现状） |
+| `diagram_gen` | 需要示意图 / 流程图 | ✅ **本节实现** |
+| `code_snippet` | 需要代码片段 | ✅ **本节实现** |
+| `math_animate` | 需要公式 / 数学动画 | ❌ 登记 `PROGRAMMATIC_TOOL_UNSUPPORTED` |
+| `music_gen` | 需要背景音乐 | ❌ 登记 `PROGRAMMATIC_TOOL_UNSUPPORTED` |
+| `video_selector` | 需要视频素材 | ❌ 登记 `PROGRAMMATIC_TOOL_UNSUPPORTED` |
+
+**`source` 的取值**（上游 schema 的枚举）：`generate`（要生成）/ `source`（要取材）/ `provided`（已提供）。
+
+**提示词必须给出的选择规则**（否则 LLM 会乱填）：
+- 讲**流程 / 结构 / 关系** ⇒ `diagram_gen`；
+- 讲**代码 / 命令 / API** ⇒ `code_snippet`；
+- 讲**公式 / 定理 / 数学推导** ⇒ `math_animate`；
+- 其余 ⇒ `image_selector`（默认）。
+- ⚠ **默认必须是 `image_selector`** ⇒ 声明缺失时行为与今天完全一致（不改变既有产出）。
+
+#### 19.4.2 程序化素材生成器（新增模块）
+
+新增 `apps/desktop/electron/services/explainer/explainer-programmatic-assets.js`：
+
+| 导出 | 职责 |
+|---|---|
+| `resolveProgrammaticRequests(scene)` | 从 `required_assets[]` 解析出**本节支持的**程序化素材请求（`type` + `description`）；不支持的类型**如实登记 issue** |
+| `renderDiagramAsset(spec, opts)` | 产出**示意图** PNG（节点框 + 标签 + 连线），ffmpeg drawbox/drawtext |
+| `renderCodeSnippetAsset(spec, opts)` | 产出**代码片段图** PNG（行号 + 注释行单独着色；字体走仓内 CJK 字体，**不保证等宽**），ffmpeg drawtext |
+| `buildProgrammaticAssets(scenes, opts)` | 批量：逐场景解析请求 → 渲染 → 汇总 `{assets, issues}` |
+
+**渲染规格**：
+- 画布 **1280×720**（与 P5a 的成片规格一致；P5c 动态尺寸后再统一）；
+- 底色 `theme.backgroundColor`（`#0F172A`），前景 `theme.textColor` / `theme.accentColor`；
+- 字体**走 `font-resolver` 的 `buildDrawtextFontOption()`**（**单一真源**：不许自己找字体）⇒
+  CJK 由 `resolveContentCjkFont()` 解析（打包态 `<resourcesPath>/fonts/`、开发态 `apps/desktop/src/public/fonts/`）；
+- ⚠ **ffmpeg 子进程必须注入 `FONTCONFIG_FILE`**（`font-resolver` 新增 `buildFontconfigEnv()`，**复用已有的
+  `buildFontconfigForSharp()`** ⇒ 同一份最小 fonts.conf 生成逻辑）：**Windows 上没有系统 fontconfig 配置**
+  ⇒ ffmpeg 的 drawtext 初始化失败（`Cannot load default config file`）⇒ 退出码非 0 ⇒ 渲染失败
+  （带 `:alpha=` 的 drawtext 尤其如此）。⇒ 本片与 `title-card-renderer` 共用这一份注入。
+- ⚠ **字体解析不出来 ⇒ 判失败并登记**，**不产出豆腐块图**（与 `title-card-renderer` 同一口径）。
+
+#### 19.4.3 降级链（**可见、不静默**）
+
+```
+声明了程序化素材
+  ├─ 工具类型本节不支持（math_animate / music_gen / video_selector）
+  │    ⇒ 登记 PROGRAMMATIC_TOOL_UNSUPPORTED（warn）
+  │    ⇒ 该镜回落：AI 生图（若开）→ 否则 text_card
+  ├─ ffmpeg 不可用 / 字体解析不出来 / 渲染失败
+  │    ⇒ 登记 PROGRAMMATIC_ASSET_FAILED（error）
+  │    ⇒ 同上回落
+  └─ 渲染成功
+       ⇒ 进 asset_manifest（type='diagram' | 'code_snippet'）
+       ⇒ compose 侧 cut 消费
+```
+
+⚠ **回落必须留痕**：登记进 `asset_manifest.metadata.issues` 与 `final_review.metadata.issues`
+⇒ 用户与排查者能看出「这一镜本来要程序化素材，实际用的是 AI 生图」。
+
+#### 19.4.4 assets 阶段接线
+
+`createAssetsExecutor`（`explainer-prod-stages.js`）在 `buildAssetManifest` **之前**插入一步：
+1. 取场景清单（`resolveSceneSource(context).scenes`）；
+2. `buildProgrammaticAssets(scenes, {...})` ⇒ `{assets, issues}`；
+3. 把程序化资产并进 `buildAssetManifest` 的输入（新增 `programmaticAssets` 字段）；
+4. `buildAssetManifest` 认识 `type='diagram' | 'code_snippet'` ⇒ 登记进 `assets[]`（`id` 形如 `asset-<sceneId>-diagram`）。
+
+⚠ **判据要求「每个 scene 至少一条资产」**（`checkAssetManifestCriteria`）⇒
+程序化资产**可以替代** image 资产（不是追加约束）⇒ 声明了 `diagram_gen` 的场景**不必**再 AI 生图。
+
+#### 19.4.5 asset_manifest 登记（**不扩 schema**）
+
+上游 `asset_manifest` 的 `type` 枚举**已含** `diagram` / `code_snippet` ⇒ **本节不动任何 1:1 schema**（P1 的 sha256 门禁不受影响）。
+
+登记形态：
+```json
+{ "id": "asset-scene-3-diagram", "type": "diagram", "path": "<绝对路径>",
+  "source_tool": "diagram_gen", "scene_id": "scene-3",
+  "prompt": "场景声明里对这张图的描述", "cost_usd": 0, "resolution": "1280x720" }
+```
+⚠ `cost_usd: 0`（本地 ffmpeg 渲染，零算力成本）⇒ `total_cost_usd` 的求和判据天然成立。
+
+#### 19.4.6 compose 侧消费
+
+| 素材类型 | 进 cut 的哪个字段 | 合成器行为 |
+|---|---|---|
+| `diagram` | `cut.images` **+** `cut.type='anime_scene'` **+** `cut.source` | **整屏**渲染该图（`anime_scene` 的 AnimeScene 组件：`animation='static'` 不推拉、`particles=''` 不加粒子、`vignette=false` 不压暗角 ⇒ 图上的字看得清） |
+| `code_snippet` | `cut.steps`（打字机）**+** `cut.source`（兜底） | `terminal_scene` 的**打字机**效果（`steps: [{kind:'cmd'|'out', text, holdSeconds}]`）；`steps` 为空时回落**媒体兜底**显示代码片段图 |
+| `image` | `cut.source` | 现状（媒体兜底分支） |
+
+⚠⚠ **`cut.source` 只是「媒体兜底分支」，不是「视觉主体」**（本轮 E2E 实测踩到，代价是 32 分钟一次跑）：
+合成器的 `SceneRenderer` 是一串 `if (cut.type === 'xxx' && cut.<某字段>)`（`packages/remotion-composer/src/Explainer.tsx:563` 起），
+**卡片类组件会抢先匹配** ⇒ `cut.source` 压根不被读 ⇒ **素材全程不上屏**（画面是卡片文字，素材在盘上但没人看见）。
+⇒ 所以「示意图」必须把 cut 改成**媒体型**（`anime_scene` + `cut.images`）⇒ 该图才成为这一镜的**视觉主体**。
+
+⚠ `cut.steps` 的契约（`packages/remotion-composer/src/components/TerminalScene.tsx`）：
+`{kind:'cmd'|'out', text: string, typeSpeed?: number, holdSeconds?: number}`。
+⚠ **合成器的守卫是 `cut.type === 'terminal_scene' && cut.steps`** ⇒ 缺 `steps` 会静默走兜底（不报错）⇒
+本节在 `code_snippet` 素材存在时**必须**给出 `steps`（从代码文本逐行切分）⇒ 合成器才真的渲染终端。
+
+⚠ **程序化素材那一镜不再叠加 AI 生图**：AI 生图仍是该镜的资产（登记在 manifest 里），
+但**画面上是程序化素材**（示意图）⇒ 避免「图上叠图上叠文字」三层叠在一起看不清。
+
+### 19.5 数据校验（fail-closed）
+
+| 校验点 | 判据 | 失败处置 |
+|---|---|---|
+| 素材声明缺 `type` / `description` / `source` | 上游 schema（`required_assets.items.required`）⇒ schema 判红 | 归一化时**丢弃该条**并登记 issue（不把脏声明带进 scene_plan） |
+| 声明的 `type` 不在词表内 | 自由 string ⇒ schema 不拦 ⇒ **本节判** | 登记 `PROGRAMMATIC_TOOL_UNKNOWN`（warn）⇒ 按「不支持」处理 |
+| 渲染产物不存在或为空 | 文件存在性 + 体积 > 0 | 判失败 ⇒ 登记 `PROGRAMMATIC_ASSET_FAILED` ⇒ 回落 |
+| 字体解析不出 | `resolveContentCjkFont()` 返回空 | 判失败 ⇒ 登记 ⇒ 回落（**不产出豆腐块**） |
+| 资产的 `scene_id` 对不上 scene_plan | 既有 `ASSET_SCENE_ID_UNKNOWN` 判据 | error（既有判据自动抓） |
+| `total_cost_usd` ≠ 各资产之和 | 既有 `TOTAL_COST_MISMATCH` 判据 | error（程序化资产 cost=0 ⇒ 天然满足） |
+| 每个 scene 至少一条资产 | 既有 `SCENE_WITHOUT_ASSET` 判据 | error（程序化资产可替代 image） |
+
+⚠ **「补齐」与「达标」仍是两个量**：程序化素材的**存在**不改变场景质量判据
+（`checkScenePlanCriteria` 的场景数/时长判据照旧）⇒ **不因多了一张图就把质量判据放水**。
+
+### 19.6 流程（一次 explainer 运行的生产段）
+
+```
+scenes    → scene_plan（含 required_assets 素材声明）        ← 本节新增
+assets    → ① AI 生图 / 旁白（现状）
+             ② 程序化素材（diagram / code_snippet）           ← 本节新增
+             → asset_manifest（含 type='diagram'|'code_snippet' 的资产）
+editing   → edit_decisions（时间轴 / 字幕 / 音频层）           ← P2b
+compose   → ① 合成 composition_data（叙事 + 剪辑 → 渲染指令）  ← P5a
+             ② Remotion 渲染 → mp4
+             ③ 旁白混轨 + mux                               ← P5a
+             ④ 探测产物 → render_report + final_review        ← P5a
+publish   → publish_log                                      ← P2b
+```
+
+### 19.7 交互逻辑 / 显示项 / 提示文字
+
+⚠ **本节无 UI 变更**（素材声明由 LLM 自动产出、程序化素材自动生成，用户不需要新控件）
+⇒ **QM-4 视觉回归 N/A**、`check-locale-sync --cjk` 不受影响（**无新增 i18n 键**）。
+
+**用户能感知的差异**（必须写清楚，避免"静默变化"）：
+
+| 场景 | 用户看到 | 说明 |
+|---|---|---|
+| 场景声明了 `diagram_gen` 且渲染成功 | 那一镜变成**程序化示意图**（不再是 AI 生图） | 画面更"结构化"，内容由讲稿决定 |
+| 场景声明了 `diagram_gen` 但工具不可用 | **仍是 AI 生图**（或文字卡） | 降级**可见**：成片的 `final_review` 里会有一条「该镜的程序化素材未生成」的记录 |
+| 场景没声明素材 | **与今天完全一致** | 默认 `image_selector` |
+
+⚠ **提示文字**：本节**不新增任何用户可见文案** ⇒ 降级信息只进**产物**（`asset_manifest.metadata.issues` /
+`final_review.metadata.issues`）⇒ 现有「阶段问题」展示通道会带上它 ⇒ **不需要新 i18n 键**。
+
+### 19.8 测试与验收矩阵
+
+**单测**（新增 `explainer-programmatic-assets.test.js`）：
+① 素材声明解析（支持的 / 不支持的 / 缺字段的）；
+② 渲染产物**真的存在且非空**（真 ffmpeg）；
+③ 字体解析不出来 ⇒ 判失败而非产出豆腐块；
+④ 降级登记（`PROGRAMMATIC_TOOL_UNSUPPORTED` / `PROGRAMMATIC_ASSET_FAILED`）；
+⑤ `buildAssetManifest` 认识 `diagram` / `code_snippet`；
+⑥ `buildCut` 把程序化素材接进**会真的渲染它的分支**：示意图 ⇒ `cut.type='anime_scene'` + `cut.images`
+   （**媒体型**；卡片类组件会抢先匹配 ⇒ 素材不上屏）；代码片段 ⇒ `cut.steps`（打字机）；
+⑦ 降级链：声明了但不可用 ⇒ 该镜仍**有资产**（既有 `SCENE_WITHOUT_ASSET` 判据不红）。
+
+**回归**：explainer 目录全部测试 + `render-engine` + `explainer-stage-type-isolation`。
+
+**端到端验收（**已真跑，实测值**）**：
+- 场景里有一镜声明 `diagram_gen` ⇒ asset_manifest 里出现 `type='diagram'` 的资产
+  ⇒ **实测产出 `asset-scene-4-diagram.png` 43,623 B**；
+- 成片那一镜是**程序化示意图** ⇒ **实测抽帧确认**：标题「即时奖励回路、长期计划回路、认知重评」
+  + 3 个节点框 + 连接线，**整屏**呈现，下方**词级高亮字幕**照常；
+- 成片整体：**1920×1080 / h264+aac / 87.3 秒 / 20,316,253 B**；**mean_volume −23.2 dB**（真人旁白）；
+- `render_runtime_used='remotion'`、`render_fallback_reason=null`（**未回落**）；
+- ⚠ **首轮 E2E 曾暴露「素材产出了但成片里看不见」**（`cut.source` 只是媒体兜底分支）⇒
+  修法与回归锁见 §18.11 与本节的 ⑥（cut 类型必须落在**会渲染该媒体的分支**）；
+- 声明了 `math_animate` ⇒ 成片仍出片（回落）+ `final_review` 里有 `PROGRAMMATIC_TOOL_UNSUPPORTED`
+  （**单测覆盖**；真实 E2E 用的是 `diagram_gen`，未在 E2E 里专门造 `math_animate` 场景）。
+
+### 19.9 已知限制与未闭合项
+
+1. **只实现两种程序化素材**：`math_animate`（需 Manim）、`music_gen`（需音乐 provider）、
+   `video_selector`（视频素材）**本节不做** ⇒ 逐条登记 ⇒ **功能名义存在、实际未接**的部分要写进执行记录。
+2. **素材声明由 LLM 产出 ⇒ 可能不准**：讲稿说"流程"但 LLM 填了 `image_selector` ⇒ 不生成图（不报错，行为退化）。
+   ⇒ 本节**不做**声明纠错（那属于 P3 的审批门关注点：人审看"这一镜该用什么素材"）。
+3. **画布硬编码 1280×720**（`Explainer` 本身也硬编码 1920×1080）⇒ 竖屏/动态尺寸属 P5c。
+4. **示意图的"结构"由描述文本推导**（节点名来自 `description` 的顿号/逗号切分）⇒
+   描述含糊 ⇒ 图也含糊 ⇒ **不给假精确的结构**。
+5. **代码片段图只有「注释行 vs 代码行」两类着色**（ffmpeg drawtext 无着色能力）⇒
+   视觉上比上游 Pygments 朴素；且**字体走仓内 `font-resolver` 解析到的 CJK 字体（不保证等宽）**
+   ⇒ 代码的对齐是**近似**的，不是真 monospace。
+6. **渲染耗时**：每张程序化素材一次 ffmpeg ⇒ 10 镜最多 10 次调用 ⇒ 本地约几秒量级
+   （实测单张 0.1~0.3 秒；远小于 Remotion 渲染本身）。

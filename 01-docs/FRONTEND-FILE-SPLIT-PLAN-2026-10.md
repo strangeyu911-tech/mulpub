@@ -320,6 +320,26 @@ node .github/scripts/check-locale-sync.js --cjk
 - CJK 无阻断（§2.8 预检）；`S2V_BATCH_MAX_TEXTS/FILES` 需加入桥接（模板引用）；批量删除三方法留壳。
 
 
+
+### 2.11 复评补充（2026-10-25）：§2.9 的「第 4/5 步不做」按当前数据复评
+
+**本节只加指针，不改本文件任何既有结论**（目标结构 / 拆分顺序 / 红线 / 浮层合同 / 执行纪律继续有效）。
+
+§2.9 的收口结论基于 2026-10-10 的数据。2026-10-25 复评（`CreateView.vue` 4896 → **5563 行**，+667）：
+
+| 步 | §2.9 原结论 | 复评结论 |
+|---|---|---|
+| 4 QuickRender | 不做 | ✅ 维持不做（冲突频率 0/50） |
+| 5 `useS2vConfig` | 不做 | ✅ 维持不做（相对触点最重，且要迁出 `s2vConfig` 本体） |
+| **5 ConfigProfile** | 不做 | ⚠️ **重新成为候选**（冲突频率 7/50 → **1/50**） |
+
+⇒ 复评报告与**第一刀（`useConfigProfiles` composable）的可实施规格**见
+**`01-docs/PRD-CREATEVIEW-SPLIT-REVIEW-2026-10-25.md`**；
+openspec change：`openspec/changes/createview-config-profile-extract/`。
+⚠️ 该 PRD 同时记录了**复评的诚实边界**（触点口径与本文件不同源 ⇒ 只做相对排序；冲突频率才是主证据）
+与**「实现须与 QM-4 像素回归同批」**的纪律。
+
+
 ---
 
 ## 三、里程碑 1（P0-2）：locales/zh.js · en.js（各 ~3800 行，51 命名空间）

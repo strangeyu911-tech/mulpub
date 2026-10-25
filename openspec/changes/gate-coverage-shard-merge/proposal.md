@@ -40,3 +40,19 @@
   2. **形状不认识的产物被判成 100%** ⇒ 已加逐份形状校验（实测 `createCoverageMap({任意键:'任意值'})` **不抛错**且读数 100%）；
   3. **阈值漂移** ⇒ 判定器不硬编码阈值，阈值真源唯一；
   4. **新增测试被漏接线** ⇒ 已接进 `static-gates`（仓内「未接线测试棘轮」`scripts/check-unwired-tests.js` 要求）。
+
+## 增补：PR-2（接线片，2026-10-25）
+
+- **What Changes（本片）**：
+  - `desktop-shards` 的分片命令行**顺带采覆盖率**（`--coverage --coverage.reporter=json`
+    + 四项阈值中和），并把产物上传为 artifact（`coverage-shard-<job-index>`，
+    **名字不能含斜杠** ⇒ 不用 matrix 值）。
+  - `QG Coverage` 改为**依赖分片产物**：下载 artifact → 合并 → 判一次全局阈值；
+    **不再自己跑一遍全量**（那正是本 change 要消掉的 40–47 分钟重复劳动）。
+  - 同步 `workflow-contract.test.js` 的**三处锁**（换锚点 / 加反向锁 / 消费者覆盖面改具名清单）。
+- **不变量不变**：阈值真源唯一、阈值语义与 vitest 原生一致、**失明 ≠ 通过**、
+  合并口径 == 全量口径。
+- **需要人工过目**：本片改的是 **required context 的判定依据**
+  ⇒ 按仓内纪律须人工过目（用户 2026-10-25 授权由 owner 拍板 ⇒ 拍板结论与理由见
+  `01-docs/PRD-GATE-COVERAGE-SHARD-MERGE-2026-10-25.md` 的「三处拍板结论」）。
+- **⛔ 硬约束**：`QG Coverage` 的 **jobId 与显示名不得改**（required context，改名 ⇒ 全仓 PR 永久 BLOCKED）。

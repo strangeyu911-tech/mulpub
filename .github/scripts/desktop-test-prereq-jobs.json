@@ -14,11 +14,6 @@
     },
     {
       "workflow": "quality-gate.yml",
-      "job": "coverage",
-      "why": "桌面 coverage 跑桌面 vitest（test:coverage），preload 产物必须在测试前重建"
-    },
-    {
-      "workflow": "quality-gate.yml",
       "job": "desktop-shards",
       "why": "桌面分片显示过滤后跑桌面 vitest，preload 产物必须在测试前重建"
     }

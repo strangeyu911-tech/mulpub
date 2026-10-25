@@ -26,7 +26,7 @@
  *   0 = 达标；1 = 阈值未达；**2 = 失明**（读不到阈值 / 读不到任何分片产物 / 形状不对 / 合并失败）
  *   ⇒ 「没测成」绝不能读成「通过」。
  *
- * ── ⚠ 三处「假绿」必须显式堵住（2026-10-25 实测） ──
+ * ── ⚠ 四处「假绿」必须显式堵住（2026-10-25 实测） ──
  *   ① `createCoverageMap({任意键:'任意值'})` **不抛错**，而是把那个键当成一个「零语句的文件」
  *      ⇒ 覆盖率读数变成 total=0 / **pct=100** ⇒ 阈值判定全绿。
  *      ⇒ 所以合并前必须**逐份校验 istanbul 形状**（`statementMap`/`fnMap`/`branchMap` + `s`/`f`/`b`）。
@@ -34,10 +34,16 @@
  *      ⇒ `"Unknown" < 55` 在 JS 里是 **false** ⇒ 判定全绿。
  *      ⇒ 所以合并后必须**至少有一个文件**，且四项的 `pct` 必须是**有限数字**。
  *   ③ 「读不到分片产物」若被当成「0 个文件」⇒ 同上 ⇒ 必须单独走失明通道。
+ *   ④ ⚠ **只收到一部分分片** ⇒ 拿半份数据当全局读数 ⇒ 单片读数**系统性偏低**
+ *      （实测 37.5% vs 合并 62.5%）⇒ 但**偏低也可能仍然跨过阈值** ⇒ 判成「达标」就是**假绿**。
+ *      ⇒ `--expect-shards=N`：收到的片数必须**恰好**是 N，少一片（分片失败）或多一片（陈旧产物）
+ *        一律走失明通道（rc=2）。⚠ 这一条是 PR-2 独立复核抓出来的：分片挂一半时，
+ *        `download-artifact` **不会报错**（它只按 pattern 命中的下载）⇒ 少了的那片是**静默**的。
  *
  * 用法：
  *   node scripts/merge-coverage-shards.js <coverage-final.json> [<coverage-final.json> ...]
  *   node scripts/merge-coverage-shards.js --dir <目录>        # 递归找 coverage-final.json
+ *   node scripts/merge-coverage-shards.js --dir <目录> --expect-shards=2   # ⭐ 生产用法：片数必须恰好为 2
  *   node scripts/merge-coverage-shards.js --thresholds='{"lines":55,...}' <文件...>   # 离线/单测覆盖
  *   node scripts/merge-coverage-shards.js --config <vitest.config.js> <文件...>       # 换阈值真源（单测用夹具）
  */
@@ -118,7 +124,12 @@ function readThresholdsFromConfig (configPath) {
     // eslint-disable-next-line
     cfg = require(target)
   } catch (e) {
-    blind('读覆盖率阈值真源失败：' + target + '（' + e.message + '）')
+    // 常见原因（按可能性排序）：① 依赖没装（真源要 vitest/config 与 @vitejs/plugin-vue）；
+    // ② 真源是 ESM 而当前 Node 不支持 require(esm)；③ 真源自身抛错。
+    // ⚠ 一律走失明通道（rc=2）：读不到阈值绝不能当成「没有阈值 ⇒ 全部通过」。
+    blind('读覆盖率阈值真源失败：' + target + '（' + e.message + '）'
+      + '｜常见原因：依赖未安装（真源需要 vitest/config 与 @vitejs/plugin-vue）、'
+      + '真源是 ESM 而当前 Node 不支持 require(esm)、或真源自身抛错')
   }
   const thresholds = cfg && cfg.test && cfg.test.coverage && cfg.test.coverage.thresholds
   if (!thresholds || typeof thresholds !== 'object') {
@@ -132,12 +143,15 @@ function parseArgv (argv) {
   let dir = null
   let thresholds = null
   let config = null
+  let expectShards = null
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--config') { config = argv[++i]; continue }
     if (a.startsWith('--config=')) { config = a.slice('--config='.length); continue }
     if (a === '--dir') { dir = argv[++i]; continue }
     if (a.startsWith('--dir=')) { dir = a.slice('--dir='.length); continue }
+    if (a === '--expect-shards') { expectShards = argv[++i]; continue }
+    if (a.startsWith('--expect-shards=')) { expectShards = a.slice('--expect-shards='.length); continue }
     if (a.startsWith('--thresholds=')) {
       try {
         thresholds = JSON.parse(a.slice('--thresholds='.length))
@@ -160,11 +174,11 @@ function parseArgv (argv) {
     }
     files.push(a)
   }
-  return { files, dir, thresholds, config }
+  return { files, dir, thresholds, config, expectShards }
 }
 
 function main () {
-  const { files: argFiles, dir, thresholds: thresholdOverride, config } = parseArgv(process.argv.slice(2))
+  const { files: argFiles, dir, thresholds: thresholdOverride, config, expectShards: expectRaw } = parseArgv(process.argv.slice(2))
 
   const files = dir ? collectFromDir(dir) : argFiles
   if (!files || files.length === 0) {
@@ -172,6 +186,23 @@ function main () {
   }
   for (const f of files) {
     if (!fs.existsSync(f)) blind('分片产物不存在：' + f)
+  }
+
+  // ⚠ 片数守卫：少一片 = 半份数据（单片读数系统性偏低，但偏低也可能跨过阈值 ⇒ 会假绿）；
+  //   多一片 = 可能有陈旧产物混进来（判定不可信）⇒ 一律失明。
+  if (expectRaw !== null && expectRaw !== undefined) {
+    const expected = Number(expectRaw)
+    if (!Number.isInteger(expected) || expected < 1) {
+      blind('--expect-shards 必须是正整数（收到：' + JSON.stringify(expectRaw) + '）—— 不知道该等几片 ⇒ 不判')
+    }
+    if (files.length < expected) {
+      blind('只收到 ' + files.length + '/' + expected + ' 片覆盖率产物（分片可能失败）'
+        + ' ⇒ 不得用半份数据判全局阈值（会把「没测全」读成「达标」）')
+    }
+    if (files.length > expected) {
+      blind('收到 ' + files.length + ' 片覆盖率产物（期望 ' + expected + ' 片）'
+        + ' ⇒ 可能有陈旧产物混进来，判定不可信')
+    }
   }
 
   const thresholds = thresholdOverride || readThresholdsFromConfig(config)

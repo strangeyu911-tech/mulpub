@@ -39,11 +39,15 @@ const WORKFLOWS_REL = path.join('.github', 'workflows');
 // 判据模块不导出该步骤名（它是 workflow 侧的事实，不是判据的常量）⇒ 在测试里自带
 const SATISFIER_STEP_NAME = 'Build preload bundles';
 
-// 域内集合必须**恰好**是这四条。新增/减少都要在本文件里显式过目（不是自动跟随）。
+// 域内集合必须**恰好**是这三条。新增/减少都要在本文件里显式过目（不是自动跟随）。
+//
+// ★ 2026-10-25（change: gate-coverage-shard-merge）：`quality-gate.yml#coverage` 被移出域内 ——
+//   覆盖率改由 desktop-shards 顺带采集，QG Coverage 只做「下载 → 合并 → 判阈值」，
+//   **不再跑桌面 vitest** ⇒ 它不再需要 preload 重建 ⇒ 登记表（desktop-test-prereq-jobs.json）
+//   里那条登记同步删除（清单只能缩小）。本清单同步收窄 ⇒ 「coverage 不在域内」被钉死。
 const FIXED_JOB_KEYS = [
   'clock-shift-oracle.yml#clock-shift-oracle',
   'electron-ci.yml#electron-tests',
-  'quality-gate.yml#coverage',
   'quality-gate.yml#desktop-shards'
 ];
 

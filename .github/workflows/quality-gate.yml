@@ -1545,6 +1545,19 @@ jobs:
       # 桌面套件里依赖真实 ffmpeg/ffprobe 的 suite 因此会真跑原生工具（保留这条真实路径覆盖）。
       # 代价是这类 suite 的 beforeAll 必须自带显式 hook 预算，不能指望全局 --hookTimeout=10000；
       # 现有实例见 story2video-stages.test.js 的媒体 beforeAll（MEDIA_SETUP_HOOK_TIMEOUT_MS）。
+      #
+      # ★ 2026-10-25（change: gate-coverage-shard-merge）：本 job **顺带产出覆盖率**，
+      #   供 QG Coverage 合并后判一次全局阈值（原先那一档自己重跑一遍全量，40–47 分钟）。
+      #   三个旗标缺一不可：
+      #   ① --coverage：开启 v8 覆盖率采集；
+      #   ② --coverage.reporter=json：产出 **istanbul 形状**的 coverage-final.json
+      #      （blob reporter 产 V8 原始格式，不能喂合并器；--merge-reports 读的是测试结果 blob、不产覆盖率）。
+      #      顺带：CLI 覆盖掉 config 里的 reporter 数组 ⇒ 不再写 html/lcov ⇒ 省掉一段写盘。
+      #   ③ --coverage.thresholds.*=0：**中和阈值**。实测 vitest 的 --shard 模式**照样按全局阈值判**
+      #      （resolveThresholds 没有 shard 分支）⇒ 不中和则两片各按 55% 判 ⇒ 必红。
+      #      阈值本身由 QG Coverage 在**合并之后**按真源统一判一次（分片只负责采数）。
+      #   ⚠ 旗标清单不在 run 块里加注释：PowerShell 反引号续行中间插注释会把续行吃掉
+      #     （scripts/check-desktop-shard-forwarding.js 的第③条判据就是防这个）。
       - name: "Desktop tests shard ${{ matrix.shard }}"
         shell: pwsh
         # 运行时出站台账（与 Gate 4 同一份基线、同一个判定器）：桌面面是唯一真的会起
@@ -1585,7 +1598,13 @@ jobs:
               "--reporter=verbose",
               "--testTimeout=10000",
               "--hookTimeout=10000",
-              "--teardownTimeout=10000"
+              "--teardownTimeout=10000",
+              "--coverage",
+              "--coverage.reporter=json",
+              "--coverage.thresholds.statements=0",
+              "--coverage.thresholds.branches=0",
+              "--coverage.thresholds.functions=0",
+              "--coverage.thresholds.lines=0"
             ) `
             -NoNewWindow -PassThru
 
@@ -1633,11 +1652,31 @@ jobs:
           node scripts/check-test-egress-ledger.js --ledger "$env:MP_TEST_EGRESS_LEDGER"
           if ($LASTEXITCODE -ne 0) { throw "运行时出站台账出现基线之外的新条目，或台账装配未经证实（清单只能缩小）" }
 
+      # ★ 2026-10-25（change: gate-coverage-shard-merge）：把本片的覆盖率产物传给 QG Coverage。
+      #   ⚠ artifact 名**不能含斜杠**（matrix 值是 "1/2"，GitHub 会拒收）⇒ 用 strategy.job-index（0/1）。
+      #   ⚠ 名字前缀 coverage-shard-* 与下游 download-artifact 的 pattern 一一对应（改一处必须改另一处）。
+      #   ⚠ if-no-files-found: error：**产物没生成必须当场红** —— 静默上传空产物会让下游
+      #     拿到「没有覆盖率」却读成「覆盖率 0」或干脆没产物，两种都不可判 ⇒ 必须在这里出声。
+      #   ⚠ 只在成功时上传：失败的覆盖率（半截产物）绝不能参与合并。
+      - name: "Upload desktop shard coverage"
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-shard-${{ strategy.job-index }}
+          path: apps/desktop/coverage/coverage-final.json
+          if-no-files-found: error
+          retention-days: 1
+
 
   coverage:
     name: QG Coverage
     runs-on: windows-latest
-    needs: [changes]
+    # ★ 2026-10-25（change: gate-coverage-shard-merge）：多依赖 desktop-shards ——
+    #   覆盖率产物**由分片顺带采**，本作业只负责「下载两片 → 合并 → 判一次全局阈值」。
+    #   为什么不再自己跑一遍：那一档原先自己跑全量桌面测试（40–47 分钟），
+    #   而 desktop-shards 已经把同一套跑过一遍 ⇒ 同一棵树上跑两遍 = 重复劳动。
+    #   ⚠ 两边验的是**同一棵树**（PR 侧作业都检出 merge ref）⇒ 合并后的口径 == 合并前的口径。
+    needs: [changes, desktop-shards]
     # ⚠️ 2026-10-25（change: ci-push-heavy-job-dedupe）：push 侧不再跑覆盖率，PR 侧完整保留。
     #
     # 为什么可以去掉（不是「少跑一遍」那么简单）：
@@ -1651,7 +1690,15 @@ jobs:
     #   主干**当前状态**的覆盖率体检从「每次 push」变成「随下一个 PR 的 merge preview 一起」
     #   ⇒ 合并之后、下一个 PR 之前那段窗口里，主干覆盖率若漂移，要到下一个 PR 才被发现。
     #   恢复路径 = 删掉下面这个 event_name 条件（成本：settle 周期回到约 48 分钟）。
-    if: needs.changes.outputs.docs-only != 'true' && github.event_name == 'pull_request'
+    #
+    # ★ 四个合取子句各自的作用（缺一不可）：
+    #   ① always()：分片失败时本作业**仍然要跑** —— 否则它会被跳过，而「跳过的 required check」
+    #      在 GitHub 眼里**算通过** ⇒ 等于把覆盖率门禁悄悄关掉。跑起来后拿不到产物 ⇒
+    #      **这一档明确变红**（三条路径，见下面「分片失败时这一档怎么红」）。
+    #   ② needs.changes.result == 'success'：changes 自己失败时不跑（避免噪音：门禁红了不用再叠一层红）。
+    #   ③ docs-only 短路：纯文档 PR 不跑（docs-only PR 本来就没有桌面覆盖率要判）。
+    #   ④ event_name == 'pull_request'：push 侧不跑（见上面的窄缺口与恢复路径）。
+    if: always() && needs.changes.result == 'success' && needs.changes.outputs.docs-only != 'true' && github.event_name == 'pull_request'
     # 40 → 60（2026-10-18）：40 这一档实测撞死过两趟 main push（run 39037127191 = PR #3836 的收口证据、
     # run 39084091986），后果不是"跑挂"而是 main 侧证据永久丢失；同一窗口里成功样本的尾部是 39.4/39.5/39.7，
     # 也就是**贴着天花板过线**。
@@ -1684,25 +1731,41 @@ jobs:
 
       - name: Install deps
         run: pnpm install --frozen-lockfile
-      # electron@43 没有 postinstall：pnpm install 之后 electron 包只有 npm 壳、没有 dist。
-      # 不先备好二进制，任何 require('electron') 会走进 node_modules/electron/index.js，
-      # 它先打 "Downloading Electron binary..." 再当场下载 ⇒ 下载耗时被记到"当时正在跑的那条用例"头上
-      # （#2783 实测：15700ms 撞 vitest testTimeout=10000，而该用例本身只要几毫秒）。
-      - name: Ensure Electron binary
-        run: node scripts/ensure-electron.js
+      # ⚠️ 本作业**不再跑桌面测试** ⇒ 不再需要 Electron 二进制、不再需要重建构建产物
+      #   （那两步是「跑桌面测试」的前置，desktop-shards 作业里同样有那两步）。
+      #   ⚠️ 仍需 pnpm install：判定器要 require 桌面端的覆盖率阈值真源（它依赖 vitest/config
+      #   与 @vitejs/plugin-vue），判定器自身还需要根 devDep istanbul-lib-coverage。
 
-      # 构建产物不进版本控制（change: bundle-untrack）⇒ 跑测试前必须先重建它们。
-      # 本 job 里的「产物契约锁」直接读这些文件（锁名含「已重打包」/「tracked bundle」/
-      # 「路径真实存在」），它们守的性质由「提交的产物与源码一致」变成「构建出的产物与
-      # 源码一致」——仍然完全有效，且不再需要人肉记得重建。
-      - name: Build preload bundles
-        run: |
-          pnpm --filter @multi-publish/desktop run build:preload
-          pnpm --filter @multi-publish/desktop run build:paginator
+      # 下载分片采到的覆盖率产物：pattern 与 desktop-shards 的上传名一一对应
+      # （coverage-shard-<job-index>）。不设 merge-multiple：那样两个产物会落进同一个
+      # coverage-final.json 文件名互相覆盖 ⇒ 而同名覆盖是静默的 ⇒ 保持「一产物一目录」。
+      - name: "Download desktop shard coverage artifacts"
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-shard-*
+          path: coverage-shards
 
-      # --- Gate 5: Coverage 检查（单 worker 串行，独立 job 避免与 Gate 4 争资源）---
-      - name: "Gate 5 - Test coverage check"
-        run: pnpm --filter @multi-publish/desktop test:coverage -- --coverage.reporter=text-summary
+      # ⚠ 分片失败时这一档怎么红（三条路径，机制各不相同 ⇒ 排障别找错地方）：
+      #   ① **全挂**（0 片上传）⇒ download-artifact 自己就红（pattern 命中 0 个 artifact
+      #      ⇒ 动作直接失败）⇒ 红在**下载步**，判定器根本没跑到。
+      #   ② **挂一部分**（比如 2 片里挂 1 片）⇒ ⚠ download-artifact **不报错**（它只下载
+      #      pattern 命中的那一个）⇒ 少的那片是**静默**的 ⇒ 若不加片数守卫，判定器会拿
+      #      **半份数据**当全局读数（单片读数系统性偏低，但偏低也可能跨过阈值 ⇒ 假绿）。
+      #      ⇒ 判定器的 --expect-shards（片数必须**恰好**匹配）就是为这条准备的。
+      #   ③ 产物在但**形状不对**（不是 istanbul / 合并为空 / 读不到阈值真源）⇒ 判定器走
+      #      **失明**通道（退出码 2）⇒ 红在**判定步**。
+      #   ⇒ 三条路径都会让本作业红（GitHub 只看退出码是否非 0）⇒「没测成」绝不会被读成「通过」。
+
+      # --- Gate 5: 覆盖率判定（合并两片产物后判一次全局阈值）---
+      # ⚠ 判定器退出码三态：0 达标 / 1 未达 / **2 失明**（读不到产物 / 形状不认识 / 合并为空 /
+      #   **片数与期望不符**）。
+      #   失明必须红：宁可红，也不要让「没测成」被读成「通过」。
+      #   ⚠ 阈值真源只有一个（桌面端 vitest 配置），判定器不硬编码任何阈值数字。
+      # ⚠ --expect-shards=2：**期望恰好两片**。⚠ 这个数字不是拍脑袋 —— 契约锁
+      #   （.github/scripts/workflow-contract.test.js）会把它与 desktop-shards 的矩阵腿数
+      #   **对拍**（腿数变了却没改这里 ⇒ 当场红）⇒ 不会漂移。
+      - name: "Gate 5 - Coverage merge check"
+        run: node scripts/merge-coverage-shards.js --dir coverage-shards --expect-shards=2
 
   visual:
     name: QG Visual

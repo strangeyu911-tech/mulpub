@@ -62,3 +62,54 @@ SHALL 一律走退出码 **2**，SHALL NOT 被当成达标。
 
 - **WHEN** 指定的产物路径都不存在，或指定目录里找不到任何覆盖率产物
 - **THEN** 判定器 SHALL 以退出码 2 退出
+
+### Requirement: 覆盖率由分片采集、合并后统一判定
+
+桌面覆盖率 SHALL 由 `desktop-shards` 的分片**顺带采集**，产物 SHALL 以 artifact 传递；
+`QG Coverage` SHALL 下载这些产物、合并后**判一次**全局阈值，SHALL NOT 自己再跑一遍全量桌面测试。
+
+分片侧 SHALL 显式中和覆盖率阈值（`--coverage.thresholds.*=0`）：分片报告的是**局部**覆盖率，
+按全局阈值判会必然判红；阈值 SHALL 由合并后的那一次统一判定。
+
+覆盖率产物 SHALL 以 **istanbul 形状**（`--coverage.reporter=json`）产出；上传步骤 SHALL 在产物缺失时**报错**
+（不得静默上传空产物）。artifact 名 SHALL NOT 含斜杠（矩阵值为 `1/2`）。
+
+`QG Coverage` SHALL 在分片失败时**仍然运行**并以「失明」结论报红：required check 被跳过在 GitHub 眼里
+等于通过 ⇒ 静默跳过等于把覆盖率门禁悄悄关掉。
+
+#### Scenario: 分片采覆盖率且不按局部阈值判红
+
+- **WHEN** 桌面分片在覆盖率插桩下运行
+- **THEN** 每片 SHALL 产出 istanbul 形状的覆盖率产物，且 SHALL NOT 因局部覆盖率低于全局阈值而失败
+
+#### Scenario: 合并后的口径与全量一致
+
+- **WHEN** 两片互补覆盖后合并判定
+- **THEN** 合并后的全局覆盖率读数 SHALL 等于同一棵树全量跑出的读数
+
+#### Scenario: 产物缺失必须报红而不是静默跳过
+
+- **WHEN** 分片失败或产物未生成，导致 `QG Coverage` 拿不到覆盖率产物
+- **THEN** `QG Coverage` SHALL 以「失明」结论失败（退出码非 0），SHALL NOT 被跳过成「通过」
+
+### Requirement: 消费方必须校验「拿到了几份」产物
+
+`QG Coverage` SHALL 以 `--expect-shards=N` 声明**期望的分片数**，判定器 SHALL 在收到的片数
+**不等于** N 时以「失明」结论失败（退出码 2）。
+
+**理由**：`download-artifact` 的 pattern 命中 0 个 artifact 时动作自身失败（红在下载步），
+但**命中数少于期望时它不报错** ⇒ 少的那片是**静默**的 ⇒ 判定器若不校验片数，就会拿
+**半份数据**当全局读数 ⇒ 而半份读数系统性偏低，偏低**也可能**跨过阈值 ⇒ 判成「达标」即假绿。
+
+期望片数 SHALL NOT 与上游分片数脱钩：契约锁 SHALL 把 `--expect-shards` 的值与
+`desktop-shards` 的矩阵腿数**对拍**（腿数变了却没改这里 ⇒ 当场红）。
+
+#### Scenario: 只收到部分分片时必须判红而不是拿半份数据判达标
+
+- **WHEN** 期望两片但只收到一片（某片分片失败）
+- **THEN** 判定器 SHALL 以退出码 2 退出，SHALL NOT 用这一片读数判全局阈值
+
+#### Scenario: 片数期望值必须与分片矩阵对拍
+
+- **WHEN** `desktop-shards` 的矩阵腿数变化而 `--expect-shards` 未同步
+- **THEN** 契约锁 SHALL 失败

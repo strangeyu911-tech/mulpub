@@ -170,11 +170,38 @@ test('GUI gate Electron 步骤仅发布 tag 触发且带硬看门狗', () => {
 });
 
 test('桌面覆盖率门禁串行运行，避免全量 V8 coverage 资源竞争', () => {
+  // ★ 2026-10-25（change: gate-coverage-shard-merge）：覆盖率采集**搬到 desktop-shards**
+  //   （原先 QG Coverage 自己跑一遍全量，40–47 分钟；现在分片顺带采，QG Coverage 只合并判定）。
+  //   ⇒ 这条锁**变成两处都守**（不是把旧的换掉）：
+  //     ① CI 路径：desktop-shards 的分片命令行（真正采覆盖率的地方）；
+  //     ② 开发者路径：apps/desktop 的 test:coverage 脚本（PR-2 之后 CI 不再调它，
+  //        但它仍是开发者手动跑覆盖率的入口 ⇒ 它的串行不变量也不该没人守）。
+  //   ⇒ 不变量两处相同：**覆盖率采集必须串行**
+  //   （共享 mock / 资源型测试争用 —— 串行是桌面套件的既有契约，不是覆盖率专属）。
   const desktopPackage = JSON.parse(fs.readFileSync(desktopPackagePath, 'utf8'));
   const coverageScript = desktopPackage.scripts['test:coverage'];
+  assert.ok(coverageScript, 'apps/desktop 的 test:coverage 脚本必须存在（开发者手动跑覆盖率的入口）');
+  assert.match(coverageScript, /--maxWorkers=1/, 'test:coverage 必须 --maxWorkers=1（串行契约）');
+  assert.match(coverageScript, /--no-file-parallelism/, 'test:coverage 必须 --no-file-parallelism（不并发收文件）');
 
-  assert.match(coverageScript, /--maxWorkers=1/);
-  assert.match(coverageScript, /--no-file-parallelism/);
+  const wf = yaml.load(fs.readFileSync(qualityGatePath, 'utf8'));
+  const shardsJob = wf.jobs['desktop-shards'];
+  assert.ok(shardsJob, 'desktop-shards 作业必须存在（改名时保护本锁不失效）');
+  const shardStep = (shardsJob.steps || []).find((s) => /Desktop tests shard/.test(String(s.name || '')));
+  assert.ok(shardStep, 'desktop-shards 的分片步骤必须存在（改名时保护本锁不失效）');
+  const argv = String(shardStep.run || '');
+  assert.match(argv, /--maxWorkers=1/, '分片采集覆盖率必须 --maxWorkers=1（串行契约）');
+  assert.match(argv, /--no-file-parallelism/, '分片采集覆盖率必须 --no-file-parallelism（不并发收文件）');
+  assert.match(argv, /--coverage\.reporter=json/,
+    '分片必须产 istanbul 形状的覆盖率产物（json reporter）；blob reporter 产 V8 原始格式，合并器读不了');
+  // ⚠ 四项阈值**逐条**锁（只锁 statements 一项 ⇒ 漏掉另外三项会「分片必红」，是 fail-safe，
+  //   但四条是一套 ⇒ 一起锁，别留半套）。
+  //   根因：实测 vitest 的 --shard 照样按全局阈值判（resolveThresholds 无 shard 分支）
+  //   ⇒ 不中和则两片各按全局阈值判、必红；阈值由合并后统一判一次。
+  for (const key of ['statements', 'branches', 'functions', 'lines']) {
+    assert.match(argv, new RegExp(`--coverage\\.thresholds\\.${key}=0`),
+      `分片侧必须中和 ${key} 阈值：--coverage.thresholds.${key}=0（vitest 的 --shard 照样按全局阈值判）`);
+  }
 });
 
 test('桌面默认 Vitest 串行收集，避免共享 mock 和资源型测试争用', () => {
@@ -564,13 +591,58 @@ test('docs-only 短路：全部重型 job 挂 needs: [changes] 且条件为 docs
   //      `A && B || C` 这类写法在字符串层面看不出「push 侧其实会跑」⇒ 出现析取就当场红。
   const coverage = wf.jobs.coverage;
   assert.ok(coverage, 'coverage job 必须存在');
-  assert.deepEqual(coverage.needs, ['changes'], 'coverage 必须 needs: [changes]');
+  // ★ 2026-10-25（change: gate-coverage-shard-merge）：覆盖率产物**由分片顺带采** ⇒
+  //   本作业必须依赖 desktop-shards（否则拿不到产物），且**不得**再自己跑一遍全量
+  //   （那正是这一片要消掉的 40–47 分钟重复劳动）。
+  assert.deepEqual(coverage.needs, ['changes', 'desktop-shards'],
+    'coverage 必须依赖 desktop-shards 的覆盖率产物（合并判定），且保留 changes（docs-only 判定与门禁结论）');
   const coverageClauses = String(coverage.if).split('&&').map((s) => s.trim()).filter(Boolean);
   assert.deepEqual(coverageClauses.sort(), [
+    "always()",
     "github.event_name == 'pull_request'",
     "needs.changes.outputs.docs-only != 'true'",
-  ], 'coverage 的 if 必须恰好是两个合取子句（docs-only 短路 + 只在 PR 侧跑）：多一项、少一项、'
-  + '或出现 `||`（会让 push 侧也跑）都改变语义 ⇒ 必须当场红');
+    "needs.changes.result == 'success'",
+  ], 'coverage 的 if 必须恰好是这四个合取子句：always()（分片失败时也要跑，否则「跳过的 required check」'
+  + '会被读成通过、门禁被悄悄关掉）＋ changes 成功 ＋ docs-only 短路 ＋ 只在 PR 侧跑：'
+  + '多一项、少一项、或出现 `||`（会让 push 侧也跑 / 让失明被跳过）都改变语义 ⇒ 必须当场红');
+  // 反向锁：QG Coverage **不得**再跑全量覆盖率（那是这一片要消掉的重复劳动）。
+  // ⚠ 写成「读 run 块」而不是「读整份 workflow」：run 块之外的注释/步骤不参与判定，
+  //   否则一条说明性注释就能把这条锁顶红（内容级启发式锁的已知脆点）。
+  const coverageRuns = (coverage.steps || []).map((s) => String((s && s.run) || '')).join('\n');
+  assert.doesNotMatch(coverageRuns, /test:coverage/,
+    'QG Coverage 不得再跑全量覆盖率（PR-2 的全部意义就是消掉这 40–47 分钟的重复劳动）');
+  assert.doesNotMatch(coverageRuns, /vitest run|--shard=/,
+    'QG Coverage 不得再自己跑桌面测试：覆盖率只由分片采集、这里只做合并判定');
+  // ⭐ 加宽：不再只黑名单三种字面形态（`pnpm --filter @multi-publish/desktop test` 这类
+  //   改写会从三条断言的缝里溜过去）⇒ 直接锁「命令里不得出现桌面包 / 桌面路径」。
+  //   ⇒ 这条与具体命令写法无关 ⇒ 改写成任何形态都逃不掉。
+  assert.doesNotMatch(coverageRuns, /@multi-publish\/desktop|apps\/desktop/,
+    'QG Coverage 的命令里不得出现桌面包或桌面路径：覆盖率只由分片采集、这里只做合并判定'
+    + '（本条不依赖具体命令写法 ⇒ 任何改写形态都逃不掉）');
+  assert.match(coverageRuns, /scripts\/merge-coverage-shards\.js/,
+    'QG Coverage 必须调用合并判定器（否则它就既不跑测试也不判覆盖率 = 门禁被拆空）');
+  // ⭐ 片数守卫：判定器必须知道**该等几片**，否则「只收到一部分分片」是静默的
+  //   （download-artifact 只下载 pattern 命中的那几个 ⇒ 少一片它不报错）⇒
+  //   判定器会拿半份数据当全局读数（单片读数系统性偏低，但偏低也可能跨过阈值 ⇒ 假绿）。
+  // ⚠ 这个数字**不许漂**：它必须与 desktop-shards 的矩阵腿数**对拍**（下面那条锁）⇒
+  //   腿数变了却没改这里 ⇒ 当场红。
+  const shardLegs = ((((wf.jobs['desktop-shards'] || {}).strategy || {}).matrix || {}).shard || []).length;
+  assert.ok(shardLegs >= 1, 'desktop-shards 的矩阵腿数必须可读（矩阵形状变了会当场红）');
+  assert.match(coverageRuns, new RegExp(`--expect-shards=${shardLegs}(\\s|$)`),
+    `QG Coverage 必须传 --expect-shards=${shardLegs}（与 desktop-shards 的矩阵腿数对拍）：`
+    + '片数少于或多于期望都必须走失明（rc=2）⇒ 少一片时不得拿半份数据判「达标」');
+  // 反向锁：判定的产物必须来自分片上传的 artifact（pattern 与上传名一一对应）。
+  const coverageDownload = (coverage.steps || []).find((s) => /download-artifact/.test(String(s.uses || '')));
+  assert.ok(coverageDownload, 'QG Coverage 必须有下载分片覆盖率产物的步骤');
+  assert.match(String((coverageDownload.with || {}).pattern || ''), /coverage-shard-\*/,
+    '下载 pattern 必须与 desktop-shards 的上传名前缀一致（coverage-shard-*）');
+  const shardUpload = ((wf.jobs['desktop-shards'] || {}).steps || [])
+    .find((s) => /upload-artifact/.test(String(s.uses || '')));
+  assert.ok(shardUpload, 'desktop-shards 必须有上传覆盖率产物的步骤');
+  assert.match(String((shardUpload.with || {}).name || ''), /coverage-shard-/,
+    '上传 artifact 名必须以 coverage-shard- 开头（且不得含斜杠：matrix 值是 "1/2"）');
+  assert.equal(String((shardUpload.with || {})['if-no-files-found'] || ''), 'error',
+    '上传步骤的 if-no-files-found 必须是 error：产物没生成要当场红，不能静默上传空产物');
   // gate-result 必须聚合 changes 的结论：判定 job 自身红（git 取证失败）时不得静默放行
   const gateResult = wf.jobs['gate-result'];
   assert.ok(gateResult.needs.includes('changes'), 'gate-result 必须依赖 changes（判定失败即拦）');
@@ -964,7 +1036,21 @@ test('跑桌面测试的质量门禁作业必须先备好 Electron 二进制（�
   const collected = Object.keys(wf.jobs)
     .filter((job) => ((wf.jobs[job] && wf.jobs[job].steps) || []).some(isDesktopTestStep))
     .sort();
-  const NEEDS_PREP = ['coverage', 'desktop-shards', 'unit-tests'];
+  // ★ 2026-10-25（change: gate-coverage-shard-merge）：`coverage` 移出本清单 ——
+  //   它**不再跑桌面测试**（覆盖率由分片顺带采集，它只做合并判定）⇒ 不再需要先备 Electron 二进制。
+  //   移出的前提是**机械可判**的，不是写一句注释就算数：收集清单用的谓词
+  //   （步骤 run 块里同时出现桌面端路径与测试关键字）**认不出它**了
+  //   ⇒ 一旦有人把桌面测试加回 coverage 作业，它会重新被 collected
+  //   ⇒ 那时 collected 与本清单不再相等 ⇒ 下面那条 deepEqual 当场红。
+  // ⚠ 但这条「前提失效即锁失效」**只在谓词认得出的几种形态上成立**（独立复核指出）：
+  //   谓词认的是 `test:coverage|test:startup|--shard=|vitest run|run test` 这五种字面形态 ⇒
+  //   若有人回填成 `pnpm --filter @multi-publish/desktop test`（`test` 脚本 + `--coverage`），
+  //   谓词**认不出来** ⇒ 本条锁不会红。
+  //   ⇒ 真正的兜底是**另一条**锁（桌面全量必须先重建 build:preload/paginator ⇒ MISSING_BUILD）
+  //   与本 PR 新增的「QG Coverage 命令里不得出现桌面包/桌面路径」那条反向锁。
+  //   ⇒ 本条锁的定位要如实说清：它是「收集清单 + 逐条准备步骤」的结构性守卫，
+  //     **不是**「coverage 永远不会跑桌面测试」的唯一保证。
+  const NEEDS_PREP = ['desktop-shards', 'unit-tests'];
   // e2e 与 visual 同类：经 Playwright 打本机 dev server / Chromium，不加载 Electron 模块；
   // 这条前提由下面的目录扫描钉住 —— 有人往这两个目录里引入 require('electron') 时，豁免当场失效变红。
   const EXEMPT = ['e2e', 'visual'];
@@ -1441,7 +1527,23 @@ test('跑桌面 vitest 全量的每个 job 都必须在测试前重建那 5 个�
     }
   }
   // 反失明：谓词被改窄/解析退化会让 rows 变空，而"全部合规"读起来完全像通过
-  assert.ok(rows.length >= 3, `消费者覆盖面下界 3，实测 ${rows.length} ⇒ 谓词或扫描域退化：` +
+  //
+  // ★ 2026-10-25（change: gate-coverage-shard-merge）：`quality-gate.yml:coverage`
+  //   **不再跑桌面全量**（覆盖率由 desktop-shards 顺带采、它只做合并判定）
+  //   ⇒ 跑桌面全量的消费者从 3 个减到 2 个。
+  // ⇒ **只把数字下界从 3 改成 2 不够**：那只会让「覆盖面悄悄少一个」变成合法。
+  // ⇒ 改成**具名清单**：两个必须存在的消费者逐个点名，删掉任何一个都当场红
+  //   （数字下界保留，但它的作用退化成「谓词没有整体失效」的兜底）。
+  const REQUIRED_DESKTOP_SUITE_CONSUMERS = [
+    'electron-ci.yml:electron-tests',   // push 侧的桌面全量（保留第二次独立运行的 flake 检出）
+    'quality-gate.yml:desktop-shards',  // PR 侧的分片（顺带采覆盖率）
+  ];
+  for (const key of REQUIRED_DESKTOP_SUITE_CONSUMERS) {
+    assert.ok(rows.some((r) => r.key === key),
+      `跑桌面全量的消费者 ${key} 必须仍在覆盖面内（整片删掉测试步来"修好"本锁不算修）：`
+      + `实测 rows=${JSON.stringify(rows.map((r) => r.key))}`);
+  }
+  assert.ok(rows.length >= 2, `消费者覆盖面下界 2，实测 ${rows.length} ⇒ 谓词或扫描域退化：` +
     JSON.stringify(rows.map(r => r.key)));
   const offenders = rows.filter(r => r.judge.verdict !== 'OK' && !DESKTOP_SUITE_NO_BUILD_ACK.includes(r.key));
   assert.deepEqual(

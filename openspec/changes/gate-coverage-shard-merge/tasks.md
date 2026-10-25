@@ -40,3 +40,31 @@
 - [ ] 推送分支 → 开 PR → CI 全绿 → squash 合并
 - [ ] PR-2（**须人工过目**）：shards 加 `--coverage --coverage.reporter=json --coverage.thresholds.*=0` + artifact +
       `QG Coverage` 改 `needs` 并下载合并判阈 + 三处 CI 契约锁同步 + `gate-timeout-registry.json` 重采样
+
+## 6. PR-2（接线片）
+
+- [x] `desktop-shards` 分片命令行追加覆盖率旗标（`--coverage` / `--coverage.reporter=json` / 四项阈值中和）
+- [x] `desktop-shards` 新增覆盖率产物上传（`coverage-shard-<job-index>`、`if-no-files-found: error`）
+- [x] `QG Coverage` 改 `needs: [changes, desktop-shards]` + 四个合取子句的 `if` + 步骤换成「下载 → 合并判定」
+- [x] 同步三处契约锁：① `coverage.needs`/`if` + 三条反向锁 ② 覆盖率串行锁换锚点到分片命令行
+      ③ `NEEDS_PREP` 去掉 `coverage`（前提机械可判）④ 桌面全量消费者覆盖面改**具名清单**
+- [x] 判定器读阈值真源失败时的报错信息补全最可能原因（依赖未装 / ESM / 真源抛错）
+- [x] 端到端本地验证：真 vitest 产物 + 真源阈值 + 生产命令形态（单片 FAIL rc=1 / 合并 PASS rc=0）
+- [x] 真源 `require` 路径实测通过（Node 22.19；`vitest/config` 与 `@vitejs/plugin-vue` 均有 CJS 入口）
+- [ ] 合并后：按实测重测 `scripts/gate-budget.js` 的分片预算（覆盖率插桩让分片变慢）
+- [ ] 合并后：改采集途径并**重采样** `scripts/gate-timeout-registry.json` 的 `coverage` 格
+      （旧来源「main push 的 QG Coverage」自 #4457 起已不产生样本；本片又改了作业形态）
+
+### PR-2 补做（独立复核后追加）
+
+- [x] **域内 job 登记表同步收窄**：删掉 `.github/scripts/desktop-test-prereq-jobs.json` 里的
+      `quality-gate.yml#coverage` 条目；测试侧 `FIXED_JOB_KEYS` 同步收窄为 3 条
+      （⚠ 原稿只列了三处锁 ⇒ 漏了这一处 ⇒ CI 首次跑就红）
+- [x] **判定器加片数守卫** `--expect-shards=N`（少/多都走失明 rc=2）+ 行为锁 ⑦/⑦-2（含变异反证）
+- [x] **契约锁把 `--expect-shards` 与分片矩阵腿数对拍**（数字不许漂）
+- [x] **覆盖率串行锁两处都守**（CI 路径 + 开发者路径 `test:coverage` 脚本的锁加回来）
+- [x] **反向锁加宽**：QG Coverage 的命令里不得出现桌面包/桌面路径（不依赖具体写法）
+- [x] **四条阈值中和旗标逐条锁**（原只锁 statements 一项）
+- [x] **本地门禁改跑仓内自己的完整清单**（static-gates 的 55 行 / 66 个测试目标），
+      并用**干净 origin/main 同环境对照**判定「本地红是不是我的锅」
+- [x] **文档订正**：失败机制（三条路径）、风险算术（64% ≠ 逼近贴脸线）、push 侧代价与取舍理由

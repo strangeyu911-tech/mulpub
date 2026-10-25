@@ -251,3 +251,63 @@ test('⑥ ⭐ 变异反证：判据必须真的有牙', () => {
   const mrB = runMutant(mutB, [bad, '--thresholds=' + thrAll])
   assert.equal(mrB.code, 0, '变异后「失明」必须被变成 rc=0（这正是 ④ 要抓住的假绿）')
 })
+
+test('⑦ ⭐ 片数守卫：收到的分片数必须**恰好**等于期望数，否则走失明（rc=2）', () => {
+  // 动因（独立复核抓出来的假绿）：分片挂一半时，`download-artifact` **不报错**
+  // （它只下载 pattern 命中的那几个）⇒ 少的那片是**静默**的 ⇒
+  // 若判定器不校验片数，就会拿**半份数据**当全局读数 ⇒ 而半份数据读数偏低，
+  // 偏低**也可能**跨过阈值 ⇒ 判成「达标」＝ 假绿。
+  const thr = JSON.stringify({ statements: 100, branches: 0, functions: 100, lines: 100 })
+  // ⚠ 夹具要点：两片**各自 100% 覆盖** ⇒ 合并后 100%（达标）。
+  //   ⇒ 这样「只收到 1 片」时那一片自己就是 100% ⇒ 若没有片数守卫，判定器会
+  //     **判成达标**（rc=0）⇒ 假绿成立 ⇒ 守卫才是唯一拦住它的东西（变异反证会证明这点）。
+  const a = writeTmp('a.json', makeCoverage({ 'x.js': { hits: [1] } }))
+  const b = writeTmp('b.json', makeCoverage({ 'y.js': { hits: [1] } }))
+
+  // 恰好 2 片 ⇒ 正常判定
+  const ok = run([a, b, '--expect-shards=2', '--thresholds=' + thr])
+  assert.equal(ok.code, 0, '片数恰好匹配时必须正常判定：\n' + ok.stdout + ok.stderr)
+  assert.match(ok.stdout, /verdict=PASS/)
+
+  // 只收到 1 片（期望 2）⇒ 失明 rc=2，**不得**判成达标
+  const few = run([a, '--expect-shards=2', '--thresholds=' + thr])
+  assert.equal(few.code, 2, '少一片必须失明 rc=2（半份数据不得判达标）：\n' + few.stdout + few.stderr)
+  assert.match(few.stderr, /只收到 1\/2 片/, '失明原因必须说清缺了几片：\n' + few.stderr)
+  assert.doesNotMatch(few.stdout, /verdict=PASS/, '少一片时绝不能出现 verdict=PASS')
+
+  // 收到 3 片（期望 2）⇒ 陈旧产物混进来 ⇒ 失明
+  const c = writeTmp('c.json', makeCoverage({ 'z.js': { hits: [1] } }))
+  const many = run([a, b, c, '--expect-shards=2', '--thresholds=' + thr])
+  assert.equal(many.code, 2, '多一片必须失明 rc=2（可能有陈旧产物混进来）：\n' + many.stdout + many.stderr)
+  assert.match(many.stderr, /期望 2 片/, '失明原因必须说清期望几片：\n' + many.stderr)
+
+  // 期望值本身非法 ⇒ 不知道该等几片 ⇒ 不判（失明），不得当成「没有期望 ⇒ 随便判」
+  const bogus = run([a, b, '--expect-shards=abc', '--thresholds=' + thr])
+  assert.equal(bogus.code, 2, '非法的期望片数必须失明：\n' + bogus.stdout + bogus.stderr)
+
+  // 不传 --expect-shards ⇒ 不做片数检查（本地/离线用法保持原行为）
+  const noExpect = run([a, '--thresholds=' + thr])
+  assert.equal(noExpect.code, 0, '不传 --expect-shards 时不应做片数检查：\n' + noExpect.stdout + noExpect.stderr)
+})
+
+test('⑦-2 ⭐ 变异反证：片数守卫必须真的有牙（去掉它 ⇒ ⑦ 的少一片用例立刻变绿假象）', () => {
+  const src = fs.readFileSync(SCRIPT, 'utf8')
+  const thr = JSON.stringify({ statements: 100, branches: 0, functions: 100, lines: 100 })
+  const a = writeTmp('a.json', makeCoverage({ 'x.js': { hits: [1] } }))
+  const b = writeTmp('b.json', makeCoverage({ 'y.js': { hits: [1] } }))
+
+  // 对照组（未变异）：少一片 ⇒ 失明 rc=2
+  const control = run([a, '--expect-shards=2', '--thresholds=' + thr])
+  assert.equal(control.code, 2, '对照组（未变异）必须失明 rc=2：\n' + control.stdout + control.stderr)
+
+  // 变异：把「片数不足 ⇒ 失明」这条分支去掉（改成不判、继续往下走）
+  const mut = src.replace(
+    "      blind('只收到 ' + files.length + '/' + expected + ' 片覆盖率产物（分片可能失败）'",
+    "      console.error('[COVERAGE-MERGE] MUTANT 只收到 ' + files.length + '/' + expected + ' 片覆盖率产物（分片可能失败）'"
+  )
+  assert.notEqual(mut, src, '变异必须真的改到字节')
+  const mr = runMutant(mut, [a, '--expect-shards=2', '--thresholds=' + thr])
+  assert.equal(mr.code, 0,
+    '变异后少一片必须被放行成 rc=0（这正是 ⑦ 要抓住的假绿）：\n' + mr.stdout + mr.stderr)
+  assert.match(mr.stdout, /verdict=PASS/, '变异后必须出现「假达标」读数（否则 ⑦ 的断言没牙齿）')
+})

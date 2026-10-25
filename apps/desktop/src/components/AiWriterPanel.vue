@@ -13,6 +13,15 @@
     </div>
 
     <p v-if="panelError" class="panel-error" role="alert">{{ panelError }}</p>
+    <!-- 1.10b：错误卡片必须能一键直达（审计点名的「请参考使用说明」不该只是文字） -->
+    <div v-if="panelError && panelErrorActionLabel" class="panel-error-action-row">
+      <button
+        type="button"
+        class="panel-error-action cohere-btn-primary"
+        data-testid="panel-error-action"
+        @click="goToProviders"
+      >{{ t(panelErrorActionLabel) }}</button>
+    </div>
 
     <!-- 敏感词警告（fix-rewrite-warning-severity，2026-10-21）：warning 级而非红色错误。
          改写成功了，只是提醒人工审核；与 panelError 的失败语义必须分开。 -->
@@ -194,7 +203,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue"
+import {ref,  onMounted, computed} from "vue"
 import { Aim, Document, EditPen, MagicStick, Refresh, TrendCharts } from "@element-plus/icons-vue"
 import { useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
@@ -229,6 +238,35 @@ const selectedStyle = ref("polish")
 const enhancedResult = ref("")
 const summary = ref("")
 const panelError = ref("")
+// 阶段 1.10b：错误码 → 站内动作。只列「有直达意义」的两码；其余一律不给按钮 ——
+// 给一个无关的「前往设置」比不给更糟（用户会以为配额/网络问题也能在设置里解决）。
+// 通道复用既有 goToProviders()（配置横幅已在用），不新写第二份外链/协议判据。
+const ERROR_ACTION_LABEL_BY_CODE = {
+  LLM_KEY_MISSING: "rewritePage.goToModelSettings",
+  API_KEY_NOT_CONFIGURED: "rewritePage.goToModelSettings",
+}
+const panelErrorCode = ref("")
+const panelErrorActionLabel = computed(() => ERROR_ACTION_LABEL_BY_CODE[panelErrorCode.value] || "")
+
+function setPanelError(payload, fallback) {
+  const formatted = formatUserError(payload, { fallback })
+  panelError.value = formatted.message
+  // errorCode 是 formatUserError 已经算好的稳定码；过去这里只取 .message，把码丢了。
+  panelErrorCode.value = formatted.errorCode || ""
+}
+
+function clearPanelError() {
+  panelError.value = ""
+  panelErrorCode.value = ""
+}
+
+// 只有文本、没有稳定码的错误（res.data.error / res.message）也必须经这里出去：
+// 配对不变式若分叉成「helper 两处 + 手写两处」，那两处既不经过 helper 也无从证明它清了码
+// （评审 i1：上一轮错误码残留 + 本轮错误文本 = 挂着一个无关的「前往模型设置」）。
+function setPanelErrorText(text) {
+  panelErrorCode.value = ""
+  panelError.value = text
+}
 // 敏感词警告（fix-rewrite-warning-severity，2026-10-21）：引擎后置检测的 warnings。
 // 与 panelError（role="alert" 的红色错误区）语义分离——改写成功了，只是提醒人工审核。
 const panelSensitiveWarnings = ref([])
@@ -333,7 +371,7 @@ async function loadRewriteStrategies() {
 async function doRewrite() {
   if (!rewriteContent.value.trim()) return
   if (!(await ensureLogin({ message: "AI 改写需要登录后使用，是否立即登录？" }))) return
-  panelError.value = ""
+  clearPanelError()
   rewriting.value = true
   // P2 隐式反馈：上次改写结果未被应用就再次改写 → 弃用上次引用的知识条目
   if (rewriteResult.value && rewriteKnowledgeRefs.value.length > 0) {
@@ -387,12 +425,12 @@ async function doRewrite() {
         panelSensitiveWarnings.value = data.warnings.slice()
       }
     } else if (res && res.code === 0 && res.data && res.data.error) {
-      panelError.value = res.data.error
+      setPanelErrorText(res.data.error)
     } else {
-      panelError.value = (res && res.message) || "改写失败"
+      setPanelErrorText((res && res.message) || "改写失败")
     }
   } catch (e) {
-    panelError.value = formatUserError(e, { fallback: "改写失败" }).message
+    setPanelError(e, "改写失败")
   } finally {
     rewriting.value = false
   }
@@ -424,7 +462,7 @@ function goToProviders() {
 }
 
 async function checkConfig() {
-  panelError.value = ""
+  clearPanelError()
   let providerError = null
   try {
     const providerResult = await modelProviderIsConfigured("llm")
@@ -445,20 +483,20 @@ async function checkConfig() {
   } catch (error) {
     providerError = error
   }
-  if (providerError) panelError.value = formatUserError(providerError, { fallback: "读取 AI 配置失败" }).message
+  if (providerError) setPanelError(providerError, "读取 AI 配置失败")
 }
 
 async function generateTitles() {
   if (!topic.value.trim()) return
   // 主动操作登录门：未登录弹登录窗口，登录成功后继续生成标题
   if (!(await ensureLogin({ message: "AI 标题生成需要登录后使用，是否立即登录？" }))) return
-  panelError.value = ""
+  clearPanelError()
   generating.value = true
   try {
     const res = await aiGenerateTitles(topic.value)
     if (res && res.code === 0) titles.value = res.data || []
   } catch (e) {
-    panelError.value = formatUserError(e, { fallback: "生成标题失败" }).message
+    setPanelError(e, "生成标题失败")
   } finally {
     generating.value = false
   }
@@ -472,7 +510,7 @@ async function enhanceContent() {
   // 主动操作登录门：未登录弹登录窗口，登录成功后继续润色
   if (!(await ensureLogin({ message: "AI 内容润色需要登录后使用，是否立即登录？" }))) return
   enhancing.value = true
-  panelError.value = ""
+  clearPanelError()
   try {
     // Read content from parent - passed via prop or get from editor
     const content = props.sourceContent || ""
@@ -483,7 +521,7 @@ async function enhanceContent() {
     const res = await aiEnhanceContent(content, selectedStyle.value)
     if (res && res.code === 0) enhancedResult.value = res.data
   } catch (e) {
-    panelError.value = formatUserError(e, { fallback: "润色正文失败" }).message
+    setPanelError(e, "润色正文失败")
   } finally {
     enhancing.value = false
   }
@@ -498,7 +536,7 @@ async function generateSummary() {
   // 主动操作登录门：未登录弹登录窗口，登录成功后继续生成摘要
   if (!(await ensureLogin({ message: "AI 摘要生成需要登录后使用，是否立即登录？" }))) return
   summarizing.value = true
-  panelError.value = ""
+  clearPanelError()
   try {
     const content = props.sourceContent || ""
     if (!content || content.length < 20) {
@@ -508,7 +546,7 @@ async function generateSummary() {
     const res = await aiGenerateSummary(content)
     if (res && res.code === 0) summary.value = res.data || ""
   } catch (e) {
-    panelError.value = formatUserError(e, { fallback: "生成摘要失败" }).message
+    setPanelError(e, "生成摘要失败")
   } finally {
     summarizing.value = false
   }
@@ -544,6 +582,15 @@ onMounted(() => {
   font-size: var(--font-size-sm);
   color: var(--muted);
 }
+.panel-error-action-row {
+  margin: 6px 0 0;
+}
+
+.panel-error-action:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
 .panel-error {
   margin: 0 0 var(--space-sm);
   color: var(--danger, #c53b3b);

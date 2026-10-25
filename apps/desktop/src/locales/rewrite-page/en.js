@@ -6,6 +6,7 @@ export default {
     title: 'Copy Rewrite',
     subtitle: 'AI-powered multi-strategy rewrite engine, combining viral library and personal experience for originality',
     inputSection: 'Input content',
+    goToModelSettings: "Open model settings",
     inputPlaceholder: 'Enter or paste content to rewrite (up to 50000 characters)...',
     configSection: 'Rewrite settings',
     useViralLibrary: 'Use viral library',

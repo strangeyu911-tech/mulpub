@@ -6,6 +6,7 @@ export default {
     title: '文案改写',
     subtitle: 'AI 驱动的多策略文案改写引擎，结合爆款库与个人经历提升原创性',
     inputSection: '输入文案',
+    goToModelSettings: "前往模型设置",
     inputPlaceholder: '输入或粘贴需要改写的文案内容（最多 50000 字）...',
     configSection: '改写设置',
     useViralLibrary: '结合爆款库',

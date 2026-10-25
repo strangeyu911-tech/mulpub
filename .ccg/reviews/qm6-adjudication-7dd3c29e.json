@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "adjudicatedBy": "self-play",
+  "confidenceWeight": 0.6,
+  "reason": "stall/maxRounds 后自扮演裁决（引擎第三档出口）",
+  "highRiskNote": "高危域争议项不允许自扮演豁免，必须外部复核",
+  "requiresExternalReview": [
+    {
+      "id": "i3",
+      "severity": "Warning",
+      "domains": [
+        "crypto"
+      ]
+    }
+  ],
+  "critiqueFingerprint": "4bde1aa6c432b742",
+  "instructions": [
+    "对 items 里每一条争议，依次生成：",
+    "  1) 最强指控 —— 论证这条确实是真问题（含具体失败场景）",
+    "  2) 最强辩护 —— 论证这不是问题 / 已被别处覆盖",
+    "  3) 裁决 —— 哪一边论证更强，verdict 取 upheld（指控成立）/ dismissed（指控不成立）",
+    "裁决理由必须可验证，不得只写「看起来没问题」。"
+  ],
+  "items": [
+    {
+      "id": "i1",
+      "severity": "Warning",
+      "finding": "PRD §3 明确承诺「无码/未知码（res.data.error、res.message 这类纯文本）→ 不给动作，不得猜」，但没有任何测试覆盖这条路径：六个测试全部用带 errorCode 的 rejected payload；message-only payload（new Error('boom') 或 {message:'x'}）下「alert 仍在、按钮不在」从未被断言，也没有对应的 E 变异。更关键的是 doRewrite 里两个非 catch 分支（res.code===0&&res.data.error 与 res.message 分支）直接手写 `panelErrorCode.value = \"\"` + `panelError.value = ...`，绕过 setPanelError/clearPanelError 这对被 PRD 称为「配对不变式」实现的 helper，且这两个分支完全不被任何测试触碰（onMounted 的 checkConfig 在测试里只 mock 成功）。因此「错误码与文本同生同灭」这个不变式实际由三处并存实现（helper 两处 + 手写两处），其中手写两处既不经过 helper 也无测试——一旦未来有人在这两个分支里改成从 res 里再取一次 errorCode，按钮残留/错配按钮这类缺陷会全绿放行。",
+      "highRiskDomains": [],
+      "prosecution": "PRD §3 承诺「无码/未知码不给动作」，但六个用例全用带码载荷；且 res.data.error / res.message 两个非 catch 分支手写 panelErrorCode + panelError，绕过被 PRD 称为配对不变式实现的 helper ⇒ 不变式实际有四处实现，其中两处无测。",
+      "defense": "两个手写分支确实各写了一行 panelErrorCode.value = \"\"，行为上没错；且 catch 分支统一走 setPanelError。",
+      "verdict": "upheld",
+      "rationale": "「行为上没错」不等于「有证据」：四处并存里被改坏的任意一处都不会被任何测试发现，而 PRD 声称的收口点是 helper。已修：新增 setPanelErrorText(text) 把两个手写分支收进同一出口（源码里不再有直接给 panelError/panelErrorCode 赋值的第四、第五处）；补两个用例——① 同一实例内带码错误→message-only 错误，断言文本换掉且动作消失；② 分别穿过 :427（code===0 && data.error）与 :430（else，只有 message）两个分支，各自断言\"出文本 + 不出动作\"。反证加 E8（把 :427 改回直接赋值不清码）。第二个用例第一版把载荷写成 {code:-1,data:{error}}，被组件判进 else 分支、断言到\"改写失败\"——那是我对分支条件的猜测，读源码 :407-430 之后才把夹具改成与真实条件同形，没有放宽断言。"
+    },
+    {
+      "id": "i2",
+      "severity": "Warning",
+      "finding": "diff 末尾三处文件（apps/desktop/src/components/AiWriterPanel.vue、rewrite-page/en.js、rewrite-page/zh.js）都以 `\\ No newline at end of file` 结束，且 AiWriterPanel.vue 还在末行追加了一个空行（`+` 后无内容）。这恰好是执行记录 §五自己点名的「行尾不是噪声」「两口径一致就不要碰行尾」的同类伤口：若 CI 跑 prettier/eslint 的 eol-last 类检查会直接失败；即便不跑，下一次任何编辑都会把这三个文件拖成整文件幽灵 diff。",
+      "highRiskDomains": [],
+      "prosecution": "AiWriterPanel.vue 与 rewrite-page/{zh,en}.js 三个文件都以 ` No newline at end of file` 结束，且 vue 末行还多一个空行；正是执行记录 §五 自己点名的「两口径一致就别碰行尾」同类伤口，且 lone CR 会让 git 把文件判成 -text。",
+      "defense": "这是我上一轮\"统一到 LF\"动作的副产品，不是新引入的策略。",
+      "verdict": "upheld",
+      "rationale": "成立且已核：`ends_with_newline=false`、`last24` 显示结尾是 `\\n\\r`（**孤立 CR**）。后果不是风格问题——`git ls-files --eol` 当场报 `i/-text`，而 AGENTS 记过触发 `-text` 的正是 lone CR/NUL，那会让 blob 以整文件 CRLF 形态入库。已修为单一 LF 收尾并验证：`git diff --numstat` 与 `--ignore-cr-at-eol --numstat` 对这三个文件都是 `0/1`（一致），loneCR 计数为 0。"
+    },
+    {
+      "id": "i3",
+      "severity": "Warning",
+      "finding": "测试 2 的 `not.toMatch(/window\\.open\\(/)` 与 `not.toMatch(/\\/\\^https?:/)` 是对整个 AiWriterPanel.vue 文件的全文件结构锁，测试 6 的 `data-testid=\"panel-error-action\"[\\s\\S]{0,200}?goToProviders` 是 200 字符的邻近度启发式。这类锁过宽过脆：该文件还承载改写/标题/润色/摘要等多个 AI 功能，未来任何一处合法地引入 window.open 或第二个协议正则都会让本套件无端变红；反之它们也并不能证明「按钮的通道就是复用 goToProviders」——若有人给按钮绑一个新函数、新函数内自行 push + 自带协议正则，行为测试只能撞见 push 被调用，结构锁只是碰巧不冲突。",
+      "highRiskDomains": [
+        "crypto"
+      ],
+      "prosecution": "测试 2 的两条 not.toMatch 是对整份 AiWriterPanel.vue 的全文件结构锁，测试 6 是 200 字符邻近度启发式；该文件还承载标题/润色/摘要等功能，未来任一功能合法引入 window.open 都会让本套件无端变红，而且它们并不能证明\"按钮的通道就是复用 goToProviders\"。",
+      "defense": "结构锁的初衷是防\"新写第二份协议判据\"，AGENTS 确有这条。",
+      "verdict": "upheld",
+      "rationale": "两点都成立，已分别处理：① 收窄到动作块本身（`data-testid=\"panel-error-action\"` 到 `</button>` 之间），不再对整个文件施加禁令；② 这条禁令本仓已有全域执行体 `apps/desktop/src/href-scheme-contract.test.js`（扫全仓 :href= 与 window.open 登记面），在那里守比在这里重复一份会漂移的口径更对；③ \"必须复用 goToProviders\" 改成正面结构断言（动作块内必须出现 @click=\"goToProviders\"），不再靠\"别的写法碰巧不冲突\"。邻近度启发式只能证明同块、不能证明函数同一，这一点如实写明，不夸大成\"已证明复用\"。"
+    },
+    {
+      "id": "i4",
+      "severity": "Warning",
+      "finding": "G4（文案 zh/en 成对）零机械保障：没有任何测试读取 locales/rewrite-page/zh.js 与 en.js，也没有变异删除或改名该 key。vue-i18n 对缺失 key 的默认行为是渲染 key 原文，因此 en/zh 任一文件里把 goToModelSettings 改名或删掉，按钮就静默显示 `rewritePage.goToModelSettings` 字面量——这正是 PRD §3 反复强调的「拼错会静默渲染成 key 原文」失败模式，只是它只对码表做了机械防护，对码表指向的 locale key 毫无防护。",
+      "highRiskDomains": [],
+      "prosecution": "G4（zh/en 成对）零机械保障：没有测试读 locales/rewrite-page/{zh,en}.js，也没有变异删/改名该键；vue-i18n 缺键时渲染 key 原文 ⇒ 按钮会显示 rewritePage.goToModelSettings，正是 PRD §3 自己强调的失败模式。",
+      "defense": "仓内 CI 有 Gate 7 locale 成对门禁。",
+      "verdict": "upheld",
+      "rationale": "不成立为免责理由：Gate 7 实测只比对根级 zh.js/en.js 的键集（见记忆「locale 成对门禁对拆分文件失明」），对本这种拆分文件结构性失明，且它不检查\"码表指向的键是否存在\"。已补：从源码正则取出码表引用的全部 rewritePage.* 键，逐个断言 zh 与 en 两侧都在（键数下界 >0 防解析退化）；反证加 E7（删掉 en 侧该键）必须变红。"
+    }
+  ]
+}

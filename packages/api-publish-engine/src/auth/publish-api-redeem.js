@@ -1,4 +1,5 @@
 'use strict'
+
 /**
  * publish-api-redeem.js — `POST /api/v1/redeem` 路由 + 兑换失败限流（PublishApiServer 的 mixin）。
  *
@@ -25,6 +26,9 @@
  * 同一用户 60 秒内失败 ≥ 5 次 / 同一 IP 10 分钟内失败 ≥ 200 次**或**最近 60 秒内失败 ≥ 60 次 ⇒ 429。
  * 命中时不透露剩余次数。一次成功会清零该用户的失败计数。
  */
+
+// 客户端 IP 取值的**单一真源**（与全局粗桶同口径，见 src/client-ip.js）。
+const { clientIpFromRequest } = require('../client-ip')
 
 /** 限流器实例挂载键（实例级 ⇒ 多实例各算各的，与仓内既有 rate-limiter 同形态）。 */
 const LIMITER_KEY = '_redeemFailureLimiter'
@@ -63,13 +67,9 @@ class PublishApiRedeemHelpers {
    * 且用户维度（60 秒 5 次失败）不受 IP 维度被绕开的影响 ⇒ 单账号探测仍被拦。
    */
   _redeemClientIp (req) {
-    if (!req) return null
-    const forwarded = req.headers && req.headers['x-forwarded-for']
-    if (typeof forwarded === 'string' && forwarded) {
-      const parts = forwarded.split(',').map((part) => part.trim()).filter(Boolean)
-      if (parts.length) return parts[parts.length - 1]
-    }
-    return (req.socket && req.socket.remoteAddress) || null
+    // 取值口径收敛到 **单一真源**（src/client-ip.js）：与全局粗桶同口径，
+    // 避免「端点级限流按真实 IP 生效、全站粗桶按回环地址生效」的口径分裂。
+    return clientIpFromRequest(req)
   }
 
   /**

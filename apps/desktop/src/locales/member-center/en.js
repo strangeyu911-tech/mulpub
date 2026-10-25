@@ -8,7 +8,7 @@ import identityDiagnosticsEn from '../identity-diagnostics/en'
 export default {
     ...identityDiagnosticsEn,
     redeemTitle: 'Redeem activation code',
-    redeemHint: 'Enter a 16-character activation code to redeem membership. Codes are bound to your account and can only be redeemed once.',
+    redeemHint: 'Enter the 12-character activation code (like ABCD-EFGH-JKMN) to redeem membership. Codes are bound to your account and can only be redeemed once.',
     redeemPlaceholder: 'ABCD-EFGH-JKMN',
     redeemAction: 'Redeem',
     redeeming: 'Redeeming…',

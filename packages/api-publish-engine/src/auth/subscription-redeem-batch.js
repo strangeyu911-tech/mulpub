@@ -165,9 +165,18 @@ class SubscriptionRedeemBatchOps {
       // 出了这个错误就没别的去处了（审计与响应体都靠这两个字段定位是哪一批）。
       error.batch = batchId
       error.issuedTo = normalizedIssuedTo
+      // ⚠️ expiresAt 同样必须挂上：已签发出去、仍可兑的那些码，运营要拿它做交付表
+      // （CSV 的「兑换码过期时间」列）。少了它 ⇒ 交付表里这一列恒为空
+      // ⇒ 渠道方拿到的是一批「不知道什么时候作废」的码。
+      error.expiresAt = normalizedExpiresAt
       throw error
     }
-    return { batch: batchId, plan, durationDays, issuedTo: normalizedIssuedTo, requested: count, generated: created.length, codes: created }
+    // ⚠️ 返回体必须带 expiresAt（2026-10-25 独立复评 F2 实测）：
+    // 运营中心导出的 CSV 有「兑换码过期时间」这一列，而列来源必须是**签发结果**
+    // ⇒ 服务端不回这个字段 ⇒ 成功路径导出时该列恒为空（失败路径当时已补，
+    // 成功路径漏了 ⇒ 两边口径不一致）。
+    // ⇒ 成功与失败两条路径现在都带同一个字段（归一化后的 ISO 串 / null）。
+    return { batch: batchId, plan, durationDays, issuedTo: normalizedIssuedTo, expiresAt: normalizedExpiresAt, requested: count, generated: created.length, codes: created }
   }
 }
 

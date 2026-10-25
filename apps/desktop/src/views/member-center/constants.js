@@ -39,3 +39,35 @@ export const REDEEM_CODE_MAX_LENGTH = 14
 
 /** 本地格式校验的 i18n key（失败时不发请求）。 */
 export const REDEEM_ERR_FORMAT_LOCAL = 'memberCenter.redeemErrFormatLocal'
+
+/** 码的**字符**位数（4-4-4 ⇒ 12 个字符；显示上另有 2 个连字符 ⇒ 共 14 位）。 */
+export const REDEEM_CODE_DIGITS = 12
+
+/**
+ * 输入归一化：**自动大写 + 自动分隔**（4-4-4）。
+ *
+ * 为什么要有（PRD P0-1）：
+ *  - **大写**：服务端核销前会 `trim().toUpperCase()`，客户端不转的话用户看到的是
+ *    自己输入的大小写、库里查的是大写 ⇒ 出错时极难自查。
+ *  - **分隔**：激活码天然是 4-4-4 三段，人从聊天记录里抄时常漏一个连字符 ⇒
+ *    边输边补连字符比让用户被服务端打回「格式不正确」友好。
+ *
+ * ⚠️ **不替换字母表之外的字符**：`I` / `L` / `O` / `0` / `1` 是**易混淆字符**，
+ * 服务端字母表里没有 ⇒ 保留原样交给本地校验去拒（并给出「不包含 I、L、O 与 0、1」的
+ * 可读原因），**不在这里悄悄改成别的字符**（那会让用户以为自己输对了）。
+ *
+ * ⚠️ 去掉的是**所有非字母数字**字符（空格 / 连字符 / 全角空格等分隔类字符都在内）
+ * ⇒ 粘贴带横线、带空格的码也能吃下。
+ *
+ * @param {string} raw 输入框原文
+ * @returns {string} 归一化后的码（大写、每 4 位一个连字符、最多 12 位）
+ */
+export function normalizeRedeemInput (raw) {
+  const compact = String(raw == null ? '' : raw)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, REDEEM_CODE_DIGITS)
+  const groups = []
+  for (let i = 0; i < compact.length; i += 4) groups.push(compact.slice(i, i + 4))
+  return groups.join('-')
+}

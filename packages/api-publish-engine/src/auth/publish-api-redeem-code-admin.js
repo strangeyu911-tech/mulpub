@@ -299,6 +299,9 @@ class PublishApiRedeemCodeAdminHelpers {
         // 既不在审计的码列表里、也不知道属于哪一批 ⇒ 泄漏后无从定位。
         batch: error.batch || null,
         issuedTo: error.issuedTo || null,
+        // ⚠️ expiresAt 同样进审计（与成功路径同口径）：已签发出去、仍可兑的那些码
+        // 什么时候作废，是运营做交付时必须带上的信息。
+        expiresAt: error.expiresAt || null,
       },
     });
     this._json(res, 409, {
@@ -308,6 +311,9 @@ class PublishApiRedeemCodeAdminHelpers {
       generated: error.generated,
       rounds: error.rounds,
       batch: error.batch || null,
+      // ⚠️ expiresAt 必须进响应体（与成功路径同口径）：运营要拿它做交付表的
+      // 「兑换码过期时间」列 ⇒ 少了它 ⇒ 补足失败时导出的表这一列恒为空。
+      expiresAt: error.expiresAt || null,
       codes: error.created,
     });
   }

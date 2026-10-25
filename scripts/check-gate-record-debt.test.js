@@ -2036,3 +2036,70 @@ test('CLI 层：从外来 cwd 真跑一次，读数必须仍来自仓库（默�
   assert.strictEqual(there.status, here.status, `外来 cwd 下退出码漂移：仓库=${String(here.status)} 外来=${String(there.status)}`)
   assert.strictEqual(there.first, here.first, `外来 cwd 下首行读数漂移（默认根被 cwd 带走就是这个形状）：仓库=${JSON.stringify(here.first)} 外来=${JSON.stringify(there.first)}`)
 })
+
+// ── 输出契约锁：「实际带入」这个真值必须一直印在输出里 ──────────────────
+//
+// 背景（2026-10-25 实测事故，PR #4434）：门禁的 `intentMismatch` 输出**本来就印着**
+//   `xhs-draft-store.md —— 声明 4408 / 实际带入 4235`
+// 也就是「git 实际算出来的归属」就在同一屏上。但那一轮改动没有采用它，而是另起一套
+// `git log --diff-filter=A` 的二次推断，得出了**相反**的结论（声称「实际带入 4408」），
+// 随后把 12 篇别人 PR 的执行记录改了 —— 门禁当场判红，而误判的结论还被写进了 commit
+// message 与执行记录正文（看起来像有据可依）。
+//
+// 根因不是判据漏判（判据判对了），而是**真值没有主人**：输出格式随时可能被改成
+// 「只列文件名」，届时读者就只剩「再猜一次」这一条路。本锁把输出格式钉住：
+//   ① 每条不符项必须同时印出**声明值**与**实际值**（两个数都要在）；
+//   ② 实际值必须**逐篇**与 `merge-ledger` 账本算出的归属一致（不得另起第二份口径）。
+//
+// 变异对照（手工验过）：把 `format` 里的 ` / 实际带入 ${m.actual}` 删掉 ⇒ 本锁立刻红。
+test('输出契约：每条「声明与主干事实不符」必须同时印出声明值与实际值（真值不许从输出里消失）', () => {
+  const dir = fixture([{ head: '记录甲（alpha，2026-09-28）', status: 'PASS' }])
+  const r = checker.collect({ root: dir, ledger: {}, duplicatesAllowed: new Set() })
+  r.intentMismatch = [
+    { file: 'xhs-draft-store.md', declared: 4408, actual: 4235 },
+    { file: 'drop-legal-wording.md', declared: 4408, actual: 4140 },
+  ]
+  const text = checker.format(r)
+  for (const m of r.intentMismatch) {
+    const line = text.split('\n').find((l) => l.includes(m.file))
+    assert.ok(line, `每条不符项都必须单独成行并点名文件：${m.file}`)
+    assert.match(line, new RegExp(`声明\\s*${m.declared}`),
+      `必须印出**声明值**（${m.declared}）：${line}`)
+    assert.match(line, new RegExp(`实际带入\\s*${m.actual}`),
+      `必须印出**实际值**（${m.actual}）—— 这是 git 算出的真值，删掉它读者就只剩猜：${line}`)
+  }
+})
+
+test('输出契约：印出的「实际带入」必须逐篇等于 merge-ledger 账本算出的归属（不许有第二份口径）', () => {
+  const { execFileSync } = require('node:child_process')
+  const { buildLedger, classifyAttribution } = require('./lib/merge-ledger.js')
+  let root
+  try {
+    root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
+    execFileSync('git', ['rev-parse', '--verify', 'origin/main'], { encoding: 'utf8' })
+  } catch (e) {
+    return // 取不到 origin/main：真仓对照不成立，跳过（与本文件其它真仓锁同一取舍）
+  }
+  const frozen = execFileSync('git', ['rev-parse', 'origin/main'], { encoding: 'utf8' }).trim()
+  const ml = buildLedger({ baseRef: frozen, cwd: root })
+  assert.equal(ml.ok, true, `真仓账本必须可用：${ml.reason}`)
+  const r = checker.collect({ root, ledger: checker.loadLedger(), mergeLedger: ml })
+  // 真仓上当前不应有「声明与事实不符」（这条断言本身就是本轮 12 篇回退后的棘轮）
+  assert.deepStrictEqual(r.intentMismatch, [],
+    '真仓上不得出现「声明的来源 PR 与主干事实不符」')
+  // 逐篇核对：输出里印的「实际带入」必须等于账本算出的归属。
+  // 造一条人造的不符项（拿一篇真记录 + 一个错声明），看输出印的是不是账本的值。
+  const recordsRoot = path.join(root, 'openspec', 'records')
+  const sample = checker.listRecordFiles(recordsRoot)
+    .map((name) => {
+      const rel = 'openspec/records/' + name
+      return { name, rel, attr: classifyAttribution(ml, rel) }
+    })
+    .find((x) => x.attr.state === 'PR' && x.attr.pr)
+  assert.ok(sample, '真仓上至少要有一篇归属可解析的记录')
+  r.intentMismatch = [{ file: sample.name, declared: 999999, actual: sample.attr.pr }]
+  const line = checker.format(r).split('\n').find((l) => l.includes(sample.name))
+  assert.ok(line, '造出来的不符项必须成行')
+  assert.match(line, new RegExp(`实际带入\\s*${sample.attr.pr}`),
+    `输出印的「实际带入」必须等于账本归属 ${sample.attr.pr}：${line}`)
+})

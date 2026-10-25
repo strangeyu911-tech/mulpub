@@ -108,7 +108,7 @@
           :maxlength="REDEEM_CODE_MAX_LENGTH"
           autocomplete="off"
           spellcheck="false"
-          @input="redeemCode = redeemCode.toUpperCase()"
+          @input="redeemCode = normalizeRedeemInput($event.target.value)"
           @keyup.enter="submitRedeem"
         >
         <button
@@ -148,7 +148,7 @@ import { useIdentityStore } from '@/stores/identity'
 import { useMemberStore } from '@/stores/member'
 import { onIdentityStateChanged } from '@/api/identity'
 import { featureLabelOf, formatExpiresAt, graceState, planLabelOf } from './labels'
-import { REDEEM_CODE_MAX_LENGTH, REDEEM_CODE_PATTERN, REDEEM_ERR_FORMAT_LOCAL } from './constants'
+import { REDEEM_CODE_MAX_LENGTH, REDEEM_CODE_PATTERN, REDEEM_ERR_FORMAT_LOCAL, normalizeRedeemInput } from './constants'
 
 // 异步组件：弹窗只在用户点「购买」后才需要。同步 import 会让会员中心的每次挂载
 // 都连带加载二维码组件链（electron-bridge + labels），实测把 MemberCenter.test.js 的
@@ -290,14 +290,10 @@ function formatPeriodEnd(iso) {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString()
 }
 
-// 成功文案不能留空洞占位：plan/end 缺失时退成一句不含变量的兜底，
-// 否则会出现「已开通 ，有效期至 」这种明显坏掉的用户可见文案。
-function redeemDetail(plan, end) {
-  const parts = []
-  if (plan) parts.push(plan)
-  if (end) parts.push(end)
-  return parts.join(' · ')
-}
+// ⛔ 原先的 `redeemDetail(plan, end)`（把两者拼成「专业版 · 2026/11/24」）已删：
+// 它被塞进 `{end}` ⇒ 渲染成「已开通 专业版，有效期至 专业版 · 日期」⇒ **档位两次**
+// （2026-10-25 独立复评 F12；属既有缺陷，本 PR 顺带修掉）。⇒ 模板两个槽分别填两个值；
+// 「不留空洞占位」的防御意图保留在下面的判据里（缺一 ⇒ 退到不含变量的通用文案）。
 
 async function submitRedeem() {
   if (!canSubmitRedeem.value) return
@@ -320,12 +316,14 @@ async function submitRedeem() {
       return
     }
     const end = formatPeriodEnd(res.periodEnd)
-    const detail = redeemDetail(res.plan, end)
     if (!res.idempotent) {
       redeemResult.value = {
         tone: 'success',
-        text: detail
-          ? t('memberCenter.redeemSuccess', { plan: res.plan, end: detail })
+        // ⚠️ `{end}` 传 end 本身（不是组合串）；`{plan}` 传**显示名**（planLabelOf）
+        // 而不是原始 id（'pro'）—— 两者都改自 2026-10-25 独立复评 F12（既有缺陷）。
+        // ⚠️ 兜底：plan 或 end 缺一 ⇒ 退到不含变量的通用文案（不留空洞占位）。
+        text: res.plan && end
+          ? t('memberCenter.redeemSuccess', { plan: planLabelOf(t, res.plan), end })
           : t('memberCenter.redeemSuccessGeneric'),
       }
     } else if (res.hasActiveSubscription) {

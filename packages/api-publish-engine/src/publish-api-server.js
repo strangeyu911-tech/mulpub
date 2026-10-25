@@ -20,6 +20,8 @@ const { getPlanCatalog } = require("./auth/plan-matrix")
 const { safeErrorCode } = require("./auth/safe-error-code")
 const { applyCommerceHelpers } = require("./auth/publish-api-commerce")
 const { applyRedeemCodeAdminHelpers } = require("./auth/publish-api-redeem-code-admin")
+const { clientIpFromRequest } = require("./client-ip")
+const { clampLogPagination } = require("./log-pagination")
 const { applyRedeemRouteHelpers } = require("./auth/publish-api-redeem")
 const { applyPaymentHelpers } = require("./auth/publish-api-payment")
 const { applyCloudAccountHelpers, applyCloudAccountNoStore, mergeFaceHeaders } = require("./auth/publish-api-cloud-accounts")
@@ -776,7 +778,9 @@ class PublishApiServer {
     applyCloudAccountNoStore(res, url);
 
     // Rate limiting
-    if (this._rateLimiter && !this._rateLimiter.check(req.socket.remoteAddress || req.headers["x-forwarded-for"] || "unknown")) {
+    // ⚠️ 分桶键取**真实客户端 IP**（XFF 最右，见 src/client-ip.js）：按 socket 分桶时生产拓扑下
+    // 引擎看到的来源恒为 127.0.0.1 ⇒ **全站所有用户共用一个桶**（一个人打满，全站被限）。
+    if (this._rateLimiter && !this._rateLimiter.check(clientIpFromRequest(req) || "unknown")) {
       this._json(res, 429, { error: "Too Many Requests", message: "Rate limit exceeded. Try again later." });
       return;
     }
@@ -1230,7 +1234,11 @@ class PublishApiServer {
       // --- Audit Log ---
       if (method === "GET" && url === "/api/v1/logs") {
         const owner = this._ownerSubject(req);
-        this._json(res, 200, { logs: this._publicResources(this._auditLog.list(undefined, undefined, owner)), stats: this._auditLog.stats(owner) });
+        // 分页：此前写死 undefined ⇒ 硬上限 50 条，第 51 条之后 API 侧**不可读**（stats.total 仍报总数）。
+        // 夹紧口径（limit ∈ [1,200] / offset ≥ 0 / 越界夹边界而非回落默认）见 src/log-pagination.js。
+        const logsQuery = typeof this._queryParams === "function" ? this._queryParams(req) : {};
+        const { limit: logsLimit, offset: logsOffset } = clampLogPagination(logsQuery);
+        this._json(res, 200, { logs: this._publicResources(this._auditLog.list(logsLimit, logsOffset, owner)), stats: this._auditLog.stats(owner) });
         return;
       }
       if (method === "POST" && url === "/api/v1/logs/clear") {

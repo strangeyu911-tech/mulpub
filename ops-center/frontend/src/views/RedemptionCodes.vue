@@ -125,9 +125,16 @@
           </div>
         </el-form-item>
         <el-form-item label="兑换码过期">
-          <el-input v-model="form.expires_at" placeholder="ISO 时间或留空，如 2027-01-01T00:00:00Z" />
+          <el-date-picker
+            v-model="form.expires_at"
+            type="datetime"
+            placeholder="留空表示长期有效"
+            :disabled-date="isPastDate"
+            style="width:100%"
+          />
           <div style="color:var(--color-text-placeholder);font-size: var(--font-size-xs)">
-            指兑换码本身的使用截止时间；留空表示长期有效。
+            指兑换码本身的使用截止时间（本地时区选择，提交时按 UTC 发送）；留空表示长期有效。
+            只能选未来的时间 —— 过期时间早于当前时刻的批次，签出来就是一批立刻作废的码。
           </div>
         </el-form-item>
         <el-form-item label="批次号">
@@ -136,7 +143,7 @@
       </el-form>
       <template #footer>
         <el-button @click="showGenerate = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="generate">签发</el-button>
+        <el-button type="primary" :loading="saving" @click="confirmGenerate">签发</el-button>
       </template>
     </el-dialog>
 
@@ -157,9 +164,13 @@
         <div v-for="c in lastCodes" :key="c" class="code-line">{{ c }}</div>
       </div>
       <p style="color:var(--color-danger);font-size: var(--font-size-xs);margin-top:8px">
-        完整兑换码仅本次显示，关闭后无法再次查看。
+        完整兑换码仅本次显示，关闭后无法再次查看 —— 请先「复制全部码」或「导出 CSV」保存，再点完成。
       </p>
       <template #footer>
+        <el-button @click="copyAllCodes">复制全部码</el-button>
+        <el-button @click="copyCsv">复制 CSV</el-button>
+        <el-button @click="copyTemplateRow">复制模板行</el-button>
+        <el-button @click="exportCsvFile">导出 CSV 文件</el-button>
         <el-button type="primary" @click="showResult = false">完成</el-button>
       </template>
     </el-dialog>
@@ -170,6 +181,16 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createRedemptionBatch, listRedemptionCodes, disableRedemptionCode } from '../api/redemptionCodes'
+import {
+  TEMPLATE_ROW,
+  buildConfirmSummary,
+  buildCsvFromResult,
+  copyTextWithFallback,
+  expiresAtMustBeFuture,
+  expiresAtToIso,
+  isPastDate,
+  runIssueFlow,
+} from './redemption-code-utils'
 
 // 与后端 services/redeem_batch_service.py 的 SUPPORTED_PLANS 保持一致。
 // 服务端拒 free（无套餐可授予），且不存在 trial 档——旧的 free/trial 已被真源淘汰。
@@ -213,7 +234,7 @@ const form = reactive({
   plan: 'standard',
   durationPreset: 'month1',
   durationDays: 30,
-  expires_at: '',
+  expires_at: null,
   batch: '',
   issuedTo: '',
 })
@@ -273,7 +294,7 @@ function openGenerate() {
     plan: 'standard',
     durationPreset: 'month1',
     durationDays: 30,
-    expires_at: '',
+    expires_at: null,
     batch: '',
     issuedTo: '',
   })
@@ -286,11 +307,121 @@ function onDurationPresetChange(key) {
   if (preset && preset.days) form.durationDays = preset.days
 }
 
+/**
+ * 复制文本到剪贴板。
+ * ⚠️ 局域网 http 部署下 `navigator.clipboard` 不可用（非安全上下文）⇒ 必须降级到
+ * 临时 textarea + execCommand，否则「一键复制」在运营的实际环境里会静默失败。
+ *
+ * ⚠️ 降级与失败判定都在 `copyTextWithFallback`（`redemption-code-utils.js`）里：
+ * 留在本文件时，「非安全上下文也能复制」这条**行为**只能拿到「源码里有 execCommand 降级」
+ * 这种形状锁 ⇒ 证明不了降级路径真的能复制（2026-10-25 独立复评 F10 实测）。
+ * ⇒ 规则与降级路径一起进可测的纯函数。
+ * ⛔ 本文件**不得**再自己实现一份降级（两份口径必然漂移；形状锁会当场拦）。
+ */
+async function copyText (text, okMessage) {
+  const res = await copyTextWithFallback(text)
+  if (res.ok) {
+    ElMessage.success(okMessage)
+    return true
+  }
+  if (res.reason === 'empty') {
+    ElMessage.warning('没有可复制的内容')
+    return false
+  }
+  ElMessage.error('复制失败，请手动选中文本复制')
+  return false
+}
+
+function copyAllCodes () {
+  return copyText(lastCodes.value.join('\n'), `已复制 ${lastCodes.value.length} 个兑换码`)
+}
+
+function copyCsv () {
+  return copyText(currentCsv(), '已复制 CSV 内容')
+}
+
+/**
+ * 当前结果的 CSV 全文。
+ * ⚠️ 列来源=**签发结果**，不是当前表单（规则钉在 `redemption-code-utils.js` 的
+ * `buildCsvFromResult` 里 ⇒ 视图层没有任何入口能把表单值塞进来）。
+ */
+function currentCsv () {
+  return buildCsvFromResult(lastResult.value || {}, {
+    codes: lastCodes.value,
+    planLabels: PLAN_LABELS,
+  })
+}
+
+function copyTemplateRow () {
+  return copyText(TEMPLATE_ROW, '已复制模板行')
+}
+
+/** 导出 CSV 文件：带 BOM，Excel 打开中文不乱码。 */
+function exportCsvFile () {
+  const result = lastResult.value || {}
+  const name = result.batch || 'batch'
+  const day = new Date().toISOString().slice(0, 10)
+  const blob = new Blob(['\uFEFF' + currentCsv()], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `兑换码-${name}-${day}.csv`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+  ElMessage.success('CSV 已导出')
+}
+
 /** 天数 → 语义化文案：整月显示「N 个月」，其余显示「N 天」。 */
 function durationLabel(days) {
   const n = Number(days)
   if (!Number.isFinite(n) || n <= 0) return '-'
   return n % 30 === 0 ? `${n / 30} 个月` : `${n} 天`
+}
+
+/** 表单里的有效期 → 提交给服务端的 UTC ISO 串（空 ⇒ 不带该字段）。 */
+function expiresAtPayload () {
+  return expiresAtToIso(form.expires_at)
+}
+
+/**
+ * 签发前二次确认：把「将要发生什么」摊开给运营看一眼（PRD P0-2）。
+ *
+ * ⚠️ 次序与中止条件由 `runIssueFlow`（`redemption-code-utils.js`）保证：
+ *   ① 校验不通过 ⇒ **不进确认框、更不发请求**（就地报错）；
+ *   ② 运营点「再看看」（确认框被拒）⇒ **一个请求都不发**。
+ * 这两条是**行为**，写在 `.vue` 里就只能靠「源码里有某个字符串」的形状锁来验
+ * ⇒ 形状锁证明不了「取消后仍然发了请求」（2026-10-25 独立复评 F10 实测）。
+ */
+async function confirmGenerate () {
+  const expiresAt = expiresAtPayload()
+  const lines = buildConfirmSummary({
+    plan: form.plan,
+    planLabels: PLAN_LABELS,
+    durationDays: form.durationDays,
+    count: form.count,
+    issuedTo: form.issuedTo,
+    batch: form.batch,
+    expiresAt,
+    expiresAtText: expiresAt ? new Date(expiresAt).toLocaleString() : '',
+  })
+  const outcome = await runIssueFlow({
+    summary: lines,
+    validate: () => (
+      expiresAtMustBeFuture(expiresAt) ? '兑换码过期时间必须晚于当前时间' : null
+    ),
+    confirm: (summary) => ElMessageBox.confirm(summary.join('\n'), '确认签发', {
+      confirmButtonText: '确认签发',
+      cancelButtonText: '再看看',
+      type: 'warning',
+    }),
+    submit: () => generate(),
+  })
+  if (!outcome.ok) {
+    if (outcome.stage === 'validate') ElMessage.error(outcome.error)
+    return
+  }
 }
 
 async function generate() {
@@ -300,11 +431,17 @@ async function generate() {
       plan: form.plan,
       durationDays: form.durationDays,
       count: form.count,
-      expires_at: form.expires_at,
+      expires_at: expiresAtPayload(),
       batch: form.batch,
       issued_to: form.issuedTo,
     })
-    lastResult.value = data
+    // ⚠️ expiresAt 必须并进结果（2026-10-25 独立复评 F2 实测）：导出的 CSV 有
+    // 「兑换码过期时间」这一列，而列来源必须是**签发结果** ⇒ 服务端没回这个字段时，
+    // 成功路径导出的表这一列**恒为空**（失败路径当时已补，成功路径漏了 ⇒ 两边口径不一致）
+    // ⇒ 渠道方拿到的是一批「不知道什么时候作废」的码。
+    // ⇒ 优先用服务端回来的（那是归一化后的真值）；服务端没回才回落到本次请求参数
+    // （服务端签这些码用的就是这份参数，且此刻签发弹窗已关闭、表单不会再被改）。
+    lastResult.value = { ...data, expiresAt: data.expiresAt || expiresAtPayload() || null }
     lastCodes.value = data.codes || []
     showGenerate.value = false
     showResult.value = true
@@ -315,7 +452,18 @@ async function generate() {
     // 碰撞补足失败：服务端已签发了一部分码。把它们显式带出来，
     // 否则运营既不知道拿到了几个、也拿不到可交付的那部分。
     if (detail && typeof detail === 'object' && detail.error === 'REDEEM_BATCH_INCOMPLETE') {
-      lastResult.value = detail
+      // ⚠️ 服务端的 `detail` 里**没有**发放对象/套餐/时长/过期时间（它只回 error/requested/generated/batch/codes）
+      // ⇒ 只用它 ⇒ 导出的 CSV 会**丢掉发放对象与套餐两列** ⇒ 运营拿到的交付表是不完整的。
+      // ⇒ 把**本次请求实际带的参数**并进结果对象（服务端签这些码用的就是这份参数，
+      // 且此刻签发弹窗已关闭、表单不会再被改）⇒ 导出的表与真实批次一致。
+      // ⚠️ 注意这不是「用表单值冒充签发结果」：合并后的对象**就是**这批码的签发结果。
+      lastResult.value = {
+        ...detail,
+        issuedTo: form.issuedTo,
+        plan: form.plan,
+        durationDays: form.durationDays,
+        expiresAt: expiresAtPayload(),
+      }
       lastCodes.value = detail.codes || []
       showGenerate.value = false
       showResult.value = true

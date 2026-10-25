@@ -3,9 +3,14 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { ref } from 'vue'
 
+// i18n 桩回**键名**（不是译文）⇒ 插值参数看不到 ⇒ 「档位出现两次」这类问题无法从渲染文本里看出来。
+// ⇒ 额外把每次 t(key, params) 的参数记下来，供断言用（`vi.hoisted` 才能在 mock 工厂里引用）。
+const { i18nCalls } = vi.hoisted(() => ({ i18nCalls: [] }))
 vi.mock('vue-i18n', () => ({
   createI18n: () => ({ global: { locale: { value: 'zh' } } }),
-  useI18n: () => ({ t: (key) => key }),
+  useI18n: () => ({
+    t: (key, params) => { i18nCalls.push({ key, params }); return key },
+  }),
 }))
 
 // WeChatPayDialog 是 defineAsyncComponent——挂载时会真去 import 组件链。
@@ -243,6 +248,34 @@ describe('member-center/Subscription', () => {
       expect(wrapper.find('[data-testid="redeem-result-error"]').exists()).toBe(true)
     })
 
+    // F12（2026-10-25 独立复评）：成功文案把「plan · end」的**组合串**塞进 `{end}`
+    // ⇒ 渲染成「已开通 专业版，有效期至 专业版 · 2026/11/24」⇒ **档位出现两次**。
+    // 该缺陷是**既有的**（origin/main 同形），但本 PR 重写的用户手册把这条文案写进了
+    // 「结果提示」表 ⇒ 手册与实现必须对得上 ⇒ 顺带修掉并钉死。
+    it('兑换成功文案：档位**只出现一次**，且用显示名（不漏原始 id）', async () => {
+      memberCtx.redeemCode.mockClear()
+      // ⚠️ i18nCalls 是模块级的、**跨用例累积** ⇒ 本用例先清空，只看自己这次的调用。
+      i18nCalls.length = 0
+      const { wrapper } = await mountSubscription()
+      await wrapper.get('[data-testid="redeem-code-input"]').setValue('ABCD-EFGH-JKMN')
+      await wrapper.get('[data-testid="redeem-code-submit"]').trigger('click')
+      await flushPromises()
+      // ⚠️ i18n 桩回键名、不做插值 ⇒ 断言落在**插值参数**上（渲染文本里只有键名）。
+      const calls = i18nCalls.filter((c) => c.key === 'memberCenter.redeemSuccess')
+      expect(calls.length).toBe(1)
+      const params = calls[0].params || {}
+      // {plan} 必须是**显示名**（经 planLabelOf）而不是原始 id
+      expect(params.plan).toBeTruthy()
+      expect(params.plan).not.toBe('pro')
+      expect(params.plan).not.toBe('standard')
+      // {end} 只能是日期本身：把「档位 · 日期」的组合串塞进 {end} ⇒ 档位出现两次
+      expect(params.end).toBeTruthy()
+      expect(String(params.end)).not.toContain(params.plan)
+      // ⚠️ 日期是 `toLocaleDateString()` ⇒ **顺序随运行环境 locale 变**（en-US 是 11/24/2026，
+      // zh-CN 是 2026/11/24）⇒ 断言必须与顺序无关。
+      expect(String(params.end)).toMatch(/\d{1,4}[/-]\d{1,2}[/-]\d{1,4}/)
+    })
+
     it('长度不足 → 本地拦截', async () => {
       memberCtx.redeemCode.mockClear()
       const { wrapper } = await mountSubscription()
@@ -273,6 +306,39 @@ describe('member-center/Subscription', () => {
       const input = wrapper.get('[data-testid="redeem-code-input"]')
       await input.setValue('abcd-efgh-jkmn')
       expect(input.element.value).toBe('ABCD-EFGH-JKMN')
+    })
+  })
+
+  // ── 兑换输入归一化（组件级）──────────────────────────────────────
+  // 上一组只锁了「大写」；本组锁住**接线**本身（@input 是不是真的调了归一化函数），
+  // 纯函数级的锁在 `redeem-code-input.test.js`。
+  describe('兑换输入归一化（组件级接线）', () => {
+    it('缺连字符 → 自动补成 4-4-4', async () => {
+      const { wrapper } = await mountSubscription()
+      const input = wrapper.get('[data-testid="redeem-code-input"]')
+      await input.setValue('abcdefghjkmn')
+      expect(input.element.value).toBe('ABCD-EFGH-JKMN')
+    })
+
+    it('易混淆字符（I/L/O/0/1）**保留原样**（不悄悄纠正）', async () => {
+      const { wrapper } = await mountSubscription()
+      const input = wrapper.get('[data-testid="redeem-code-input"]')
+      await input.setValue('abcd-efgh-ikmn')
+      expect(input.element.value).toBe('ABCD-EFGH-IKMN')
+    })
+
+    it('超出 12 位 → 截断到 12 位（4-4-4，共 14 字符含连字符）', async () => {
+      const { wrapper } = await mountSubscription()
+      const input = wrapper.get('[data-testid="redeem-code-input"]')
+      await input.setValue('ABCDEFGHJKMNEXTRA')
+      expect(input.element.value).toBe('ABCD-EFGH-JKMN')
+    })
+
+    it('归一化后仍是 14 个字符（12 码 + 2 连字符）⇒ 不会撞 maxlength', async () => {
+      const { wrapper } = await mountSubscription()
+      const input = wrapper.get('[data-testid="redeem-code-input"]')
+      await input.setValue('ABCDEFGHJKMN')
+      expect(input.element.value).toHaveLength(14)
     })
   })
 
@@ -312,6 +378,10 @@ describe('member-center/Subscription', () => {
       await flushPromises()
       expect(stateChangedHandlers).toHaveLength(1)
       wrapper.unmount()
+      // ⚠️ 这条断言来自主干（#4428 的「onPaid 权益刷新兜底」块），本 PR 合并 origin/main 时
+      // 在冲突解决里**误删**过一次 ⇒ 用例标题还在说「无泄漏」，断言却没了
+      // ⇒ 标题与断言脱节 ⇒ 泄漏真的发生也不会红。
+      // ⇒ 独立复评 F3 实测：把它加回去后 26/26 仍全绿 ⇒ 删除**没有任何功能上的必要性**。
       expect(stateChangedHandlers).toHaveLength(0)
     })
   })

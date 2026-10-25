@@ -8,7 +8,7 @@ import identityDiagnosticsZh from '../identity-diagnostics/zh'
 export default {
     ...identityDiagnosticsZh,
     redeemTitle: '激活码兑换',
-    redeemHint: '输入 16 位激活码兑换会员权益。激活码与账号绑定，一码仅可核销一次。',
+    redeemHint: '输入 12 位激活码（形如 ABCD-EFGH-JKMN）兑换会员权益。激活码与账号绑定，一码仅可核销一次。',
     redeemPlaceholder: 'ABCD-EFGH-JKMN',
     redeemAction: '立即兑换',
     redeeming: '兑换中…',

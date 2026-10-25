@@ -44,3 +44,42 @@ jobs:
         run: |
           cd ops-center/backend
           python -m pytest tests/ -x --no-header -q
+
+  # ⚠️ 2026-10-25 新增：运营中心**前端**的单元测试此前**在 CI 里一次都没跑过**。
+  #
+  # 事实（独立复评实测）：`ops-center/frontend` **不在 pnpm workspace 内**
+  # （自带 package-lock.json、由 npm 管理）⇒ 上面那个 job 只跑后端 pytest
+  # ⇒ 前端的 `vitest run`（含 `src/views/redemption-code-utils.test.js` 等 17 个文件 / 188 个用例）
+  # **没有任何 workflow 跑** ⇒ 新增的前端用例在 CI 里是**空转**的。
+  # 这正是本仓自己记过的失败形态（「新增文件没进白名单 ⇒ 一个都不跑」）。
+  #
+  # ⚠️ 另一个更隐蔽的形态（同一轮实测）：那个测试文件用
+  # `new URL('./RedemptionCodes.vue', import.meta.url)` 读源码 ⇒ vitest 4 下
+  # `import.meta.url` **不是 file:// 协议** ⇒ `readFileSync` 抛错 ⇒ **整份文件 0 个用例被执行**
+  # ⇒ 本地跑出来是「16 passed / 1 failed（failed = 本文件加载失败）」，
+  # 而 CI 里因为压根没跑 ⇒ 两种失败都看不见。
+  # ⇒ 这个 job 的存在本身就是「别再空转」的保证。
+  frontend-test:
+    name: ops-center 前端测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # ⚠️ 必须用 **npm ci**（不是 pnpm install）：ops-center/frontend 不在 pnpm workspace 内，
+      # 自带 package-lock.json、由 npm 管理（与 dep-audit.yml 的同一口径）。
+      - name: 安装依赖
+        working-directory: ops-center/frontend
+        run: npm ci
+
+      - name: 运行测试
+        working-directory: ops-center/frontend
+        run: npm test

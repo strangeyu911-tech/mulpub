@@ -4,6 +4,10 @@ const path = require('path')
 
 const MIGRATION_LOCK_ID = 1431325501
 const MIGRATION_PATTERN = /^\d{3}_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/
+// 形如 `1000_x.sql`（编号超过三位）的文件**不在** MIGRATION_PATTERN 内 ⇒ 原实现会**静默丢弃**
+// （既不执行、也不报错）⇒ 一条迁移被无声忽略 ⇒ 生产缺表/缺列，而仓里看不出任何异常。
+// ⇒ 改成 fail-closed：文件名看起来是迁移、却不符合命名规范 ⇒ 直接报错并点名文件。
+const MIGRATION_NUMBERED_RE = /^\d/
 
 class MigrationError extends Error {
   constructor(code, message) {
@@ -18,7 +22,19 @@ function checksum(content) {
 
 function discoverMigrations(directory) {
   const resolved = path.resolve(directory)
-  return fs.readdirSync(resolved, { withFileTypes: true })
+  const entries = fs.readdirSync(resolved, { withFileTypes: true })
+  // fail-closed：编号开头却不匹配命名规范 ⇒ 宁可启动失败，也不要静默少执行一条迁移。
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.sql')) continue
+    if (MIGRATION_PATTERN.test(entry.name)) continue
+    if (MIGRATION_NUMBERED_RE.test(entry.name)) {
+      throw new MigrationError(
+        'MIGRATION_FILE_NAME_INVALID',
+        `迁移文件名不符合规范（编号必须是三位数字 001-999，且形如 001_xxx.sql）：${entry.name}`
+      )
+    }
+  }
+  return entries
     .filter((entry) => entry.isFile() && MIGRATION_PATTERN.test(entry.name))
     .map((entry) => {
       const file = path.join(resolved, entry.name)

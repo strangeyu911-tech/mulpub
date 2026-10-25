@@ -19,14 +19,18 @@
  * 生产 compose 是 `MAX_RPM=${MAX_RPM:-100}`，`deploy/logto/api.env.example` 也是 `MAX_RPM=100`
  * ⇒ **全站粗桶在生产是开着的**。
  *
- * ⚠️ **更要紧的一条：粗桶的分桶键是 socket 优先**（`publish-api-server.js` 的全局限流位），
+ * ⚠️ **更要紧的一条：粗桶的分桶键此前是 socket 优先**（`publish-api-server.js` 的全局限流位），
  * 而生产拓扑是 nginx → `127.0.0.1:3030`、引擎只绑回环
  * ⇒ 引擎看到的来源地址**恒为 127.0.0.1** ⇒ **全站所有用户共用同一个 100 次/分钟的桶**。
  * 实测：即便客户端伪造 XFF 也无效，第 6 个请求就被粗桶 429。
  *
- * ⇒ **本模块的兑换限流在生产拓扑下会被这个前置粗桶部分遮蔽**（实际生效面小于设计预期）。
- * 这条**不在本 PR 的改动范围**（全局限流位未动），但它决定本模块的生产有效性，
- * 故在此写明并登记为下一轮的最高优先级（粗桶分桶键改为 XFF 最右优先，与本模块同口径）。
+ * ⇒ 因此**本模块的兑换限流在生产拓扑下会被这个前置粗桶部分遮蔽**（实际生效面小于设计预期）。
+ *
+ * ✅ **该问题已在本 PR 一并修掉**（2026-10-25）：粗桶的分桶键改为**真实客户端 IP**
+ * （X-Forwarded-For 最右），与本模块**同源**（`src/client-ip.js` 是唯一真源，两套限流共用）。
+ * ⚠️ 本段原先写的是「该条不在本 PR 的改动范围（全局限流位未动）… 登记为下一轮的最高优先级」
+ * —— **那句话已随本 PR 的改动过期**，写在这里是为了让后来者知道：
+ * **粗桶已经改过了，不要重复做，也不要把它回退成 socket 优先。**
  *
  * ## 本模块的口径（端点级 + 失败计数）
  *
@@ -104,6 +108,10 @@ class RedeemFailureLimiter {
     // 可注入时钟：滑窗行为（窗口过期、速率条件）必须能被**不靠等待**地测出来。
     // 真实环境用 Date.now()；测试里推进虚拟时间即可覆盖「10 分钟后窗口过期」这类分支。
     this.now = typeof options.now === 'function' ? options.now : () => Date.now()
+    // 桶数量上限（每个维度各一份）：失败一次就新建一个桶 ⇒ 攻击者用**海量不同的
+    // userId / IP** 就能把进程内存撑爆（第 3 轮红队实测边际 679 字节/(user键+ip键)对，
+    // 20k 键对 ≈ 13.5 MB，且**无上限**）。超限时按插入顺序逐出最老的桶（近似 LRU）。
+    this.maxBuckets = Number.isFinite(options.maxBuckets) ? options.maxBuckets : 10000
     // key → { failures: number[], pending: number[] }（均为滑窗时间戳数组）
     this._users = new Map()
     this._ips = new Map()
@@ -219,11 +227,36 @@ class RedeemFailureLimiter {
     if (!bucket) {
       bucket = { failures: [], pending: [] }
       store.set(key, bucket)
+      this._evictOldBuckets(store)
     }
     const cutoff = now - windowMs
     bucket.failures = bucket.failures.filter((ts) => ts > cutoff)
     bucket.pending = bucket.pending.filter((ts) => ts > cutoff)
     return bucket
+  }
+
+  /**
+   * 桶数量超限时逐出**最老**的桶（Map 的迭代顺序 = 插入顺序 ⇒ 近似 LRU）。
+   *
+   * ⚠️ 逐出会让那个 key 的计数**归零** ⇒ 逐出的代价是「该 key 多几次机会」，
+   * 不是「该 key 绕过限流」⇒ 可接受（限流器是安全阀，不是安全边界）。
+   * 一次逐出超出量（而不是只逐出 1 个）⇒ 摊还 O(1)，不会在洪泛下退化。
+   */
+  _evictOldBuckets (store) {
+    const limit = this.maxBuckets
+    if (!limit || store.size <= limit) return
+    const excess = Math.max(store.size - limit, Math.ceil(limit * 0.1))
+    let removed = 0
+    for (const key of store.keys()) {
+      if (removed >= excess) break
+      store.delete(key)
+      removed += 1
+    }
+  }
+
+  /** 当前桶数量（观测用：内存占用 / 逐出是否生效）。 */
+  bucketCounts () {
+    return { users: this._users.size, ips: this._ips.size }
   }
 
   _cleanup () {

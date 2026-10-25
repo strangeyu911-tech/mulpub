@@ -147,3 +147,38 @@
 | **P6** | 有效密钥前置（**能解出现存密文**，非「key 存在」） | D17 |
 
 **建议 P1–P6 先单独走一轮，再进实现。**
+
+---
+
+## 第三次订正（2026-10-25）· **前提级订正**：本 change 的「迁表」前提被 Phase 1 推翻
+
+### 订正内容
+
+前两轮评审（C1–C8）都在**修症状**：跨库读点、列类型、`create_all` 归属、编号机制、密钥前置。
+**没有一轮质疑过「要把 `official_keys` 搬到 Postgres」这个前提本身。**
+
+**2026-10-23 合入的 Phase 1（`credit-cost-accounting-phase1`）证明这个前提是错的**：
+
+- Phase 1 已把**价格卡 / 积分单价配置 / 事件级用量（带 user_id）**建在 **ops-center 的 SQLite**；
+- 已把**积分账户 / 不可变账本**建在 **api-publish-engine 的 Postgres**；
+- 取舍 8 明写「**事件表为下一期扣减接线预留**」，取舍 9 明写「**接线留给下一期**」
+  ⇒ **「下一期扣减接线」就是本 change 要做的事，而它的形态已由 Phase 1 框定。**
+- ops-center **早就在代调上游模型**（`prompt_eval_generation_service.py:140-159` 用 httpx 打
+  `/images/generations`，带 `Bearer` 头）⇒ 「官方算力代理放 ops-center」的地基**现成**。
+
+### 因此被推翻的三个设计决定
+
+1. **迁 `official_keys` 到 Postgres**（D13 双库 / D14 跨库读点 / `database_pg.py`）⇒ **可能不需要**
+2. **建 `official_key_envelopes` 表**（第 3 组）⇒ **不需要**（那是「代理放 api-publish-engine」的专属产物）
+3. **F3 死结（Node 解不开 Fernet）** ⇒ **自动消失**（解密留在 Python 侧）
+
+⇒ 连带 **`compute-key-envelope-migration` 整条 change 的存在前提不成立**。
+
+### 处置
+
+- **本 change 从「迁表」改向为「扣减接线」**，或与信封 change 一并重构；
+- 改向后工作量**小一个数量级**（不迁表 / 不建信封 / 不做跨语言对拍 / 不碰 F3）；
+- **仍需拍板**：① 代理放哪个进程（**推荐 ops-center**）；② 账户模型缺口
+  （`identity_credit_accounts` 单周期、无 `expires_at`、装不下双轨 ⇒ 需加列/加表）。
+
+详见 design.md **D19**。

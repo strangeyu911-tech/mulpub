@@ -9,6 +9,21 @@
 
 ## Why
 
+> 🚨 **2026-10-25 前提级订正 —— 本 change 的范围本身待拍板（详见 design.md D19）**
+>
+> **Phase 1（`credit-cost-accounting-phase1`，2026-10-23 合入）已重铺算力计费域的地基**：
+> 价格卡 / 积分单价配置 / 事件级用量（**带 user_id**）建在 **ops-center 的 SQLite**，
+> 积分账户 / 不可变账本建在 **api-publish-engine 的 Postgres**；
+> 且取舍 8 明写「**事件表为下一期扣减接线预留**」、取舍 9 明写「**接线留给下一期**」。
+> 而 ops-center **早就在代调上游模型**（`prompt_eval_generation_service.py:140-159`）。
+>
+> ⇒ **「把 `official_keys` 搬到 Postgres」这个前提可能是错的**：
+> 若**官方算力代理放 ops-center**，则 Key 池 / 价格卡 / 事件表 / Fernet 解密全在**同一进程同一库**
+> ⇒ **不需迁任何表、不需建信封表、不碰 F3 死结**，工作量小一个数量级；
+> 且 **`compute-key-envelope-migration` 整条 change 的存在前提随之不成立**。
+>
+> ⚠️ **本 change 的 Why 与 tasks 1–8 在「0 组」拍板前均属待复核状态**（见 tasks.md 第 0 组）。
+
 `compute-key-envelope-migration` 的第 3 组（表结构与迁移文件）**卡在一个硬前提上**：
 
 > 它的 tasks 3.1 要求建表 `official_key_envelopes(key_id UNIQUE **FK → official_keys.id

@@ -185,3 +185,29 @@
       本次只改 session 来源。
 - [ ] 8.8 **不在本 change 里做 reserve / settle**：那是 `compute-key-envelope-migration` 的范围，
       且依赖本 change 完成。
+
+---
+
+## 0. 前提重核（**阻塞 1–8 全部**，2026-10-25 新增）
+
+> Phase 1（`credit-cost-accounting-phase1`，2026-10-23 合入）已重铺算力计费域的地基，
+> **本 change 的「迁表」前提被推翻**（详见 design.md **D19**、review-responses「第三次订正」）。
+> **⇒ 1–8 组在 0 组全绿前一律不得开工。**
+
+- [ ] 0.1 **决定代理放在哪个进程**（**推荐 ops-center**）：
+      Key 池 / 价格卡 / 事件表 / Fernet 解密 / httpx 全在 ops-center ⇒ 不迁表、不建信封、不碰 F3；
+      放 api-publish-engine ⇒ 才是本 change 现有形态。
+- [ ] 0.2 若采纳 ops-center 路线：**重写 proposal / design / tasks 的 Why 与范围**
+      （从「迁表」改向为「扣减接线」），并**同步处置 `compute-key-envelope-migration`**
+      （其前提「Node 侧要解官方 Key」在改向后不成立 ⇒ 需归档或改向）。
+- [ ] 0.3 **账户模型缺口立项**：`identity_credit_accounts` 是单周期账户
+      （`migrations/postgresql/008_credit_ledger.sql:28-38`），
+      **无 `expires_at`**、装不下**双轨**（会员额度日释放+月清零 / 充值积分永久有效）
+      ⇒ 「FIFO 按过期时间扣减」**无字段支撑** ⇒ 加列/加表（进本 change 或独立 change，须拍板）。
+- [ ] 0.4 **订正迁移编号**：`compute-key-envelope-migration/tasks.md` 里仍写
+      `006_official_key_envelopes.sql` ⇒ 按 Phase 1 记录，「`007` 已被该 change 预定」
+      ⇒ 订正为 `007_official_key_envelopes.sql`（**编号纪律要求规格文档本身也要更新**）。
+- [ ] 0.5 **确认 006 号现状**：`ls migrations/postgresql/` 实测为
+      `002/003/004/005/006_payment_orders/008_credit_ledger/009_redeem_code_issued_to`
+      ⇒ `006` 已被占、`007` 已被预定、`008`/`009` 已被占 ⇒ 新迁移只能从 **010** 起
+      （**FK 建表顺序 = 文件名 localeCompare 序**，D15）。

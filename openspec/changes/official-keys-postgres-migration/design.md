@@ -345,3 +345,89 @@ except (ValueError, Exception):
 - `priority` 现状排序是 **ASC**（`key_service.py:306` 与 `:373`）⇒ 方案写的 `priority DESC` **与现状相反且未说明**
 - `key_service.py:360` 的 `get_active_keys_for_tier` **生产引用数为 0**（只有测试引用）⇒ 不能拿它当索引依据
 
+---
+
+## D19 · **前提根本性订正：Phase 1 已重铺地基 ⇒ 本 change 的「迁表」前提可能不成立**（2026-10-25）
+
+> ⚠️ 本节是**第三次订正**。前两次（D13 落地对象、D14 跨库边界）都只修了对**症状**的理解，
+> 没质疑「要迁表」这个**前提本身**。是 **Phase 1（`credit-cost-accounting-phase1`，2026-10-23 合入）**
+> 的落地读数让这个前提浮出水面。
+
+### 新证据：Phase 1 已经把「算力计费域」铺成两个进程两个库
+
+| 资产 | 进程 | 库 | 状态 |
+|---|---|---|---|
+| `official_keys` | ops-center | SQLite | 已有 |
+| `model_price_cards` / `credit_price_config` | ops-center | SQLite | **Phase 1 新建** |
+| `model_usage_events`（`cost_cents` / `credit_cost`，**带 user_id**） | ops-center | SQLite | **Phase 1 新建** |
+| `model_usage_daily`（日聚合，无 user_id） | ops-center | SQLite | 不动（Phase 1 取舍 8） |
+| `identity_credit_accounts` / `identity_credit_ledger` | api-publish-engine | Postgres | **Phase 1 新建** |
+
+**Phase 1 的两条取舍原文（`openspec/records/credit-cost-accounting-phase1.md`）**：
+
+> 取舍 8 · **日聚合表 `model_usage_daily` 不动**，新增事件表承载 user_id 粒度｜改既有表唯一键会破坏存量数据与既有看板；**事件表为下一期扣减接线预留**
+> 取舍 9 · 账本与账户都**物理新增**，**不接 `consumeFeature`**｜`consumeFeature` 的 amount 语义是**次数**（正整数）；积分是**金额**，两者语义不同，**接线留给下一期**
+
+**⇒ 「下一期扣减接线」就是本条线。但 Phase 1 的形态已经暗示了正确解法，而本 change 没对上。**
+
+### 关键新事实：ops-center **早就在代调上游模型**
+
+`ops-center/backend/services/prompt_eval_generation_service.py:140-159`：
+
+```python
+client = http or httpx.AsyncClient(timeout=120)
+url = f"{base_url}/images/generations"          # 或 minimax 的 /image_generation
+headers = {"Authorization": f"Bearer {api_key}"}
+resp = await client.post(url, json=payload, headers=headers)
+```
+
+⇒ ops-center 现成有：**异步 HTTP 客户端**、**Fernet 解密**、**价格卡**、**成本核算**、**用量事件表（user_id 粒度）**。
+⇒ **「把官方算力代理放在 ops-center」这条路的地基是现成的。**
+
+### 由此，三个设计决定被推翻
+
+| | 本 change 原设计 | 新形态下的结论 |
+|---|---|---|
+| **迁 `official_keys` 到 Postgres** | 要（D13 双库、`database_pg.py`、跨库读点拆两段） | **可能不需要** —— 代理放 ops-center，Key 池 / 价格卡 / 事件表全在**同一进程同一库**，原子性天然，**零跨库读点** |
+| **建 `official_key_envelopes` 表** | 要（第 3 组） | **不需要** —— 那是「代理放 api-publish-engine」路线的专属产物；路线不选就不用。**连带 `compute-key-envelope-migration` 整条 change 的前提不成立** |
+| **F3 死结（Node 解不开 Fernet）** | 致命，需重加密 + 跨语言对拍 | **自动消失** —— 解密仍在 ops-center（Python 侧），Node 不碰密文 |
+
+### 新形态的完整链路（Phase 1 已铺 80% 地基）
+
+```
+桌面端
+  ├─【新增】官方算力模式 ──► ops-center  /api/v1/compute/execute
+  │      ├─ 选 Key       official_keys (SQLite，已有)
+  │      ├─ 调上游       httpx（已有，prompt_eval 已验证可行）
+  │      ├─ 算成本       model_price_cards → cost_cents（已有）
+  │      ├─ 算积分       ceil(cost_cents / credit_unit_price_cents × multiplier)（已有）
+  │      ├─ 写事件       model_usage_events（已有，user_id 粒度）
+  │      └─【新增】跨服务调 api-publish-engine 扣分
+  │             identity_credit_accounts + identity_credit_ledger（已有）
+  └─【新增】带 user_id 的用量上报（修 usage-reporter 只有 client_id 的缺陷）
+```
+
+**⇒ 唯一必需的跨服务调用 = ops-center → api-publish-engine 扣分（一次 HTTP）。**
+
+### 仍需拍板的两项
+
+1. **代理放哪个进程？**
+   - **推荐 ops-center**：Key / 价格卡 / 事件表 / Fernet 解密 / httpx 全在它那儿 ⇒ **不需要迁任何表、不需要信封、不碰 F3**
+   - 放 api-publish-engine ⇒ 才是本 change 现在设计的形态 ⇒ 需迁 Key + 建信封 + 跨语言对拍
+
+2. **账户模型缺口仍在**：`identity_credit_accounts` 是**单周期**账户
+   （`user_id` PK / `balance` / `granted_total` / `spent_total` / `period_start` / `period_end`，
+   `migrations/postgresql/008_credit_ledger.sql:28-38`），
+   **没有 `expires_at`**，也装不下定案要求的**双轨**（会员额度日释放+月清零 / 充值积分永久有效）
+   ⇒ 「FIFO 按过期时间扣减」**目前无字段支撑** ⇒ 账户表要加列/加表。
+
+### 对本 change 的处置建议
+
+**建议：把本 change 从「迁表」改向为「扣减接线」**（或与 `compute-key-envelope-migration` 一并重构），因为：
+- 迁表的前提已被 Phase 1 推翻；
+- 「扣减接线」是 Phase 1 明写要留给下一期的那件事；
+- 改向后**工作量小一个数量级**：不需要迁表、不需要建信封、不需要跨语言对拍、不碰 F3。
+
+⚠️ **但改向后 `compute-key-envelope-migration`（信封 change）整条线的价值归零**
+（它的存在前提是「Node 侧要自己解官方 Key」，而新形态里解密留在 Python）⇒ **需要一并处置**，
+否则仓里会留一个前提已不成立的 change。

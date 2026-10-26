@@ -1,0 +1,61 @@
+{
+  "sha": "9283c2d35afeb36fe4523574019044b8ce457151",
+  "layer": "diff",
+  "mode": "skip",
+  "reason": "改动全部命中文档白名单 → 走 §11.2b docs-only 快通道",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 2,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 5,
+    "docSensitiveContentSample": [
+      "| 形象来源 | 公共形象库（授权清晰、有算法备案）或定制自有形象（有肖像权协议） | 用户上传的参考图 |",
+      "| 肖像权风险 | 通常随形象商用授权一并解决 | **在用户/集成方身上**，厂商只提供生成能力 |",
+      "| 2026-10-26 | **新增 §6.5「数字人 vs 视频模型」——把排除 MiniMax 的个例判据一般化成分类方法** | 起因是用户直接提问「数字人出视频」与「视频模型（Seedance）拿本人照片生成视频」有何不同。新增 7 个子节：① 本质差异（口型是**音频驱动**还是 **prompt 生成**）含 8 维对照表；② 对口播场景的判决（3 分钟要拼 12–36 段、人物漂移、口型不对 ⇒ **语义上不满足，不是更便宜的替代**）；③ 混合路线正在侵蚀边界（腾讯照片数智人/免训练版、即梦参考视频、**可灵把「对口型」做成独立功能=自证视频生成不自带准确口型**）；④ **五个当场可问的判断问题**；⑤ 成本结构（数字人显性可预算 vs 视频模型「表价 × 重试 × 片段数」，隐性乘出来）；⑥ 责任归属（形象库授权 vs 参考图像肖像权风险在集成方）；⑦ 结论表（四类需求分别该用什么）。同时在 §6.1 加交叉引用，把 MiniMax 定位为该判据的一个实例而非特例 |"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "786c2cc16036e213d05ad137050227e6b88baca571da4c6ebfe77eb90cdae494",
+  "decidedAt": "2026-10-26T15:09:39.104Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": false,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

@@ -54,6 +54,7 @@ const i18n = createI18n({
     zh: {
       automation: {
         title: '自动化', subtitle: 'sub', resourceNotice: 'notice', create: '新建任务',
+        wfRunsTitle: '运行记录',
         createTitle: '新建', editTitle: '编辑', empty: '还没有自动化任务', unreadable: '读取失败',
         saveFailed: '保存失败', colName: '名称', colTrigger: '触发', colAction: '动作',
         colPolicy: '策略', colLastRun: '上次运行', colOps: '操作', actionPipeline: '流水线',

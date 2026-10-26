@@ -65,7 +65,7 @@ async function runCleanups(cleanups) {
 async function startServices({ container, usageTracker, store, taskQueue, callbackServer, scheduler,
   keywordMonitor, analyticsService, pythonBridge, CloudPublisher, modelProviderManager, getMainWin,
   createIdentityService, loadIdentityRuntimeEnv, waitForStoreReady, opsCenterSync, automationScheduler,
-  usageReporter }) {
+  workflowQueue, usageReporter }) {
   /** @type {Array<() => unknown | Promise<unknown>>} */
   const cleanups = []
   let rollbackPromise = null
@@ -150,6 +150,13 @@ async function startServices({ container, usageTracker, store, taskQueue, callba
     cleanups.push(() => { if (scheduler.stopAll) scheduler.stopAll() })
     // 自动化任务：退出时清干净全部定时器（定时器已 unref，这里保证不残留）
     cleanups.push(() => { if (automationScheduler && automationScheduler.stopAll) automationScheduler.stopAll() })
+    // 复合工作流到点队列：同样只清定时器，队列数据留在 settings 里等下次启动恢复
+    cleanups.push(() => {
+      try {
+        const q = workflowQueue || (container && typeof container.get === 'function' ? container.get('workflowQueue') : null)
+        if (q && typeof q.stop === 'function') q.stop()
+      } catch (_) { /* 容器已拆时忽略 */ }
+    })
 
     const unsubscribeAlert = keywordMonitor.onAlert((keyword, current, previous, ratio) => {
       const win = getMainWin()
@@ -306,6 +313,22 @@ async function startServices({ container, usageTracker, store, taskQueue, callba
           automationScheduler.start()
         } catch (error) {
           log.notify('Automation', 'automation-scheduler-start-failed', { level: 'WARN', error: errorMessage(error) })
+        }
+      }
+      // 复合工作流到点队列（2026-10-26）：应用启动即恢复，24h 内过期项补发并标 late。
+      // 从容器现取而不是要求调用方多传一个依赖：漏传会表现为「队列永不启动」，
+      // 而这条链路没有任何界面信号，属于最不该靠人记住的形态。
+      const wfQueue = workflowQueue || (container && typeof container.get === 'function'
+        ? (() => { try { return container.get('workflowQueue') } catch (_) { return null } })()
+        : null)
+      if (wfQueue && typeof wfQueue.start === 'function') {
+        try {
+          wfQueue.start()
+          Promise.resolve(wfQueue.tick()).catch((error) => {
+            log.notify('WorkflowQueue', 'workflow-queue-tick-failed', { level: 'WARN', error: errorMessage(error) })
+          })
+        } catch (error) {
+          log.notify('WorkflowQueue', 'workflow-queue-start-failed', { level: 'WARN', error: errorMessage(error) })
         }
       }
       return restored

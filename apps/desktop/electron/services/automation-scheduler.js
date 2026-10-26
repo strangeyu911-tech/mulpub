@@ -33,6 +33,7 @@ const {
   describeTrigger,
   MAX_TASKS,
 } = require('./automation-task')
+const { describeWorkflow } = require('./workflow-schema')
 
 /** 单任务硬超时：防一个卡死的 run 永久占着执行位 */
 const DEFAULT_RUN_TIMEOUT_MS = 30 * 60 * 1000
@@ -45,6 +46,7 @@ class AutomationScheduler {
    *   log?: { info: Function, warn: Function, error: Function },
    *   store?: { getSetting: Function, setSetting: Function },
    *   pipeline?: { startRun: Function, getRunSnapshot: Function },
+   *   workflowRunner?: { startRun: Function },
    *   notify?: (payload: object) => void,
    * }} deps
    */
@@ -52,6 +54,7 @@ class AutomationScheduler {
     this._log = deps.log || { info: () => {}, warn: () => {}, error: () => {}, notify: () => {} }
     this._store = deps.store || null
     this._pipeline = deps.pipeline || null
+    this._workflowRunner = deps.workflowRunner || null
     this._notify = typeof deps.notify === 'function' ? deps.notify : () => {}
     this._settingsKey = deps.settingsKey || 'automation_tasks'
 
@@ -109,10 +112,13 @@ class AutomationScheduler {
 
   /** 界面视图：补上触发摘要与运行中标记 */
   _toView (task) {
+    const isWorkflow = task.action && task.action.type === 'compositeWorkflow'
     return {
       ...task,
       triggerLabels: (task.triggers || []).map(describeTrigger),
       running: this._running.get(task.id) === true,
+      // 列表页不重复算摘要：执行器与渲染层共用同一份 describeWorkflow
+      actionSummary: isWorkflow ? describeWorkflow(task.action.config) : '',
     }
   }
 
@@ -231,7 +237,9 @@ class AutomationScheduler {
       return { ok: false, reason: 'already-running' }
     }
     if (!task.enabled) return { ok: false, reason: 'disabled' }
-    if (!this._pipeline || typeof this._pipeline.startRun !== 'function') {
+    const hasPipeline = this._pipeline && typeof this._pipeline.startRun === 'function'
+    const hasWorkflowRunner = this._workflowRunner && typeof this._workflowRunner.startRun === 'function'
+    if (!hasPipeline && !hasWorkflowRunner) {
       this._markResult(task, 'failed', '自动化执行器未就绪')
       this._notify({
         level: 'error',
@@ -279,6 +287,7 @@ class AutomationScheduler {
     // 既不 fallback 到 pipeline（会静默跑错链路），也不 throw
     // （throw 发生在调度循环里，一条脏任务就会让其余任务全部不再触发）。
     const type = task.action && task.action.type
+    if (type === 'compositeWorkflow') return this._executeWorkflow(task)
     if (type && type !== 'fullAutoPipeline') {
       if (type === 'creatorMonitor') return this._executeCreatorMonitor(task)
       return this._quarantineUnknownType(task)
@@ -302,6 +311,30 @@ class AutomationScheduler {
       }
     }
     // skip 策略：重试耗尽仍失败
+    return { status: 'failed', error: lastError }
+  }
+
+  /**
+   * 复合工作流：一次运行 = 采集 → 去重 → 改写 → 创作 → 排期。
+   * 重试语义与旧动作一致：整条 workflow 重跑（不是只重跑失败条目），
+   * 因为失败条目已写入运行记录，重跑会按账本去重避免重复发布。
+   */
+  async _executeWorkflow (task) {
+    const runner = this._workflowRunner
+    if (!runner || typeof runner.startRun !== 'function') {
+      return { status: 'failed', error: '工作流执行器未就绪' }
+    }
+    const attempts = (task.maxRetries || 0) + 1
+    let lastError = ''
+    for (let i = 0; i < attempts; i++) {
+      const result = await runner.startRun(task)
+      if (result && result.ok) {
+        return { status: 'completed', runId: result.runId || '' }
+      }
+      lastError = (result && result.error) || '工作流执行失败'
+      if (task.failurePolicy === 'abort') return { status: 'failed', error: lastError }
+      if (result && result.error === 'ledger-unreadable') break
+    }
     return { status: 'failed', error: lastError }
   }
 

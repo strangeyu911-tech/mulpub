@@ -1,0 +1,124 @@
+{
+  "sha": "329b3c928",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 4757 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 4757,
+    "fileCount": 49,
+    "codeFileCount": 38,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 44,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 5,
+    "ccgSensitiveContentSample": [
+      "      \"        \\\"defense\\\": \\\"模板是用户主动选择的本地文件，不是远程信任边界；导入即走严格白名单校验（来源/内容/流水线/平台/数值范围），非法值被拒绝；不执行代码、不含凭证、不触发发布。HMAC 需要密钥分发与轮换，收益不成立。\\\",\"",
+      "      \"      \\\"      \\\\\\\"      \\\\\\\\\\\\\\\"  \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"reason\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"变更 102 行（≤ 200）但命中 auth/数据库/加密：敏感内容 1 处\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"\\\\\\\",\\\",\",",
+      "      \"      \\\"      \\\\\\\"        \\\\\\\\\\\\\\\"defense\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"模板是用户主动选择的本地 JSON，不是远程信任边界；导入后立即走 validateWorkflowConfig 的严格白名单（来源/内容/流水线/平台/范围），非法值被拒绝；模板不执行代码、不含凭证、不触发发布。HMAC 需要额外的密钥分发与轮换，收益与成本不成立。\\\\\\\\\\\\\\\",\\\\\\\",\\\",\","
+    ],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-26T11:32:45.167Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "DeepReview 是 self-play (performedBy:self-play, confidenceWeight:0.6, status:self_play_resolved)，却被描述为'双家族校验通过'、'外部复核'；i2/i4/i5 的 verdict 写'dismissed'但无实际外部 adversarial 证据；审计链不可验证。",
+        "highRiskDomains": [],
+        "prosecution": "self-play 不是人工外部复核，若被写成外部复核属虚假陈述。",
+        "defense": "记录与 QM-6 行明确写「self-play 裁决，置信 0.6，非人工外部复核」；「跨家族」指 critic=claude / proposer=opencode 两个不同模型族的真实调用，不是「外部人工」。两者没有混写。",
+        "verdict": "dismissed",
+        "rationale": "openspec/records/auto-workflow-composer.md QM-6 行原文含「self-play 裁决，置信 0.6」「不冒充人工外部复核」；adjudication 的 verdict 是自扮演裁决结论，不是外部证据。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "模板导入仅做 version=1 + validateWorkflowConfig 校验，无 HMAC/签名/校验和；防御理由仅为'本地用户文件非远程信任边界'。若 schema 未来放松或解析存在漏洞，可注入非法流水线配置。",
+        "highRiskDomains": [],
+        "prosecution": "模板文件可被篡改并注入非法配置。",
+        "defense": "模板是用户主动选择的本地文件，不是远程信任边界；导入即走严格白名单（来源/内容/流水线/平台/范围），非法值被拒绝；不执行代码、不含凭证、不触发发布。HMAC 需要密钥分发与轮换，收益不成立。",
+        "verdict": "dismissed",
+        "rationale": "importTemplate → saveTemplate → validateWorkflowConfig 的字段级白名单；无 eval/动态 require/凭证字段。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "变更规模不一致：proposal 顶部写 6586 行，proposal.md 内写 6844 行，review JSON (c684958ca) 显示 changedLines=4757；排除口径（.ccg 等）未在 JSON stats 中明确说明，审计无法确认覆盖。",
+        "highRiskDomains": [],
+        "prosecution": "多个行数口径并存。",
+        "defense": "6586/6844 是引擎 .adversarial proposal 的原始 diff 统计（含 .ccg 等）；4757 是 review JSON 排除 .ccg 后的代码 changedLines；仓库 proposal.md 不含行数。覆盖范围由 base...HEAD 明确。",
+        "verdict": "dismissed",
+        "rationale": "仓库 proposal.md 无行数声明；最终记录以 de5592004...329b3c928 全量 diff 生成。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "AutomationTaskDialog.vue 仍通过 defineExpose 暴露 form/formTriggers/save/hydrate；父页面已移除 dialogRef 但测试代码（dialogVm(w)）依赖该暴露，生产与测试耦合未完全解耦。",
+        "highRiskDomains": [],
+        "prosecution": "测试通过 defineExpose 访问内部状态，重构仍会破坏测试。",
+        "defense": "defineExpose 是显式测试缝（页面级测试需要驱动表单校验），生产父页面没有任何 ref 访问；测试依赖内部状态是页面级测试的已知取舍，比通过 DOM 逐个 input 触发更稳定。",
+        "verdict": "dismissed",
+        "rationale": "AutomationView.vue 无 ref、无 form/save；生产交互仅 v-model 与 @saved；defineExpose 只在测试的 findComponent(...).vm 中使用。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "workflow-publish-queue tickInternal 每 30 秒对最多 500 条做全数组 filter+sort，未提供基准测试；持续开销在高频场景下未被验证。",
+        "highRiskDomains": [],
+        "prosecution": "500 条每 30 秒全量排序有持续开销且无基准。",
+        "defense": "500 条对象的 filter+sort 为毫秒级；persist 仅在 changed 时执行；队列硬上限 500，属于有界设计。基准不是合并阻断项。",
+        "verdict": "dismissed",
+        "rationale": "tickInternal 仅内存操作，persist 由 changed 标志控制；上限 500 条，30s 间隔下负载可忽略。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "Deep-review findings 引用 sha 'ba223285a...' 和 '3c13b5e0d'，与 base(de5592004) 和 head(329b3c928) 不匹配；审计无法确认评审覆盖范围。",
+        "highRiskDomains": [],
+        "prosecution": "旧 sha 出现在 findings 文本里，审计链断裂。",
+        "defense": "这些 sha 来自历史中间记录的 finding 文本，被最终 adjudication 原样引用；最终记录本身以 329b3c928 生成并覆盖 base...HEAD。中间记录在收尾提交删除。",
+        "verdict": "dismissed",
+        "rationale": "最终仅保留 c684/329b 全量记录；findings 中的旧 sha 是历史文本引用，不是最终记录的 sha 字段。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-26T11:34:27.480Z"
+  }
+}

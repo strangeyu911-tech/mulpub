@@ -300,6 +300,11 @@ function registerAllIpcHandlers({ app, BrowserWindow, context }) {
     }
   })()
   Object.assign(handlerDependencies, creatorDeps)
+  // 复合工作流（2026-10-26）：模板库 / 运行记录 / 审核动作走 workflowService。
+  // 用 resolveContextDep 而不是顶层直取：context 是分组 Proxy，没有 get 方法（见上）。
+  Object.assign(handlerDependencies, {
+    workflowService: resolveContextDep('workflowService'),
+  })
 
   let state = registrationStates.get(context)
   if (!state) {

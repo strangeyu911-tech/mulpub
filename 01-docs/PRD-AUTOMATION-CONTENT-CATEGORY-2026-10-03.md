@@ -4,6 +4,8 @@
 > **当前版本**：v1.0.0
 > **交付分支**：`automation-content-category`
 > **Worktree**：`D:\Data\projects\mp-worktrees\mp-automation-content-category`
+> **后续扩展**：2026-10-26 的复合工作流（来源/改写/内容/流水线/节奏/多平台/模板）见
+> `PRD-AUTO-WORKFLOW-COMPOSER-2026-10-26.md`；本文的「全自动流水线」动作仍保留，配置面以新 PRD 为准。
 
 ---
 

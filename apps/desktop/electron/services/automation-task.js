@@ -27,6 +27,8 @@ const MAX_RETRIES = 3
 const INTERVAL_MIN_MINUTES = 5
 const INTERVAL_MAX_MINUTES = 1440 // 24h
 
+const { validateWorkflowConfig } = require('./workflow-schema')
+
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
 
 /**
@@ -101,6 +103,9 @@ function validateAutomationTask (raw, ctx = {}) {
 
   const failurePolicy = FAILURE_POLICIES.includes(String(raw.failurePolicy)) ? String(raw.failurePolicy) : 'skip'
 
+  const action = normalizeAction(raw.action, ctx.now)
+  if (!action.ok) return { ok: false, reason: action.reason, errors: action.errors }
+
   return {
     ok: true,
     task: {
@@ -108,7 +113,7 @@ function validateAutomationTask (raw, ctx = {}) {
       name,
       enabled: raw.enabled === false ? false : true,
       triggers,
-      action: { type: 'fullAutoPipeline', config: (raw.action && raw.action.config) || {} },
+      action: action.action,
       failurePolicy,
       maxRetries,
       concurrency: 'background',
@@ -117,6 +122,23 @@ function validateAutomationTask (raw, ctx = {}) {
       lastError: typeof raw.lastError === 'string' ? raw.lastError : '',
     },
   }
+}
+
+/**
+ * 动作归一化：compositeWorkflow 走完整配置校验；旧 fullAutoPipeline 保持原样。
+ * 未知动作类型不在这里静默改名 —— 交由调度器隔离并出声。
+ * @param {unknown} rawAction
+ * @param {number} [now]
+ */
+function normalizeAction (rawAction, now) {
+  const action = rawAction && typeof rawAction === 'object' ? rawAction : {}
+  const type = typeof action.type === 'string' && action.type ? action.type : 'fullAutoPipeline'
+  if (type === 'compositeWorkflow') {
+    const validated = validateWorkflowConfig(action.config, { now })
+    if (!validated.ok) return { ok: false, reason: 'workflow-config', errors: validated.errors }
+    return { ok: true, action: { type: 'compositeWorkflow', config: validated.config } }
+  }
+  return { ok: true, action: { type, config: action.config && typeof action.config === 'object' ? action.config : {} } }
 }
 
 /**
@@ -156,12 +178,14 @@ function normalizeAutomationTasks (raw, opts = {}) {
 
     seenIds.add(id)
     seenNames.add(name)
+    const action = normalizeAction(item.action, opts.now)
+    if (!action.ok) { dropped.push({ id, reason: action.reason }); continue }
     tasks.push({
       id,
       name,
       enabled: item.enabled === false ? false : true,
       triggers,
-      action: { type: 'fullAutoPipeline', config: (item.action && item.action.config) || {} },
+      action: action.action,
       failurePolicy: FAILURE_POLICIES.includes(String(item.failurePolicy)) ? String(item.failurePolicy) : 'skip',
       maxRetries: Math.min(Math.max(Number(item.maxRetries) || 0, 0), MAX_RETRIES),
       concurrency: 'background',

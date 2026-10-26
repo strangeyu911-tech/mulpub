@@ -337,6 +337,12 @@ function registerHandlers (ipcMain, deps) {
       findFfmpeg: () => mediaToolPaths.findFfmpeg(),
       findFfprobe: () => mediaToolPaths.findFfprobe(),
     })
+    // 复合工作流复用同一个出期宿主（2026-10-26）：宿主持有频道忙标记与取消登记，
+    // 另建一份会让「工作流正在出期」与「手动出期」互不可见，两个入口同时跑同一频道。
+    try {
+      const hostModule = require('../services/podcast-episode-host')
+      if (typeof hostModule.setSharedEpisodeHost === 'function') hostModule.setSharedEpisodeHost(episodeHost)
+    } catch (_) { /* 共享登记失败不影响播客页自身 */ }
     return episodeHost
   }
 

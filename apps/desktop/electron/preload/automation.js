@@ -16,6 +16,18 @@ function createAutomationApi(ipcRenderer) {
     automationUpdate: (id, payload) => ipcRenderer.invoke('automation:update', id, payload),
     automationRemove: (id) => ipcRenderer.invoke('automation:remove', id),
     automationRunNow: (id) => ipcRenderer.invoke('automation:run-now', id),
+    // ── 复合工作流（2026-10-26）─────────────────────────────
+    automationListTemplates: () => ipcRenderer.invoke('automation:templates:list'),
+    automationSaveTemplate: (payload) => ipcRenderer.invoke('automation:templates:save', payload),
+    automationDeleteTemplate: (id) => ipcRenderer.invoke('automation:templates:delete', id),
+    automationExportTemplate: (id) => ipcRenderer.invoke('automation:templates:export', id),
+    automationImportTemplate: (payload) => ipcRenderer.invoke('automation:templates:import', payload),
+    automationWorkflowMeta: () => ipcRenderer.invoke('automation:workflow:meta'),
+    automationPreviewPlan: (payload) => ipcRenderer.invoke('automation:preview-plan', payload),
+    automationListRuns: () => ipcRenderer.invoke('automation:runs:list'),
+    automationGetRun: (runId) => ipcRenderer.invoke('automation:runs:get', runId),
+    automationApproveRun: (runId) => ipcRenderer.invoke('automation:runs:approve', runId),
+    automationCancelRun: (runId) => ipcRenderer.invoke('automation:runs:cancel', runId),
     // 后台任务通知（失败 / 从失败恢复）：渲染层转 toast，不打断当前操作
     onAutomationNotification: (cb) => {
       const h = (_, payload) => cb(payload)

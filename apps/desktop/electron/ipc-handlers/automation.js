@@ -22,8 +22,16 @@ function unavailable () {
 }
 
 function registerHandlers (ipcMain, deps) {
-  const { automationScheduler, log } = deps
+  const { automationScheduler, workflowService, log } = deps
   const warn = (e) => log && log.warn('[ipc:automation]', ((e && e.message) || String(e)))
+
+  const wfChannels = [
+    'automation:templates:list', 'automation:templates:save', 'automation:templates:delete',
+    'automation:templates:export', 'automation:templates:import',
+    'automation:workflow:meta',
+    'automation:preview-plan',
+    'automation:runs:list', 'automation:runs:get', 'automation:runs:approve', 'automation:runs:cancel',
+  ]
 
   if (!automationScheduler) {
     log && log.error('Automation', 'automationScheduler service not provided — handlers registered in degraded mode')
@@ -31,10 +39,39 @@ function registerHandlers (ipcMain, deps) {
     for (const channel of [
       'automation:list', 'automation:create', 'automation:update',
       'automation:remove', 'automation:run-now',
+      ...wfChannels,
     ]) {
       ipcMain.handle(channel, () => unavailable())
     }
     return
+  }
+
+  // ── 复合工作流：模板 / 计划预览 / 运行记录 ─────────────────────────
+  // workflowService 缺席时同样注册通道并回具体原因；不要 return（否则任务通道也一起没了）
+  if (!workflowService) {
+    log && log.error('Automation', 'workflowService not provided — workflow channels degraded')
+    for (const channel of wfChannels) ipcMain.handle(channel, () => unavailable())
+  } else {
+    const guard = (fn) => {
+      try { return { code: 0, ...fn() } } catch (e) { warn(e); return { code: -1, message: e.message } }
+    }
+    ipcMain.handle('automation:templates:list', () => guard(() => ({ data: workflowService.listTemplates() })))
+    ipcMain.handle('automation:templates:save', (_e, payload) => guard(() => workflowService.saveTemplate(payload)))
+    ipcMain.handle('automation:templates:delete', (_e, id) => guard(() => workflowService.deleteTemplate(String(id || ''))))
+    ipcMain.handle('automation:templates:export', (_e, id) => guard(() => workflowService.exportTemplate(String(id || ''))))
+    ipcMain.handle('automation:templates:import', (_e, payload) => guard(() => workflowService.importTemplate(payload)))
+    ipcMain.handle('automation:workflow:meta', () => guard(() => ({ data: workflowService.getWorkflowMeta() })))
+    ipcMain.handle('automation:preview-plan', (_e, payload) => guard(() => {
+      const p = payload && typeof payload === 'object' ? payload : {}
+      return workflowService.previewPlan(p.config, { itemCount: p.itemCount })
+    }))
+    ipcMain.handle('automation:runs:list', () => guard(() => ({ data: { runs: workflowService.listRuns() } })))
+    ipcMain.handle('automation:runs:get', (_e, runId) => guard(() => ({ data: workflowService.getRun(String(runId || '')) })))
+    ipcMain.handle('automation:runs:approve', async (_e, runId) => {
+      try { return { code: 0, ...(await workflowService.approveRun(String(runId || ''))) } }
+      catch (e) { warn(e); return { code: -1, message: e.message, ok: false } }
+    })
+    ipcMain.handle('automation:runs:cancel', (_e, runId) => guard(() => workflowService.cancelRun(String(runId || ''))))
   }
 
   ipcMain.handle('automation:list', () => {

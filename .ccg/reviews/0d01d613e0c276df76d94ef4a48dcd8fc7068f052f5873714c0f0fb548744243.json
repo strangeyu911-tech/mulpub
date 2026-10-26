@@ -1,0 +1,91 @@
+{
+  "sha": "3a51bb53ba361e6eedc8f7b87fe27e1c77d0aa88",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 2 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 2,
+    "fileCount": 1,
+    "codeFileCount": 1,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "0d01d613e0c276df76d94ef4a48dcd8fc7068f052f5873714c0f0fb548744243",
+  "decidedAt": "2026-10-26T12:07:23.956Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "finding": "Review JSON stats say changedLines=2, fileCount=1, but diff adds a 57-line new JSON file plus a 2-line test edit; the new review artifact is omitted or miscounted.",
+        "highRiskDomains": [],
+        "prosecution": "统计与实际 diff 不一致会掩盖评审范围。",
+        "defense": "评审 artifact 位于 .ccg/，判据刻意排除 .ccg 后统计代码变更；2 行 = observability-messagekey.test.js 的两行登记，fileCount=1 正确。新增 JSON 是评审自身产物，不是被评审代码。",
+        "verdict": "dismissed",
+        "rationale": "ccg-review-decider 的 stats 以排除 .ccg 的代码 diff 为准；本次实际代码变更是 test 文件新增 2 行 ALLOWED_KEYS。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "deepReview.required is true but status=pending, performedBy=null, evidence/findings=null; proposal advances without completed mandatory deep review.",
+        "highRiskDomains": [],
+        "prosecution": "required=true 却 pending，说明深度评审未完成。",
+        "defense": "这是评审开始前的记录状态；本轮 deep review 正在执行，完成后会写回同一记录（状态 self_play_resolved）。",
+        "verdict": "dismissed",
+        "rationale": "本轮已执行 ccg-deep-review --sha 066b1136c --base 3a51bb53b，完成后记录状态更新。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "New ALLOWED_KEYS (WorkflowQueue:...) added in test with no corresponding source-change evidence in diff; usage not verifiable from proposal.",
+        "highRiskDomains": [],
+        "prosecution": "新增 allowlist 键没有对应源码调用，可能是空登记。",
+        "defense": "对应调用点在已提交的 phase3-services.js：`log.notify('WorkflowQueue','workflow-queue-tick-failed'...)` 与 `workflow-queue-start-failed`；本地运行 observability-messagekey.test.js 36 项全绿（总数断言通过）。",
+        "verdict": "dismissed",
+        "rationale": "phase3-services.js:328/331 为两处 notify；测试 36/36 通过，证明键与调用一一对应。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-26T12:09:15.862Z"
+  }
+}

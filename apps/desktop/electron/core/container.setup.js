@@ -207,17 +207,9 @@ function createContainer(options) {
       log: c.get("logger"),
     });
   });
-  // 自动化任务调度器（2026-10-03）：定时 / 应用启动触发，后台执行。
-  // 执行器复用 fullAutoPipeline；通知出口由 bootstrap 用 setNotify 注入（容器装配期
-  // 还没有主窗口，这里拿不到 window，硬取会让通知永久静默）。
-  container.register("automationScheduler", function(c) {
-    const { AutomationScheduler } = require('../services/automation-scheduler');
-    return new AutomationScheduler({
-      log: c.get("logger"),
-      store: c.get("store"),
-      pipeline: c.get("fullAutoPipeline"),
-    });
-  });
+  // 复合自动化工作流 + 自动化调度器：拆到兄弟模块，避免主表撞 500 行硬限。
+  // 工作流四个注册项共享同一个 workflowRuntime（同一份账本/队列），详见分片头注。
+  require('./container.setup.workflow').registerWorkflowServices(container);
   // auditDir 显式注入：AuditLogger 无目录时静默丢弃所有防护事件（回归：采集失败无日志）。
   // 注意：目录在装配时快照式定型（与 app-*.log 同源）；若未来支持运行时切换日志目录，
   // 需同步评估审计日志是否跟随（当前生产无 setLogOptions 调用，契约稳定）。

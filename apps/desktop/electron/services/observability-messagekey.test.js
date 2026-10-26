@@ -109,6 +109,8 @@ const ALLOWED_KEYS = new Set([
   'Scheduler:resume-guard-attached',
   'Scheduler:resume-guard-attach-failed',
   'BatchManager:scheduled-batches-restored',
+  'WorkflowQueue:workflow-queue-tick-failed',
+  'WorkflowQueue:workflow-queue-start-failed',
   'App:tasks-recovered-from-queue',
   'window:main-window-shown',
   'window:main-window-load-failed',

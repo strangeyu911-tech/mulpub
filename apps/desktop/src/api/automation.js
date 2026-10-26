@@ -31,6 +31,52 @@ export async function automationRunNow (id) {
   return invokeWithFallback('automationRunNow', { code: -1, message: 'electronAPI not available', ok: false, data: {} }, id)
 }
 
+// ── 复合自动化工作流（2026-10-26）────────────────────────────
+
+export async function listWorkflowTemplates () {
+  return invokeWithFallback('automationListTemplates', { code: -1, message: 'electronAPI not available', data: { builtin: [], custom: [] } })
+}
+
+export async function saveWorkflowTemplate (payload) {
+  return invokeWithFallback('automationSaveTemplate', { code: -1, message: 'electronAPI not available', ok: false }, payload)
+}
+
+export async function deleteWorkflowTemplate (id) {
+  return invokeWithFallback('automationDeleteTemplate', { code: -1, message: 'electronAPI not available', ok: false }, id)
+}
+
+export async function exportWorkflowTemplate (id) {
+  return invokeWithFallback('automationExportTemplate', { code: -1, message: 'electronAPI not available', ok: false }, id)
+}
+
+export async function importWorkflowTemplate (payload) {
+  return invokeWithFallback('automationImportTemplate', { code: -1, message: 'electronAPI not available', ok: false }, payload)
+}
+
+export async function getWorkflowMeta () {
+  return invokeWithFallback('automationWorkflowMeta', { code: -1, message: 'electronAPI not available', data: null })
+}
+
+export async function previewWorkflowPlan (payload) {
+  return invokeWithFallback('automationPreviewPlan', { code: -1, message: 'electronAPI not available', ok: false }, payload)
+}
+
+export async function listWorkflowRuns () {
+  return invokeWithFallback('automationListRuns', { code: -1, message: 'electronAPI not available', data: { runs: [] } })
+}
+
+export async function getWorkflowRun (runId) {
+  return invokeWithFallback('automationGetRun', { code: -1, message: 'electronAPI not available', data: null }, runId)
+}
+
+export async function approveWorkflowRun (runId) {
+  return invokeWithFallback('automationApproveRun', { code: -1, message: 'electronAPI not available', ok: false }, runId)
+}
+
+export async function cancelWorkflowRun (runId) {
+  return invokeWithFallback('automationCancelRun', { code: -1, message: 'electronAPI not available', ok: false }, runId)
+}
+
 /**
  * 订阅后台任务通知（失败 / 从失败恢复）。
  * @param {(payload: {level:string,title:string,message:string,taskId:string}) => void} callback

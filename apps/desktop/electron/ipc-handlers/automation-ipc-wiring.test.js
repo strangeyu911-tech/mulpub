@@ -35,12 +35,14 @@ function read(rel) {
 
 describe('自动化 IPC 装配链 · 结构锁', () => {
   it('container 注册了 automationScheduler', () => {
-    const src = read('electron/core/container.setup.js')
+    // 2026-10-26：工作流注册拆到兄弟模块 container.setup.workflow.js（500 行硬限），
+    // 结构锁必须覆盖两个文件，否则拆分会把「注册存在」读成缺失。
+    const src = read('electron/core/container.setup.js') + '\n' + read('electron/core/container.setup.workflow.js')
     expect(src).toMatch(/container\.register\(\s*["']automationScheduler["']/)
   })
 
   it('container 的 assertRequired 含 automationScheduler', () => {
-    const src = read('electron/core/container.setup.js')
+    const src = read('electron/core/container.setup.js') + '\n' + read('electron/core/container.setup.workflow.js')
     expect(src).toMatch(/assertRequired\([\s\S]*?["']automationScheduler["']/)
   })
 

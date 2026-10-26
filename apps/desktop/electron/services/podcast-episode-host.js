@@ -357,4 +357,25 @@ function removeRunDir (dir, fs, log) {
   }
 }
 
-module.exports = { createEpisodeHost, HOST_ERRORS, META_ALLOWLIST, TITLE_MAX_CODEPOINTS, removeRunDir }
+/**
+ * 共享出期宿主（2026-10-26）：播客页与复合工作流必须用**同一个**宿主实例，
+ * 否则两边的频道忙标记与取消登记互不可见，会出现「工作流正在出期时手动又出一次」。
+ * 由播客 IPC 在惰性创建宿主时登记；工作流侧只读。
+ */
+let sharedEpisodeHost = null
+function setSharedEpisodeHost (host) {
+  sharedEpisodeHost = host && typeof host === 'object' ? host : null
+}
+function getSharedEpisodeHost () {
+  return sharedEpisodeHost
+}
+
+module.exports = {
+  createEpisodeHost,
+  HOST_ERRORS,
+  META_ALLOWLIST,
+  TITLE_MAX_CODEPOINTS,
+  removeRunDir,
+  setSharedEpisodeHost,
+  getSharedEpisodeHost,
+}

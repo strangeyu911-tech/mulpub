@@ -1,0 +1,100 @@
+{
+  "sha": "f3c8d3360",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 59 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 59,
+    "fileCount": 6,
+    "codeFileCount": 4,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-26T12:45:32.522Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "新提交的评审 JSON（0563/649c）deepReview.required=true、findings=null、状态 pending，备注明确“3/3 条未定”，未完成裁决即入库。",
+        "highRiskDomains": [],
+        "prosecution": "pending 记录若被当成评审证据，等于未评审就合并。",
+        "defense": "0563/649c 是 pre-commit 生成的中间记录；本次 deep review 针对最终 commit f3c8d3360 执行并写回 f3c8d3360.json，完成后只保留已裁决记录，中间记录删除。",
+        "verdict": "dismissed",
+        "rationale": "本轮执行 `ccg-deep-review --sha f3c8d3360 --base 90c25bd55`；收尾时删除 0563/649c 等 pending 中间记录，仅保留已 resolved 的最终记录。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "测试拼接 container.setup.js + container.setup.workflow.js；若拆分文件缺失，错误无法定位缺失源。",
+        "highRiskDomains": [],
+        "prosecution": "拼接字符串后无法知道哪个文件缺失。",
+        "defense": "read() 对每个文件单独 fs.readFileSync；任一文件缺失会抛 ENOENT 并带完整路径，定位到具体文件；断言失败时也会显示拼接内容。",
+        "verdict": "dismissed",
+        "rationale": "automation-ipc-wiring.test.js 的 read(rel) 使用 path.join(ROOT, rel) 并逐文件读取，ENOENT 消息含具体路径。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "AutomationTaskDialog.vue / WorkflowRunsDrawer.vue 移除了 mask @click.self 关闭，但可见区域未新增替代关闭控件（仅依赖 Esc）；同时每实例向 window 注册全局 keydown。",
+        "highRiskDomains": [],
+        "prosecution": "移除点击遮罩关闭后，鼠标用户没有可见的关闭入口。",
+        "defense": "两个组件都有可见关闭按钮：Drawer 头部「取消」按钮，Dialog 底部「取消」按钮；Esc 只是键盘补充。window keydown 在 onBeforeUnmount 移除，不会泄漏。",
+        "verdict": "dismissed",
+        "rationale": "WorkflowRunsDrawer.vue 第 6 行 close 按钮；AutomationTaskDialog.vue 第 127 行 close 按钮；两处 onBeforeUnmount 均 removeEventListener。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "WorkflowRunsDrawer.vue 仅为在 keydown 访问 modelValue 而引入 const props = defineProps(...)，增加不必要间接引用。",
+        "highRiskDomains": [],
+        "prosecution": "多一层 props 间接引用。",
+        "defense": "Vue `<script setup>` 中访问 props 的标准写法就是 `const props = defineProps(...)`；模板仍可直接用 modelValue，运行时零额外开销。",
+        "verdict": "dismissed",
+        "rationale": "defineProps 返回值赋给 props 是官方推荐用法；keydown 需要读取 props.modelValue，无法用模板变量替代。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-26T12:48:21.503Z"
+  }
+}

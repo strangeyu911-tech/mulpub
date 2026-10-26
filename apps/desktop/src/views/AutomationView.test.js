@@ -13,19 +13,49 @@ const mockState = {
   updateRes: { code: 0, ok: true, task: {} },
   removeRes: { code: 0, ok: true },
   runRes: { code: 0, ok: true, data: {} },
+  lastPayload: null,
   notifier: null,
 }
 
 vi.mock('@/api/automation', () => ({
   automationList: () => Promise.resolve(mockState.listRes),
-  automationCreate: () => Promise.resolve(mockState.createRes),
-  automationUpdate: () => Promise.resolve(mockState.updateRes),
+  automationCreate: (payload) => { mockState.lastPayload = payload; return Promise.resolve(mockState.createRes) },
+  automationUpdate: (_id, payload) => { mockState.lastPayload = payload; return Promise.resolve(mockState.updateRes) },
   automationRemove: () => Promise.resolve(mockState.removeRes),
   automationRunNow: () => Promise.resolve(mockState.runRes),
+  listWorkflowTemplates: () => Promise.resolve({ code: 0, data: { builtin: [], custom: [] } }),
+  saveWorkflowTemplate: () => Promise.resolve({ code: 0, ok: true, template: {} }),
+  getWorkflowMeta: () => Promise.resolve({
+    code: 0,
+    data: {
+      defaults: {
+        source: { type: 'hotTopics', categories: ['ai'], limit: 5, sort: 'latest', followIds: [], perCreatorLimit: 3, folderTokens: [] },
+        rewrite: { mode: 'default', strategyId: '', length: 'keep' },
+        content: { type: 'article', videoPipeline: '', podcastChannelId: '' },
+        publish: { targets: [{ platform: 'zhihu', accountId: '' }], mode: 'immediate', startAt: '' },
+        cadence: { minMinutes: 35, maxMinutes: 40 },
+        guardrails: { maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 1 },
+        review: { requireApproval: false },
+        dedupe: { enabled: true },
+      },
+      sources: [{ id: 'hotTopics', label: '热门选题' }],
+      contentTypes: [{ id: 'article', label: '图文' }],
+      videoPipelines: [],
+      platforms: [{ id: 'zhihu', label: '知乎' }],
+      categories: ['ai'],
+      limits: { maxHotTopicsLimit: 30, maxFolderLimit: 50, maxItemsPerRun: 50, maxDailyItems: 200 },
+    },
+  }),
+  previewWorkflowPlan: () => Promise.resolve({ code: 0, ok: true, summary: '预览', totalMinutes: 0 }),
+  listWorkflowRuns: () => Promise.resolve({ code: 0, data: { runs: [] } }),
   onAutomationNotification: (cb) => {
     mockState.notifier = cb
     return () => { mockState.notifier = null }
   },
+}))
+
+vi.mock('@/api/publisher', () => ({
+  aiListRewriteStrategies: () => Promise.resolve({ code: 0, data: [] }),
 }))
 
 vi.mock('@/composables/useNotify', () => ({
@@ -33,6 +63,7 @@ vi.mock('@/composables/useNotify', () => ({
 }))
 
 import AutomationView from '@/views/AutomationView.vue'
+import AutomationTaskDialog from '@/features/automation/AutomationTaskDialog.vue'
 
 const i18n = createI18n({
   legacy: false,
@@ -41,6 +72,10 @@ const i18n = createI18n({
     zh: {
       automation: {
         title: '自动化', subtitle: 'sub', resourceNotice: 'notice',
+        wfRunsTitle: '运行记录',
+        wfActionType: '任务类型', wfActionComposite: '复合工作流', wfActionLegacy: '直发', wfActionHint: 'hint',
+        wfTemplate: '模板', wfTemplatePlaceholder: '选择模板', wfTemplateBuiltin: '内置', wfTemplateCustom: '我的',
+        wfTemplateApply: '应用', wfTemplateNamePlaceholder: '模板名称', wfTemplateSave: '保存模板', wfTemplateHint: 'hint',
         create: '新建任务', createTitle: '新建', editTitle: '编辑',
         empty: '还没有自动化任务', unreadable: '读取失败', saveFailed: '保存失败',
         colName: '名称', colTrigger: '触发', colAction: '动作',
@@ -166,13 +201,17 @@ describe('自动化页 · 表单校验', () => {
     await new Promise((r) => setTimeout(r, 0))
   }
 
+  function dialogVm(w) {
+    return w.findComponent(AutomationTaskDialog).vm
+  }
+
   it('未填名称 → errNameEmpty', async () => {
     const w = mountView()
     await new Promise((r) => setTimeout(r, 0))
     await openDialog(w)
-    w.vm.form.name = ''
+    dialogVm(w).form.name = ''
     await w.vm.$nextTick()
-    await w.vm.save()
+    await dialogVm(w).save()
     await new Promise((r) => setTimeout(r, 0))
     expect(w.find('[data-testid="automation-form-error"]').text()).toContain('请填写任务名称')
     w.unmount()
@@ -182,9 +221,9 @@ describe('自动化页 · 表单校验', () => {
     const w = mountView()
     await new Promise((r) => setTimeout(r, 0))
     await openDialog(w)
-    w.vm.form.name = '任务A'
+    dialogVm(w).form.name = '任务A'
     await w.vm.$nextTick()
-    await w.vm.save()
+    await dialogVm(w).save()
     await new Promise((r) => setTimeout(r, 0))
     expect(w.find('[data-testid="automation-form-error"]').text()).toContain('请至少选择一种触发方式')
     w.unmount()
@@ -194,11 +233,11 @@ describe('自动化页 · 表单校验', () => {
     const w = mountView()
     await new Promise((r) => setTimeout(r, 0))
     await openDialog(w)
-    w.vm.form.name = '任务A'
-    w.vm.form.useWeekly = true
-    w.vm.form.weekdays = []
+    dialogVm(w).form.name = '任务A'
+    dialogVm(w).form.useWeekly = true
+    dialogVm(w).form.weekdays = []
     await w.vm.$nextTick()
-    await w.vm.save()
+    await dialogVm(w).save()
     await new Promise((r) => setTimeout(r, 0))
     expect(w.find('[data-testid="automation-form-error"]').text()).toContain('请至少选择一个星期')
     w.unmount()
@@ -208,11 +247,11 @@ describe('自动化页 · 表单校验', () => {
     const w = mountView()
     await new Promise((r) => setTimeout(r, 0))
     await openDialog(w)
-    w.vm.form.useAppStart = true
-    w.vm.form.useDaily = true
-    w.vm.form.useInterval = true
+    dialogVm(w).form.useAppStart = true
+    dialogVm(w).form.useDaily = true
+    dialogVm(w).form.useInterval = true
     await w.vm.$nextTick()
-    expect(w.vm.formTriggers.map((t) => t.type)).toEqual(['onAppStart', 'daily', 'interval'])
+    expect(dialogVm(w).formTriggers.map((t) => t.type)).toEqual(['onAppStart', 'daily', 'interval'])
     w.unmount()
   })
 
@@ -221,10 +260,25 @@ describe('自动化页 · 表单校验', () => {
     await new Promise((r) => setTimeout(r, 0))
     await w.vm.openEdit(sampleTask)
     await new Promise((r) => setTimeout(r, 0))
-    expect(w.vm.form.useDaily).toBe(true)
-    expect(w.vm.form.dailyTime).toBe('09:00')
-    expect(w.vm.form.useAppStart).toBe(true)
-    expect(w.vm.form.failurePolicy).toBe('skip')
+    expect(dialogVm(w).form.useDaily).toBe(true)
+    expect(dialogVm(w).form.dailyTime).toBe('09:00')
+    expect(dialogVm(w).form.useAppStart).toBe(true)
+    expect(dialogVm(w).form.failurePolicy).toBe('skip')
+    w.unmount()
+  })
+
+  it('编辑旧 fullAutoPipeline 任务：保存时保留原配置，不被清空', async () => {
+    const legacyConfig = { sourceType: 'url', contentType: 'article', urls: ['https://example.com/a'] }
+    const legacyTask = { ...sampleTask, action: { type: 'fullAutoPipeline', config: legacyConfig } }
+    const w = mountView()
+    await new Promise((r) => setTimeout(r, 0))
+    await w.vm.openEdit(legacyTask)
+    await new Promise((r) => setTimeout(r, 0))
+    const d = dialogVm(w)
+    d.form.useAppStart = true
+    await d.save()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(mockState.lastPayload.action).toEqual({ type: 'fullAutoPipeline', config: legacyConfig })
     w.unmount()
   })
 })

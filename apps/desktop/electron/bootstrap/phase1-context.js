@@ -193,6 +193,11 @@ function extractContext(container) {
   // 缺失 → phase5-ipc 解构出 undefined → ipc-handlers/automation.js 静默 return
   // → 运行时报 No handler registered for 'automation:create'。
   const automationScheduler = container.get('automationScheduler')
+  // 复合自动化工作流（2026-10-26）：runner/queue/service 三者共享同一 workflowRuntime，
+  // 分别 get 会让账本、队列各建一份，去重与「到点派发」立即失效。
+  const workflowRunner = container.get('workflowRunner')
+  const workflowQueue = container.get('workflowQueue')
+  const workflowService = container.get('workflowService')
 
   // ─── ModelProviderManager + ProviderRouter 接线 ───
   const { ModelProviderManager } = require('../services/model-provider-manager')
@@ -508,6 +513,9 @@ function extractContext(container) {
       filmEngineeringService,
       fullAutoPipeline,
       automationScheduler,
+      workflowRunner,
+      workflowQueue,
+      workflowService,
       story2videoProjectService,
       promptEvalService,
       signalCollector,

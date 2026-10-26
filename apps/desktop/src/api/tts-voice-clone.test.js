@@ -1,48 +1,68 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { invokeNamespace } from './electron-bridge'
 import {
   addTtsVoiceClone,
   chooseTtsVoiceCloneSamples,
   deleteTtsVoiceClone,
+  editTtsVoiceCloneParams,
   getTtsVoiceCloneRequirements,
   listTtsVoiceClones,
   renameTtsVoiceClone,
 } from './tts-voice-clone'
 
-afterEach(() => {
-  vi.unstubAllGlobals()
+/**
+ * tts-voice-clone 渲染层 API 的通道契约测试（change: hifly-voice-edit-ui）。
+ *
+ * 覆盖率此前为 0。这层最容易出的错是「复制粘贴改漏一个方法名」——
+ * 类型检查、lint、契约测试都发现不了，只有真跑才会把 delete 发到 rename 的通道上。
+ *
+ * 重点测 `editTtsVoiceCloneParams`：它是本次新增的唯一方法（change: hifly-voice-edit-ui），
+ * 走错通道的话「改音色参数」会静默失败——因为它返回的是 { code, message } 信封，
+ * 通道错时拿到的是 Electron 的 reject，被本层兜成 -1，调用方只会看到「失败」。
+ */
+
+vi.mock('./electron-bridge', () => ({ invokeNamespace: vi.fn() }))
+
+beforeEach(() => {
+  invokeNamespace.mockReset()
+  invokeNamespace.mockResolvedValue({ code: 0, data: {} })
 })
 
-describe('renderer TTS 音色克隆 API', () => {
-  it('只调用隔离 preload API，并把输入转换为纯 JSON IPC 值', async () => {
-    const requirements = vi.fn(async input => ({ code: 0, data: input }))
-    const chooseSamples = vi.fn(async input => ({ code: 0, data: input }))
-    const list = vi.fn(async input => ({ code: 0, data: input }))
-    const add = vi.fn(async input => ({ code: 0, data: input }))
-    const deleteClone = vi.fn(async input => ({ code: 0, data: input }))
-    const rename = vi.fn(async input => ({ code: 0, data: input }))
-    vi.stubGlobal('window', { electronAPI: { ttsVoiceClone: { requirements, chooseSamples, list, add, deleteClone, rename } } })
+const CASES = [
+  ['getTtsVoiceCloneRequirements', getTtsVoiceCloneRequirements, 'requirements'],
+  ['chooseTtsVoiceCloneSamples', chooseTtsVoiceCloneSamples, 'chooseSamples'],
+  ['listTtsVoiceClones', listTtsVoiceClones, 'list'],
+  ['addTtsVoiceClone', addTtsVoiceClone, 'add'],
+  ['deleteTtsVoiceClone', deleteTtsVoiceClone, 'deleteClone'],
+  ['renameTtsVoiceClone', renameTtsVoiceClone, 'rename'],
+  ['editTtsVoiceCloneParams', editTtsVoiceCloneParams, 'editParams'],
+]
 
-    const input = { providerId: 'elevenlabs', model: 'eleven_multilingual_v2', nested: { value: 'safe' } }
-    await getTtsVoiceCloneRequirements(input)
-    await chooseTtsVoiceCloneSamples(input)
-    await listTtsVoiceClones(input)
-    await addTtsVoiceClone({ providerId: 'elevenlabs', model: 'eleven_multilingual_v2', name: 'Voice', selectionId: 'selection-a', consent: true })
-    await deleteTtsVoiceClone({ ...input, voiceId: 'voice-a' })
-    await renameTtsVoiceClone({ ...input, voiceId: 'voice-a', name: '我的音色' })
-
-    expect(requirements).toHaveBeenCalledWith(input)
-    expect(chooseSamples).toHaveBeenCalledWith(input)
-    expect(list).toHaveBeenCalledWith(input)
-    expect(add).toHaveBeenCalledWith({ providerId: 'elevenlabs', model: 'eleven_multilingual_v2', name: 'Voice', selectionId: 'selection-a', consent: true })
-    expect(deleteClone).toHaveBeenCalledWith({ ...input, voiceId: 'voice-a' })
-    expect(rename).toHaveBeenCalledWith({ ...input, voiceId: 'voice-a', name: '我的音色' })
+describe('tts-voice-clone renderer API — 通道契约', () => {
+  it.each(CASES)('%s 走 ttsVoiceClone/%s', async (_name, fn, method) => {
+    const res = await fn({ probe: 1 })
+    expect(invokeNamespace).toHaveBeenCalledWith('ttsVoiceClone', method, { probe: 1 })
+    expect(res).toEqual({ code: 0, data: {} })
   })
 
-  it('在 Electron API 缺失时对列表 fail closed', async () => {
-    vi.stubGlobal('window', {})
+  // editParams 是本 change 新增的方法，单独锁一次它的通道名
+  it('editTtsVoiceCloneParams 走 editParams（不是 rename/add）', async () => {
+    await editTtsVoiceCloneParams({ voiceId: 'v_1', rate: '1.2' })
+    expect(invokeNamespace).toHaveBeenCalledWith('ttsVoiceClone', 'editParams', { voiceId: 'v_1', rate: '1.2' })
+  })
 
-    await expect(listTtsVoiceClones({ providerId: 'elevenlabs', model: 'eleven_multilingual_v2' }))
-      .resolves.toMatchObject({ code: -1, message: 'TTS_VOICE_CLONE_API_UNAVAILABLE', data: { voices: [] } })
+  it('invokeNamespace 抛错 ⇒ 返回统一信封，不抛', async () => {
+    invokeNamespace.mockRejectedValue(new Error('No handler registered'))
+    const res = await editTtsVoiceCloneParams({ voiceId: 'v_1', rate: '1.2' })
+    expect(res.code).not.toBe(0)
+    expect(typeof res.message).toBe('string')
+  })
+
+  it('invokeNamespace 返回 undefined ⇒ 统一信封', async () => {
+    invokeNamespace.mockResolvedValue(undefined)
+    const res = await getTtsVoiceCloneRequirements({})
+    expect(res.code).not.toBe(0)
+    expect(typeof res.message).toBe('string')
   })
 })

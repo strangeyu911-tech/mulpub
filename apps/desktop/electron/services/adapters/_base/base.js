@@ -77,6 +77,11 @@ const KNOWN_METHODS = [
   //   createAudioByTts      POST /audio/create_by_tts       音频创作
   'createVideoByAudio', 'createVideoByTemplate', 'translateVideo',
   'createVideoBySing', 'createVideoByImage', 'createAudioByTts',
+  // change: hifly-voice-edit —— editVoice：修改已克隆声音的语速/音量/语调
+  // （官方 POST /voice/edit，提交即完成、无 task）。同型原则：只有真的实现了
+  // 该端点的 adapter 才登记；未实现的保持不登记 ⇒ supports() false ⇒
+  // callAdapter 闸门 fail-closed，UI 不会给出点了必失败的入口。
+  'editVoice',
 ]
 
 /**

@@ -37,20 +37,22 @@
 - [x] `apps/desktop/src/locales/user-errors/zh.js` / `en.js`：五条精确文案（成对）
 - [x] `apps/desktop/src/components/AiWriterPanel.vue`：额度/凭据码 →「前往模型设置」；限流不给
 
-## 2bis. P1b：设置 + 弹窗 + 任务级覆盖（未实现，下一 PR）
+## 2bis. P1b：设置 + 弹窗 + 任务级覆盖（P1b-1 后端决策层已实现；P1b-2 未实现）
+
+> P1b-1 范围：纯函数决策器 + Coordinator + `modelSourceOverrides` + 测试；IPC/preload/UI/业务域接入留在 P1b-2。
 
 ### 2b.1 TDD
 
-- [ ] `apps/desktop/electron/services/model-quota-policy.test.js`（新增）：12 条决策优先级逐条；三档 × 7 状态 × official 可用/不可用 × 余额/预估组合；credential 永远 ask；cap 边界
-- [ ] `apps/desktop/electron/services/model-quota-coordinator.test.js`（新增）：并发去重；requestId 一次性；超时 cancel；checkpoint 调用顺序；埋点字段
-- [ ] `apps/desktop/electron/services/provider-run-context.test.js`（扩展）：`modelSourceOverrides` 读写/清理；既有 quota 熔断不变
-- [ ] `apps/desktop/src/views/model-quota-labels.test.js`（新增）：state/quotaKind/reason → locale key
+- [x] `apps/desktop/electron/services/model-quota-policy.test.js`（新增）：12 条决策优先级逐条；三档 × 7 状态 × official 可用/不可用 × 余额/预估组合；credential 永远 ask；cap 边界
+- [x] `apps/desktop/electron/services/model-quota-coordinator.test.js`（新增）：并发去重；requestId 一次性；超时 cancel；checkpoint 调用顺序；埋点字段
+- [x] `apps/desktop/electron/services/provider-run-context.test.js`（扩展）：`modelSourceOverrides` 读写/清理；既有 quota 熔断不变
+- [ ] `apps/desktop/src/views/model-quota-labels.test.js`（新增）：state/quotaKind/reason → locale key（P1b-2）
 
 ### 2b.2 实现
 
-- [ ] `apps/desktop/electron/services/model-quota-policy.js`（新增）：纯函数决策器 + 设置归一
-- [ ] `apps/desktop/electron/services/model-quota-coordinator.js`（新增）：并发/设置/事件/检查点/埋点
-- [ ] `apps/desktop/electron/services/provider-run-context.js`：扩展 `modelSourceOverrides`
+- [x] `apps/desktop/electron/services/model-quota-policy.js`（新增）：纯函数决策器 + 设置归一
+- [x] `apps/desktop/electron/services/model-quota-coordinator.js`（新增）：并发/设置/事件/检查点/埋点
+- [x] `apps/desktop/electron/services/provider-run-context.js`：扩展 `modelSourceOverrides`
 - [ ] `apps/desktop/electron/ipc-handlers/model-quota.js`（新增）：5 条通道 + `withSenderCheck`
 - [ ] `apps/desktop/electron/preload/index.js`：暴露 `modelQuota` API
 - [ ] `apps/desktop/electron/bootstrap/*.js`：实例化 Coordinator 并注入 run 生命周期

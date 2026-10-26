@@ -62,6 +62,39 @@ describe('ProviderRunContext', () => {
   })
 })
 
+describe('ProviderRunContext modelSourceOverrides', () => {
+  it('按 capability 读写来源覆盖，返回副本不暴露内部对象', () => {
+    const ctx = new ProviderRunContext()
+    expect(ctx.getModelSourceOverride('image')).toBeNull()
+    ctx.setModelSourceOverride('image', { source: 'official', officialAttempts: 1 })
+    const read = ctx.getModelSourceOverride('image')
+    expect(read).toEqual({ source: 'official', officialAttempts: 1 })
+    read.officialAttempts = 99
+    expect(ctx.getModelSourceOverride('image').officialAttempts).toBe(1)
+    expect(ctx.getModelSourceOverride('tts')).toBeNull()
+  })
+
+  it('清除单个/全部覆盖', () => {
+    const ctx = new ProviderRunContext()
+    ctx.setModelSourceOverride('image', { source: 'official' })
+    ctx.setModelSourceOverride('tts', { source: 'official' })
+    ctx.clearModelSourceOverride('image')
+    expect(ctx.getModelSourceOverride('image')).toBeNull()
+    expect(ctx.getModelSourceOverride('tts')).toEqual({ source: 'official', officialAttempts: 0 })
+    ctx.clearModelSourceOverrides()
+    expect(ctx.getModelSourceOverride('tts')).toBeNull()
+  })
+
+  it('非法 capability / source 被忽略，不影响既有 quota 熔断', () => {
+    const ctx = new ProviderRunContext()
+    ctx.setModelSourceOverride('', { source: 'official' })
+    ctx.setModelSourceOverride('image', { source: 'invalid' })
+    expect(ctx.getModelSourceOverride('image')).toBeNull()
+    expect(ctx.openIfQuota('openai', new Error('insufficient balance'))).toBe(true)
+    expect(ctx.isOpen('openai')).toBe(true)
+  })
+})
+
 describe('ProviderRunContext.cloneVoiceOnce', () => {
   it('deduplicates concurrent clones and reuses the succeeded voice id', async () => {
     const ctx = new ProviderRunContext()

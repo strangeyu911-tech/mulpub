@@ -1,7 +1,7 @@
 # PRD：模型额度用尽时的来源切换策略（model-quota-fallback）
 
 > **文档性质**：产品需求 + 决策记录（PRD）。本文件是「用户自带模型 Key（BYOK）」与「平台官方模型（消耗官方积分）」之间**优先级与切换控制**的单一真源。
-> **状态**：🚧 **P1a 已实现**（错误识别 + 精确提示 + 「前往模型设置」动作）；**P1b / P2 / P3 未实现**。P1a 见 §13.1 与执行记录 `openspec/records/model-quota-p1.md`。官方兜底仍受 D-11 约束（官方算力代理 D-① 未落地，设置项与「使用官方模型」按钮不上线）。
+> **状态**：🚧 **P1a 已实现**（错误识别 + 精确提示 + 「前往模型设置」动作）；**P1b-1 后端决策层已实现**（纯函数决策器 + Coordinator + run context 覆盖），**P1b-2 IPC/设置卡片/弹窗/业务域接入未实现**；P2/P3 未实现。P1b-1 见 §13.2 与 `openspec/records/model-quota-p1b.md`。官方兜底仍受 D-11 约束（官方算力代理 D-① 未落地，设置项与「使用官方模型」按钮不上线）。
 > **关联设计**：`01-docs/DESIGN-MODEL-QUOTA-FALLBACK-2026-10-26.md`
 > **上游依赖**：`01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（D-① 官方算力代理，**未落地**）、`01-docs/PRD-CREDIT-CONSUME-API-2026-10-25.md`（扣分端点，已实现）、`01-docs/PRD-OFFICIAL-COMPUTE-CHARGE-STATE-2026-10-25.md`（扣分状态机，已实现）
 > **日期**：2026-10-26
@@ -700,7 +700,8 @@ runContext.modelSourceOverrides = {
 |---|---|---|---|
 | **P0** | 决策定案 + PRD + 设计 + 验收标准 | 无 | ✅ 已随 PR #4497 合并（仅文档） |
 | **P1a（本 PR）** | 统一错误分类器（`model-access-failure.js`）+ 产品级 `userErrorCode` + `httpStatus`/`providerCode` 分离 + 精确文案 + 「前往模型设置」动作 | 无（可先于官方算力） | ✅ 本 PR 实现 |
-| **P1b** | 设置读写 + 弹窗组件 + 任务级覆盖 + 检查点；官方按钮按能力 gate 禁用 | 无（可先于官方算力） | ❌ 下一 PR |
+| **P1b-1** | 纯函数决策器 + Coordinator + `modelSourceOverrides` + 检查点/埋点编排 | 无（可先于官方算力） | ✅ 本 PR 实现 |
+| **P1b-2** | IPC/preload + 设置卡片 + 弹窗 + 业务域接入；官方按钮按能力 gate 禁用 | P1b-1 | ❌ 下一 PR |
 | **P2** | 官方算力代理 D-① + 余额读通道 U-13 + 价格卡 U-12 + 官方调用客户端 + `byok=0` + 扣分 | D-① / U-12 / U-13 | ❌ 与官方算力同批 |
 | **P3** | 自动档 `official` 全量开放 + 任务积分上限 + 埋点看板 + LLM 官方供给（若 U-1 决定做） | P2 + U-1 | ❌ |
 
@@ -727,6 +728,21 @@ runContext.modelSourceOverrides = {
 **P1a 明确不做**：官方模型按钮 / 设置项 / 弹窗 / 任务级覆盖 / 检查点 / 积分上限。理由见 D-11：官方算力代理 D-① 未落地，先上设置是空承诺。
 
 **P1a follow-up（2026-10-26）**：合并后 CCG 复核发现「两套额度正则漂移 + 裸 `billing` 误判」。已补 `model-access-parity.test.js` 16 例，锁定额度 fixture 两边都判 quota、非额度 fixture 都不判 quota；修正 `insufficient_quota` / `insufficient_balance` 下划线形态、`usage limit` 产品侧漏判；把裸 `billing` 收窄为 `billing hard limit` / `billing … exceeded|insufficient|quota`。新增测试 16 例，P1a 核心 6 文件 177 例全绿。
+
+### 13.2 P1b-1 后端决策层落地记录（2026-10-27）
+
+**范围**：只做「决策 + 运行态覆盖 + 并发/检查点/埋点编排」；不做 IPC、preload、设置卡片、弹窗、业务域接入（P1b-2）。
+
+| 层 | 实际实现 | 说明 |
+|---|---|---|
+| 纯函数决策器 | `apps/desktop/electron/services/model-quota-policy.js`（新增） | 12 条优先级逐条实现；`normalizePolicy` / `normalizeCap` 校验；`credential_invalid` 永远 ask；`estimate=null` / 超 cap 降级为 ask |
+| 运行态覆盖 | `provider-run-context.js` 扩展 `modelSourceOverrides` | `get/set/clear` 按 capability；返回副本；不写 `model_providers` / 不持久化；既有 `openIfQuota` 不变 |
+| 编排器 | `apps/desktop/electron/services/model-quota-coordinator.js`（新增） | 同 `(runId, capability)` 并发去重；`model-quota:required` 事件 + 一次性 requestId；5 分钟超时视为 cancel；用户选 official 后**先 checkpoint.save 再写 override**；`telemetry.record` 埋点 |
+| 设置键 | `modelQuotaFallbackPolicy` / `officialCreditCapPerTask` | 通过注入的 `store.getSetting` / `setSetting` 读取，非法值归一 `ask` / 500 |
+
+**测试**：`model-quota-policy.test.js` 16 例（12 条优先级 + 归一）；`model-quota-coordinator.test.js` 7 例（并发去重、requestId 一次性、超时、checkpoint 顺序、自动官方、credential 永远 ask、clearRun）；`provider-run-context.test.js` 18 例（新增 3 例覆盖 `modelSourceOverrides`）。P1b-1 定向 41 例全绿。
+
+**P1b-1 明确不做**：IPC/preload、设置卡片、弹窗、`App.vue` 根层挂载、Story2Video/图片轮播/数字人/Film Engineering 接入、模型设置「测试连接」分类展示。这些属 P1b-2；官方按钮在 P2 D-① 未落地前仍禁用。
 
 ---
 

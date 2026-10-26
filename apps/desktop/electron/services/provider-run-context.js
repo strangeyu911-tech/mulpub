@@ -22,6 +22,46 @@ class ProviderRunContext {
   constructor() {
     this._open = new Map()
     this._voice = new Map()
+    this._modelSourceOverrides = new Map()
+  }
+
+  /**
+   * 读取当前 run 的官方来源覆盖。返回副本，调用方不能改内部状态。
+   * @param {string} capability
+   * @returns {{source:'official'|'byok', officialAttempts:number}|null}
+   */
+  getModelSourceOverride(capability) {
+    const key = String(capability || '').trim()
+    if (!key) return null
+    const value = this._modelSourceOverrides.get(key)
+    return value ? { ...value } : null
+  }
+
+  /**
+   * 写入当前 run 的官方来源覆盖；只允许 official / byok。
+   * 不写 checkpoint、不写 model_providers；持久化由业务域负责。
+   * @param {string} capability
+   * @param {{source:'official'|'byok', officialAttempts?:number}} override
+   */
+  setModelSourceOverride(capability, override) {
+    const key = String(capability || '').trim()
+    const source = override && override.source
+    if (!key || (source !== 'official' && source !== 'byok')) return false
+    const attempts = Number.isInteger(override.officialAttempts) && override.officialAttempts >= 0
+      ? override.officialAttempts
+      : 0
+    this._modelSourceOverrides.set(key, { source, officialAttempts: attempts })
+    return true
+  }
+
+  clearModelSourceOverride(capability) {
+    const key = String(capability || '').trim()
+    if (!key) return
+    this._modelSourceOverrides.delete(key)
+  }
+
+  clearModelSourceOverrides() {
+    this._modelSourceOverrides.clear()
   }
 
   failureOf(providerId) {

@@ -1,0 +1,58 @@
+{
+  "sha": "50911b775602a45d078a2f3bd9f890df0705d66a",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 283 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 283,
+    "fileCount": 3,
+    "codeFileCount": 3,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "1e02755704098c49e2a4f405dfee0c77cd65270e3a60aa9375da84807073406c",
+  "decidedAt": "2026-10-25T02:23:27.400Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "tier": "self-play",
+    "performedBy": "self-play",
+    "evidence": null,
+    "findings": [],
+    "closureNote": "轮次标记：pre-commit 生成 dual 判定，未跑 deep-review。\n\n非高危面：只改 apps/desktop 下三个文件（一个 Vue 组件的 buildPayload 补 template、两个新测试文件）。不触及 workflows / 凭证 / 判据本体。\n\n内容：补 11 端点 UI 的测试缺口并修一个真 bug。\n\n1. 新增 src/api/hifly-extra.test.js（15 例）：11 个导出的 (ns, method) 一一对应断言——这一层最容易出「复制粘贴改漏名字」，类型检查/lint/契约测试都发现不了，只有真跑才会把图当音频提交；另有异常与空返回的统一降级（11 个导出逐个验）。\n2. 新增 HiflyExtraPanel.extra.test.js（12 例）：模板加载/空态/失败、封面模板、封面提交、翻译通道、图片 model 数字转换、音频通道、提交失败不直出服务端 message、删除成功/失败。\n3. 修真 bug：template 由「点模板按钮」写入 draft，但 buildPayload() 只遍历 fields ⇒ 「网感模板」与「创建封面」两个模式提交时 template 恒为空，服务端必拒。这在「能渲染、能点击」的前提下完全看不出来——正是补分支测试才逼出来的。修法：buildPayload 末尾补 if (this.draft.template)。\n\n验证：HiflyExtraPanel.test 7 + extra 12 + api 15 = 34/34 全绿；max-lines / debt / font-size-scale / ipc-sender-guard 全过；eslint rc=0。\n\n动因：CI 的 QG Coverage 在新增约 1000 行代码后红，而本地对应检查全绿——缺的不是「能跑」，是分支没被走过。"
+  }
+}

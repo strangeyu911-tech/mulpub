@@ -1,0 +1,58 @@
+{
+  "sha": "fdcf6ec4ddf75c054bea49bf323dce1d356cd429",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 208 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 208,
+    "fileCount": 1,
+    "codeFileCount": 1,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "3f4bde4b2c64b8671f532b51627149cb01c7723be9ed4f0c6a5548a546be5eb0",
+  "decidedAt": "2026-10-26T02:36:24.189Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "tier": "self-play",
+    "performedBy": "self-play",
+    "evidence": null,
+    "findings": [],
+    "closureNote": "轮次标记：pre-commit 生成 dual 判定，未跑 deep-review。\n\n非高危面：只新增一个测试文件 electron/ipc-handlers/hifly-extra.normalize.test.js。不触及 workflows / 凭证 / 判据本体。\n\n内容：补 normalizeCreateCover / normalizeCreateByAudio / normalizeCreateByTemplate / normalizeLivelyTemplates 四个形状校验函数的分支覆盖，48 例。\n\n为什么：ipc-handlers/hifly-extra.js 380 行里绝大部分是这四个 normalize 的校验分支，之前 9 个通道级用例只能走到主路径 + 一种错法，QG Coverage 因此红。它们恰恰是唯一在参数进主进程深处之前拦住脏数据的地方——每条 if 都是一次拒绝理由，漏一条意味着一种脏输入能穿过去。\n\n覆盖：未知字段拒（防前端字段名拼错被静默丢掉）、每个可选字符串的非字符串分支、分页正整数的 0/负/小数分支、type=0 合法（竖屏是默认值不是未传）、cover 的 content/slots 联合必填与 slots 元素形态、audio 的二选一与至少一个、template 的 voice+avatar 联合必填（videoFileId 可替代）、text 10000 字上限、四个 lufs 的数字与数字字符串两种形态、可选字段空串不进 payload。\n\n验证：48/48 全绿；max-lines 通过；eslint rc=0。#4387 测试总数达 91 例（7 原 + 12 面板分支 + 15 api + 9 通道 + 48 normalize）。"
+  }
+}

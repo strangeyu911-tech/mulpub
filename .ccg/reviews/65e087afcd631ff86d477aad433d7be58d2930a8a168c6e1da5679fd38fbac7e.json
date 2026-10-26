@@ -1,0 +1,58 @@
+{
+  "sha": "c23a77934fa4e70580251072f545771d9802c90e",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 261 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 261,
+    "fileCount": 3,
+    "codeFileCount": 3,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "65e087afcd631ff86d477aad433d7be58d2930a8a168c6e1da5679fd38fbac7e",
+  "decidedAt": "2026-10-26T05:58:32.735Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "tier": "self-play",
+    "performedBy": "self-play",
+    "evidence": null,
+    "findings": [],
+    "closureNote": "轮次标记：pre-commit 生成 dual 判定，未跑 deep-review。\n\n非高危面：一个生产文件加 6 行 module.exports（为可测性），加两个测试文件。不触及 workflows / 凭证 / 判据本体。\n\n内容：针对未覆盖行精准补齐。\n\n1. electron/preload/hifly-extra.preload.test.js 25 例 —— 这个文件此前覆盖率 0：我第一次写的测试用了 require('vitest')，而本项目只认 ESM，整个文件被判 no tests 后被我删了。正确写法是 import {} from 'vitest' 配 require() 取被测 CJS 模块（与本目录其他 electron 测试同型）。覆盖 11 个方法→11 个通道的映射、入参原样转发、credit 无参签名恒定发 {}、命名空间只暴露 11 个方法、不提供通用 invoke、两次调用返回互不相同对象。\n\n2. electron/ipc-handlers/hifly-extra.normalize2.test.js 36 例 —— 覆盖此前从未被调用的 6 个 normalize（coverStyles / deleteWork / translate / createBySing / createByImage / audioTts）。它们此前测不到不是覆盖不足，是根本没导出：11 个 normalize 只导出 4 个。故在生产文件补 6 行 module.exports（纯可测性改动）。\n\n3. 顺带修一处测试设计错误：credit 在 preload 里是无参签名会忽略入参，我最初按「透传入参」断言导致 2 例红。改成三元组 [方法名, 通道名, 期望入参] 把期望值写进表里，而不是在循环里加 if 特例。\n\n验证：ipc-handlers/hifly-extra.js 覆盖率 58.6/50.5/27.3/61.7 → 73.7/61.9/95.5/77.9（函数覆盖 27%→95%）；preload 0 → 100/100/100/100；新增 61 例全绿；max-lines 通过；eslint rc=0。#4387 测试总数 152 例。"
+  }
+}

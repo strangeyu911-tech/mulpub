@@ -104,7 +104,7 @@ function parseRetryAfterMs(headers) : number|null
 **与现有 `classifyProviderFailure` 的关系**：
 - `classifyProviderFailure` 返回 `quota` / `rate` / `transient` / `content_policy` / `other`，服务于**重试/熔断**。
 - `classifyModelAccessFailure` 返回更细的 `AccessState` + `quotaKind`，服务于**用户提示/官方兜底**。
-- 两者**各自独立实现**文本模式（`classifyProviderFailure` 在 `provider-error.js`，产品级分类器在新模块）；不互相 require，避免循环依赖；由测试锁住两套枚举的「quota 语义交集」。这样改一套重试策略不会静默改变用户提示。
+- 两者**各自独立实现**文本模式（`classifyProviderFailure` 在 `provider-error.js`，产品级分类器在新模块）；不互相 require，避免循环依赖；由 `model-access-parity.test.js` 锁住两套枚举的「quota 语义交集」（额度 fixture 两边都判 quota，非额度 fixture 都不判 quota）。这样改一套重试策略不会静默改变用户提示。
 
 **关键实现点**：
 - `context.statusCode` 目前被 MiniMax 业务码复用（1004/2056）。P1 必须新增 `context.httpStatus` 与 `context.providerCode` 两个字段，**保留 `statusCode` 向后兼容**（历史测试断言 `context.statusCode === 1004`）。

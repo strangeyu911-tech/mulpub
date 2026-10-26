@@ -722,9 +722,11 @@ runContext.modelSourceOverrides = {
 
 **数据校验（P1a 已实现）**：`providerCode` 只接受 `[A-Za-z0-9_.: -]{1,64}`；`httpStatus` 只接受 100–599；`retryAfterMs` 只接受 0–7 天；错误文本截断 500 字符并脱敏 `sk-` / `Bearer` / `api_key`；分类器内部异常一律降级 `unknown`。
 
-**测试**：`model-access-failure.test.js` 21 例；`provider-error.test.js` 新增 2 例；`model-provider-call-adapter.test.js` 新增 4 例；`user-facing-error.test.js` 新增 8 例；`AiWriterPanel.error-action.test.js` 新增 1 例。P1a 相关 154 例全绿（详见执行记录）。
+**测试**：`model-access-failure.test.js` 24 例；`provider-error.test.js` 新增 2 例；`model-provider-call-adapter.test.js` 新增 5 例；`user-facing-error.test.js` 新增 8 例；`AiWriterPanel.error-action.test.js` 新增 1 例；`model-access-parity.test.js` 新增 16 例。P1a 相关 177 例全绿（详见执行记录）。
 
 **P1a 明确不做**：官方模型按钮 / 设置项 / 弹窗 / 任务级覆盖 / 检查点 / 积分上限。理由见 D-11：官方算力代理 D-① 未落地，先上设置是空承诺。
+
+**P1a follow-up（2026-10-26）**：合并后 CCG 复核发现「两套额度正则漂移 + 裸 `billing` 误判」。已补 `model-access-parity.test.js` 16 例，锁定额度 fixture 两边都判 quota、非额度 fixture 都不判 quota；修正 `insufficient_quota` / `insufficient_balance` 下划线形态、`usage limit` 产品侧漏判；把裸 `billing` 收窄为 `billing hard limit` / `billing … exceeded|insufficient|quota`。新增测试 16 例，P1a 核心 6 文件 177 例全绿。
 
 ---
 

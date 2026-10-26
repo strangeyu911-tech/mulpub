@@ -57,8 +57,9 @@ const MODEL_ACCESS_PRODUCT_CODES = Object.freeze({
 
 // ─── 文本模式 ────────────────────────────────────────────────────────────
 // 与 provider-error.js 的 QUOTA_MESSAGE_PATTERN 保持同一语义域；本文件独立实现是为了
-// 不把「用户提示」耦合进「重试分类」的枚举（两套枚举由测试锁交集，不互相 require）。
-const QUOTA_TEXT_PATTERN = /(?:insufficient|exhausted|exceeded|out\s+of)[^\n]{0,40}(?:quota|balance|token|credit)|(?:quota|balance|token|credit)s?[^\n]{0,40}(?:exceeded|insufficient|exhausted)|credit\s+balance[^\n]{0,30}(?:too\s+low|low|insufficient)|(?:余额|额度|配额)[^\n]{0,20}(?:不足|不够|超|耗尽|用尽|用完)|insufficient[_\s]*balance|billing|payment\s*required|(?:用量|token\s*plan|额度)[^\n]{0,24}(?:上限|超|耗尽|用尽|用完)|(?:套餐|plan)[^\n]{0,24}(?:expired|到期|过期)/i
+// 不把「用户提示」耦合进「重试分类」的枚举。两套正则的**共享语义**由
+// `model-access-parity.test.js` 锁定（额度 fixture 两边都必须判 quota，非额度 fixture 都不得判）。
+const QUOTA_TEXT_PATTERN = /\b(?:insufficient|exhausted|exceeded|out\s+of)[^\n]{0,40}(?:quota|balance|token|credit)|(?:quota|balance|token|credit)s?[^\n]{0,40}(?:exceeded|insufficient|exhausted)|credit\s+balance[^\n]{0,30}(?:too\s+low|low|insufficient)|(?:余额|额度|配额)[^\n]{0,20}(?:不足|不够|超|耗尽|用尽|用完)|\binsufficient[_\s]*(?:quota|balance|token|credit)|billing\s*(?:hard\s*)?limit|billing[^\n]{0,20}(?:exceeded|insufficient|quota)|payment\s*required|(?:usage|token\s*plan|额度)[^\n]{0,30}(?:limit|上限|超|耗尽|用尽|用完|exceeded|insufficient)|(?:套餐|plan)[^\n]{0,24}(?:expired|到期|过期)/i
 const RATE_TEXT_PATTERN = /\brate[\s_-]?limit\b|too\s+many\s+requests|rpm\s+exhausted|429\s+Too\s+Many|限流|请求频率|请求过于频繁/i
 const CREDENTIAL_TEXT_PATTERN = /invalid\s+api[ _-]?key|api[ _-]?key[^\n]{0,24}(?:invalid|expired|失效|过期|无效|错误|不正确)|(?:invalid|expired)\s+api[ _-]?key|authentication\s+(?:failed|error)|unauthorized|access\s+denied|credential|认证失败|密钥[^\n]{0,12}(?:无效|过期)/i
 const PLAN_EXPIRED_PATTERN = /plan[^\n]{0,24}(?:expired|到期)|套餐[^\n]{0,12}(?:到期|过期)|订阅[^\n]{0,12}(?:到期|过期)|续费/i

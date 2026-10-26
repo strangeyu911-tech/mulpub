@@ -1,0 +1,61 @@
+{
+  "sha": "9a02488da9982dd6270d29832527e7261f2267e5",
+  "layer": "diff",
+  "mode": "skip",
+  "reason": "改动全部命中文档白名单 → 走 §11.2b docs-only 快通道",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 2,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 4,
+    "docSensitiveContentSample": [
+      "| **① API-first** | 提交任务 → 轮询状态 → 取片，有开放平台文档与密钥体系 | 蝉镜开放平台、闪剪开放平台、讯飞虚拟人、百度曦灵、火山引擎、硅基智能、相芯科技 | ✅ 可适配现有 adapter 契约 |",
+      "| **Duix.Heygem / Duix.Avatar** | 硅基智能开源 | 1 秒视频或一张照片克隆形象+声音；30 秒完成克隆；60 秒合成 4K 视频；复杂光影/侧脸/遮挡下口型匹配；**Docker 启动后本地端口暴露训练与合成 API**（`127.0.0.1`） | **免费**（自由提供的形象模型可全球商用，用户数 >10 万或年营收超门槛需授权） | **A** |",
+      "| C4 密钥体量 | 单 Key + 单 baseURL 即可调用 | 需 OAuth 多步换 token 的，要在 adapter 内加 token 缓存 |"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "ebf08531767f0268fed26318b55b3730c997b888dec8f73b96879faaf12000ec",
+  "decidedAt": "2026-10-26T13:48:15.428Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": false,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

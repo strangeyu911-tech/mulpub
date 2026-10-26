@@ -132,6 +132,95 @@ describe('render IPC 可信来源正常工作', () => {
     expect(result.code).toBe(0)
     expect(deps.renderEngine.render).toHaveBeenCalled()
   })
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // render:start（图片轮播）—— 失败**不得**报成功
+  //
+  // 修复前：失败也返回 { code: 0, data: { success:false, error } }，
+  // 而渲染端只判 res.code === 0 ⇒ 本地渲染失败被显示成「视频渲染完成」，
+  // 用户点【查看视频】才拿到一个不存在的路径。
+  // ───────────────────────────────────────────────────────────────────────────
+  it('render:start 渲染失败 ⇒ 非 0 code + 稳定 errorCode（不再返回 code:0）', async () => {
+    const sendMock = vi.fn()
+    const deps = createMockDeps({
+      renderEngine: {
+        render: vi.fn().mockResolvedValue({ success: false, error: '渲染进程退出码: 1' }),
+        cancel: vi.fn(),
+        getStatus: vi.fn(() => ({ ready: true })),
+        installDeps: vi.fn(),
+        listCompositions: vi.fn(() => []),
+        getComposition: vi.fn(() => null),
+        validateProps: vi.fn(() => ({ valid: true })),
+      },
+      BrowserWindow: {
+        fromWebContents: vi.fn(() => ({ webContents: { send: sendMock } })),
+        getAllWindows: vi.fn(() => []),
+      },
+    })
+    const ipcMain = createMockIpcMain()
+    registerHandlers(ipcMain, deps)
+    const handler = ipcMain._get('render:start')
+
+    const result = await handler(TRUSTED_EVENT, { props: { cuts: [{ id: 's1', in_seconds: 0, out_seconds: 1 }] } })
+
+    expect(result.code).toBeLessThan(0)
+    expect(result.errorCode).toBe('QUICK_RENDER_FAILED')
+    expect(result.message).toContain('渲染进程退出码: 1')
+    // data 保留失败详情，但**不得**带 success:true
+    expect(result.data.success).toBe(false)
+    // 失败必须落主进程日志（可诊断）
+    expect(deps.log.error).toHaveBeenCalled()
+  })
+
+  // 异常路径也要带稳定错误码（外部评审第 4 轮 i2）：
+  // 「每次失败都携带稳定错误码」是合同的一部分，异常分支不能漏。
+  it('render:start 抛异常 ⇒ 同样带 errorCode 且落日志', async () => {
+    const deps = createMockDeps({
+      renderEngine: {
+        render: vi.fn(() => { throw new Error('composer 目录缺失') }),
+        cancel: vi.fn(),
+        getStatus: vi.fn(() => ({ ready: false })),
+        installDeps: vi.fn(),
+        listCompositions: vi.fn(() => []),
+        getComposition: vi.fn(() => null),
+        validateProps: vi.fn(() => ({ valid: true })),
+      },
+    })
+    const ipcMain = createMockIpcMain()
+    registerHandlers(ipcMain, deps)
+    const handler = ipcMain._get('render:start')
+
+    const result = await handler(TRUSTED_EVENT, { props: { cuts: [{ id: 's1', in_seconds: 0, out_seconds: 1 }] } })
+
+    expect(result.code).toBeLessThan(0)
+    expect(result.errorCode).toBe('QUICK_RENDER_FAILED')
+    expect(result.message).toContain('composer 目录缺失')
+    expect(deps.log.error).toHaveBeenCalled()
+    // 失败必须落主进程日志（可诊断）
+    expect(deps.log.error).toHaveBeenCalled()
+  })
+
+  it('render:start 成功 ⇒ code 0 + outputPath', async () => {
+    const deps = createMockDeps({
+      renderEngine: {
+        render: vi.fn().mockResolvedValue({ success: true, outputPath: 'C:/tmp/out.mp4' }),
+        cancel: vi.fn(),
+        getStatus: vi.fn(() => ({ ready: true })),
+        installDeps: vi.fn(),
+        listCompositions: vi.fn(() => []),
+        getComposition: vi.fn(() => null),
+        validateProps: vi.fn(() => ({ valid: true })),
+      },
+    })
+    const ipcMain = createMockIpcMain()
+    registerHandlers(ipcMain, deps)
+    const handler = ipcMain._get('render:start')
+
+    const result = await handler(TRUSTED_EVENT, { props: { cuts: [{ id: 's1', in_seconds: 0, out_seconds: 1 }] } })
+
+    expect(result.code).toBe(0)
+    expect(result.data).toEqual({ success: true, outputPath: 'C:/tmp/out.mp4' })
+  })
 })
 
 describe('render:start-ai-video — 快速渲染 AI 视频生成', () => {
@@ -192,7 +281,7 @@ describe('render:start-ai-video — 快速渲染 AI 视频生成', () => {
   })
 
   it('generateSceneVideo 失败时返回可读错误并推送 render:error', async () => {
-    const generateSceneVideoMock = vi.fn().mockResolvedValue({ success: false, error: '视频生成超时' })
+    const generateSceneVideoMock = vi.fn().mockResolvedValue({ success: false, error: '视频生成超时', errorCode: 'PROVIDER_VIDEO_TIMEOUT' })
     const sendMock = vi.fn()
     const deps = createMockDeps({
       generateSceneVideo: generateSceneVideoMock,
@@ -213,7 +302,78 @@ describe('render:start-ai-video — 快速渲染 AI 视频生成', () => {
 
     expect(result.code).toBeLessThan(0)
     expect(result.message).toContain('视频生成超时')
-    expect(sendMock).toHaveBeenCalledWith('render:error', { success: false, error: '视频生成超时' })
+    // 稳定错误码：渲染端据此出 locale 文案（不再靠匹配中文句子猜失败原因）
+    expect(result.errorCode).toBe('PROVIDER_VIDEO_TIMEOUT')
+    expect(sendMock).toHaveBeenCalledWith('render:error', { success: false, error: '视频生成超时', errorCode: 'PROVIDER_VIDEO_TIMEOUT' })
+  })
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // fix-quick-render（2026-10-23）：失败必须**可诊断**
+  //
+  // 此前本通道的失败路径**完全不写主进程日志** ⇒ 线上出问题时日志里查不到
+  // 任何痕迹，只能靠 provider 调用日志反推（本次排障即卡在这里）。
+  // ───────────────────────────────────────────────────────────────────────────
+  it('失败时写主进程日志（含 provider / 错误码 / 原始原因）', async () => {
+    const deps = createMockDeps({
+      generateSceneVideo: vi.fn().mockResolvedValue({ success: false, error: 'provider 返回空任务 ID', errorCode: 'PROVIDER_VIDEO_SUBMIT_FAILED' }),
+      modelProviderManager: {
+        callAdapter: vi.fn(),
+        getDefault: vi.fn(() => ({ id: 'agnes-multimodal', enabled: true })),
+      },
+    })
+    const ipcMain = createMockIpcMain()
+    registerHandlers(ipcMain, deps)
+    const handler = ipcMain._get('render:start-ai-video')
+
+    await handler(TRUSTED_EVENT, { prompt: '夏天的风' })
+
+    expect(deps.log.error).toHaveBeenCalled()
+    const logged = deps.log.error.mock.calls.map((c) => String(c[0]) + ' ' + String(c[1] || '')).join('\n')
+    expect(logged).toContain('quick-ai-video failed')
+    expect(logged).toContain('agnes-multimodal')
+    expect(logged).toContain('PROVIDER_VIDEO_SUBMIT_FAILED')
+  })
+
+  it('未配置视频供应商时回稳定错误码（渲染端出可执行文案，而非笼统失败）', async () => {
+    const deps = createMockDeps({
+      modelProviderManager: {
+        callAdapter: vi.fn(),
+        getDefault: vi.fn(() => null),
+      },
+    })
+    const ipcMain = createMockIpcMain()
+    registerHandlers(ipcMain, deps)
+    const handler = ipcMain._get('render:start-ai-video')
+
+    const result = await handler(TRUSTED_EVENT, { prompt: '夏天的风' })
+
+    expect(result.code).toBeLessThan(0)
+    expect(result.errorCode).toBe('QUICK_RENDER_NO_VIDEO_PROVIDER')
+  })
+
+  it('进度回调透传 stageKey（渲染端据此取 locale 文案）', async () => {
+    const sendMock = vi.fn()
+    const deps = createMockDeps({
+      generateSceneVideo: vi.fn(async ({ onProgress }) => {
+        onProgress(30, '生成中', 'GENERATING')
+        return { success: true, path: 'C:/tmp/ai-video.mp4' }
+      }),
+      modelProviderManager: {
+        callAdapter: vi.fn(),
+        getDefault: vi.fn(() => ({ id: 'agnes-video', enabled: true })),
+      },
+      BrowserWindow: {
+        fromWebContents: vi.fn(() => ({ webContents: { send: sendMock } })),
+        getAllWindows: vi.fn(() => []),
+      },
+    })
+    const ipcMain = createMockIpcMain()
+    registerHandlers(ipcMain, deps)
+    const handler = ipcMain._get('render:start-ai-video')
+
+    await handler(TRUSTED_EVENT, { prompt: '夏天的风' })
+
+    expect(sendMock).toHaveBeenCalledWith('render:progress', { percent: 30, stage: '生成中', stageKey: 'GENERATING' })
   })
 
   // ── 2026-10-23 扩展契约（模式 / 媒体 / 画幅 / 时长 / 种子） ──

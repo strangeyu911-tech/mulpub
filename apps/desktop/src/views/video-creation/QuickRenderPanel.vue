@@ -109,7 +109,7 @@
       <p class="progress-text" data-testid="quick-progress">{{ progress }}% — {{ stage }}</p>
     </div>
 
-    <div v-if="result" class="result-banner success">
+    <div v-if="result && !error" class="result-banner success">
       <p>{{ $t('create.story2video.ui.quickCompleted') }}</p>
       <UiButton data-testid="quick-view-result" @click="viewResult">{{ $t('create.story2video.ui.quickViewVideo') }}</UiButton>
     </div>
@@ -140,8 +140,7 @@ import QuickRenderMaterials from './QuickRenderMaterials.vue'
 import QuickRenderParams from './QuickRenderParams.vue'
 import { useQuickRenderMaterials } from './useQuickRenderMaterials'
 import {
-  PROFILE_ASPECT_RATIO, DEFAULT_ASPECT_RATIO,
-  DEFAULT_SECONDS, DEFAULT_PROFILE, DEFAULT_THEME,
+  PROFILE_ASPECT_RATIO, DEFAULT_ASPECT_RATIO, STAGE_KEY_TO_LOCALE, DEFAULT_SECONDS, DEFAULT_PROFILE, DEFAULT_THEME,
 } from './quick-render-constants'
 
 const { t } = useI18n()
@@ -393,7 +392,8 @@ async function start () {
   if (effectiveMedia.value.videos && effectiveMedia.value.videos.length) payload.videos = effectiveMedia.value.videos
   try {
     const res = await renderStartAiVideo(payload)
-    if (res && res.code === 0) {
+    // ⚠️ code=0 但 data.success=false 仍是失败（fix-quick-render）
+    if (res && res.code === 0 && !(res.data && res.data.success === false)) {
       result.value = res.data
       rendering.value = false
       progress.value = 100
@@ -425,7 +425,7 @@ async function startGallery () {
       out_seconds: (i + 1) * 5 - 0.5,
     }))
     const res = await renderStart({ props: { cuts, theme: theme.value, renderer_family: 'explainer-data' }, profile: profile.value })
-    if (res && res.code === 0) {
+    if (res && res.code === 0 && !(res.data && res.data.success === false)) {
       result.value = res.data
       rendering.value = false
       progress.value = 100
@@ -465,8 +465,10 @@ onMounted(() => {
     const isObject = payload && typeof payload === 'object'
     const percent = isObject ? payload.percent : payload
     const stageText = isObject ? payload.stage : undefined
+    // stageKey 是稳定机器键 ⇒ 走 locale；不认识才回落到主进程自带的中文 stage
+    const localeKey = isObject ? STAGE_KEY_TO_LOCALE[payload.stageKey] : undefined
     progress.value = Number(percent) || 0
-    stage.value = String(stageText || '')
+    stage.value = localeKey ? t(localeKey) : String(stageText || '')
   }))
   cleanups.push(onRenderComplete((res) => {
     if (!rendering.value) return
@@ -476,6 +478,7 @@ onMounted(() => {
   }))
   cleanups.push(onRenderError((err) => {
     if (!rendering.value) return
+    result.value = null // 清成功态：否则与错误横幅同时显示
     error.value = formatUserError(err, { fallback: t('create.story2video.ui.quickError.renderFailed') }).message
     rendering.value = false
   }))

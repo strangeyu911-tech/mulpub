@@ -1,0 +1,61 @@
+{
+  "sha": "33762edddea03a3f1a9de6f2900aec88eb19643d",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 490 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 490,
+    "fileCount": 16,
+    "codeFileCount": 14,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "182d9339f3191e1693ac0ff335f29892b0b7e661fe8de014a42046c4be0f18f2",
+  "decidedAt": "2026-10-25T16:10:26.069Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play(claude×opencode 第1轮 + 逐条裁决)",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": null,
+    "template": ".adversarial\\ccg-deep-0ba89d63\\adjudication.json",
+    "at": "2026-10-25T16:18:56.037Z",
+    "adjudicatedAt": "2026-10-26T10:05:00.000Z",
+    "closureNote": "第 1 轮（DUAL，490 行）4 条意见逐条裁决：i4 成立（STAGE_KEY_TO_LOCALE 与 locale 手工同步、现有门禁查不到二者是否对得上）已修 —— 加双向锁 + 变异验证（删 zh 的 quickStageEncoding 后锁立即红）；i1/i2 驳回（组件 start()/startGallery() 的 else 与 catch 均显式复位 rendering 并设 error，事件仅冗余通道）；i3 驳回（.ccg/reviews 入库是仓内惯例，主干已跟踪 2353 条；执行记录是 check-pr-exec-record 的强制输入）。i4 的修复由第 2 轮复评确认不复现（该轮未再提出同一缺陷），后续第 3/4/5 轮继续收敛，第 5 轮阻塞项为空已由 writeback 写回 tier=external + evidence(PR #4496 裁决评论)。"
+  }
+}

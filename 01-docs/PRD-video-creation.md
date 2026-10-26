@@ -1942,6 +1942,43 @@ SettingsDialog 关闭（App.vue @close）
 
 **范围边界（2026-10-23 核实）**：**主流水线不做**该能力——视频场景根本不生成图片（图片只是视频失败时的回退），且视频提交早于该分镜图片的生成请求（manual 模式同理）⇒ 任何模式下视频生成时该分镜的图都不存在。要让它存在需把资产策略改成「每个视频场景也先生成图 + 该段视频等这张图」（多出 V 次图片生成 + 阶段内串行化），与 2026-08-13 的并行优化直接冲突 ⇒ **属产品决策，未做**。
 
+### 3.1.45 快速渲染的失败可诊断性与失败语义修正（2026-10-25）
+
+**需求来源**：用户于 2026-10-23 22:07 报「视频创作 → 快速渲染 → 点击【开始渲染】→ 好像没有启动，有报错」。取证结论（可复算）：
+
+1. **用户当时运行的构建是旧的**（工作树 `mp-signer-reuse`，HEAD `4116035d2`，早于主干 130+ 提交），该版本把进度事件按 `(pct, stg)` 两个位置参数解包，而 preload 的 `onRenderProgress` 把 IPC 载荷**原样**单参透传 ⇒ `pct` 拿到整个对象 ⇒ 进度条渲染成 `[object Object]%`（CSS 非法 ⇒ 宽度不生效）⇒ **进度条全程不动**。该缺陷已由 §3.1.42 修掉。
+2. **同一次运行的产物其实是成功的**：主进程 22:01:57 提交 `generateVideo`（provider 日志 `success`，耗时 20.4s），22:02:07–22:09:53 轮询 `getVideoStatus` 47 次，22:09:54 落盘 `<os.tmpdir>/story2video/quick-render/ai-video/scene_video_000.mp4`（1,897,058 字节，`ftypisom`+`moov`+`trak` 完整，ffprobe 可解码）⇒ **provider 侧成功**。
+3. **真正的缺口在「失败面」**（本节修复范围）：主进程 AI 视频失败路径**一条日志都不写** ⇒ 线上出问题时日志里查不到任何痕迹（本次排障只能靠 `model_provider_logs` 反推）；失败原因是一句含 `provider: agnes-multimodal` 的自由文本 ⇒ 渲染端 `formatUserError` 判定为「技术文本」⇒ 一律退化成笼统的「渲染失败」，用户看不到能据以行动的原因；**图片轮播渲染失败时主进程仍返回 `code: 0`** ⇒ 渲染端显示「视频渲染完成」，用户点【查看视频】才拿到不存在的路径。
+
+**合同**：
+
+1. **失败必须落主进程日志**：`render:start-ai-video` 与 `render:start` 的失败路径都 `log.error`，内容含 **provider / 稳定错误码 / 原始原因**（`[render] quick-ai-video failed provider=… code=… reason=…`）。判据：任何一次失败，都能在主进程日志里用错误码 grep 到。
+2. **稳定错误码（机器可读）+ 本地化文案（人类可读）**：主进程回 `errorCode`，渲染端经 `formatUserError` 的 `errorCode` 分支取 `userErrors.*` 文案。**不靠匹配中文句子判失败原因**（主进程改一个字，渲染端就静默失配）。
+   | errorCode | 触发条件 | 渲染端文案（zh / en） |
+   |---|---|---|
+   | `QUICK_RENDER_NO_VIDEO_PROVIDER` | 未配置可用视频供应商 | 到「模型设置」启用视频生成能力并填 API Key 后重试 |
+   | `QUICK_RENDER_VIDEO_SERVICE_UNAVAILABLE` | 模型服务不可用 | 重启应用；持续出现则重存视频模型配置 |
+   | `QUICK_RENDER_FAILED` | 本地 Remotion 渲染失败 | 检查文案/素材后重试 |
+   | `PROVIDER_VIDEO_SUBMIT_FAILED` | 提交失败 / 未返回任务 ID | 检查 API Key、模型名与额度后重试 |
+   | `PROVIDER_VIDEO_TASK_FAILED` | provider 任务终态失败 | 检查视频模型配置或改用其他模型 |
+   | `PROVIDER_VIDEO_TIMEOUT` | 轮询 10 分钟未出 URL | 稍后重试；频繁超时可缩短文案或换模型 |
+   | `PROVIDER_VIDEO_EMPTY_FILE` | 下载结果为空 | 重试 |
+   | `PROVIDER_VIDEO_UNDECODABLE` | ffprobe 不可解码 | 重试 |
+3. **失败语义修正（图文轮播）**：`render:start` 失败返回**非 0 code** + `errorCode` + `data.success=false`（保留失败详情，但**不得**带 `success:true`）。渲染端同时判 `res.code === 0` **与** `res.data.success !== false` ⇒ 失败绝不会再显示成「视频渲染完成」。
+4. **成功与失败横幅互斥**：渲染端成功横幅条件为 `result && !error`；失败事件到达时清空成功态。
+5. **进度阶段用稳定机器键（stageKey）**：主进程 `render:progress` 载荷由 `{ percent, stage }` 扩为 `{ percent, stage, stageKey }`；`stageKey ∈ { SUBMITTING, QUEUED, GENERATING, DOWNLOADING, RENDERING, ENCODING, COMPUTING, STARTING, COMPLETED }`。渲染端按 `stageKey` 取 `create.story2video.ui.quickStage*` 本地化文案，**中文 `stage` 仅作兜底**（不认识该键时才用）⇒ 英文界面不再显示中文进度；且不靠「匹配中文句子」判阶段。
+6. **进度百分比单调不减**：Remotion 先报「渲染帧进度」（0→100）再报「编码进度」（0→100），两个百分比分属不同量纲 ⇒ 直接透传会出现 **100% → 6%** 的回退（进度条来回抖动）。映射规则：渲染阶段 `0–95`，编码阶段 `96–99`，且只增不减。
+7. **验收边界**：真实 AI 视频生成依赖已配置的视频供应商与真实第三方服务，属外部验收；本地单测覆盖 IPC 契约、错误码、日志、进度载荷形状、单调映射与渲染层行为。
+
+**明确不做（边界）**：
+
+- **不代远端 provider 取消任务**：`renderCancel` 仍只取消本地 Remotion 渲染；上游未公开任务取消端点，AI 视频路径仍只停本地等待并如实提示「远端任务可能仍在生成」（沿用 §3.1.42 合同第 7 条，本轮不推翻）。
+- **不伪造连续进度**：百分比如实透传服务端 `progress`（服务端只有 10/100 两档），不按时间自造爬升。
+- **不改 provider 适配器协议**：本轮只改主进程 IPC 层、生成器返回契约与渲染端展示，不动 Agnes 协议字段。
+- **不引入新的 provider 能力**：不新增参考视频/多镜头等能力（§3.1.42/§3.1.43 已界定）。
+
+**相关文件**：`electron/ipc-handlers/render.js`、`electron/services/scene-video-generator.js`、`electron/services/render-engine.js`、`src/views/video-creation/QuickRenderPanel.vue`、`src/views/video-creation/quick-render-constants.js`、`src/utils/user-facing-error.js`、`src/locales/user-errors/{zh,en}.js`、`src/locales/create/ui/{zh,en}.js`。
+
 ### 3.1.26 视频任务编辑页场景多素材选择与再次合成（2026-08-14；2026-08-20 布局与交互修订）
 
 **需求**：「视频创作-历史记录 → 视频任务编辑页」每个场景固定展示 4 个视觉卡：**图1 / 图2（备选图）/ 视频1 / 视频2（两个视频显示位）**；底层仍只有 3 个持久化素材身份 `image1 | image2 | video`。新增按钮【生成新图】【生成 AI 视频】（生成更多素材供选择）与【再次合成视频】（用当前选定素材 + 已有 TTS 旁白/字幕/背景音乐重新合成成片）；流水线完成后即可从视频任务编辑页继续生成、预览、选择素材并重新合成。其余既有功能（分段编辑、替换旁白、重试、重新合成、导出等）保持不变。

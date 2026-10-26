@@ -51,15 +51,32 @@ function registerHandlers(ipcMain, deps) {
       // R51 P0 修复：data 为 undefined 时 data.props / data.profile 属性访问必崩
       if (!data || typeof data !== 'object') return { code: EC.VALIDATION_ERROR, message: '缺少 data 参数' }
       const win = BrowserWindow.fromWebContents(event.sender)
-      const onProgress = (percent, stage) => { win?.webContents.send('render:progress', { percent, stage }) }
+      const onProgress = (percent, stage, stageKey) => { win?.webContents.send('render:progress', { percent, stage, stageKey }) }
       const result = await renderEngine.render(data.props || data, { onProgress, profile: data.profile })
-      if (result.success) win?.webContents.send('render:complete', result)
-      else win?.webContents.send('render:error', result)
-      // R52 修复：统一为标准 { code, data, message } 格式
-      return { code: 0, data: result }
+      if (result.success) {
+        win?.webContents.send('render:complete', result)
+        // R52 修复：统一为标准 { code, data, message } 格式
+        return { code: 0, data: result }
+      }
+      // ⚠️ 失败必须返回**非 0 code**（2026-10-23 fix-quick-render）：
+      //   此前失败也返回 { code: 0, data: { success:false, error } }，
+      //   而渲染端只判 res.code === 0 ⇒ **图片轮播渲染失败被显示成「视频渲染完成」**，
+      //   用户点【查看视频】才拿到一个不存在的路径。
+      //   现在失败返回 REQUEST_ERROR + 稳定 errorCode，渲染端据此出错误文案。
+      log.error('[render] render:start failed reason=' + ((result && result.error) || 'unknown'))
+      win?.webContents.send('render:error', { success: false, error: result && result.error, errorCode: 'QUICK_RENDER_FAILED' })
+      return {
+        code: EC.REQUEST_ERROR,
+        errorCode: 'QUICK_RENDER_FAILED',
+        message: (result && result.error) || '渲染失败',
+        data: { success: false, error: (result && result.error) || '渲染失败' },
+      }
     } catch (err) {
+      // 异常路径同样要带稳定错误码（外部评审第 4 轮 i2）：
+      // 「每次失败都携带稳定错误码」是本次合同的一部分；此前只有非异常失败分支带了码，
+      // 渲染端拿到异常响应时无法据此出具体文案（只能退化成通用兜底）。
       log.error('[render] render:start error:', err)
-      return { code: EC.REQUEST_ERROR, message: err.message }
+      return { code: EC.REQUEST_ERROR, errorCode: 'QUICK_RENDER_FAILED', message: err.message }
     }
   }))
 
@@ -73,7 +90,7 @@ function registerHandlers(ipcMain, deps) {
   ipcMain.handle('render:ai-video-capabilities', withSenderCheck(async () => {
     try {
       if (!modelProviderManager || typeof modelProviderManager.getDefault !== 'function') {
-        return { code: EC.REQUEST_ERROR, message: 'AI 视频生成服务不可用，请在模型设置中启用视频供应商' }
+        return { code: EC.REQUEST_ERROR, errorCode: 'QUICK_RENDER_VIDEO_SERVICE_UNAVAILABLE', message: 'AI 视频生成服务不可用，请在模型设置中启用视频供应商' }
       }
       const provider = modelProviderManager.getDefault('video')
       if (!provider || typeof provider.id !== 'string' || !provider.id.trim()) {
@@ -145,18 +162,20 @@ function registerHandlers(ipcMain, deps) {
       const size = sizeForAspectRatio(aspectRatio)
 
       const win = BrowserWindow.fromWebContents(event.sender)
-      const onProgress = (percent, stage) => { win?.webContents.send('render:progress', { percent, stage }) }
+      // stageKey：渲染端按**稳定机器键**取 locale 文案；stage 中文串仅作兜底
+      // （2026-10-23 fix-quick-render：此前只有中文串，英文界面下进度提示仍是中文）
+      const onProgress = (percent, stage, stageKey) => { win?.webContents.send('render:progress', { percent, stage, stageKey }) }
       if (!modelProviderManager || typeof modelProviderManager.callAdapter !== 'function' ||
           typeof modelProviderManager.getDefault !== 'function') {
         return { code: EC.REQUEST_ERROR, message: 'AI 视频生成服务不可用，请在模型设置中启用视频供应商' }
       }
       const provider = modelProviderManager.getDefault('video')
       if (!provider || typeof provider.id !== 'string' || !provider.id.trim()) {
-        return { code: EC.REQUEST_ERROR, message: '未配置可用的视频供应商，请在模型设置中启用视频生成能力' }
+        return { code: EC.REQUEST_ERROR, errorCode: 'QUICK_RENDER_NO_VIDEO_PROVIDER', message: '未配置可用的视频供应商，请在模型设置中启用视频生成能力' }
       }
       const model = resolveProviderDefaultModel(provider, 'video')
       const runDir = path.join(os.tmpdir(), 'story2video', 'quick-render', 'ai-video')
-      onProgress(2, '提交视频生成任务')
+      onProgress(2, '提交视频生成任务', 'SUBMITTING')
       const outcome = await generateSceneVideo({
         manager: modelProviderManager,
         providerId: provider.id.trim(),
@@ -183,15 +202,20 @@ function registerHandlers(ipcMain, deps) {
       })
       if (!outcome || !outcome.success || !outcome.path) {
         const message = (outcome && (outcome.error || outcome.message)) || 'AI 视频生成失败'
-        win?.webContents.send('render:error', { success: false, error: message })
-        return { code: EC.REQUEST_ERROR, message }
+        // ⚠️ 失败必须落主进程日志（2026-10-23 fix-quick-render）：
+        //   此前本通道的失败路径**完全不写日志** ⇒ 线上出问题时日志里查不到任何痕迹，
+        //   只能靠 provider 调用日志反推（本次排障即卡在这里）。
+        const errorCode = (outcome && outcome.errorCode) || 'PROVIDER_VIDEO_TASK_FAILED'
+        log.error('[render] quick-ai-video failed provider=' + provider.id + ' code=' + errorCode + ' reason=' + message)
+        win?.webContents.send('render:error', { success: false, error: message, errorCode })
+        return { code: EC.REQUEST_ERROR, errorCode, message }
       }
       const result = { success: true, outputPath: outcome.path }
       win?.webContents.send('render:complete', result)
       return { code: 0, data: result }
     } catch (err) {
       log.error('[render] render:start-ai-video error:', err)
-      return { code: EC.REQUEST_ERROR, message: err.message }
+      return { code: EC.REQUEST_ERROR, errorCode: 'PROVIDER_VIDEO_TASK_FAILED', message: err.message }
     }
   }))
 

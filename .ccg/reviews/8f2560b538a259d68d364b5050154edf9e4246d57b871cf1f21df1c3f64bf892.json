@@ -1,0 +1,105 @@
+{
+  "sha": "2611e9369821f5f3105e5605e9d5824a10400a08",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 33 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 33,
+    "fileCount": 3,
+    "codeFileCount": 2,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "8f2560b538a259d68d364b5050154edf9e4246d57b871cf1f21df1c3f64bf892",
+  "decidedAt": "2026-10-26T09:32:44.612Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": ".ccg/reviews/*.json 新增 5 个审查工件，但全部 deepReview.status 为 self_play_pending/pending，findings: null，note 明确写「裁决尚未填写：X/X 条未定（i1, i2...）」。提案声称已通过外部评审（第 3/4 轮），但工件无任何 adjudication 结果，无法证明 i1–i4 已被对抗验证。",
+        "highRiskDomains": [],
+        "prosecution": "工件全部为 pending、findings 为 null，无法证明 i1–i4 已被对抗验证；若据此合并，等于把「未审」当「已审」。",
+        "defense": "① 前提有误：本 PR **从未声称**做过外部评审。第 1 轮是双家族（claude×opencode，DUAL，490 行），第 2–5 轮是单模型（diff 均 <200 行，SINGLE），PR 描述与执行记录都写明了「自扮演档，置信权重 0.6，不是外部复核」。② pending 是闭环流程的**中间态**：引擎在裁决填写前不判定阻断、也不写回，顺序是「跑评审 → 落裁决模板 → agent 逐条填 → 在 PR 留可核证据 → writeback 写回 status」。本 PR 的裁决正文已作为公开评论发布（https://github.com/Colinchiu007/mulpub/pull/4496#issuecomment-6412651739），本次重跑即带 `--evidence` 指向它。③ 合并闸门只认闭集状态词（cleared/needs_revision/self_play_resolved），pending 结构上进不了合并。",
+        "verdict": "dismissed",
+        "rationale": "「工件 pending」是流程中间态而非结论；本 PR 明确标注自扮演档、未冒充外部复核，裁决正文已公开可核，且闸门只认闭集状态词。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "QuickRenderPanel.vue 的 start()/startGallery() 只在 res.code === 0 且 data.success !== false 时进入成功分支；对非 0 code（包括 REQUEST_ERROR）的响应无 else 处理，rendering.value 保持 true，error.value 不被设置，UI 会卡在「渲染中」无错误提示。异常分支（catch）同样只返回对象，不触发 onRenderError，界面无法感知失败。",
+        "highRiskDomains": [],
+        "prosecution": "start()/startGallery() 对非 0 code 无 else，rendering 保持 true、error 不设，界面卡在「渲染中」；catch 只返回对象不触发 onRenderError。",
+        "defense": "与代码事实不符，逐点反驳（行号为当前 HEAD a83c67c4 实测）：\n① **有 else**：`start()` 的 `} else {` 在 QuickRenderPanel.vue 401 行，内部设 `error.value`（403–405）并 `rendering.value = false`（406）；`startGallery()` 的 else 在 433 行，设 error（434）+ `rendering.value = false`（435）。\n② **catch 也复位**：`start()` catch 在 408–411（error + rendering=false），`startGallery()` catch 在 437–440。\n③ **事件不是必需**：主进程 catch 返回的是**已 resolve 的响应**（不是 reject），渲染端 await 后必然进入上述 else 或 catch，状态一定复位；`render:error` 是冗余通知通道。\n④ **实测**：`QuickRenderPanel.test.js` 33 条用例中含「主进程 code≠0 ⇒ 显示错误横幅且不显示成功横幅」「code=0 但 data.success=false ⇒ 按失败处理」等，全部观察到 `rendering` 归零；全文件 34/34 绿。",
+        "verdict": "dismissed",
+        "rationale": "指控的两处「缺失」在代码里都存在（401/433 行的 else、408/437 行的 catch，均显式复位 rendering 并设 error），且有用例实测覆盖。该指控与第 1 轮 i1/i2 同源，已两次以行号驳回。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": ".ccg/reviews/8f2560b5... 使用不同 JSON 模式（status: pending 而非 self_play_pending；缺 performedBy/template/confidenceWeight），与其余 4 个工件不一致，自动化解析易出错。",
+        "highRiskDomains": [],
+        "prosecution": "8f2560b5 这条记录用 `status: pending` 而其余用 `self_play_pending`，且缺 performedBy/template/confidenceWeight，自动化解析易出错。",
+        "defense": "属实但**不属于本 PR 的改动**：两套 schema 来自工具链的两个不同生产者——`ccg-review-decider.js` 在 pre-commit 阶段新建记录时写 `pending`（未跑深度评审前的占位），`ccg-deep-review.js` 在跑完评审后写 `self_play_pending` + performedBy/template/confidenceWeight。这是既有工具链的既存差异（主干 2353 条记录里两种形态并存），本次 PR 未改任何评审工具。若要统一 schema，属独立的评审工具改造切片。",
+        "verdict": "dismissed",
+        "rationale": "现象成立但归因错误：schema 差异来自 decider 与 engine 两个既有生产者，本 PR 未触碰评审工具；统一 schema 是独立切片，不应混入本次功能修复。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "render.js catch 分支（render:start 与 render:start-ai-video）只 log.error 并返回 {code: REQUEST_ERROR, errorCode, message}，未调用 win?.webContents.send('render:error', ...)。渲染端若依赖事件流接收错误，将漏收异常错误；同时 start() 无 else 处理返回的非 0 code，形成双重缺失。",
+        "highRiskDomains": [],
+        "prosecution": "render.js 两个 catch 分支只 log.error 并返回错误对象，未 send render:error；渲染端若依赖事件将漏收异常错误；叠加 start() 无 else，形成双重缺失。",
+        "defense": "① 「start() 无 else」已在 i2 以行号驳回。② 「渲染端依赖事件」不成立：渲染端对**响应**做判定（`res.code` + `res.data.success`），事件只是额外通知；且 `render:start` 的**非异常**失败分支**确实**调用了 `win?.webContents.send('render:error', …)`（当前实现），只有 catch 分支不发——而 catch 分支已返回带 `errorCode: 'QUICK_RENDER_FAILED'` 的响应（外部评审第 4 轮 i2 修复点）。③ 主进程日志已覆盖两条路径（`log.error`），排障不依赖前端事件。",
+        "verdict": "dismissed",
+        "rationale": "双重缺失的前提之一（start 无 else）已被行号驳回；另一支（catch 不发事件）不构成缺陷：渲染端以响应为准、catch 响应已带稳定错误码、主进程日志已留痕。事件通道的选择是设计取舍，不是缺失。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-26T09:38:19.485Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4496#issuecomment-6412651739",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@4c86f3a71916bc1ad078da8b5f54a566944696902dbb4a677c9f05ffcbe0c26c"
+  }
+}

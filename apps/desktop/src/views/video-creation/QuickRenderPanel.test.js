@@ -15,6 +15,9 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import i18n from '@/i18n'
 import QuickRenderPanel from './QuickRenderPanel.vue'
+import { STAGE_KEY_TO_LOCALE } from './quick-render-constants'
+import createUiZh from '@/locales/create/ui/zh'
+import createUiEn from '@/locales/create/ui/en'
 
 vi.mock('@/api/publisher', () => ({
   renderStart: vi.fn(),
@@ -40,12 +43,32 @@ const AGNES_CAPS = {
   aspectRatios: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
 }
 
+/**
+ * 挂载登记（外部评审第 2 轮 i2，2026-10-26）
+ *
+ * 此前每个用例在**断言之后**才 `w.unmount()`：断言一失败，unmount 就被跳过，
+ * 组件的事件订阅（onRenderProgress / onRenderComplete / onRenderError 各自的 cleanup）
+ * 会跨用例残留 —— 后续用例可能收到上一个用例的事件，产生与本次改动无关的偶发红。
+ * ⇒ 统一登记，`afterEach` 兜底卸载（重复 unmount 是安全的）。
+ */
+const mountedWrappers = []
+function trackWrapper (w) {
+  mountedWrappers.push(w)
+  return w
+}
+afterEach(() => {
+  while (mountedWrappers.length) {
+    const w = mountedWrappers.pop()
+    try { w.unmount() } catch (e) { /* 用例内已卸载 */ }
+  }
+})
+
 async function mountPanel (caps = AGNES_CAPS) {
   const mocks = await import('@/api/publisher')
   mocks.renderAiVideoCapabilities.mockResolvedValue({ code: 0, data: { providerId: 'agnes-multimodal', model: 'agnes-video-2.5-flash', capabilities: caps } })
   mocks.renderStartAiVideo.mockResolvedValue({ code: 0, data: { success: true, outputPath: '/tmp/out.mp4' } })
   mocks.renderStart.mockResolvedValue({ code: 0, data: { success: true, outputPath: '/tmp/gallery.mp4' } })
-  const w = mount(QuickRenderPanel, { global: { plugins: [i18n] } })
+  const w = trackWrapper(mount(QuickRenderPanel, { global: { plugins: [i18n] } }))
   await nextTick()
   await new Promise((r) => setTimeout(r, 0))
   await nextTick()
@@ -326,7 +349,7 @@ describe('QuickRenderPanel — 进度、结果与取消', () => {
     mocks.onRenderProgress.mockImplementation((cb) => { progressCb = cb; return vi.fn() })
     // 提交保持 pending ⇒ 组件停留在渲染态（进度区才渲染）
     mocks.renderStartAiVideo.mockImplementation(() => new Promise(() => {}))
-    const w2 = mount(QuickRenderPanel, { global: { plugins: [i18n] } })
+    const w2 = trackWrapper(mount(QuickRenderPanel, { global: { plugins: [i18n] } }))
     await nextTick()
     await w2.find('[data-testid="quick-ai-prompt"]').setValue('x')
     await w2.find('[data-testid="quick-start"]').trigger('click')
@@ -345,7 +368,7 @@ describe('QuickRenderPanel — 进度、结果与取消', () => {
     let progressCb = null
     mocks.onRenderProgress.mockImplementation((cb) => { progressCb = cb; return vi.fn() })
     mocks.renderStartAiVideo.mockImplementation(() => new Promise(() => {}))
-    const w2 = mount(QuickRenderPanel, { global: { plugins: [i18n] } })
+    const w2 = trackWrapper(mount(QuickRenderPanel, { global: { plugins: [i18n] } }))
     await nextTick()
     await w2.find('[data-testid="quick-ai-prompt"]').setValue('x')
     await w2.find('[data-testid="quick-start"]').trigger('click')
@@ -385,7 +408,7 @@ describe('QuickRenderPanel — 进度、结果与取消', () => {
   it('取消：调用 renderCancel 并如实提示远端可能仍在生成', async () => {
     const { w, mocks } = await mountPanel()
     mocks.renderStartAiVideo.mockImplementation(() => new Promise(() => {}))
-    const w2 = mount(QuickRenderPanel, { global: { plugins: [i18n] } })
+    const w2 = trackWrapper(mount(QuickRenderPanel, { global: { plugins: [i18n] } }))
     await nextTick()
     await w2.find('[data-testid="quick-ai-prompt"]').setValue('x')
     await w2.find('[data-testid="quick-start"]').trigger('click')
@@ -412,6 +435,160 @@ describe('QuickRenderPanel — 进度、结果与取消', () => {
     expect(cuts).toHaveLength(2)
     expect(cuts[0].type).toBe('anime_scene')
     expect(cuts[0].animation).toBe('ken-burns')
+  })
+})
+
+/**
+ * fix-quick-render（2026-10-23）：失败与进度**可读性**回归
+ *
+ * 锁住三件真实存在过的事：
+ *  1. 主进程只发中文 stage ⇒ 英文界面下进度提示仍是中文，且渲染端无法本地化；
+ *  2. 失败事件到达时成功态没被清 ⇒ 「视频渲染完成」与错误提示同时出现；
+ *  3. 失败原因是一句含 provider 名等技术文本的自由文本 ⇒ 用户看不懂。
+ */
+describe('QuickRenderPanel — 失败与进度的可读性（fix-quick-render）', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('进度按 stageKey 走本地化文案（不直接展示主进程的中文 stage）', async () => {
+    const { w, mocks } = await mountPanel()
+    let progressCb = null
+    mocks.onRenderProgress.mockImplementation((cb) => { progressCb = cb; return vi.fn() })
+    mocks.renderStartAiVideo.mockImplementation(() => new Promise(() => {}))
+    const w2 = trackWrapper(mount(QuickRenderPanel, { global: { plugins: [i18n] } }))
+    await nextTick()
+    await w2.find('[data-testid="quick-ai-prompt"]').setValue('x')
+    await w2.find('[data-testid="quick-start"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    // stage 是主进程的中文兜底文案，stageKey 才是稳定机器键
+    progressCb({ percent: 30, stage: '生成中', stageKey: 'GENERATING' })
+    await nextTick()
+
+    const text = w2.find('[data-testid="quick-progress"]').text()
+    expect(text).toContain('30%')
+    expect(text).toContain(i18n.global.t('create.story2video.ui.quickStageGenerating'))
+    w.unmount()
+    w2.unmount()
+  })
+
+  it('不认识的 stageKey 才回落到主进程自带文案（不丢信息）', async () => {
+    const { w, mocks } = await mountPanel()
+    let progressCb = null
+    mocks.onRenderProgress.mockImplementation((cb) => { progressCb = cb; return vi.fn() })
+    mocks.renderStartAiVideo.mockImplementation(() => new Promise(() => {}))
+    const w2 = trackWrapper(mount(QuickRenderPanel, { global: { plugins: [i18n] } }))
+    await nextTick()
+    await w2.find('[data-testid="quick-ai-prompt"]').setValue('x')
+    await w2.find('[data-testid="quick-start"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    progressCb({ percent: 50, stage: '某种未登记阶段' })
+    await nextTick()
+
+    expect(w2.find('[data-testid="quick-progress"]').text()).toContain('某种未登记阶段')
+    w.unmount()
+    w2.unmount()
+  })
+
+  it('渲染中收到失败事件 ⇒ 显示错误横幅且**不显示**成功横幅', async () => {
+    const { w, mocks } = await mountPanel()
+    let errorCb = null
+    // ⚠️ 必须在**挂载前**换掉实现：组件在 onMounted 里订阅事件，
+    //    挂载后再换 mock 拿到的仍是旧实现（注册时已把回调交出去）。
+    mocks.onRenderError.mockImplementation((cb) => { errorCb = cb; return vi.fn() })
+    // 提交保持 pending ⇒ 组件停留在渲染态（失败事件只在渲染态被处理）
+    mocks.renderStartAiVideo.mockImplementation(() => new Promise(() => {}))
+    const w2 = trackWrapper(mount(QuickRenderPanel, { global: { plugins: [i18n] } }))
+    await nextTick()
+    await w2.find('[data-testid="quick-ai-prompt"]').setValue('x')
+    await w2.find('[data-testid="quick-start"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    errorCb({ success: false, error: 'provider 失败', errorCode: 'PROVIDER_VIDEO_TASK_FAILED' })
+    await nextTick()
+
+    expect(w2.find('[data-testid="quick-error"]').exists()).toBe(true)
+    expect(w2.find('[data-testid="quick-view-result"]').exists()).toBe(false)
+    w.unmount()
+    w2.unmount()
+  })
+
+  it('主进程 code=0 但 data.success=false ⇒ 按失败处理（不显示成功横幅）', async () => {
+    const { w, mocks } = await mountPanel()
+    mocks.renderStartAiVideo.mockResolvedValue({ code: 0, data: { success: false, error: '渲染进程退出码: 1' } })
+    await w.find('[data-testid="quick-ai-prompt"]').setValue('x')
+    await w.find('[data-testid="quick-start"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await nextTick()
+
+    expect(w.find('[data-testid="quick-view-result"]').exists()).toBe(false)
+    expect(w.find('[data-testid="quick-error"]').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('稳定错误码 ⇒ 走本地化文案（不把技术文本原样透给用户）', async () => {
+    const { w, mocks } = await mountPanel()
+    mocks.renderStartAiVideo.mockResolvedValue({
+      code: -1,
+      errorCode: 'PROVIDER_VIDEO_TIMEOUT',
+      message: '视频生成超时或失败（provider: agnes-multimodal）',
+    })
+    await w.find('[data-testid="quick-ai-prompt"]').setValue('x')
+    await w.find('[data-testid="quick-start"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+    await nextTick()
+
+    const text = w.find('[data-testid="quick-error"]').text()
+    expect(text).toContain(i18n.global.t('userErrors.PROVIDER_VIDEO_TIMEOUT'))
+    // 技术文本不得出现
+    expect(text).not.toContain('provider:')
+    w.unmount()
+  })
+})
+
+/**
+ * 阶段键 ↔ locale 的一致性（外部评审 i4，2026-10-25）
+ *
+ * 背景：`STAGE_KEY_TO_LOCALE`（quick-render-constants.js）与
+ * `locales/create/ui/{zh,en}.js` 的 `quickStage*` 是**手工双向同步**。
+ * 现有 locale 门禁只查「zh/en 成对」与「渲染端无新增硬编码中文」，
+ * **不查映射与 locale 键是否对得上** ⇒ 新增一个 stageKey 却忘了加文案时，
+ * 界面会静默显示原始 key 路径（`create.story2video.ui.quickStageXxx`），
+ * 既不报错也不进任何门禁。
+ *
+ * 这里补两条**双向**锁：映射的每个值必须在 zh/en 都存在；locale 里的每个
+ * `quickStage*` 也必须被映射覆盖（防止「加了文案但没人用」的反向漂移）。
+ */
+describe('QuickRenderPanel — 阶段键与 locale 的双向一致（外部评审 i4）', () => {
+  it('STAGE_KEY_TO_LOCALE 的每个值在 zh/en 都存在（否则界面显示原始 key 路径）', () => {
+    const leafOf = (localeKey) => localeKey.split('.').pop()
+    const missing = []
+    for (const [stageKey, localeKey] of Object.entries(STAGE_KEY_TO_LOCALE)) {
+      if (typeof createUiZh[leafOf(localeKey)] !== 'string') missing.push(`zh:${stageKey}→${localeKey}`)
+      if (typeof createUiEn[leafOf(localeKey)] !== 'string') missing.push(`en:${stageKey}→${localeKey}`)
+    }
+    expect(missing).toEqual([])
+  })
+
+  // 两个生产者的阶段键并集（外部评审第 2 轮 i1：5 vs 9 不是缺陷，是两条路径各有产出）
+  //   AI 视频（scene-video-generator.js）：SUBMITTING/QUEUED/GENERATING/DOWNLOADING/COMPLETED
+  //   本地 Remotion（render-engine.js）  ：RENDERING/ENCODING/COMPUTING/STARTING
+  // 任一生产者新增阶段键，本断言即红 ⇒ 强制补映射（否则界面回落成原始 key 路径）。
+  const PRODUCER_STAGE_KEYS = [
+    'SUBMITTING', 'QUEUED', 'GENERATING', 'DOWNLOADING', 'COMPLETED',
+    'RENDERING', 'ENCODING', 'COMPUTING', 'STARTING',
+  ]
+
+  it('映射表恰好覆盖两个生产者的阶段键并集（多一个或少一个都红）', () => {
+    expect(Object.keys(STAGE_KEY_TO_LOCALE).sort()).toEqual([...PRODUCER_STAGE_KEYS].sort())
+  })
+
+  it('locale 里的 quickStage* 全部有映射（加了文案却没人用时也能发现）', () => {
+    const mapped = new Set(Object.values(STAGE_KEY_TO_LOCALE).map((k) => k.split('.').pop()))
+    const orphanInZh = Object.keys(createUiZh).filter((k) => /^quickStage/.test(k) && !mapped.has(k))
+    const orphanInEn = Object.keys(createUiEn).filter((k) => /^quickStage/.test(k) && !mapped.has(k))
+    expect(orphanInZh).toEqual([])
+    expect(orphanInEn).toEqual([])
   })
 })
 

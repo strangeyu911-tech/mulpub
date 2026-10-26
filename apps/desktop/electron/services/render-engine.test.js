@@ -85,28 +85,52 @@ describe('RenderEngine', () => {
 
   describe('parseRenderProgress — Remotion CLI 进度解析', () => {
     it('解析 Remotion 实际输出 "Rendered 45/900"（无 frame 字样）', () => {
-      expect(RenderEngine.parseRenderProgress('Rendered 45/900')).toEqual({ percent: 5, stage: '渲染中' })
+      expect(RenderEngine.parseRenderProgress('Rendered 45/900')).toEqual({ percent: 5, stage: '渲染中', stageKey: 'RENDERING' })
     })
 
     it('解析 Remotion makeRenderingProgress 输出 "Rendered frames 45/900"（复数 frames）', () => {
-      expect(RenderEngine.parseRenderProgress('Rendered frames 45/900')).toEqual({ percent: 5, stage: '渲染中' })
+      expect(RenderEngine.parseRenderProgress('Rendered frames 45/900')).toEqual({ percent: 5, stage: '渲染中', stageKey: 'RENDERING' })
     })
 
     it('解析渲染中阶段 "Rendering frames 45/900"', () => {
-      expect(RenderEngine.parseRenderProgress('Rendering frames 45/900')).toEqual({ percent: 5, stage: '渲染中' })
+      expect(RenderEngine.parseRenderProgress('Rendering frames 45/900')).toEqual({ percent: 5, stage: '渲染中', stageKey: 'RENDERING' })
     })
 
     it('解析拼接阶段 "Encoded 45/900"', () => {
-      expect(RenderEngine.parseRenderProgress('Encoded 450/900')).toEqual({ percent: 50, stage: '编码中' })
+      expect(RenderEngine.parseRenderProgress('Encoded 450/900')).toEqual({ percent: 50, stage: '编码中', stageKey: 'ENCODING' })
     })
 
     it('剥离 ANSI 转义码后仍能解析', () => {
       const ansi = '\u001b[2K\u001b[0G\u001b[36mRendered frames 45/900\u001b[0m'
-      expect(RenderEngine.parseRenderProgress(ansi)).toEqual({ percent: 5, stage: '渲染中' })
+      expect(RenderEngine.parseRenderProgress(ansi)).toEqual({ percent: 5, stage: '渲染中', stageKey: 'RENDERING' })
+    })
+
+    it('COMPLETED 原样透传 100（不得被阶段缩放成 95 —— 外部评审第 3 轮 i3）', () => {
+      expect(RenderEngine.mapStagePercent(100, 'COMPLETED')).toBe(100)
+    })
+
+    it('未知阶段原样透传（不静默缩放，避免将来多报一个阶段就永远到不了 100）', () => {
+      expect(RenderEngine.mapStagePercent(50, 'SOMETHING_NEW')).toBe(50)
+      expect(RenderEngine.mapStagePercent(100, undefined)).toBe(100)
+    })
+
+    it('RENDERING 封顶 95（给编码阶段留位）', () => {
+      expect(RenderEngine.mapStagePercent(100, 'RENDERING')).toBe(95)
+      expect(RenderEngine.mapStagePercent(0, 'RENDERING')).toBe(0)
+    })
+
+    it('ENCODING 映射到 [96, 99]', () => {
+      expect(RenderEngine.mapStagePercent(0, 'ENCODING')).toBe(96)
+      expect(RenderEngine.mapStagePercent(100, 'ENCODING')).toBe(99)
+    })
+
+    it('越界百分比被夹到 0-100', () => {
+      expect(RenderEngine.mapStagePercent(-5, 'RENDERING')).toBe(0)
+      expect(RenderEngine.mapStagePercent(999, 'COMPLETED')).toBe(100)
     })
 
     it('total=0 时返回 0 而非 Infinity（除零边界）', () => {
-      expect(RenderEngine.parseRenderProgress('Rendered 0/0')).toEqual({ percent: 0, stage: '渲染中' })
+      expect(RenderEngine.parseRenderProgress('Rendered 0/0')).toEqual({ percent: 0, stage: '渲染中', stageKey: 'RENDERING' })
     })
 
     it('非进度文本返回 null', () => {

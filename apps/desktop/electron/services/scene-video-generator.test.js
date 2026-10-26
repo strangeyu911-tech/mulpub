@@ -23,7 +23,7 @@ vi.mock('fs', async (importOriginal) => {
   return { ...actual, default: actual }
 })
 
-const { buildSubmitParams, generateSceneVideo, PROGRESS_STAGES } = require('./scene-video-generator')
+const { buildSubmitParams, generateSceneVideo, PROGRESS_STAGES, PROGRESS_STAGE_KEYS } = require('./scene-video-generator')
 
 /** 造一个只实现必要接口的 manager 替身 */
 function createManager (behaviour) {
@@ -135,7 +135,7 @@ describe('generateSceneVideo — 提交 / 轮询 / 进度', () => {
     })
     expect(outcome.success).toBe(false)
     expect(outcome.error).toContain('provider exploded')
-    expect(onProgress).toHaveBeenCalledWith(2, PROGRESS_STAGES.SUBMITTING)
+    expect(onProgress).toHaveBeenCalledWith(2, PROGRESS_STAGES.SUBMITTING, PROGRESS_STAGE_KEYS.SUBMITTING)
   })
 
   it('适配器未返回任务 ID 时给出明确错误', async () => {
@@ -192,5 +192,37 @@ describe('generateSceneVideo — 提交 / 轮询 / 进度', () => {
     const tens = percents.filter((p) => p === 10)
     expect(tens.length).toBeGreaterThanOrEqual(2)
     expect(Math.max(...percents)).toBe(10)
+  })
+})
+
+/**
+ * 进度阶段键的**两侧锁**（外部评审第 2 轮 i1 / i3，2026-10-26）
+ *
+ * 契约：`render:progress` 的 stageKey 由**两个生产者**发出——
+ *   ① 本模块（AI 视频路径）：SUBMITTING / QUEUED / GENERATING / DOWNLOADING / COMPLETED
+ *   ② `render-engine.js`（本地 Remotion 路径）：RENDERING / ENCODING / COMPUTING / STARTING
+ * 渲染端把它们**并集**映射到 locale（`quick-render-constants.js::STAGE_KEY_TO_LOCALE`）。
+ *
+ * 为什么要有这道锁：三处（本模块 / render-engine / 渲染端映射）此前只靠人工同步。
+ * 新增一个阶段键却忘了加映射时，界面会静默回落成原始 key 路径，任何门禁都不会红。
+ * 本测试锁住「生产者这一侧」；映射侧的并集断言在
+ * `src/views/video-creation/QuickRenderPanel.test.js`。任一侧新增键，另一侧立刻红。
+ */
+describe('进度阶段键 — 生产者侧契约', () => {
+  it('AI 视频五阶段的键值固定（新增键必须同步渲染端映射表）', () => {
+    expect(PROGRESS_STAGE_KEYS).toEqual({
+      SUBMITTING: 'SUBMITTING',
+      QUEUED: 'QUEUED',
+      GENERATING: 'GENERATING',
+      DOWNLOADING: 'DOWNLOADING',
+      COMPLETED: 'COMPLETED',
+    })
+  })
+
+  it('每个阶段都有配套的中文兜底文案（stage 不许为空）', () => {
+    for (const [name, text] of Object.entries(PROGRESS_STAGES)) {
+      expect(typeof text, name).toBe('string')
+      expect(text.length, name).toBeGreaterThan(0)
+    }
   })
 })

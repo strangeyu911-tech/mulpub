@@ -47,4 +47,15 @@ export default {
     STORE_NOT_INITIALIZED: '本地数据服务尚未就绪。请稍后重试或重启应用。',
     NO_UPDATABLE_FIELDS: '没有可更新的字段。请修改内容后再保存。',
     OPERATION_FAILED: '操作失败，请稍后重试。',
+
+    // ── 快速渲染（视频创作页「开始渲染」，2026-10-23 fix-quick-render）────────
+    // 文案要求：具体原因 + 用户能据以行动的下一步。
+    QUICK_RENDER_NO_VIDEO_PROVIDER: '还没有可用的视频生成模型。请打开「模型设置」，在「视频模型」或「多模态模型」中启用视频生成能力并填好 API Key，然后回来重试。',
+    QUICK_RENDER_VIDEO_SERVICE_UNAVAILABLE: 'AI 视频生成服务暂时不可用。请重启应用后重试；若持续出现，请在「模型设置」中重新保存视频模型配置。',
+    QUICK_RENDER_FAILED: '视频渲染失败。请检查文案或图片素材后重试；若持续出现，请重启应用或联系支持。',
+    PROVIDER_VIDEO_SUBMIT_FAILED: '视频生成任务提交失败。请到「模型设置」检查视频模型的 API Key、模型名与额度后重试。',
+    PROVIDER_VIDEO_TASK_FAILED: '视频生成任务执行失败。请到「模型设置」检查视频模型配置后重试，或改用其他视频模型。',
+    PROVIDER_VIDEO_TIMEOUT: '视频生成等待超时（单次最长 10 分钟）。请稍后重试；若频繁超时，可缩短文案或改用其他视频模型。',
+    PROVIDER_VIDEO_EMPTY_FILE: '成片下载结果为空或不可用。请重试；若持续出现，请联系支持。',
+    PROVIDER_VIDEO_UNDECODABLE: '成片文件无法解码，可能下载不完整。请重试；若持续出现，请联系支持。',
   }

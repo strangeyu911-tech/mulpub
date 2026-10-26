@@ -47,4 +47,14 @@ export default {
     STORE_NOT_INITIALIZED: 'The local data service is not ready yet. Please try again later or restart the app.',
     NO_UPDATABLE_FIELDS: 'There are no updatable fields. Modify something before saving.',
     OPERATION_FAILED: 'The operation failed. Please try again later.',
+
+    // ── Quick render ("Start rendering" on the video creation page, 2026-10-23 fix-quick-render) ──
+    QUICK_RENDER_NO_VIDEO_PROVIDER: 'No usable video generation model yet. Open "Model Settings", enable video generation for a "Video" or "Multimodal" provider, fill in its API key, then come back and retry.',
+    QUICK_RENDER_VIDEO_SERVICE_UNAVAILABLE: 'The AI video generation service is unavailable right now. Restart the app and try again; if it keeps happening, re-save your video model configuration in "Model Settings".',
+    QUICK_RENDER_FAILED: 'Video rendering failed. Check your script or image assets and try again; if it keeps happening, restart the app or contact support.',
+    PROVIDER_VIDEO_SUBMIT_FAILED: 'The video generation job could not be submitted. Check the video model API key, model name and quota in "Model Settings", then retry.',
+    PROVIDER_VIDEO_TASK_FAILED: 'The video generation job failed. Check the video model configuration in "Model Settings" and retry, or switch to another video model.',
+    PROVIDER_VIDEO_TIMEOUT: 'Timed out while waiting for the video (10 minutes max). Please try again later; if it keeps timing out, shorten the script or use another video model.',
+    PROVIDER_VIDEO_EMPTY_FILE: 'The downloaded video is empty or unusable. Please try again; if it keeps happening, contact support.',
+    PROVIDER_VIDEO_UNDECODABLE: 'The downloaded video cannot be decoded and may be incomplete. Please try again; if it keeps happening, contact support.',
   }

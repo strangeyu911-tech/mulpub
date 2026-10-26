@@ -49,6 +49,39 @@ const PROGRESS_STAGES = Object.freeze({
   COMPLETED: '完成',
 })
 
+/**
+ * 进度阶段的**稳定机器键**（2026-10-23 fix-quick-render）
+ *
+ * 为什么需要：PROGRESS_STAGES 是中文文案，渲染端拿它直接展示 ⇒
+ * ① 英文界面下进度提示仍是中文；② 渲染端若想本地化，只能去**匹配中文句子**
+ * （主进程改一个字就静默失配）。
+ * ⇒ 进度回调新增第三个参数 stageKey：渲染端按键取 locale 文案，
+ * 中文 stage 只作为「不认识该键」时的兜底。
+ */
+const PROGRESS_STAGE_KEYS = Object.freeze({
+  SUBMITTING: 'SUBMITTING',
+  QUEUED: 'QUEUED',
+  GENERATING: 'GENERATING',
+  DOWNLOADING: 'DOWNLOADING',
+  COMPLETED: 'COMPLETED',
+})
+
+/**
+ * AI 视频生成的失败分类（稳定错误码）
+ *
+ * 为什么需要：此前失败只回一句自由文本（如「视频生成超时或失败（provider: agnes-multimodal）」），
+ * 渲染端经 formatUserError 归一化时会把它当「技术文本」⇒ 一律退化成笼统的「渲染失败」，
+ * 用户看不到**能据以行动的**原因；主进程侧也没落日志 ⇒ 线上完全不可诊断。
+ * ⇒ 主进程回稳定 errorCode，渲染端据此出 locale 文案（具体原因 + 怎么解决）。
+ */
+const VIDEO_ERROR_CODES = Object.freeze({
+  SUBMIT_FAILED: 'PROVIDER_VIDEO_SUBMIT_FAILED',
+  TASK_FAILED: 'PROVIDER_VIDEO_TASK_FAILED',
+  TIMEOUT: 'PROVIDER_VIDEO_TIMEOUT',
+  EMPTY_FILE: 'PROVIDER_VIDEO_EMPTY_FILE',
+  UNDECODABLE: 'PROVIDER_VIDEO_UNDECODABLE',
+})
+
 /** 毫秒级等待 */
 function sleep (ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -239,26 +272,27 @@ async function generateSceneVideo ({
     mode, images, audios, videos, firstFrame, lastFrame, aspectRatio, seed, seconds, sizeTier,
   })
   const report = typeof onProgress === 'function' ? onProgress : null
-  if (report) report(2, PROGRESS_STAGES.SUBMITTING)
+  if (report) report(2, PROGRESS_STAGES.SUBMITTING, PROGRESS_STAGE_KEYS.SUBMITTING)
   const submit = providerRunContext
     ? await manager.callAdapter(providerId, 'generateVideo', submitParams, { providerRunContext })
     : await manager.callAdapter(providerId, 'generateVideo', submitParams)
   if (submit && submit.code !== 0) {
-    return { success: false, error: (submit && submit.message) || ('视频生成调用失败（provider: ' + providerId + '）') }
+    return { success: false, errorCode: VIDEO_ERROR_CODES.SUBMIT_FAILED, error: (submit && submit.message) || ('视频生成调用失败（provider: ' + providerId + '）') }
   }
   const data = submit && submit.data
   // 适配器外层 code=0 但内层可能返回 { code: -1, message }（如 MiniMax 特殊套餐的 Missing task_id），
   // 此时 data.taskId 为空，必须透传适配器的真实错误消息，避免吞成「视频生成未返回任务 ID」。
   if (data && typeof data === 'object' && (Number(data.code) < 0 || data.success === false)) {
-    return { success: false, error: (data.message || data.error || '视频生成失败（provider: ' + providerId + '）') }
+    return { success: false, errorCode: VIDEO_ERROR_CODES.SUBMIT_FAILED, error: (data.message || data.error || '视频生成失败（provider: ' + providerId + '）') }
   }
   const taskId = data && (data.taskId || data.videoId)
   if (!taskId) {
-    return { success: false, error: '视频生成未返回任务 ID' + (data && data.message ? '：' + data.message : '') }
+    return { success: false, errorCode: VIDEO_ERROR_CODES.SUBMIT_FAILED, error: '视频生成未返回任务 ID' + (data && data.message ? '：' + data.message : '') }
   }
   const pollDeadline = Date.now() + POLL_DEADLINE_MS
   let videoUrl = null
   let pollError = ''
+  let pollErrorCode = ''
   while (Date.now() < pollDeadline) {
     await sleep(pollInterval)
     // model 一并回传：查询接口要求 model_name 与提交时一致，
@@ -270,6 +304,7 @@ async function generateSceneVideo ({
     // provider 显式报错（code<0 / success=false，无 URL）视为终止态，避免空转整轮 10 分钟（2026-08-11 W3）
     if (status && (Number(status.code) < 0 || status.success === false)) {
       pollError = (status && status.message) || '视频生成任务失败（provider: ' + providerId + '）'
+      pollErrorCode = VIDEO_ERROR_CODES.TASK_FAILED
       break
     }
     const url = status && (status.videoUrl || status.url || (status.data && (status.data.videoUrl || status.data.url)))
@@ -277,6 +312,7 @@ async function generateSceneVideo ({
     const state = status && (status.status || (status.data && status.data.status)) || ''
     if (['failed', 'error', 'cancelled'].includes(String(state).toLowerCase())) {
       pollError = '视频生成任务状态为 ' + String(state) + '（provider: ' + providerId + '）'
+      pollErrorCode = VIDEO_ERROR_CODES.TASK_FAILED
       break
     }
     if (report) {
@@ -284,21 +320,22 @@ async function generateSceneVideo ({
       // 「排队中 / 生成中」用 provider 的原始状态区分（适配器归一化后只剩 processing）。
       const rawState = String((status && status.providerStatus) || '').toLowerCase()
       const stage = rawState === 'queued' ? PROGRESS_STAGES.QUEUED : PROGRESS_STAGES.GENERATING
+      const stageKey = rawState === 'queued' ? PROGRESS_STAGE_KEYS.QUEUED : PROGRESS_STAGE_KEYS.GENERATING
       const percent = Number(status && status.progress)
-      report(Number.isFinite(percent) ? percent : 10, stage)
+      report(Number.isFinite(percent) ? percent : 10, stage, stageKey)
     }
   }
   if (!videoUrl) {
-    return { success: false, error: pollError || '视频生成超时或失败（provider: ' + providerId + '）' }
+    return { success: false, errorCode: pollErrorCode || VIDEO_ERROR_CODES.TIMEOUT, error: pollError || '视频生成超时或失败（provider: ' + providerId + '）' }
   }
-  if (report) report(90, PROGRESS_STAGES.DOWNLOADING)
+  if (report) report(90, PROGRESS_STAGES.DOWNLOADING, PROGRESS_STAGE_KEYS.DOWNLOADING)
   fs.mkdirSync(runDir, { recursive: true })
   const dest = path.join(runDir, 'scene_video_' + String(index).padStart(3, '0') + '.mp4')
   await downloadVideoToFile(videoUrl, dest, { maxBytes: MAX_VIDEO_FILE_BYTES })
   // 下载后校验：非空文件 + ffprobe 可解码，避免 HTML 错误页/截断文件伪装 mp4 拖到 compose 才暴露（2026-08-11 W4）
   if (!(fs.existsSync(dest) && fs.statSync(dest).size > 0)) {
     fs.unlink(dest, () => {})
-    return { success: false, error: '视频下载结果为空或不可用' }
+    return { success: false, errorCode: VIDEO_ERROR_CODES.EMPTY_FILE, error: '视频下载结果为空或不可用' }
   }
   try {
     await probeVideoFile(dest)
@@ -306,10 +343,11 @@ async function generateSceneVideo ({
     fs.unlink(dest, () => {})
     return {
       success: false,
+      errorCode: VIDEO_ERROR_CODES.UNDECODABLE,
       error: '视频文件无法解码（' + (probeError && probeError.message ? probeError.message : String(probeError)).slice(0, 120) + '）',
     }
   }
-  if (report) report(100, PROGRESS_STAGES.COMPLETED)
+  if (report) report(100, PROGRESS_STAGES.COMPLETED, PROGRESS_STAGE_KEYS.COMPLETED)
   return { success: true, path: dest }
 }
 
@@ -322,4 +360,6 @@ module.exports = {
   runTool,
   MAX_VIDEO_FILE_BYTES,
   PROGRESS_STAGES,
+  PROGRESS_STAGE_KEYS,
+  VIDEO_ERROR_CODES,
 }

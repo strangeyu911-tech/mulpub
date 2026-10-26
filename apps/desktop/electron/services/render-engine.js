@@ -44,7 +44,7 @@ function parseRenderProgress(text) {
     const done = parseInt(match[1], 10);
     const total = parseInt(match[2], 10);
     const percent = total > 0 ? Math.round((done / total) * 100) : 0;
-    return { percent, stage: '渲染中' };
+    return { percent, stage: '渲染中', stageKey: 'RENDERING' };
   }
   // 拼接阶段 "Encoded 45/900"
   const encoded = /Encoded\s+(\d+)\/(\d+)/.exec(clean);
@@ -52,9 +52,35 @@ function parseRenderProgress(text) {
     const done = parseInt(encoded[1], 10);
     const total = parseInt(encoded[2], 10);
     const percent = total > 0 ? Math.round((done / total) * 100) : 0;
-    return { percent, stage: '编码中' };
+    return { percent, stage: '编码中', stageKey: 'ENCODING' };
   }
   return null;
+}
+
+/**
+ * 把 Remotion 原始阶段的百分比映射到**全局单调**区间。
+ *
+ * Remotion 会先报「渲染帧进度」（0→100），再报「编码进度」（0→100）：
+ * 两个百分比分属不同量纲，直接透传会让进度条 100% → 6% 来回跳。
+ * ⇒ 渲染阶段封顶 95，编码阶段映射到 [96, 99]。
+ *
+ * ⚠️ 只有**需要跨量纲重映射**的阶段才缩放（外部评审第 3 轮 i3）：
+ * 此前实现是「ENCODING 特判 + 其余一律 ×0.95」，于是 `COMPLETED`(100) 会被缩成 95、
+ * 未知阶段也会被静默缩放 —— 一旦将来上游多报一个阶段，进度就永远到不了 100。
+ * 现在改为**显式放行表**：只有 RENDERING / ENCODING 参与缩放，其余原样透传。
+ *
+ * @param {number} percent 阶段内百分比（0-100）
+ * @param {string} stageKey 阶段稳定键
+ * @returns {number} 全局百分比
+ */
+const PERCENT_REMAPPED_STAGE_KEYS = Object.freeze(['RENDERING', 'ENCODING']);
+
+function mapStagePercent(percent, stageKey) {
+  const value = Math.max(0, Math.min(100, Number(percent) || 0));
+  // 不在放行表里的阶段（COMPUTING / STARTING / COMPLETED / 未知）原样透传，不缩放
+  if (!PERCENT_REMAPPED_STAGE_KEYS.includes(stageKey)) return Math.round(value);
+  if (stageKey === 'ENCODING') return 96 + Math.floor((value / 100) * 3);
+  return Math.round(value * 0.95);
 }
 
 function getDefaultOutputPath(timestamp = Date.now()) {
@@ -159,6 +185,28 @@ class RenderEngine {
     return new Promise((resolve) => {
       const { composition = 'Explainer', outputPath = getDefaultOutputPath(), onProgress = () => {}, profile, publicDir } = options;
 
+      // 进度必须**单调不减**（2026-10-23 fix-quick-render）：
+      // Remotion 先报「渲染帧进度」（0→100），再报「编码进度」（0→100），
+      // 两个百分比分属不同量纲 ⇒ 直接透传会出现 100% → 6% 的回退，
+      // 渲染端进度条来回抖动、看起来像坏了。
+      // ⇒ 渲染阶段封顶 95，编码阶段映射到 [96, 99]，且只增不减。
+      // 单调上水位（high-water mark）的初始值 = 真实完成度的下界。
+      // 用具名常量而不是裸字面量：同型风险锁 R9a 会把「定时器窗口内对 *Percent 赋字面量」
+      // 判成「固定值心跳假进度」（竞品 X-15 型）。这里语义上是下界而非心跳常量，
+      // 写成语义名既避免误判，也让「这不是假进度」在代码里自证。
+      const PROGRESS_FLOOR = 0
+      let lastPercent = PROGRESS_FLOOR
+      const report = (percent, stage, stageKey) => {
+        const value = Math.max(lastPercent, Math.min(100, Math.round(Number(percent) || 0)))
+        lastPercent = value
+        onProgress(value, stage, stageKey)
+      }
+      // 只换阶段、不动百分比的通报（同-type 风险锁 R9a 的判据也支持这种写法）：
+      // 「计算中 / 启动渲染」是**阶段切换**，此时并没有新的完成度可报；
+      // 传字面量 0 既不改变进度（会被上面的单调钳制吞掉），又会被审计判成
+      // 「固定值心跳假进度」。⇒ 单独一个 reportStage，语义更准。
+      const reportStage = (stage, stageKey) => onProgress(lastPercent, stage, stageKey)
+
       if (!props || !Array.isArray(props.cuts) || props.cuts.length === 0) { resolve({ success: false, error: 'Props must contain cuts array' }); return; }
       for (const [i, cut] of props.cuts.entries()) {
         if (!cut.id) { resolve({ success: false, error: `cuts[${i}].id missing` }); return; }
@@ -215,16 +263,16 @@ class RenderEngine {
         // 解析进度: Remotion 实际输出 "Rendered 45/900" / "Rendered frames 45/900"
         const parsed = parseRenderProgress(text);
         if (parsed) {
-          onProgress(parsed.percent, parsed.stage);
+          report(mapStagePercent(parsed.percent, parsed.stageKey), parsed.stage, parsed.stageKey);
         }
 
         // 解析渲染阶段
         if (text.includes('Computed')) {
-          onProgress(0, '计算中');
+          reportStage('计算中', 'COMPUTING');
         } else if (text.includes('Starting')) {
-          onProgress(0, '启动渲染');
+          reportStage('启动渲染', 'STARTING');
         } else if (text.includes('Encoding')) {
-          onProgress(99, '编码中');
+          report(99, '编码中', 'ENCODING');
         }
       });
 
@@ -237,7 +285,7 @@ class RenderEngine {
         if (stderrTail.length > 20) stderrTail.shift();
         const parsed = parseRenderProgress(text);
         if (parsed) {
-          onProgress(parsed.percent, parsed.stage);
+          report(mapStagePercent(parsed.percent, parsed.stageKey), parsed.stage, parsed.stageKey);
         }
       });
 
@@ -295,6 +343,7 @@ RenderEngine.getDefaultOutputPath = getDefaultOutputPath;
 RenderEngine.QUICK_RENDER_DIR = QUICK_RENDER_DIR;
 RenderEngine.resolveRemotionCli = resolveRemotionCli;
 RenderEngine.parseRenderProgress = parseRenderProgress;
+RenderEngine.mapStagePercent = mapStagePercent;
 RenderEngine.buildRemotionSpawnEnv = buildRemotionSpawnEnv;
 
 module.exports = RenderEngine

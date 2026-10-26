@@ -25,6 +25,26 @@ export const PROFILE_ASPECT_RATIO = Object.freeze({
   'xiaohongshu': '3:4',
 })
 
+/**
+ * 主进程 render:progress 的 stageKey → locale 键（**稳定机器键**，不靠中文句子匹配）。
+ *
+ * 为什么需要：主进程此前只发中文 stage 文案，渲染端只能直接展示
+ * ⇒ ① 英文界面下进度提示仍是中文；② 想本地化只能去匹配中文句子（改一个字就失配）。
+ *
+ * @type {Readonly<Record<string, string>>}
+ */
+export const STAGE_KEY_TO_LOCALE = Object.freeze({
+  SUBMITTING: 'create.story2video.ui.quickStageSubmitting',
+  QUEUED: 'create.story2video.ui.quickStageQueued',
+  GENERATING: 'create.story2video.ui.quickStageGenerating',
+  DOWNLOADING: 'create.story2video.ui.quickStageDownloading',
+  RENDERING: 'create.story2video.ui.quickStageRendering',
+  ENCODING: 'create.story2video.ui.quickStageEncoding',
+  COMPUTING: 'create.story2video.ui.quickStageComputing',
+  STARTING: 'create.story2video.ui.quickStageStarting',
+  COMPLETED: 'create.story2video.ui.quickStageCompleted',
+})
+
 /** 画幅兜底（映射表未命中时） */
 export const DEFAULT_ASPECT_RATIO = '16:9'
 

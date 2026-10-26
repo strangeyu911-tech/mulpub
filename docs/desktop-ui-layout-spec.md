@@ -842,3 +842,60 @@ mainWindow.on('resize', () => {
 | `apps/desktop/src/components/PublishProgressPanel.vue` | 引用浮标区 token |
 | `apps/desktop/src/views/Dashboard.vue` | 数据页内容安全区（`.dash-page`） |
 | `01-docs/PRD-DASHBOARD-TRUTHFUL-UI-2026-10-25.md` | 功能 PRD（T1 章节） |
+
+---
+
+## 17. 首页导航入口与发布记录状态标签（2026-10-26，home-nav-connect）
+
+### 17.1 首页统计卡
+
+- 四张统计卡（总发布 / 成功 / 失败 / 已绑定账号）统一为**原生 `button`**，整卡可点。
+- 复用 `.mp-home-stat-card` 视觉；按钮 reset（`font: inherit` / `color: inherit` / `cursor: pointer`）与焦点环写在独立 `apps/desktop/src/features/home/home-navigation.css`，不修改既有卡片几何。
+- 点击目标：`/publish/history?status=all|success|failed` 与 `/accounts`。
+- 卡片高度仍 ≤96px；数字与标签文本位置不变，不新增「查看」文案（去向由 `title` / `aria-label` 说明）。
+
+### 17.2 首页近期动态
+
+- 有公开作品链接的记录整行渲染为 `<a>`；无链接渲染为 `div`，不进入 Tab 顺序。
+- 可点行 hover 使用 `--color-bg-inset`，光标为 pointer；不新增行内按钮。
+- 链接解析与发布记录页共用 `usePublishHistoryContentLink`，布局规范不复制判据。
+
+### 17.3 发布页页头「发布记录」入口
+
+- 位于 `.publish-header-row` 末尾、批量模式开关之后；使用 `cohere-btn cohere-btn-secondary` 视觉。
+- 图标 `Tickets`（Element Plus），尺寸 15；文案「发布记录」。
+- 窄屏（`.publish-header-row` 换行）时随批量开关之后换行，不覆盖模式切换条。
+- 草稿箱视图（`/publish?tab=drafts`）不渲染该按钮。
+
+### 17.4 发布记录页状态标签
+
+- 位于发布记录工具卡顶部、搜索框上方；容器 `role="group"`，按钮原生 `button` + `aria-pressed`。
+- 复用既有 `.history-tabs` / `.history-tab` 视觉；补 `.history-status-tabs` 容器（`margin: 0 0 14px; padding: 0; background: transparent;`）。
+- 四个标签：全部 / 发布成功 / 发布失败 / 处理中；不显示数量（当前只加载部分记录，局部数量会误导为全量统计）。
+- 原「发布状态」下拉框移除，避免同能力两套控件。
+
+### 17.5 数据校验 / 回归锁
+
+| # | 判据 | 位置 |
+|---|------|------|
+| N1 | 首页四张统计卡均为 `BUTTON` 且点击路由符合合同 | `apps/desktop/src/views/Home.test.js` |
+| N2 | 第 6 个快捷入口为「视频创作」且路由 `/create` | `Home.test.js` |
+| N3 | 近期动态有链接渲染 `<a>`、无链接渲染 `div` | `Home.test.js` |
+| N4 | `action=add-account` 自动打开添加账号浮层并清理参数 | `Accounts.test.js` + `useAccountAddDeepLink.test.js` |
+| N5 | 发布页页头引入并渲染 `PublishHistoryEntry` | `Publish.history-entry-wiring.test.js` |
+| N6 | 状态标签四态与 `?status=` 双向同步、非法值回落 | `PublishHistory.test.js` + `usePublishHistoryStatusFilter.test.js` |
+| N7 | 新增文案 zh/en 成对 | `locales/structure-lock.test.js` |
+
+### 17.6 相关文件
+
+| 文件 | 职责 |
+|------|------|
+| `apps/desktop/src/views/Home.vue` | 首页入口、统计卡、近期动态 |
+| `apps/desktop/src/views/Accounts.vue` | 账号页深链接线 |
+| `apps/desktop/src/views/Publish.vue` | 发布页页头接线（+2 行） |
+| `apps/desktop/src/views/PublishHistory.vue` | 状态标签与筛选接线 |
+| `apps/desktop/src/features/accounts/useAccountAddDeepLink.js` | 账号添加深链单一实现 |
+| `apps/desktop/src/composables/usePublishHistoryStatusFilter.js` | 状态筛选与 URL 同步单一实现 |
+| `apps/desktop/src/features/publish/components/PublishHistoryEntry.vue` | 发布记录入口组件 |
+| `apps/desktop/src/features/home/home-navigation.css` | 首页导航可点样式 |
+| `01-docs/PRD-HOME-NAV-CONNECTIVITY-2026-10-26.md` | 功能 PRD |

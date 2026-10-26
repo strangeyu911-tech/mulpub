@@ -27,6 +27,7 @@ export default {
     contentTypeVideo: '视频',
     contentTypeImage: '图片',
     filterStatusAria: '发布状态筛选',
+    statusTabAll: '全部',
     allStatuses: '全部发布状态',
     filterStatusSuccess: '发布成功',
     filterStatusFailed: '发布失败',

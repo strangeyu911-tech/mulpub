@@ -7,7 +7,9 @@ import i18n from '@/i18n'
 
 const historyListMock = vi.fn()
 const draftListMock = vi.fn()
-const pushMock = vi.fn()
+const routerMock = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), query: {} }))
+const pushMock = routerMock.push
+const replaceMock = routerMock.replace
 const historyGetMock = vi.fn()
 const historyDeleteMock = vi.fn()
 const retryTaskMock = vi.fn()
@@ -38,7 +40,10 @@ vi.mock('@/api/publisher', () => ({
 }))
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: routerMock.push, replace: routerMock.replace }),
+  // 返回同一个对象（而不是 { query: routerMock.query } 快照），
+  // 这样 replace 后 routerMock.query 的更新能被组合式函数读到。
+  useRoute: () => routerMock,
 }))
 
 // 批量删除走 confirmDanger 确认门禁（desktop-ui-consistency）；测试默认确认通过，
@@ -86,6 +91,10 @@ describe('PublishHistory', () => {
   beforeEach(() => {
     i18n.global.locale.value = 'zh'
     vi.clearAllMocks()
+    routerMock.query = {}
+    // 模拟 vue-router：replace 后 route.query 随之更新（否则「先点失败再点全部」会因
+    // 测试桩不更新 query 而被状态同步判据正确短路，断言却以为漏写）。
+    routerMock.replace.mockImplementation(async (to) => { routerMock.query = { ...to.query } })
     historyListMock.mockReset().mockResolvedValue({
       code: 0,
       data: {
@@ -133,7 +142,7 @@ describe('PublishHistory', () => {
     expect(wrapper.text()).toContain('发布成功')
   })
 
-  it('提供参考产品对齐的搜索、四类筛选、视图切换和导出工具', async () => {
+  it('提供参考产品对齐的搜索、状态快捷标签、下拉筛选、视图切换和导出工具', async () => {
     const wrapper = mountView()
     await nextTick()
     await nextTick()
@@ -141,11 +150,77 @@ describe('PublishHistory', () => {
     expect(wrapper.get('[data-testid="history-search"]').attributes('placeholder')).toContain('搜索作品描述或任务标题')
     expect(wrapper.get('[data-testid="publisher-filter"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="content-type-filter"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="status-filter"]').exists()).toBe(true)
+    // 状态筛选从下拉框收敛为四个快捷标签（同一能力不保留两套控件）
+    expect(wrapper.find('[data-testid="status-filter"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="status-tab-all"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-testid="status-tab-success"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="status-tab-failed"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="status-tab-pending"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="publish-mode-filter"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="view-grid"]').attributes('aria-pressed')).toBe('false')
     expect(wrapper.get('[data-testid="view-list"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('[data-testid="export-history"]').text()).toContain('导出')
+  })
+
+  it('状态标签点击后即时筛选，并写入 URL', async () => {
+    historyListMock.mockResolvedValue({
+      code: 0,
+      data: {
+        records: [
+          { id: 'ok-tab', title: '成功记录', platform: 'zhihu', status: 'success' },
+          { id: 'failed-tab', title: '失败记录', platform: 'weibo', status: 'failed' },
+        ],
+      },
+    })
+    const wrapper = mountView()
+    await nextTick()
+    await nextTick()
+
+    await wrapper.get('[data-testid="status-tab-failed"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.findAll('.record-card')).toHaveLength(1)
+    expect(wrapper.text()).toContain('失败记录')
+    expect(wrapper.get('[data-testid="status-tab-failed"]').attributes('aria-pressed')).toBe('true')
+    expect(replaceMock).toHaveBeenCalledWith({
+      path: '/publish/history',
+      query: { status: 'failed' },
+    })
+
+    await wrapper.get('[data-testid="status-tab-all"]').trigger('click')
+    await nextTick()
+    expect(wrapper.findAll('.record-card')).toHaveLength(2)
+    expect(replaceMock).toHaveBeenCalledWith({ path: '/publish/history', query: {} })
+  })
+
+  it('从 URL 深链进入时初始选中对应状态标签', async () => {
+    routerMock.query = { status: 'success' }
+    historyListMock.mockResolvedValue({
+      code: 0,
+      data: {
+        records: [
+          { id: 'ok-deep', title: '成功深链记录', platform: 'zhihu', status: 'success' },
+          { id: 'failed-deep', title: '失败深链记录', platform: 'weibo', status: 'failed' },
+        ],
+      },
+    })
+    const wrapper = mountView()
+    await nextTick()
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="status-tab-success"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.findAll('.record-card')).toHaveLength(1)
+    expect(wrapper.text()).toContain('成功深链记录')
+  })
+
+  it('非法 status 参数回落为全部，页面不空白', async () => {
+    routerMock.query = { status: 'not-a-status' }
+    const wrapper = mountView()
+    await nextTick()
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="status-tab-all"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('.record-card').exists()).toBe(true)
   })
 
   // S1c：本页草稿标签整体下线，草稿箱收敛到唯一整页视图 /publish?tab=drafts。
@@ -405,7 +480,7 @@ describe('PublishHistory', () => {
     expect(wrapper.text()).toContain('需要重试')
 
     await wrapper.get('[data-testid="history-search"]').setValue('')
-    await wrapper.get('[data-testid="status-filter"]').setValue('failed')
+    await wrapper.get('[data-testid="status-tab-failed"]').trigger('click')
     expect(wrapper.findAll('.record-card')).toHaveLength(1)
     expect(wrapper.text()).toContain('需要重试')
   })
@@ -438,7 +513,7 @@ describe('PublishHistory', () => {
     expect(wrapper.text()).toContain('第二页唯一待重试记录')
 
     await wrapper.get('[data-testid="history-search"]').setValue('')
-    await wrapper.get('[data-testid="status-filter"]').setValue('failed')
+    await wrapper.get('[data-testid="status-tab-failed"]').trigger('click')
     await flushHistory()
     await flushFilterDebounce()
     expect(wrapper.findAll('.record-card')).toHaveLength(1)

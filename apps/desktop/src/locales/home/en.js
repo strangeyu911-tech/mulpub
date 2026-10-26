@@ -11,6 +11,10 @@ export default {
     statSuccess: 'Succeeded',
     statFailed: 'Failed',
     boundAccounts: 'Bound Accounts',
+    statHintTotal: 'View all publish records',
+    statHintSuccess: 'View successful publishes',
+    statHintFailed: 'View failed publishes',
+    statHintAccounts: 'Go to account management',
     shortcuts: 'Shortcuts',
     hero: {
       title: 'Start Publishing',
@@ -25,6 +29,7 @@ export default {
     dashboard: 'Dashboard',
     collection: 'Collection',
     comments: 'Messages & Comments',
+    videoCreation: 'Video Creation',
     supportedPlatforms: 'Supported Platforms',
     recentActivity: 'Recent Activity',
     emptyRecent: 'No publish records yet. Start your first one!',

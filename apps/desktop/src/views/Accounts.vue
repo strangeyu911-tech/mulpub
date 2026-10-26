@@ -374,6 +374,7 @@ import RiskSuspendedBanner from '@/features/accounts/components/RiskSuspendedBan
 import LoadMoreRow from '@/components/LoadMoreRow.vue'
 import { useAccountActions } from '@/composables/useAccountActions'
 import { useAccountProxyDialog } from '@/composables/useAccountProxyDialog'
+import { useAccountAddDeepLink } from '@/features/accounts/useAccountAddDeepLink'
 import { accountBatchCheckLogin } from '@/api/publisher'
 import { getApi } from '@/api/electron-bridge'
 import { useAccountEvents } from '@/composables/useAccountEvents'
@@ -433,6 +434,7 @@ const {
 })
 const loading = ref(false)
 const showAddDialog = ref(false)
+useAccountAddDeepLink({ route, router, showAddDialog })
 const adding = ref(false)
 // completingLogin 已移除（NavBar 保存按钮替代）
 const showAuthorizationGuide = ref(false)

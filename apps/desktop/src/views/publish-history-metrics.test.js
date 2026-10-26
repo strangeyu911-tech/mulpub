@@ -45,7 +45,7 @@ vi.mock('@/stores/platforms', () => ({
   usePlatformStore: () => ({ load: vi.fn(), getLabel: () => '', getIcon: () => '', getContentCategory: () => 'ARTICLE' }),
 }))
 
-vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), useRoute: () => ({ query: {} }) }))
 
 import PublishHistory from './PublishHistory.vue'
 

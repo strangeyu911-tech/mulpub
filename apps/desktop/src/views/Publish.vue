@@ -77,9 +77,9 @@
           <input data-testid="publish-batch-mode" type="checkbox" v-model="batchMode" class="coral-check" @change="checkBatchAccess" />
           <span>{{ t('publishPage.batchMode') }}</span>
         </label>
+        <PublishHistoryEntry />
       </div>
     </div>
-
     <!-- 批量模式：文章列表 -->
     <template v-if="batchMode">
       <div class="cohere-content batch-articles">
@@ -759,6 +759,7 @@ import { useTopicTagBridge } from '@/features/publish/use-topic-tag-bridge'
 import PlatformOverridePanel from '@/features/publish/components/PlatformOverridePanel.vue'
 import PublishVisibilitySelect from '@/features/publish/components/PublishVisibilitySelect.vue'
 import PublishTargetSelector from '@/features/publish/components/PublishTargetSelector.vue'
+import PublishHistoryEntry from '@/features/publish/components/PublishHistoryEntry.vue'
 import SelectedVideoCard from '@/features/publish/components/SelectedVideoCard.vue'
 import { resolveAccountDisplayName } from '@/utils/account-display-name'
 import { usePublishPlatformCatalog } from '@/features/publish/usePublishPlatformCatalog'

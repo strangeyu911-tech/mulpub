@@ -606,6 +606,22 @@ describe("AccountsView", () => {
     expect(w.find('[data-testid="platform-filter-douyin"]').exists()).toBe(false);
   });
 
+  it("首页添加账号深链：挂载时自动打开添加账号浮层并清理参数", async () => {
+    _routeState.query = { action: "add-account" };
+    const w = await mountView();
+
+    expect(w.vm.showAddDialog).toBe(true);
+    expect(_routerState.replace).toHaveBeenCalledWith({ path: "/accounts", query: {} });
+  });
+
+  it("首页添加账号深链：非 add-account 的 action 不弹层", async () => {
+    _routeState.query = { action: "unknown-action" };
+    const w = await mountView();
+
+    expect(w.vm.showAddDialog).toBe(false);
+    expect(_routerState.replace).not.toHaveBeenCalled();
+  });
+
   it("批量操作按钮控制全选工具栏和卡片选择框显示", async () => {
     _testAccounts.push({ id: "batch-1", platform: "zhihu", status: "active", account_name: "批量账号" });
     const w = await mountView();

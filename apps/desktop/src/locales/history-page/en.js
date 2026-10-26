@@ -27,6 +27,7 @@ export default {
     contentTypeVideo: 'Video',
     contentTypeImage: 'Image',
     filterStatusAria: 'Filter by publish status',
+    statusTabAll: 'All',
     allStatuses: 'All publish statuses',
     filterStatusSuccess: 'Published',
     filterStatusFailed: 'Failed',

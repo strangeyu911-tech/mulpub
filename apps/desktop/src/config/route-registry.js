@@ -98,10 +98,11 @@ export const ROUTE_REGISTRY = Object.freeze([
   },
   {
     // 内部路由：发布记录列表。
-    // 进入方式（三处，均为页内按钮，不占侧边栏菜单）：
-    //   ① /publish 编辑器内「发布记录」按钮（Publish.vue）
-    //   ② 首页快捷入口 / 首页操作卡（Home.vue ×3）
-    //   ③ 排期结果页（PublishScheduleResult → router.push('/publish/history')）
+    // 进入方式（四处，均为页内按钮，不占侧边栏菜单）：
+    //   ① /publish 编辑器页头「发布记录」按钮（features/publish/components/PublishHistoryEntry.vue）
+    //   ② /publish 编辑器定时发布结果卡（Publish.vue → router.push('/publish/history')）
+    //   ③ 首页快捷入口 / 操作卡 / 统计卡（Home.vue）
+    //   ④ 排期结果页（PublishScheduleResult → router.push('/publish/history')）
     // entryFrom 只能填单值（check-route-registry.js:340 的 registryByPath.has 判定），
     // 故登记主宿主 '/publish'；其余宿主由 route-registry-entry-hosts.test.js 机械锁定。
     path: '/publish/history',

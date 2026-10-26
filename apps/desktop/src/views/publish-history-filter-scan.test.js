@@ -30,7 +30,7 @@ vi.mock('@/api/publisher', () => ({
   draftList: (...args) => draftListMock(...args),
 }))
 
-vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), useRoute: () => ({ query: {} }) }))
 
 vi.mock('@/stores/tab', () => ({
   useTabStore: () => ({ createTab: vi.fn() }),
@@ -123,7 +123,7 @@ describe('M-11：筛选补页扫描的防抖与上限', () => {
     // 这一步是判据的关键：必须**推进真实时间但仍小于防抖延迟**才能区分
     // "延迟生效"与"立刻生效"。只 await nextTick() 不够 —— nextTick 是微任务，
     // 连 0ms 定时器都还没轮到，两者表现相同（首版反证因此失败）。
-    await wrapper.get('[data-testid="status-filter"]').setValue('failed')
+    await wrapper.get('[data-testid="status-tab-failed"]').trigger('click')
     await new Promise((r) => setTimeout(r, 100))
     await flushPromises()
 
@@ -157,7 +157,7 @@ describe('M-11：筛选补页扫描的防抖与上限', () => {
     const callsAfterMount = historyListMock.mock.calls.length
 
     // 三个 setValue 之间不推进时间 ⇒ 都落在同一个 300ms 窗口内
-    await wrapper.get('[data-testid="status-filter"]').setValue('failed')
+    await wrapper.get('[data-testid="status-tab-failed"]').trigger('click')
     await wrapper.get('[data-testid="platform-filter"]').setValue('zhihu')
     await wrapper.get('[data-testid="history-search"]').setValue('记录')
     await nextTick()

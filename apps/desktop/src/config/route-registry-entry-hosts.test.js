@@ -25,8 +25,9 @@ const SRC_ROOT = dirname(SRC) // apps/desktop/src
  * 新增入口时必须在这里登记，并同步 `route-registry.js` 的注释。
  */
 const ALLOWED_HOSTS = Object.freeze([
-  // 发布编辑器内「发布记录」按钮
+  // 发布编辑器内「发布记录」按钮（页头入口已抽成独立组件）
   'views/Publish.vue',
+  'features/publish/components/PublishHistoryEntry.vue',
   // 首页快捷入口 / 操作卡（三处点击共用同一跳转）
   'views/Home.vue',
 ])

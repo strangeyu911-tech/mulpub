@@ -5,6 +5,7 @@
 export default {
     draftsTitle: 'Drafts',
     draftsSubtitle: 'View, edit or delete your saved content drafts',
+    publishHistory: 'Publish History',
     backToPublish: 'Back to Publish',
     loadingDrafts: 'Loading drafts...',
     noDrafts: 'No drafts yet',

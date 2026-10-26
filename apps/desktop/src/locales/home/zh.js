@@ -11,6 +11,10 @@ export default {
     statSuccess: '成功',
     statFailed: '失败',
     boundAccounts: '已绑定账号',
+    statHintTotal: '查看全部发布记录',
+    statHintSuccess: '查看发布成功记录',
+    statHintFailed: '查看发布失败记录',
+    statHintAccounts: '前往账号管理',
     shortcuts: '快捷入口',
     hero: {
       title: '开始发布',
@@ -25,6 +29,7 @@ export default {
     dashboard: '数据看板',
     collection: '内容采集',
     comments: '私信评论',
+    videoCreation: '视频创作',
     supportedPlatforms: '支持平台',
     recentActivity: '近期动态',
     emptyRecent: '暂无发布记录，开始你的第一次发布吧！',

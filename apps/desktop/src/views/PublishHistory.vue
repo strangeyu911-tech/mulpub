@@ -11,6 +11,9 @@
     <section id="records-panel" class="history-panel" :aria-label="t('historyPage.tabRecords')">
       <div class="history-tools" :class="{ 'selection-mode': selectionMode }">
         <template v-if="!selectionMode">
+          <div class="history-status-tabs" role="group" :aria-label="t('historyPage.filterStatusAria')">
+            <button v-for="tab in statusTabs" :key="tab.testId" type="button" class="history-tab" :class="{ active: statusFilter === tab.value }" :aria-pressed="statusFilter === tab.value" :data-testid="`status-tab-${tab.testId}`" @click="statusFilter = tab.value">{{ t('historyPage.' + tab.labelKey) }}</button>
+          </div>
           <div class="history-search-row">
             <label class="history-search">
               <Search aria-hidden="true" />
@@ -68,12 +71,6 @@
               <option value="article">{{ t('historyPage.contentTypeArticle') }}</option>
               <option value="video">{{ t('historyPage.contentTypeVideo') }}</option>
               <option value="image">{{ t('historyPage.contentTypeImage') }}</option>
-            </select>
-            <select v-model="statusFilter" data-testid="status-filter" :aria-label="t('historyPage.filterStatusAria')">
-              <option value="">{{ t('historyPage.allStatuses') }}</option>
-              <option value="success">{{ t('historyPage.filterStatusSuccess') }}</option>
-              <option value="failed">{{ t('historyPage.filterStatusFailed') }}</option>
-              <option value="pending">{{ t('historyPage.filterStatusPending') }}</option>
             </select>
             <select v-model="publishModeFilter" data-testid="publish-mode-filter" :aria-label="t('historyPage.filterModeAria')">
               <option value="">{{ t('historyPage.allModes') }}</option>
@@ -383,7 +380,7 @@ import { normalizeAuditStatus, isAuditAlertStatus, auditStatusLabelKey } from '@
 import { CirclePlus, Clock, Close, Delete, Download, Grid, List, Operation, Search, Tickets, User } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { getAppLocale } from '@/i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 // S1c：draftList 已移除 —— 本页不再读取草稿（草稿箱收敛到 /publish?tab=drafts）
 import { historyDelete, historyGet, historyList, retryTask } from '@/api/publisher'
 import { usePublishHistoryMetrics } from '@/composables/usePublishHistoryMetrics'
@@ -394,6 +391,7 @@ import { useDebouncedWatchSources } from '@/composables/useDebouncedRef'
 import { useFilterScan } from '@/composables/useFilterScan'
 import { usePlatformStore } from '@/stores/platforms'
 import { usePublishHistoryContentLink, CARD_INTERACTIVE_SELECTOR } from '@/composables/usePublishHistoryContentLink'
+import { usePublishHistoryStatusFilter } from '@/composables/usePublishHistoryStatusFilter'
 // 2026-10-12 发布记录真实封面缩略图（本地 cover_path → cover:read-data；远程 → safeHttpUrl）
 import { useHistoryCoverThumbnails } from '@/composables/useHistoryCoverThumbnails'
 import { useInAppLink } from '@/composables/useInAppLink'
@@ -406,6 +404,7 @@ import { usePublishRecordActions } from '@/composables/usePublishRecordActions'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
 const platformStore = usePlatformStore()
 platformStore.load()
 const records = ref([])
@@ -423,7 +422,7 @@ const paginationExhausted = ref(false)
 const searchQuery = ref('')
 const publisherFilter = ref('')
 const contentTypeFilter = ref('')
-const statusFilter = ref('')
+const { statusFilter, statusTabs } = usePublishHistoryStatusFilter({ route, router })
 const publishModeFilter = ref('')
 const viewMode = ref('list')
 const platformFilter = ref('')
@@ -1028,6 +1027,7 @@ onMounted(loadRecords)
 }
 
 .history-tab.active { border-bottom-color: var(--primary, #5048e5); color: var(--primary, #5048e5); font-weight: 700; }
+.history-status-tabs { display: flex; gap: 8px; margin: 0 0 14px; padding: 0; background: transparent; border-bottom: 0; }
 .history-panel { min-width: 0; background: transparent; }
 
 .history-tools {

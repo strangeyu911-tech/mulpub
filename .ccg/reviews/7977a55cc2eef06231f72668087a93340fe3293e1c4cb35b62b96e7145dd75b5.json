@@ -1,0 +1,95 @@
+{
+  "sha": "8d604e1be6f184e36d2fd7427cc72d1a299ce47a",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 4 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 4,
+    "fileCount": 3,
+    "codeFileCount": 2,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "7977a55cc2eef06231f72668087a93340fe3293e1c4cb35b62b96e7145dd75b5",
+  "decidedAt": "2026-10-26T14:06:25.311Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "finding": "`.ccg/reviews/*.json` 评审元数据文件被直接提交到源码树。即使仓库已有同族文件，这仍是机器生成内容污染代码提交，评审证据应由门禁系统外部持久化，不随功能分支入库。",
+        "highRiskDomains": [],
+        "prosecution": "机器生成的 sha/decidedAt/backendAvailability 与产品代码混在同一提交里，会稀释 diff 可读性；理想状态应由 CI 外部存储。",
+        "defense": "本仓将 `.ccg/reviews/**` 作为受版本管理的评审证据面：`git ls-files .ccg/reviews | wc -l` = 2395 个已跟踪文件，pre-commit 明确把新判定记录纳入暂存。`scripts/check-pr-exec-record.js` 读取这些记录判定深度审查欠账；若不提交，分支会因「有改动无记录」被判 fail-closed。当前架构下它不是污染，而是门禁输入。",
+        "verdict": "dismissed",
+        "rationale": "指控描述的是对理想架构的偏好，不是本 PR 的缺陷；本仓既定契约要求记录入库，已有 2395 个同族文件与 pre-commit 自动暂存行为佐证。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "`publish-history-filter-scan.test.js` 对 `vue-router` 的 mock 仍为静态 `{ query: {} }`，无法模拟 `router.replace` 更新 `route.query` 的真实行为；断言只验证 mock 桩，不验证组合式函数与真实路由的双向同步。",
+        "highRiskDomains": [],
+        "prosecution": "静态 query 让组合式函数的 route→statusFilter watch 永远看不到变化；如果该文件声称覆盖 URL 同步，就是假绿。",
+        "defense": "该文件的六条用例只覆盖防抖、补页 20 页上限、触顶文案与重复响应停止；文件内没有任何 URL 同步断言（`grep -n 'replaceMock|status-filter'` 只剩防抖用例的状态标签点击）。URL 同步由 `PublishHistory.test.js`「状态标签点击后即时筛选，并写入 URL」和 `usePublishHistoryStatusFilter.test.js` 的 8 条用例覆盖。静态 mock 恰好避免路由副作用干扰防抖时序，是本文件适当的隔离边界。",
+        "verdict": "dismissed",
+        "rationale": "指控把「另一个文件的判定对象」误安到本文件；防抖测试不应依赖真实路由。URL 同步已有专门测试。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "`Publish.vue` 行数门禁已压到极限（1775/1775），本次增加 import + 组件标签净 +2 行，任意后续格式化、空白或注释变动都会触发 `check-max-lines` 红灯。",
+        "highRiskDomains": [],
+        "prosecution": "门禁余量为 0 会让下一个无关改动也红，增加维护摩擦。",
+        "defense": "`Publish.vue` 本就在零增长 target 名单（1775），门禁语义就是禁止再长；本 change 未抬 target、未放宽阈值，而是把入口抽成独立组件，仅保留 import 与标签两行接线。`node .github/scripts/check-max-lines.js` 实测通过 1775/1775。未来改动必须继续遵守该文件的还债路径（拆组件），这正是门禁的目的。",
+        "verdict": "dismissed",
+        "rationale": "这是既有零增长策略的预期效果，不是本次引入的缺陷；本次净增 2 行且刚好在 target 内，没有新增债务。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-26T14:11:14.076Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4506#issuecomment-6418113249",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@e85c4c139d06c2ecd5dba34aac21d1c020ae7e95760810eb65ed2541a730c7c7"
+  }
+}

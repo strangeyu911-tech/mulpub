@@ -288,3 +288,34 @@ node --test .github/scripts/check-route-registry.test.js
 - `ICON_EMOJI` 禁用清单为单一来源，新增禁用码点须附语义依据。
 - 视图测试对 `@element-plus/icons-vue` 的 `vi.mock` 必须使用 **Proxy 兜底**（`has: () => true` + 未知导出返回 stub），禁止受限字面量清单——否则守卫新引入图标会击穿既有测试。
 - ops-center 前端同守本规范（独立应用，人工审阅 + 本文档约束）。
+
+## 12. 导航入口落地动作（2026-10-26，home-nav-connect）
+
+### 12.1 「跳到页面」不等于「完成动作」
+
+语义为「执行某动作」的入口（添加账号、查看某状态记录）必须在目标页接续动作，不能只做路由跳转：
+
+| 入口 | 目标页 | 必须接续的动作 |
+|------|--------|----------------|
+| 首页「添加账号」 | `/accounts?action=add-account` | 自动打开添加账号浮层，并清理 `action` 参数 |
+| 首页「总发布/成功/失败」 | `/publish/history?status=all\|success\|failed` | 状态快捷标签选中对应值 |
+| 首页「已绑定账号」 | `/accounts` | 不自动打开添加浮层（查看 ≠ 添加） |
+
+### 12.2 路由参数纪律
+
+- 参数只接受**精确白名单**：`action=add-account`；`status=all|success|failed|pending`（大小写不敏感，数组取首值）。
+- 非法值归一化为默认视图，不得抛错、不得渲染空白页。
+- 消费型参数（`action`）消费后立即用 `router.replace` 移除；筛选型参数（`status`）随标签切换同步写回，保留其它 query。
+
+### 12.3 可点元素语义
+
+- 新增整卡/整行可点一律用原生 `button` 或 `a`；禁止 `div role="button"` 包裹可见可聚焦后代。
+- 状态筛选标签用 `role="group"` + `button[aria-pressed]`，不是 `tablist`（不切换面板，只改筛选条件）。
+- 近期动态有公开链接时整行是 `<a>`；无链接时是普通 `div`，不进入 Tab 顺序，`title` 说明原因。
+
+### 12.4 回归锁
+
+- 入口落地动作：`Home.test.js` / `Accounts.test.js` / `PublishHistory.test.js`
+- 单一实现：`useAccountAddDeepLink.test.js` / `usePublishHistoryStatusFilter.test.js`
+- 发布页入口接线：`Publish.history-entry-wiring.test.js` + `PublishHistoryEntry.test.js`
+- 文案成对：`locales/structure-lock.test.js`

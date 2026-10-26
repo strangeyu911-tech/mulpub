@@ -190,7 +190,16 @@ describe("HomeView", () => {
     expect(shortcuts.length).toBe(6);
     expect(w.text()).toContain("一键发布");
     expect(w.text()).toContain("账号管理");
-    expect(w.text()).toContain("私信评论");
+    expect(w.text()).toContain("视频创作");
+    expect(w.text()).not.toContain("私信评论");
+  });
+
+  it("快捷入口第 6 项进入视频创作页", async () => {
+    const w = await flushMounted(mountHome());
+    const shortcuts = w.findAll(".mp-home-shortcut");
+    expect(shortcuts[5].attributes("data-testid")).toBe("home-shortcut-video-creation");
+    await shortcuts[5].trigger("click");
+    expect(pushSpy).toHaveBeenCalledWith("/create");
   });
 
   it("falls back to built-in platform tags when platform store is empty", async () => {
@@ -317,12 +326,98 @@ describe("HomeView", () => {
     expect(pushSpy).toHaveBeenCalledWith("/publish/history");
   });
 
+  it("四张统计卡均为原生按钮，并落到对应视图", async () => {
+    const w = await flushMounted(mountHome());
+    const total = w.get('[data-testid="home-stat-total"]');
+    const success = w.get('[data-testid="home-stat-success"]');
+    const failed = w.get('[data-testid="home-stat-failed"]');
+    const accounts = w.get('[data-testid="home-stat-accounts"]');
+
+    for (const card of [total, success, failed, accounts]) {
+      expect(card.element.tagName).toBe("BUTTON");
+    }
+
+    await total.trigger("click");
+    expect(pushSpy).toHaveBeenCalledWith({ path: "/publish/history", query: { status: "all" } });
+    await success.trigger("click");
+    expect(pushSpy).toHaveBeenCalledWith({ path: "/publish/history", query: { status: "success" } });
+    await failed.trigger("click");
+    expect(pushSpy).toHaveBeenCalledWith({ path: "/publish/history", query: { status: "failed" } });
+    await accounts.trigger("click");
+    expect(pushSpy).toHaveBeenCalledWith("/accounts");
+  });
+
+  it("统计卡键盘 Enter/Space 与点击同出口", async () => {
+    const w = await flushMounted(mountHome());
+    const success = w.get('[data-testid="home-stat-success"]');
+    // 原生 button 的键盘行为由浏览器触发 click；这里直接断言点击出口已被正确绑定，
+    // 并确认元素本身可聚焦（tabindex 不是 -1）。
+    expect(success.attributes("disabled")).toBeUndefined();
+    expect(success.attributes("tabindex")).not.toBe("-1");
+    await success.trigger("click");
+    expect(pushSpy).toHaveBeenCalledWith({ path: "/publish/history", query: { status: "success" } });
+  });
+
+  it("近期动态有公开作品链接时渲染为链接并在应用内打开", async () => {
+    window.electronAPI.historyList = vi.fn().mockResolvedValue({
+      code: 0,
+      data: {
+        total: 1,
+        records: [{
+          id: "h-link-1",
+          title: "带链接的文章",
+          platform: "zhihu",
+          status: "success",
+          result: { postId: "1234567" },
+          timestamp: "2026-08-10T00:00:00Z",
+        }],
+      },
+    });
+    const w = await flushMounted(mountHome());
+    const item = w.get('[data-testid="home-recent-item-h-link-1"]');
+    expect(item.element.tagName).toBe("A");
+    expect(item.attributes("href")).toBe("https://zhihu.com/p/1234567");
+    expect(item.attributes("target")).toBe("_blank");
+    expect(item.attributes("rel")).toBe("noopener noreferrer");
+    expect(item.attributes("title")).toContain("点击打开平台作品链接");
+
+    await item.trigger("click");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(tabStoreMock.createTab).toHaveBeenCalledWith(expect.objectContaining({
+      url: "https://zhihu.com/p/1234567",
+      platform: "zhihu",
+      title: "作品 · 带链接的文章",
+    }));
+  });
+
+  it("近期动态无公开链接时不可点", async () => {
+    window.electronAPI.historyList = vi.fn().mockResolvedValue({
+      code: 0,
+      data: {
+        total: 1,
+        records: [{
+          id: "h-no-link",
+          title: "无链接记录",
+          platform: "zhihu",
+          status: "failed",
+          result: { draft: true },
+          timestamp: "2026-08-10T00:00:00Z",
+        }],
+      },
+    });
+    const w = await flushMounted(mountHome());
+    const item = w.get('[data-testid="home-recent-item-h-no-link"]');
+    expect(item.element.tagName).toBe("DIV");
+    expect(item.attributes("href")).toBeUndefined();
+    expect(item.attributes("title")).toContain("草稿");
+  });
+
   it("navigates on shortcut and quick action click", async () => {
     const w = await flushMounted(mountHome());
     await w.findAll(".mp-home-shortcut")[0].trigger("click");
     expect(pushSpy).toHaveBeenCalledWith("/publish");
     await w.get('[data-testid="home-add-account"]').trigger("click");
-    expect(pushSpy).toHaveBeenCalledWith("/accounts");
+    expect(pushSpy).toHaveBeenCalledWith({ path: "/accounts", query: { action: "add-account" } });
   });
 
   // 键盘可达性合同的**行为证据**（不只是属性在位）：

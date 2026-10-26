@@ -1,0 +1,121 @@
+{
+  "sha": "e2e89441a83183f39a935c6a9ec4935bfa5cec53",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 723 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 723,
+    "fileCount": 34,
+    "codeFileCount": 24,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "e1ad39477f6ad8d8fb378686f237903db612fbd231d713be888949e6185614a1",
+  "decidedAt": "2026-10-26T13:54:51.755Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "publish-history-filter-scan.test.js mocks useRoute() as static { query: {} }, so usePublishHistoryStatusFilter's watch on route.query.status never sees router.replace updates; assertions about URL sync test mock behavior, not real composable logic.",
+        "highRiskDomains": [],
+        "prosecution": "该文件把 useRoute 固定成 { query: {} }。若文件内存在任何「点击状态标签后断言 URL 已更新」的用例，mock 不随 router.replace 改变，断言只能证明 mock 自己，不能证明组合式函数。",
+        "defense": "`publish-history-filter-scan.test.js` 的六条用例只覆盖防抖、补页页数上限与触顶文案；全文件没有 `replaceMock` 或 URL 断言（`grep -n 'status-filter|replaceMock'` 仅剩防抖前的状态标签点击）。真正的 URL 同步由 `PublishHistory.test.js` 的「状态标签点击后即时筛选，并写入 URL」与 `usePublishHistoryStatusFilter.test.js` 的 8 条用例覆盖（含 replace 参数、全部移除 status、非法值、replace 失败）。该 mock 只需保持 route.query 稳定，静态对象足以支撑防抖判定。",
+        "verdict": "dismissed",
+        "rationale": "指控把「测试文件没有的断言」当成缺陷。防抖域与 URL 同步域已由不同文件分别覆盖；静态 mock 不影响本文件的判定对象。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": ".ccg/reviews/e1ad3947...json is a review-system artifact added to source tree; it contains meta (sha, decidedAt, backendAvailability) and should not be committed with code changes.",
+        "highRiskDomains": [],
+        "prosecution": "把评审元数据（sha、decidedAt、backendAvailability）混入代码提交，会让 diff 变长、审阅者误以为是产品文件，且产生机器生成内容污染仓库。",
+        "defense": "`.ccg/reviews/**` 在本仓是受版本管理的正式评审证据面：`git ls-files .ccg/reviews | wc -l` = 2395 个已跟踪文件；pre-commit 明确打印「本次门禁新产生 1 条判定记录，纳入暂存」。`check-pr-exec-record.js` 正是读取这些记录判断深度审查欠账；删除它会让分支变成「有 723 行改动却无判定记录」的 fail-closed 故障。",
+        "verdict": "dismissed",
+        "rationale": "该文件是 CCG 门禁的必需产物，不是误提交的临时文件；仓库已有 2395 个同族受管文件。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "Publish.vue has exactly 2 lines headroom (target 1775, current 1773); the change adds import + component tag and removes one blank line. Any future formatting or whitespace change will trigger the zero-growth line gate.",
+        "highRiskDomains": [],
+        "prosecution": "零增长目标被压到 1775/1775 后，下一个人哪怕只加一个空行也会红；这会把门禁变成对格式变化的噪声源。",
+        "defense": "该文件本来就在 `max-lines-baseline.json` 的 `targets` 零增长名单里（target 1775），门禁语义就是「这个文件不得再长」。本 change 没有抬 target、没有改门禁，只是用独立组件 `PublishHistoryEntry.vue` 承载入口逻辑；`node .github/scripts/check-max-lines.js` 实测通过（1775/1775）。未来任何改动同样要按该门禁的出口处理（拆组件或带理由上调 target），这不是本次引入的新债。",
+        "verdict": "dismissed",
+        "rationale": "指控描述的是既有门禁的设计后果，不是本次改动造成的缺陷；本次未放宽任何阈值。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "Home.vue renders recent dynamic items as <a> with href from cardLinkUrl but no rel='noopener noreferrer' or target='_blank'; direct navigation (right-click/open) skips the tabStore.createTab path and can expose tabnapping/open-redirect if derived URL is malicious.",
+        "highRiskDomains": [],
+        "prosecution": "若 href 能被诱导成恶意地址，用户右键「在新窗口打开」会绕过 click handler 直接导航；没有 noopener 时新窗口可通过 window.opener 反向控制原页面。",
+        "defense": "`cardLinkUrl(record)` 不是原始落库值，而是 `publicLinkHref(record)` = `safeHttpUrl(resolvePublishedContentUrl(...))`：`resolvePublishedContentUrl` 只返回平台公开内容页白名单/由合法作品 ID 派生的模板（zhihu/bilibili/douyin 等），解析不出即返回空；`safeHttpUrl` 再限制 http(s)。普通点击 `preventDefault` 走 `tabStore.createTab`；回退 `window.open` 由主进程 `setWindowOpenHandler` + `isAllowedExternalUrl` 兜底。原 `<a>` 没有 `target`，noopener 本不适用；本次已进一步加上 `target=_blank` + `rel=noopener noreferrer`（条件 v-bind，仅锚点分支带），测试断言该属性存在。",
+        "verdict": "dismissed",
+        "rationale": "恶意 URL 在两道上游判据处已被拒绝；指控的 tabnapping 前提（target=_blank 且无 rel）在原实现中不存在。仍已做纵深防御。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "usePublishHistoryContentLink is used in Home.vue (recentActivity) but its source file is not modified in the diff; the proposal claims it handles draft=true and postId parsing with safeHttpUrl, but no evidence in diff confirms it was updated for these cases.",
+        "highRiskDomains": [],
+        "prosecution": "Home 依赖一个本次没有改动的组合式函数；如果它没有处理草稿/作品 ID/协议判据，首页会把草稿或登录墙当作品链接打开，而 diff 里看不到证据。",
+        "defense": "该组合式函数是既有单一实现：源码包含 `isDraftRecord`（`record.result.draft === true`）、`resolvePublishedContentUrl`、`safeHttpUrl` 与 `cardClickHint` 四态原因；`PublishHistory.test.js` 的 V1–V8 用例覆盖 derived、无作品 ID、合成 ID、登录墙、完全无链接等场景，Home 只是消费同一实现。若在 Home 再复制一份判据，反而违反 PRD/OpenSpec 的「单一实现」要求。",
+        "verdict": "dismissed",
+        "rationale": "被依赖的实现与测试都在基线中，且正是本 change 要求复用的单一出口；无需在 diff 里重复修改。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "Home.vue uses <component :is='isCardClickable(item) ? \"a\" : \"div\"'> with :href bound even for div; Vue ignores href on div but this is fragile and can cause hydration mismatches or unexpected DOM shapes in SSR.",
+        "highRiskDomains": [],
+        "prosecution": "动态组件把 href 同时绑到 div 分支，SSR 水合时服务端与客户端属性不一致会导致 hydration mismatch；即便当前不报错，未来换渲染模式就会爆。",
+        "defense": "该应用是 Electron 渲染进程的纯客户端 SPA（`createWebHashHistory`，无 SSR/水合路径），Vue 3 对 div 上的 undefined 属性也不会输出；动态组件 `:is` 是标准写法。并且本次已把 `:href` 改成条件 `v-bind`：仅 `isCardClickable(item)` 为真时绑定 `{ href, target, rel }`，div 分支不携带任何链接属性；`Home.test.js` 断言无链接行 `attributes('href')` 为 undefined。",
+        "verdict": "dismissed",
+        "rationale": "SSR 前提在本应用不存在；指控的「div 仍带 href」在本次加固后也不成立（条件 v-bind + 测试断言）。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-26T14:06:03.333Z"
+  }
+}

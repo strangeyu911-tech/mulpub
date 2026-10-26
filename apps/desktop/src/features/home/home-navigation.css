@@ -1,0 +1,35 @@
+/**
+ * 首页导航入口样式（home-nav-connect，2026-10-26）。
+ *
+ * 独立成文件的原因：home-page.css 已 489 行、行数门禁上限 500；再往里加规则会触发
+ * NEW_OVER_LIMIT。本文件只负责「卡片/列表项变成可点控件后的 reset 与焦点反馈」，
+ * 不复制既有卡片几何与品牌 token。
+ */
+
+/* 统计卡：原生 button 的 reset（几何仍由 .mp-home-stat-card 的既有规则承担） */
+.mp-home-stat-card {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.mp-home-stat-card:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* 近期动态：有公开链接时整行是 <a>，无链接时是普通 div */
+.mp-home-recent-item.is-clickable {
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+
+.mp-home-recent-item.is-clickable:hover {
+  background: var(--color-bg-inset);
+}
+
+.mp-home-recent-item.is-clickable:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}

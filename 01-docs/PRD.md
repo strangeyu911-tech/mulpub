@@ -20800,3 +20800,31 @@ DOM 采集失败时补真实昵称/ID/粉丝、DOM 成功时不调 HTTP、兜底
 
 - 完整验收 AC-01~AC-20 见 `01-docs/PRD-MODEL-QUOTA-FALLBACK-2026-10-26.md` §11【规划中】
 - 文案 zh/en 成对、日志不泄露 API Key、官方 Key 客户端零持有【规划中】
+
+---
+
+## 首页导航连通性与发布记录快捷筛选（2026-10-26，home-nav-connect）
+
+> 完整 PRD：`01-docs/PRD-HOME-NAV-CONNECTIVITY-2026-10-26.md`；OpenSpec change：`openspec/changes/home-nav-connect/`。
+
+### 一、本批解决的六个断点【已实现】
+
+1. **首页「添加账号」只跳页不弹层**：现改为 `/accounts?action=add-account`，账号页消费后立即打开添加账号浮层并清理参数（刷新不重复弹）。
+2. **发布页没有稳定的发布记录入口**：页头新增「发布记录」按钮（独立组件 `PublishHistoryEntry.vue`），不依赖定时发布结果卡分支。
+3. **发布记录页只能下拉筛选状态**：改为「全部 / 发布成功 / 发布失败 / 处理中」四个快捷标签，状态值与 `?status=` 双向同步；非法值回落「全部」。
+4. **首页统计卡只是展示**：总发布 / 成功 / 失败 / 已绑定账号四张卡改为原生按钮，分别落到对应筛选视图或账号页；键盘 Enter/Space 与点击同出口。
+5. **快捷入口「私信评论」不匹配当前高频需求**：第 6 项改为「视频创作」，路由 `/create`，图标改用 `VideoCamera` 线性图标，尺寸/继承色与其它入口一致。
+6. **近期动态不可点**：复用发布记录页 `usePublishHistoryContentLink` 的公开作品链接判据；有链接整行可点并在应用内新标签打开，无链接/草稿行不可点且 `title` 说明原因。
+
+### 二、数据与交互合同【已实现】
+
+- 路由参数：`action=add-account` 精确匹配；`status=all|success|failed|pending`（大小写不敏感、数组取首值），其余归一到「全部」。
+- 状态归一化复用 `usePublishRecordActions.normalizedStatusGroup`：`success/completed/published → success`，`failed/error` 或 `success===false → failed`，其余 → `pending`。
+- 链接判据复用 `resolvePublishedContentUrl` + `safeHttpUrl`：只给公开内容页，绝不用创作者后台页兜底；草稿（`result.draft === true`）一律不可点。
+- 无新增 IPC、无数据库变更、无历史记录格式变更；旧记录无需迁移。
+
+### 三、验收锚点【已实现】
+
+- 自动化：`Home.test.js`、`Accounts.test.js`、`PublishHistory.test.js`、`PublishHistoryEntry.test.js`、`useAccountAddDeepLink.test.js`、`usePublishHistoryStatusFilter.test.js`、`Publish.history-entry-wiring.test.js`。
+- 手动：首页添加账号一次点击即弹层；发布页页头可进发布记录；四个状态标签即时切换且 URL 同步；四张统计卡可点；第 6 个快捷入口为「视频创作」；近期动态有链接可打开。
+- 文案：`home.videoCreation`、`home.statHint*`、`publishPage.publishHistory`、`historyPage.statusTabAll` 等 zh/en 成对。

@@ -5,6 +5,7 @@
 export default {
     draftsTitle: '草稿箱',
     draftsSubtitle: '查看、编辑或删除已保存的内容草稿',
+    publishHistory: '发布记录',
     backToPublish: '返回发布',
     loadingDrafts: '正在加载草稿...',
     noDrafts: '暂无草稿',

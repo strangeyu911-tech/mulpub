@@ -13,7 +13,7 @@
         </p>
       </div>
       <div class="mp-home-quick-actions">
-        <button class="mp-home-action-btn" data-testid="home-add-account" @click="go('/accounts')">
+        <button class="mp-home-action-btn" data-testid="home-add-account" @click="openAddAccount">
           <el-icon class="action-icon" :size="15"><User /></el-icon>
           <span>{{ t('home.addAccount') }}</span>
         </button>
@@ -62,22 +62,22 @@
 
     <!-- 数据概览 -->
     <section class="mp-home-stats" data-testid="mp-home-stats">
-      <div class="mp-home-stat-card">
+      <button type="button" class="mp-home-stat-card" data-testid="home-stat-total" :title="t('home.statHintTotal')" :aria-label="t('home.statHintTotal')" @click="go({ path: '/publish/history', query: { status: 'all' } })">
         <div class="stat-number">{{ stats.total }}</div>
         <div class="stat-label">{{ t('home.statTotal') }}</div>
-      </div>
-      <div class="mp-home-stat-card mp-home-stat-card--success">
+      </button>
+      <button type="button" class="mp-home-stat-card mp-home-stat-card--success" data-testid="home-stat-success" :title="t('home.statHintSuccess')" :aria-label="t('home.statHintSuccess')" @click="go({ path: '/publish/history', query: { status: 'success' } })">
         <div class="stat-number">{{ stats.success }}</div>
         <div class="stat-label">{{ t('home.statSuccess') }}</div>
-      </div>
-      <div class="mp-home-stat-card mp-home-stat-card--danger">
+      </button>
+      <button type="button" class="mp-home-stat-card mp-home-stat-card--danger" data-testid="home-stat-failed" :title="t('home.statHintFailed')" :aria-label="t('home.statHintFailed')" @click="go({ path: '/publish/history', query: { status: 'failed' } })">
         <div class="stat-number">{{ stats.failed }}</div>
         <div class="stat-label">{{ t('home.statFailed') }}</div>
-      </div>
-      <div class="mp-home-stat-card mp-home-stat-card--info">
+      </button>
+      <button type="button" class="mp-home-stat-card mp-home-stat-card--info" data-testid="home-stat-accounts" :title="t('home.statHintAccounts')" :aria-label="t('home.statHintAccounts')" @click="go('/accounts')">
         <div class="stat-number">{{ accountCount }}</div>
         <div class="stat-label">{{ t('home.boundAccounts') }}</div>
-      </div>
+      </button>
     </section>
 
     <!-- 全 0 引导：立即新建发布 -->
@@ -119,9 +119,9 @@
           <el-icon class="shortcut-icon" :size="22"><Collection /></el-icon>
           <span class="shortcut-label">{{ t('home.collection') }}</span>
         </div>
-        <div class="mp-home-shortcut" role="button" tabindex="0" @click="go('/comments')" @keydown.enter.prevent="go('/comments')" @keydown.space.prevent="go('/comments')">
-          <el-icon class="shortcut-icon" :size="22"><ChatDotRound /></el-icon>
-          <span class="shortcut-label">{{ t('home.comments') }}</span>
+        <div class="mp-home-shortcut" role="button" tabindex="0" data-testid="home-shortcut-video-creation" @click="go('/create')" @keydown.enter.prevent="go('/create')" @keydown.space.prevent="go('/create')">
+          <el-icon class="shortcut-icon" :size="22"><VideoCamera /></el-icon>
+          <span class="shortcut-label">{{ t('home.videoCreation') }}</span>
         </div>
       </div>
     </section>
@@ -162,7 +162,17 @@
         </template>
       </EmptyState>
       <div v-else class="mp-home-recent-list">
-        <div v-for="item in recentItems" :key="item.id" class="mp-home-recent-item">
+        <component
+          :is="isCardClickable(item) ? 'a' : 'div'"
+          v-for="item in recentItems"
+          :key="item.id"
+          class="mp-home-recent-item"
+          :class="{ 'is-clickable': isCardClickable(item) }"
+          v-bind="isCardClickable(item) ? { href: cardLinkUrl(item), target: '_blank', rel: 'noopener noreferrer' } : {}"
+          :title="cardClickHint(item)"
+          :data-testid="`home-recent-item-${item.id}`"
+          @click="onRecentClick($event, item)"
+        >
           <div class="recent-item-info">
             <span class="recent-item-title">{{ item.title || t('home.untitled') }}</span>
             <span class="recent-item-platform">{{ getPlatformLabel(item.platform) }}</span>
@@ -171,7 +181,7 @@
             {{ statusLabel(item.status) }}
           </div>
           <span class="recent-item-time">{{ formatTime(item.created_at || item.createdAt || item.timestamp) }}</span>
-        </div>
+        </component>
       </div>
     </section>
   </div>
@@ -183,7 +193,7 @@ import { getApi } from '@/api/electron-bridge'
 import { accountBatchOpenLogin } from '@/api/publisher'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ChatDotRound, Clock, Collection, DataAnalysis, Lock, Promotion, Tickets, TrendCharts, User } from '@element-plus/icons-vue'
+import { VideoCamera, Clock, Collection, DataAnalysis, Lock, Promotion, Tickets, TrendCharts, User } from '@element-plus/icons-vue'
 import { usePlatformStore } from '@/stores/platforms'
 import { useAccountStore } from '@/stores/accounts'
 import { useTabStore } from '@/stores/tab'
@@ -192,6 +202,7 @@ import HomeGreeting from '@/components/HomeGreeting.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { getPlatformIconUrl } from '@/composables/usePlatformIconUrl'
 import { useExpiredAccountsBanner } from '@/composables/useExpiredAccountsBanner'
+import { usePublishHistoryContentLink } from '@/composables/usePublishHistoryContentLink'
 import { useNotify } from '@/composables/useNotify'
 import { formatDateTime } from '@/utils/datetime'
 import { reportError } from '../utils/report-error'
@@ -268,6 +279,26 @@ function statusLabel(status) {
 }
 
 const formatTime = (value) => formatDateTime(value, { style: 'numeric-short' })
+
+// 首页近期动态与发布记录页共用同一个作品链接判据（无证据不给链接；草稿一律不可点）。
+const recentActionMessage = ref('')
+const recordTitle = (record) => record?.title || t('home.untitled')
+function resultValue(record, key) {
+  const value = record && record.result && record.result[key]
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+}
+const { isCardClickable, cardClickHint, cardLinkUrl, openCardLink } = usePublishHistoryContentLink({
+  t, recordTitle, resultValue, actionMessage: recentActionMessage,
+})
+function onRecentClick(event, item) {
+  if (!isCardClickable(item)) return
+  event.preventDefault()
+  void openCardLink(item)
+}
+
+function openAddAccount() {
+  router.push({ path: '/accounts', query: { action: 'add-account' } })
+}
 
 function go(path) {
   router.push(path)
@@ -449,4 +480,5 @@ onUnmounted(() => {
 
 <style scoped>
 @import '../features/home/home-page.css';
+@import '../features/home/home-navigation.css';
 </style>

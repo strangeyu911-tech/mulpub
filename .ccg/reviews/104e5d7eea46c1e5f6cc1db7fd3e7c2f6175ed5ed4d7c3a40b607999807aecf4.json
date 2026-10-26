@@ -1,0 +1,61 @@
+{
+  "sha": "834670c34a2459c0be4f8e57ed1beed971a3ac49",
+  "layer": "diff",
+  "mode": "skip",
+  "reason": "改动全部命中文档白名单 → 走 §11.2b docs-only 快通道",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 2,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 3,
+    "docSensitiveContentSample": [
+      "| **① API-first** | 提交任务 → 轮询状态 → 取片，有开放平台文档与密钥体系 | **阿里云 DVH**、**华为云 MetaStudio**、蝉镜开放平台、闪剪开放平台、讯飞虚拟人、百度曦灵、火山引擎、硅基智能、相芯科技 | ✅ 可适配现有 adapter 契约 |",
+      "| **① API-first** | 提交任务 → 轮询状态 → 取片，有开放平台文档与密钥体系 | **腾讯云数智人**、**阿里云 DVH**、**华为云 MetaStudio**、**飞影数字人**、蝉镜开放平台、闪剪开放平台、讯飞虚拟人、百度曦灵、火山引擎、硅基智能、相芯科技 | ✅ 可适配现有 adapter 契约 |",
+      "| **腾讯云数智人（免训练版）** | ✅ 高（一段真人视频 + 文本/音频 → 口型匹配新视频，**无需训练、无需买形象**） | ✅（有「音视频制作进度查询」接口，异步任务） | ✅（资源保留 7 天，需及时下载） | ✅ 腾讯云 API 密钥体系 | 新增 `tencent-tcadh.js`（约 250–350 行 + 测试）；**注意 7 天保留期要立即下载** | **并列首选（形态最贴合）** |"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "104e5d7eea46c1e5f6cc1db7fd3e7c2f6175ed5ed4d7c3a40b607999807aecf4",
+  "decidedAt": "2026-10-26T14:26:11.620Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": false,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "sha": "f401591e7dec0305341233bd6ac247e0905b81ae",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 0 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 4,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 3,
+    "ccgSensitiveContentSample": [
+      "        \"rationale\": \"三点定案：① 探针第 2 行给出读路径上确有内容绑定的实测证据（改 verdict 不重算摘要 ⇒ external-unverified、closed=false），与「no digest binding within the derivation check / only exists in evaluateDeepReviewDebt」直接矛盾；② 残余那一格不是本刀引入也不是本刀放过：它与已合并的 adjudicated-self-play 档共用同一份 adjudicationDigest 机制（写回器 ccg-review-writeback.js:238 两档同写、判据 :988 两档同验），并在设计 D14「判据侧接受派生 = 新增一条可伪造面，必须登记并尽量补同源约束」里逐条登记；③ 把「联网核真评论正文」加进 CI 判据属另一类改动（出站、凭据、不确定性），本仓口径是形状判据 + 公开产物 + 人工抽查，本刀不偷换这个口径。本条处置的公开出处即本 PR 那条评论的 i1 小节。\",",
+      "        \"defense\": \"「does not close it with a digest binding within the derivation check」这句是错的。派生要求 tier=external，而 classifyEvidenceTier 在 tierBasis 非空分支执行 matchesAdjudicationDigest(dr)（:988），摘要由 sha256(deliveryEvidence(findings) + NUL + evidence) 构成、由写回器在盖章同刻写入（:238）。探针给两个方向的实测：改 verdict 不重算 ⇒ 降档拒派生；往 blocking 加一条没有复核的阻断不重算 ⇒ 由逐条复核那一格拒，红因 honor-item-absent 点名缺的是哪一格。「不是密码学签名」仍成立且已写明——摘要任何填写方可自算，它守的是盖章后内容漂移，不是鉴别伪造者。\",",
+      "        \"finding\": \"The CLOSED_DEEP_REVIEW_STATUSES module now throws at load if self_play_blocked is present. This is a destructive initialization failure with no graceful path, risking total pipeline breakage if any future update temporarily includes the word.\","
+    ],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "65d48cd55e2c7cd3ae5ee3540c79a441f899a8ea210bee0a98b75c4a65391e10",
+  "decidedAt": "2026-10-25T21:50:32.260Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

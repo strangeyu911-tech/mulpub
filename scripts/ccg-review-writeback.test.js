@@ -511,6 +511,100 @@ test('直签档一字不动：performedBy 等于期望后端时不得要求 URL�
   })
 })
 
+// ── 派生档（change: qm6-external-review-honor）──────────────────────────────
+// 决策层只读评审 i1 实测：① 的派生要求 blocking **非空**，而 self-play 出口原本要求它是**空数组**
+// ⇒ 不做定向豁免，主场景机制上不可满足，且主干该形态现读 0 条、落地后没有任何断言会红。
+// 所以这一组的重点不是"能盖章"，而是**除 blocking-not-empty 那一格外，其余五格必须照旧有牙**。
+
+function honoredRecord (drOver, recOver) {
+  const rec = adjudicableRecord(Object.assign({
+    status: 'self_play_blocked',
+    blocking: [{ id: 'i1', severity: 'Critical', reason: 'high_risk_requires_external', domains: ['crypto'] }],
+  }, drOver || {}))
+  rec.deepReview.findings = rec.deepReview.findings.map((f, i) => Object.assign({}, f, {
+    highRiskDomains: f.id === 'i1' ? ['crypto'] : [],
+    externalReview: f.id === 'i1'
+      ? { performedBy: 'claude', evidenceRef: ADJ_URL, reviewedAt: '2026-10-25T09:00:00.000Z' }
+      : undefined
+  }))
+  return Object.assign(rec, recOver || {})
+}
+
+test('派生档：status=self_play_blocked 但每条高危阻断都被复核满足 ⇒ 写 external，且第三档 basis 显式', () => {
+  withDelivery(adjBefore(), honoredRecord(), (file, beforeBytes) => {
+    const r = runAdj(file, beforeBytes, ADJ_URL)
+    assert.equal(r.wrote, true, '派生档没写上：' + r.reason + ' ' + (r.detail || ''))
+    assert.equal(r.reason, 'adjudicated-self-play-honored')
+    assert.ok(r.spoke.includes('closed-status-derived'), 'spoke 必须显式记派生，实际：' + r.spoke.join('|'))
+    assert.ok(!r.spoke.includes('closed-status'), '直判与派生是两个词，不得同形（读数要能分档）')
+    const after = JSON.parse(fs.readFileSync(file, 'utf8')).deepReview
+    assert.equal(after.tier, 'external')
+    assert.equal(after.tierBasis, 'adjudicated-self-play-honored')
+    assert.equal(after.evidence, ADJ_URL)
+    assert.match(after.adjudicationDigest, /^adjudicated@[0-9a-f]{64}$/, 'URL 必须被绑进重算摘要')
+    assert.equal(after.status, 'self_play_blocked', '⚠ 派生**不回写**驱动字段：status 保持引擎写的那个词')
+  })
+})
+
+test('i7 红靶：performedBy=期望后端 + self_play_blocked ⇒ 仍 not-closed，且 spoke 不含 derived', () => {
+  const rec = honoredRecord({ performedBy: 'claude' })
+  withDelivery(adjBefore(), rec, (file, beforeBytes) => {
+    const r = runAdj(file, beforeBytes, ADJ_URL)
+    assert.equal(r.wrote, false)
+    assert.equal(r.reason, 'not-closed', '直签档不获得派生（后端自己判的负面结论不由本模块代判）')
+    assert.ok(!r.spoke.includes('closed-status-derived'),
+      'spoke 声称走了放宽路径、覆盖率却把它计进直签档 = 两句话互相指认（① 先于 ③ 算派生的形态）')
+  })
+})
+
+test('i1 定向豁免：派生成立时仍挡 confidenceWeight 缺席（不得塌回 blocking 那句话）', () => {
+  const rec = honoredRecord({ confidenceWeight: undefined })
+  withDelivery(adjBefore(), rec, (file, beforeBytes) => {
+    const r = runAdj(file, beforeBytes, ADJ_URL)
+    assert.equal(r.wrote, false)
+    assert.equal(r.reason, 'confidence-weight-absent', '五格里除 blocking 外都还必须有牙，实际：' + r.reason)
+  })
+})
+
+test('i1 定向豁免：派生成立但请求后端不一致 ⇒ 红因仍是 backend-request-mismatch，spoke 保留 derived', () => {
+  const rec = honoredRecord()
+  rec.reviewBackends = { proposer: 'opencode', critic: 'codex' }
+  withDelivery(adjBefore(), rec, (file, beforeBytes) => {
+    const r = runAdj(file, beforeBytes, ADJ_URL, 'claude')
+    assert.equal(r.wrote, false)
+    assert.equal(r.reason, 'backend-request-mismatch',
+      '派生解释状态词，不解释"这一轮是谁做的"；把两者合并就是让自判闭环顺带免掉署名')
+    assert.ok(r.spoke.includes('closed-status-derived'), '① 过了、③ 没过是如实读数，不是矛盾')
+  })
+})
+
+test('honor 的红因必须原样透传，不得塌回 not-closed', () => {
+  const rec = honoredRecord({
+    blocking: [{ id: 'i1', severity: 'Critical', reason: 'self_play_upheld' }]
+  })
+  withDelivery(adjBefore(), rec, (file, beforeBytes) => {
+    const r = runAdj(file, beforeBytes, ADJ_URL)
+    assert.equal(r.wrote, false)
+    assert.equal(r.reason, 'honor-unhonorable-reason', '裁决判成立的阻断不是缺证据，红因要指对方向')
+  })
+})
+
+test('接线锁：boundEvidence 与写入 dr.evidence 必须是同一个变量（拆成两个即红）', () => {
+  const src = fs.readFileSync(MOD, 'utf8')
+  // 判据必须作用在**代码**上而不是原始文本：本仓已三次被"注释里的字样满足/触发结构断言"打红
+  // （AGENTS「禁令与存在性判据必须按语义位置切」）。剥注释的实现只有一份 —— 复用判据本体的那把。
+  const code = require('./check-pr-exec-record.js').stripCommentsForScan(src)
+  assert.match(src, /const adjEv = String\(o\.adjudicationEvidence \|\| ''\)\.trim\(\)/,
+    'adjEv 必须单点算一次')
+  assert.match(code, /boundEvidence: adjEv/, 'honorRejection 必须用同一个 adjEv')
+  assert.match(code, /dr\.evidence = adjEv/, '写入的也必须是同一个 adjEv')
+  assert.ok(!/dr\.evidence = String\(o\.adjudicationEvidence/.test(code),
+    '写入侧另算一次 trim ⇒ "验的是 A、写的是 B"，而判据重算摘要时用的是 B')
+  assert.ok(!/ADJ_URL_RE/.test(code),
+    'URL 形态判据的真源已迁到 lib，代码里不得留第二份（注释里提到那个名字不算一次用法 —— 绿控）')
+  assert.match(code, /require\('\.\/lib\/ccg-external-review-honor\.js'\)/, '必须引用仓内真源')
+})
+
 test('CLI 档必须接住 --adjudication-evidence=，否则生产路径根本走不到新出口', () => {
   const src = fs.readFileSync(MOD, 'utf8')
   assert.match(src, /argOf\(argv, 'adjudication-evidence'\)/,

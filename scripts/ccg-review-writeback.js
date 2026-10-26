@@ -9,11 +9,17 @@
  * 本模块的存在就是为了让合规路径不需要手写。
  *
  * 五条合取（正文真源在 specs/qm6-closure-writeback/spec.md 与 specs/qm6-review-chain/spec.md，这里只实现不复述规则）：
- *  ① status ∈ 闭环白名单        ② findings 是非空数组
+ *  ① status ∈ 闭环白名单；**或**（仅 self-play 出口内）该记录是 `self_play_blocked` 且
+ *     `scripts/lib/ccg-external-review-honor.js` 逐条认定「blocking 里每一条高危阻断都已被真外部后端的
+ *     交付 + 本记录绑定的那条公开评论满足」⇒ 以 `tierBasis="adjudicated-self-play-honored"` 写入。
+ *     直签档**不**获得这一档：后端自己判出的负面结论是评审结论，不是能力缺口。
+ *  ② findings 是非空数组
  *  ③ performedBy === 上层透传的期望后端；**或** performedBy==="self-play" 且六件前置齐备
  *     （含一条公开可核的 PR 评论 URL）⇒ 以 `tierBasis="adjudicated-self-play"` 写入，
  *     与直签档在覆盖率读数里分档可见。这一条出口是 2026-10-24 用户裁决明确授权的放宽，
  *     授权范围**只有这一格**：合取④⑤ 与直签档一字未动。
+ *     ⚠ 派生档只豁免 ③ 里的 `blocking-not-empty` **那一格**，其余五格照旧（决策层只读评审 i1：
+ *     ①的派生要求 blocking 非空，而 ③ 原本要求它是空数组 —— 不定向豁免就谁也签不上）。
  *  ④ 本次驱动刚产出：**字节变了** 且 **去掉 at 的语义指纹变了**（两条并立、各自出声）；
  *     动手前的状态取不到时按 **before-state-missing** 拒绝——没对照就等于没验证，
  *     而"上一轮就闭环"的记录在本机字节层面与"本次刚交付"完全同形
@@ -40,6 +46,10 @@ const {
   deepReviewFingerprint,
   sha256Hex
 } = require('./lib/ccg-delivery-digest.js')
+// 高危阻断的"已被外部复核满足"这段判定只在仓内那一处真源里；本文件原先自带的那条 URL 形态正则
+// 已删除并改为引用它（change: qm6-external-review-honor，决策层只读评审 i6 —— 形态判据抄两份必然漂移，
+// 而净减一份是收敛）。
+const { EVIDENCE_URL_RE, honorRejection } = require('./lib/ccg-external-review-honor.js')
 
 const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
 const RENAME_ATTEMPTS = 5
@@ -118,8 +128,21 @@ function applyWriteback (opts) {
   for (const k of ['tier', 'evidence']) if (!(k in dr)) dr[k] = init[k]
 
   const spoke = []
-  if (CLOSED_DEEP_REVIEW_STATUSES.has(dr.status)) spoke.push('closed-status')
-  else return { wrote: false, reason: 'not-closed', spoke, detail: `status=${JSON.stringify(dr.status)}` }
+  const directClosed = CLOSED_DEEP_REVIEW_STATUSES.has(dr.status)
+  if (directClosed) spoke.push('closed-status')
+  // ⚠ 派生的资格**不在这里**算（决策层只读评审 i7）：① 先于 ③ 执行，此时还没读 performedBy；
+  // 若在 ① 就地派生，`performedBy === expectedCritic` 且 status 非闭环的产物会先落
+  // spoke=closed-status-derived、随后 ③ 把 basis 选成 delivery —— spoke 声称走了放宽路径，
+  // 覆盖率却把它计进直签档，两句话互相指认。所以先按出口分流，派生只在 self-play 那一格内求。
+  if (!directClosed && dr.performedBy !== 'self-play') {
+    return {
+      wrote: false,
+      reason: 'not-closed',
+      spoke,
+      detail: `status=${JSON.stringify(dr.status)} 且 performedBy=${JSON.stringify(dr.performedBy)} 不是 self-play ⇒ `
+        + '直签档不获得派生：后端自己判出的负面结论是**评审结论**，不是能力缺口，不由本模块代判'
+    }
+  }
 
   if (Array.isArray(dr.findings)) spoke.push('findings-present')
   if (Array.isArray(dr.findings) && dr.findings.length > 0) spoke.push('nonempty-findings')
@@ -128,6 +151,7 @@ function applyWriteback (opts) {
   // ③ 决定的是**走哪条出口**，不是"能不能跳过后面的验证"：两条出口都必须再过 ④。
   // 否则一份手写好的 self-play 记录就能绕过"字节与语义指纹都变了"这一格被签上 external
   // —— 那比原来那个洞更糟（原洞是"产不出章"，这样改会变成"谁能写文件谁就有章"）。
+  const adjEv = String(o.adjudicationEvidence || '').trim()
   let basis = null
   if (dr.performedBy === expected) {
     spoke.push('backend-matches')
@@ -136,10 +160,20 @@ function applyWriteback (opts) {
     // 合取③ 的第二条出口（用户 2026-10-24 裁决授权，正文见 specs/qm6-review-chain/spec.md）。
     // 刻意不做成"performedBy 是什么都行"：只认 `self-play` 这一个值，且六件缺一件就点名是哪一件
     // （把"忘了传 URL"与"根本没跑外部评审"塌成同一句话，人会去修错的那一格）。
-    const adj = adjudicationRejection(dr, rec, expected, o)
+    // 派生档（本刀新增）：status 不是闭环词时，只有 `honorRejection` 逐条认定
+    // 「blocking 里每一条高危阻断都已被真外部后端的交付 + 本记录绑定的那条公开评论满足」才允许继续。
+    let closureDerived = false
+    if (!directClosed) {
+      // boundEvidence 用的就是下面写入 dr.evidence 的**同一个变量**（接线锁在测试里钉：拆成两个即红）。
+      const h = honorRejection({ deepReview: dr, record: rec, expectedCritic: expected, boundEvidence: adjEv })
+      if (h) return { wrote: false, reason: h.reason, spoke, detail: h.detail }
+      closureDerived = true
+      spoke.push('closed-status-derived')
+    }
+    const adj = adjudicationRejection(dr, rec, expected, adjEv, closureDerived)
     if (adj) return { wrote: false, reason: adj, spoke, detail: ADJ_HINT[adj] }
     spoke.push('adjudication-conditions')
-    basis = 'adjudicated-self-play'
+    basis = closureDerived ? 'adjudicated-self-play-honored' : 'adjudicated-self-play'
   } else {
     return {
       wrote: false,
@@ -199,7 +233,7 @@ function applyWriteback (opts) {
     // 自扮演档：evidence 用那条**能点开的** URL（判据既有 `url` 形态，不新增第二套形态判据），
     // 另落一个把 URL 绑进 findings 的重算摘要——只判形态时"换一条别的公开评论"与
     // "这次真公开复核过"逐字同形，绑进哈希后任换其一即失配降档。
-    dr.evidence = String(o.adjudicationEvidence || '').trim()
+    dr.evidence = adjEv
     dr.tierBasis = basis
     dr.adjudicationDigest = adjudicationDigest(dr.findings, dr.evidence)
   }
@@ -221,7 +255,6 @@ function applyWriteback (opts) {
  * 与 `delivery@` 同级（本模块提供的是可互验的自洽，不是签名）。真正的第三方核证点是那条
  * 公开评论本身：任何人都能点开看 critique 原文与逐条处置。
  */
-const ADJ_URL_RE = /^https:\/\/github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\/pull\/\d+#issuecomment-\d+$/
 const ADJ_HINT = {
   'no-adjudication-evidence': '自扮演收口要盖章必须带一条公开可核的 PR 评论 URL（--adjudication-evidence=）。'
     + '缺它 ≠ "没跑外部评审"：前者补参数，后者去跑评审，两件事的修法相反，所以红因不共用 backend-mismatch 那句。',
@@ -231,19 +264,34 @@ const ADJ_HINT = {
     + '"本轮真调用过清单里的 critic"这句没有落点，这一格不能替它背书。',
   'confidence-weight-absent': '`confidenceWeight` 缺席或不小于 1 ⇒ 这不像自扮演收口（自扮演权重恒低于真跨家族），'
     + '与其放行一条来历不明的记录，不如拒绝。',
-  'blocking-not-empty': '还有阻断项未解就先盖章，等于把矩阵要防的那格从"谁评审的"换成"谁批准的"。',
+  'blocking-not-empty': '还有阻断项未解就先盖章，等于把矩阵要防的那格从"谁评审的"换成"谁批准的"。'
+    + '若这些阻断**每一条**都已被真外部复核满足，走的不是这一格，而是 honor 派生档'
+    + '（`scripts/lib/ccg-external-review-honor.js`）—— 它会逐条点名缺哪一格，不会让你用一句话整批放行。',
   'verdicts-incomplete': '有 finding 缺 `verdict` 或缺非空 `rationale` ⇒ 逐条处置不齐，"全部指控不成立"这句话就没有证据。',
 }
 
-function adjudicationRejection (dr, rec, expected, o) {
-  const url = String((o && o.adjudicationEvidence) || '').trim()
+/**
+ * 自扮演出口的六件前置。返回**缺的那一件**的名字（不合并成一个布尔）。
+ * 每一条都是形态判据，不是语义判据：它们把"随手糊一个"挡住，挡不住"认真伪造一套"——
+ * 与 `delivery@` 同级（本模块提供的是可互验的自洽，不是签名）。真正的第三方核证点是那条
+ * 公开评论本身：任何人都能点开看 critique 原文与逐条处置。
+ *
+ * @param {boolean} closureDerived 派生档：它**只**豁免 `blocking-not-empty` 这一格
+ *   （豁免的语义是"每一条 blocking 都被 honor 逐条覆盖过"，那正是 `honorRejection` 已经证明的东西）。
+ *   其余五格一字不动 —— 派生解释的是**状态词**（引擎那句"被高危项挡住"），
+ *   不是"这一轮到底是谁做的、公开出处在哪"；把两者合并等于让"我自己判自己闭环"顺带把"谁评审的"也免了。
+ */
+function adjudicationRejection (dr, rec, expected, adjEv, closureDerived) {
+  const url = String(adjEv || '')
   if (url === '') return 'no-adjudication-evidence'
-  if (!ADJ_URL_RE.test(url)) return 'adjudication-evidence-form'
+  if (!EVIDENCE_URL_RE.test(url)) return 'adjudication-evidence-form'
   const requested = rec && rec.reviewBackends && rec.reviewBackends.critic
   if (requested !== expected) return 'backend-request-mismatch'
   const w = dr.confidenceWeight
   if (typeof w !== 'number' || !(w < 1)) return 'confidence-weight-absent'
-  if (!Array.isArray(dr.blocking) || dr.blocking.length > 0) return 'blocking-not-empty'
+  if (!Array.isArray(dr.blocking) || dr.blocking.length > 0) {
+    if (!closureDerived) return 'blocking-not-empty'
+  }
   const list = Array.isArray(dr.findings) ? dr.findings : []
   for (const f of list) {
     const v = f && f.verdict

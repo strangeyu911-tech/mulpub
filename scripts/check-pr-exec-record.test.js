@@ -2602,18 +2602,241 @@ test('tierBasis 出现未知值 ⇒ unrecognized（新字段同样是闭集，�
     '空串按"没有这个字段"处理（与 tier 的空白归一同口径），不得判 unrecognized')
 })
 
-test('覆盖率读数必须把 external 拆成直签 / 自扮演+公开复核，且两子读数之和等于 external', () => {
+test('覆盖率读数必须把 external 拆成直签 / 自扮演+公开复核 / 高危派生，且三子读数之和等于 external', () => {
   const recs = [
     adjudicatedDr(),
     { tier: 'external', evidence: DIG.deliveryEvidence(ADJ_F), findings: ADJ_F.map((f) => Object.assign({}, f)) },
     { tier: 'external', evidence: 'PR #3900', findings: ADJ_F },
     adjudicatedDr({ evidence: 'https://github.com/o/r/pull/1#issuecomment-1' }),
+    adjudicatedDr({ tierBasis: 'adjudicated-self-play-honored' }),
   ]
   const s = mod.summarizeTierCoverage(recs)
-  assert.strictEqual(s.by.external, 3)
-  assert.strictEqual(s.by['external(直签)'] + s.by['external(自扮演+公开复核)'], s.by.external,
-    '两子读数之和 != external ⇒ 分档在撒谎（被放宽的合取③ 就此不可见）')
+  assert.strictEqual(s.by.external, 4)
+  assert.strictEqual(s.by['external(直签)'] + s.by['external(自扮演+公开复核)'] + s.by['external(自扮演+公开复核+高危派生)'],
+    s.by.external, '三子读数之和 != external ⇒ 分档在撒谎（被放宽的合取③ 与高危派生档就此不可见）')
   assert.strictEqual(s.by['external(自扮演+公开复核)'], 1)
+  assert.strictEqual(s.by['external(自扮演+公开复核+高危派生)'], 1, '派生档并进第二格 = 三档只是文案')
   assert.strictEqual(s.by['external-unverified'], 1, '第 4 条：URL 换了但绑定没跟着换 ⇒ 降档')
-  assert.match(s.line, /\[external\(直签\)=2 external\(自扮演\+公开复核\)=1\]/, s.line)
+  assert.match(s.line, /\[external\(直签\)=2 external\(自扮演\+公开复核\)=1 external\(自扮演\+公开复核\+高危派生\)=1\]/, s.line)
+  assert.strictEqual(s.sum, true, '读数行必须自称求锁成立（s.sum），否则派生工具没法用它反证口径一致')
+})
+
+// ── 高危复核派生（change: qm6-external-review-honor）────────────────────────
+// 这段判定的真源在 scripts/lib/ccg-external-review-honor.js；本文件只测**判据侧的编排**：
+// 谁有资格被派生、派生要不要带工具的章、采样域是否含派生态、以及两档 mode 的分叉。
+const HONOR_URL = 'https://github.com/o/r/pull/4444#issuecomment-777'
+const HRRE = 'high_risk' + '_requires_external' // 拆写：本文件测的正是"消费方不得出现这份字面量"（见单一实现锁）
+
+function honorFinding (over) {
+  return Object.assign({
+    id: 'i5', severity: 'Warning', verdict: 'dismissed',
+    rationale: '轮 1 i5 的现场判据：该不变量由 X 守住，见评论第二节。',
+    highRiskDomains: ['crypto'],
+    externalReview: { performedBy: 'claude', evidenceRef: HONOR_URL, reviewedAt: '2026-10-25T09:00:00.000Z' },
+  }, over || {})
+}
+
+function honorDr (over) {
+  const dr = Object.assign({
+    required: true,
+    status: 'self_play_blocked',
+    performedBy: 'self-play',
+    confidenceWeight: 0.6,
+    blocking: [{ id: 'i5', severity: 'Warning', reason: HRRE, domains: ['crypto'] }],
+    findings: [honorFinding()],
+    tier: 'external',
+    evidence: HONOR_URL,
+    tierBasis: 'adjudicated-self-play-honored',
+  }, over || {})
+  dr.adjudicationDigest = DIG.adjudicationDigest(dr.findings, dr.evidence)
+  return dr
+}
+
+function honorRec (drOver, recOver) {
+  return Object.assign({
+    mode: 'dual',
+    reviewBackends: { critic: 'claude', proposer: 'opencode', from: { critic: 'list', proposer: 'list' } },
+    deepReview: honorDr(drOver),
+  }, recOver || {})
+}
+
+test('deriveClosure：白名单直判 / 派生 / 不派生三态各自分明', () => {
+  assert.deepStrictEqual(mod.deriveClosure({ deepReview: { status: 'cleared' } }).closed, true)
+  assert.strictEqual(mod.deriveClosure({ deepReview: { status: 'cleared' } }).derived, false,
+    '直判成立时不得被记成派生（那会把最干净的一类产物染成"走了放宽路径"）')
+  assert.strictEqual(mod.deriveClosure(honorRec()).closed, true, JSON.stringify(mod.deriveClosure(honorRec())))
+  assert.strictEqual(mod.deriveClosure(honorRec()).derived, true)
+  assert.strictEqual(mod.deriveClosure({ deepReview: { status: 'pending' }, mode: 'dual', reviewBackends: { critic: 'claude' } }).closed, false,
+    'pending 恰好没有 blocking 字段是形状巧合，不得当资格')
+})
+
+test('派生必须带工具的章：逐条复核齐备但从没被写回器签过 ⇒ 不认，且红因指名 honor-unsigned', () => {
+  const r = mod.deriveClosure(honorRec({ tierBasis: undefined, tier: undefined, evidence: undefined, adjudicationDigest: undefined }))
+  assert.strictEqual(r.closed, false)
+  assert.strictEqual(r.reason, 'honor-unsigned',
+    '只凭 adjudication 字段就认闭环，等于把"谁签的"这一格整条抹掉')
+  assert.match(r.detail, /deep-review\.sh/, '出路要指名跑评审，不是教人手写 tier')
+})
+
+test('派生只认 self-play 出口：performedBy 等于期望后端时不获得派生（直签档一字不动）', () => {
+  const rec = honorRec({ performedBy: 'claude' })
+  assert.strictEqual(mod.deriveClosure(rec).closed, false,
+    '后端自己判出的负面结论是评审结论，不是能力缺口')
+})
+
+test('期望后端必须现读清单：记录自报 critic 与清单不一致时按清单判（反字段自比）', () => {
+  // 只读评审 i5 的直接靶：判据侧若取 record.reviewBackends.critic 当期望值，那条锚点恒真。
+  const rec = honorRec({ performedBy: 'self-play' })
+  rec.reviewBackends = { critic: 'weird-self', proposer: 'opencode', from: { critic: 'list', proposer: 'list' } }
+  rec.deepReview.findings = [honorFinding({ externalReview: { performedBy: 'weird-self', evidenceRef: HONOR_URL, reviewedAt: '2026-10-25T09:00:00.000Z' } })]
+  rec.deepReview.adjudicationDigest = DIG.adjudicationDigest(rec.deepReview.findings, HONOR_URL)
+  assert.strictEqual(mod.deriveClosure(rec).closed, false,
+    '填写方把 reviewBackends.critic 与 externalReview.performedBy 写成同一个自造名字就自证通过 ⇒ 那是字段自比')
+  // 显式覆盖过（--critic）时，记录里的值是权威，否则正常用法会被本刀判红。
+  const overridden = honorRec()
+  overridden.reviewBackends = { critic: 'codex', proposer: 'opencode', from: { critic: 'cli', proposer: 'list' }, overridden: true }
+  overridden.deepReview.findings = [honorFinding({ externalReview: { performedBy: 'codex', evidenceRef: HONOR_URL, reviewedAt: '2026-10-25T09:00:00.000Z' } })]
+  overridden.deepReview.adjudicationDigest = DIG.adjudicationDigest(overridden.deepReview.findings, HONOR_URL)
+  assert.strictEqual(mod.deriveClosure(overridden).closed, true, '显式覆盖档必须仍能收口')
+})
+
+test('采样域必须含派生态：真 status=self_play_blocked 的派生产物要进得了 dualClosedDeepReviews', () => {
+  // 只读评审 i3（Critical）的靶：按白名单过滤时第三档结构性恒 0、三档求锁由构造恒真 = 永不红的锁。
+  const repo = repoWithFile(ART, honorRec())
+  try {
+    const got = mod.dualClosedDeepReviews(st([['A', ART]]), repo)
+    assert.strictEqual(got.length, 1, '派生产物必须进得了读数分母，否则 c 档是构造出来的 0')
+    const s = mod.summarizeTierCoverage(got)
+    assert.strictEqual(s.by['external(自扮演+公开复核+高危派生)'], 1)
+  } finally { fs.rmSync(repo, { recursive: true, force: true }) }
+})
+
+test('同源约束：有 base 可比而语义指纹未变 ⇒ 派生不被承认（挡"改一个词翻闭环"）', () => {
+  const rec = honorRec()
+  const repo = repoWithFile(ART, rec)
+  const statuses = st([['M', ART]])
+  try {
+    const same = mod.evaluateDeepReviewDebt(statuses, repo, () => JSON.stringify(rec), undefined)
+    assert.ok(same.reasons.length >= 1, 'base 与 head 逐字相同（只是把状态词留着）必须被拦')
+    assert.match(same.reasons.join('\n'), /只是把状态词翻了一下/, '红因要指到成因，实际：' + same.reasons.join('\n'))
+    const changed = JSON.parse(JSON.stringify(rec))
+    changed.deepReview.findings = [honorFinding({ rationale: '换一条处置文案 ⇒ 语义指纹真的变了' })]
+    changed.deepReview.adjudicationDigest = DIG.adjudicationDigest(changed.deepReview.findings, HONOR_URL)
+    const ok = mod.evaluateDeepReviewDebt(statuses, repo, () => JSON.stringify(changed), undefined)
+    assert.deepStrictEqual(ok.reasons, [], '本次真产出新交付时不得拦（否则这条判据只是在拦"我没注入 base"）')
+    assert.strictEqual(ok.derived, 1, '派生条数必须自己报数，否则 c 档与欠账面各说各话')
+  } finally { fs.rmSync(repo, { recursive: true, force: true }) }
+})
+
+test('取不到 base（新增 A 形态）时不判红，但必须报"派生未取证"而不是静默', () => {
+  const repo = repoWithFile(ART, honorRec())
+  try {
+    const r = mod.evaluateDeepReviewDebt(st([['A', ART]]), repo, () => null, undefined)
+    assert.deepStrictEqual(r.reasons, [], 'A 形态没有 base 可比，不得据此判红')
+    assert.strictEqual(r.derived, 1)
+    // 实现轴轮 1 i2（Critical）的落点：不判红 ≠ 不记账。这条账不进 reasons，但必须逐条可见，
+    // 否则 `本次判定=1` 与"验过语义指纹真的变过"在读数里同形。
+    assert.strictEqual(r.unverified, 1, 'A 形态的派生必须计入「无 base 可比」')
+    assert.ok(String((r.unverifiedList || []).join(' ')).includes(ART), '清单必须指名是哪一篇：' + JSON.stringify(r.unverifiedList))
+    // 反向半格（M24 的靶）：有 base 且指纹真的变了 ⇒ 这笔账必须归零，不得恒计。
+    const changed = JSON.parse(JSON.stringify(honorRec()))
+    changed.deepReview.findings = [honorFinding({ rationale: '换一条处置文案 ⇒ 语义指纹真的变过' })]
+    changed.deepReview.adjudicationDigest = DIG.adjudicationDigest(changed.deepReview.findings, HONOR_URL)
+    const repo2 = repoWithFile(ART, honorRec())
+    try {
+      const m = mod.evaluateDeepReviewDebt(st([['M', ART]]), repo2, () => JSON.stringify(changed), undefined)
+      assert.deepStrictEqual(m.reasons, [], '有 base 且指纹变了 ⇒ 该过：\n' + m.reasons.join('\n'))
+      assert.strictEqual(m.unverified, 0, '已证实的派生不得继续挂在「无 base 可比」账上（那这条计数就是恒真的装饰）')
+    } finally { fs.rmSync(repo2, { recursive: true, force: true }) }
+  } finally { fs.rmSync(repo, { recursive: true, force: true }) }
+})
+
+test('高危面上的派生产物必须过收口矩阵（不是只测非高危那一支）', () => {
+  // 缺口自查：前面几条的变更集只含 openspec/records 与 .ccg ⇒ 走不到 `onHighRisk` 那一支。
+  // "逻辑上会过"在本仓不算证据，所以这里把 M 挂到 scripts/check-* 上实测一次。
+  const repo = repoWithFile(ART, honorRec())
+  try {
+    const r = mod.evaluateDeepReviewDebt(st([['A', ART], ['M', RISK_GATE]]), repo, () => null, undefined)
+    assert.deepStrictEqual(r.reasons, [], '高危面 + 派生成立 ⇒ 矩阵应认这条外部出处：\n' + r.reasons.join('\n'))
+    assert.strictEqual(r.derived, 1)
+    // 反向（M22 的靶）：把工具的章摘掉 ⇒ 同一批参数必须红，且红因指名 honor-unsigned。
+    // 只测正向时，"摘掉章也过"这一格由谁顶罪是看不见的（本仓「文件级存在性 ≠ 逐元素成立」同型）。
+    const unsigned = honorRec({ tier: undefined, tierBasis: undefined, evidence: undefined, adjudicationDigest: undefined })
+    const repo2 = repoWithFile(ART, unsigned)
+    try {
+      const bad = mod.evaluateDeepReviewDebt(st([['A', ART], ['M', RISK_GATE]]), repo2, () => null, undefined)
+      assert.ok(bad.reasons.length >= 1, '没被写回器签过的记录在高危面上必须红')
+      assert.match(bad.reasons.join('\n'), /honor-unsigned/, '红因要指名是哪一格，实际：' + bad.reasons.join('\n'))
+    } finally { fs.rmSync(repo2, { recursive: true, force: true }) }
+  } finally { fs.rmSync(repo, { recursive: true, force: true }) }
+})
+
+test('advisory 与 enforce 对派生产物的分叉必须各有一档读数（缺任一档=该分叉未被锁）', () => {
+  const cli = (args) => {
+    try {
+      return { code: 0, out: execFileSync('node', [path.join(__dirname, 'check-pr-exec-record.js'), ...args], { encoding: 'utf8' }) }
+    } catch (e) { return { code: e.status ?? 1, out: String(e.stdout || '') + String(e.stderr || '') } }
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'honor-mode-'))
+  const run = (a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' })
+  run(['init', '--quiet', '-b', 'main']); run(['config', 'user.email', 't@e.com']); run(['config', 'user.name', 't'])
+  fs.mkdirSync(path.join(dir, 'openspec/records'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'seed.txt'), '1')
+  run(['add', '-A']); run(['commit', '--quiet', '-m', 'base'])
+  run(['checkout', '--quiet', '-b', 'feat'])
+  fs.writeFileSync(path.join(dir, 'openspec/records', 'feat.md'), '# r\n')
+  fs.mkdirSync(path.join(dir, '.ccg/reviews'), { recursive: true })
+  const good = honorRec()
+  fs.writeFileSync(path.join(dir, ART), JSON.stringify(good))
+  run(['add', '-A']); run(['commit', '--quiet', '-m', 'derived'])
+  const base = ['--repo=' + dir, '--base=main', '--head=feat', '--head-branch=feat', '--no-remote']
+  try {
+    const adv = cli([...base, '--mode=advisory'])
+    assert.strictEqual(adv.code, 0, adv.out)
+    assert.match(adv.out, /MODE=advisory/)
+    assert.match(adv.out, /HONOR-DERIVED 本次判定=1/, '派生档必须自己出一行读数（空集也要出行，否则"没跑"与"判定 0 条"同形）')
+    const enf = cli([...base, '--mode=enforce'])
+    assert.strictEqual(enf.code, 0, '派生成立的产物在 enforce 下必须过：\n' + enf.out)
+    // 反向：把那条复核摘掉 ⇒ 同一批参数在 enforce 下必须红，在 advisory 下仍 0 且点名。
+    run(['checkout', '--quiet', '-b', 'broken'])
+    fs.writeFileSync(path.join(dir, ART), JSON.stringify(honorRec({ blocking: [{ id: 'i5', reason: HRRE }], findings: [honorFinding({ externalReview: undefined })] })))
+    fs.writeFileSync(path.join(dir, 'openspec/records', 'broken.md'), '# r\n')
+    run(['add', '-A']); run(['commit', '--quiet', '-m', 'broken'])
+    const enf2 = cli(['--repo=' + dir, '--base=main', '--head=broken', '--head-branch=broken', '--no-remote', '--mode=enforce'])
+    assert.notStrictEqual(enf2.code, 0, 'honor 不成立时 enforce 必须拦，否则这一刀只是把门整个拆了')
+    assert.match(enf2.out, /honor-review-absent/, '红因必须由 honor 原样透传，不得塌回 not-closed')
+    const adv2 = cli(['--repo=' + dir, '--base=main', '--head=broken', '--head-branch=broken', '--no-remote', '--mode=advisory'])
+    assert.strictEqual(adv2.code, 0, 'advisory 档照旧不拦（既有欠账：CI 侧仍是 advisory）')
+    assert.match(adv2.out, /honor-review-absent/)
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('反捷径锁：闭环白名单逐字三词，且不含派生状态词（相等锁测不到"三处一起加词"）', () => {
+  const words = [...mod.CLOSED_DEEP_REVIEW_STATUSES].sort()
+  assert.deepStrictEqual(words, ['cleared', 'needs_revision', 'self_play_resolved'],
+    '闭环词表被改动 ⇒ 本刀的派生判据整条被旁路（把派生状态词加进这里是最省事的绕行）')
+  assert.strictEqual(mod.CLOSED_DEEP_REVIEW_STATUSES.has('self_play_blocked'), false,
+    '想加这个词请先删掉 scripts/lib/ccg-external-review-honor.js 的逐条判据 —— 那不是等价改法，那是把门拆了')
+})
+
+test('单一实现锁：两个消费方都引用真源，且代码里不得出现那份 reason 字面量', () => {
+  const strip = mod.stripCommentsForScan
+  for (const f of ['check-pr-exec-record.js', 'ccg-review-writeback.js']) {
+    const code = strip(fs.readFileSync(path.join(__dirname, f), 'utf8'))
+    assert.ok(!code.includes(HRRE), `${f} 里出现了该 reason 的字面量 ⇒ 第二份实现（注释里提到不算，剥注释是判据的语义位置）`)
+    assert.match(code, /require\(['"]\.\/lib\/ccg-external-review-honor(\.js)?['"]\)/, f + ' 必须引用真源')
+  }
+  const lib = strip(fs.readFileSync(path.join(__dirname, 'lib', 'ccg-external-review-honor.js'), 'utf8'))
+  assert.strictEqual(lib.split(HRRE).length - 1, 1, '真源里该字面量必须恰出现一次（多了就是自己抄了自己）')
+})
+
+test('形态判据单向包含：命中 honor 那条严格 URL 正则的串，必须被 evidenceForm 认成 url', () => {
+  // 只读评审 i6：不做这件事，就会出现"写回器按 lib 放行、判据按 evidenceForm 降档"的口径分裂。
+  // 刻意**不做双向相等** —— evidenceForm 还认 PR #1234 / 裸 /pull/<n> 等主干既有形态，
+  // 收窄它会把历史产物的收口判红，那是另一刀的范围（须人工过目）。
+  for (const u of [HONOR_URL, 'https://github.com/Colinchiu007/mulpub/pull/1#issuecomment-2']) {
+    assert.strictEqual(mod.evidenceForm(u), 'url', u + ' 应被认成 url 档')
+  }
+  assert.strictEqual(mod.evidenceForm('https://github.com/o/r/pull/1'), 'url',
+    '超集侧：裸 pull 链接仍算可核指针（历史写法），但它**不够格**当派生的出处 —— 那由 lib 的严格正则判')
 })

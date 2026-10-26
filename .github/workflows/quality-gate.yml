@@ -681,6 +681,7 @@ jobs:
         run: |
           node --test \
             scripts/ccg-delivery-digest.test.js \
+            scripts/ccg-external-review-honor.test.js \
             scripts/ccg-review-writeback.test.js \
             scripts/ccg-closure-writeback-chain.test.js \
             scripts/deep-review-entry-rc.test.js

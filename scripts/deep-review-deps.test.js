@@ -448,7 +448,11 @@ const ENTRY_WRITEBACK_CLOSURE_B = [
   'check-pr-exec-record.js',
   'classify-docs-only.js',
   'lib/ccg-review-backends.js',
-  'lib/ccg-delivery-digest.js'
+  'lib/ccg-delivery-digest.js',
+  // change: qm6-external-review-honor —— 写回器在加载期 require 它（零依赖纯函数，高危复核的判定真源）。
+  // ⚠ 这份清单与 scripts/deep-review-entry-rc.test.js 的 SCRIPT_CLOSURE 是**同一个闭包的两份手抄**
+  //   （本刀实测踩到：只补后者，前者当场红）。收敛成一份是欠账，见 openspec/records/ 本条记录。
+  'lib/ccg-external-review-honor.js'
 ]
 
 function makeRepoWithoutRecordB () {

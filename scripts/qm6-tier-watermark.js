@@ -23,9 +23,12 @@
 const { spawnSync } = require('node:child_process')
 const { gitSafeEnv, envDefectNotice } = require('./lib/debt-recheck-live.js')
 const {
-  AUDIT_ARTIFACT_RE, CLOSED_DEEP_REVIEW_STATUSES, classifyEvidenceTier, summarizeTierCoverage,
+  AUDIT_ARTIFACT_RE, deriveClosure, classifyEvidenceTier, summarizeTierCoverage,
   evidenceForm, makeEvidenceProbe, repoObjectPath,
 } = require('./check-pr-exec-record.js')
+// 子档名与判据共用同一份常量（实现轴轮 2 i4）：这三串抄两份，`a+b+c == external` 就成了
+// "两个字符串自己跟自己比" —— 派生工具与判据各改一次名字就能让求锁恒真。
+const { TIER_BUCKETS } = require('./lib/ccg-external-review-honor.js')
 
 const DOMAIN_DIR = '.ccg/reviews'
 const SHA_LEN = 10
@@ -97,7 +100,7 @@ function parseBatch (buf) {
   return { frames, missing, malformed }
 }
 
-/** 只取"mode=dual 且 deepReview 已闭环"这批 —— 资格判据与判据的债务扫描同集合，不另立一份。 */
+/** 只取"mode=dual 且闭环成立（白名单直判 ∥ 高危复核派生）"这批 —— 资格判据与判据的债务扫描同集合，不另立一份。 */
 function collectClosed (frames, oidToPath) {
   const closed = []
   let parseFail = 0
@@ -105,7 +108,11 @@ function collectClosed (frames, oidToPath) {
   for (const f of frames) {
     let rec = null
     try { rec = JSON.parse(f.body.toString('utf8')) } catch { parseFail += 1; continue }
-    if (!rec || rec.mode !== 'dual' || !rec.deepReview || !CLOSED_DEEP_REVIEW_STATUSES.has(rec.deepReview.status)) { notDual += 1; continue }
+    // ⚠ 这里**不得**退回 `CLOSED_DEEP_REVIEW_STATUSES.has(status)`（change: qm6-external-review-honor，
+    // 只读评审 i3）：派生产物的 status 恒为 `self_play_blocked`，按白名单过滤会让它结构性进不了 total，
+    // 于是第三档恒 0、`a+b+c == external` 由构造恒真 —— 一把永不红的求锁，
+    // 而且装饰的恰好是"有没有人开始走这条放宽路径"这一格。
+    if (!rec || rec.mode !== 'dual' || !rec.deepReview || !deriveClosure(rec).closed) { notDual += 1; continue }
     closed.push({ path: oidToPath.get(f.oid) || '', dr: rec.deepReview })
   }
   return { closed, parseFail, notDual }
@@ -226,17 +233,21 @@ function main (argv) {
     ' self-play=' + sum.by['self-play'] + ' none=' + sum.by.none +
     ' unknown=' + sum.by.unknown + ' unrecognized=' + sum.by.unrecognized +
     ' unknown-字段缺席=' + u.missingField + ' unknown-字面值=' + u.literal +
-    ' external-直签=' + sum.by['external(直签)'] +
-    ' external-自扮演复核=' + sum.by['external(自扮演+公开复核)'] +
+    ' external-直签=' + sum.by[TIER_BUCKETS.direct] +
+    ' external-自扮演复核=' + sum.by[TIER_BUCKETS.adjudicated] +
+    ' external-高危派生=' + sum.by[TIER_BUCKETS.honored] +
     ' 域外=' + outDomain.length + ' 域由=AUDIT_ARTIFACT_RE' +
     ' probe=' + (args.probe ? 'on' : 'off') + ' elapsed_ms=' + (Date.now() - t0))
   if (u.defect) out('  WATERMARK-DEFECT ' + u.defect)
-  // 合取③ 的第二条出口（2026-10-24 授权放宽）改的是"这一格算不算外部出处"，
-  // 所以分档必须在派生工具里也看得见：两子读数之和 != external 就是分档在撒谎。
-  const extSplit = sum.by['external(直签)'] + sum.by['external(自扮演+公开复核)']
+  // 合取③ 的第二条出口（2026-10-24 授权放宽）与第三条出口（qm6-external-review-honor 高危派生）
+  // 改的都是"这一格算不算外部出处"，所以每次改宽都必须在派生工具里看得见：
+  // 三子读数之和 != external 就是分档在撒谎（本刀特意把合并成一句的做法否证过两次）。
+  const extSplit = sum.by[TIER_BUCKETS.direct] + sum.by[TIER_BUCKETS.adjudicated] + sum.by[TIER_BUCKETS.honored]
   if (extSplit !== sum.by.external) {
-    out('  WATERMARK-DEFECT external 分档不等式破了：直签=' + sum.by['external(直签)'] +
-      ' + 自扮演+公开复核=' + sum.by['external(自扮演+公开复核)'] + ' != external=' + sum.by.external +
+    out('  WATERMARK-DEFECT external 分档不等式破了：' + TIER_BUCKETS.direct + '=' + sum.by[TIER_BUCKETS.direct] +
+      ' + ' + TIER_BUCKETS.adjudicated + '=' + sum.by[TIER_BUCKETS.adjudicated] +
+      ' + ' + TIER_BUCKETS.honored + '=' + sum.by[TIER_BUCKETS.honored] +
+      ' != external=' + sum.by.external +
       ' ⇒ 派生工具与判据的口径分裂，别把这份读数当覆盖率')
   }
   if (parseFail) out('  WATERMARK-PARSE-FAIL 无法解析=' + parseFail + '（命中域但读不出 JSON ⇒ 不进 total；别把它们读成"没产物"）')

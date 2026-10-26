@@ -41,7 +41,9 @@ const SCRIPT_CLOSURE = [
   //   漏抄的后果是临时仓缺模块 ⇒ 入口在**加载期**就抛 "Cannot find module"，
   //   整批子测试同形失败（实测 Gate 2b11 在 2026-10-23 打红就是这个形态）。
   'lib/exec-record-statuses.js',
-  'lib/exec-record-audit.js'
+  'lib/exec-record-audit.js',
+  // ↓ change: qm6-external-review-honor —— 写回器与判据本体都在加载期 require 它（零依赖纯函数）。
+  'lib/ccg-external-review-honor.js'
 ]
 
 const FAKE_DRIVER = `'use strict'

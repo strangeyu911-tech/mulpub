@@ -374,12 +374,77 @@ test('水位行必须把 external 拆成直签 / 自扮演+公开复核，且两
   assert.ok(!/WATERMARK-DEFECT external 分档/.test(r.out), '不等式检查自己误报：' + r.out)
 })
 
+test('水位的采样域必须真含派生态：跑真临时仓，第三档由 status=self_play_blocked 涨起来', () => {
+  // 上一条测的是判据侧的采样域；本条测**派生工具自己**那一处（qm6-tier-watermark.js 的 collectClosed）。
+  // 两处分开点名是刻意的：它们若各算一份，读数与门禁就会漂移，而"同一判据在两处都改到了"
+  // 这件事只能由两条独立用例见证 —— 只测一处时另一处退回白名单不会有任何东西红。
+  const DIG = require('./lib/ccg-delivery-digest.js')
+  const url = 'https://github.com/o/r/pull/4444#issuecomment-3'
+  const finding = {
+    id: 'i5', severity: 'Warning', verdict: 'dismissed',
+    rationale: '轮 1 i5 的现场判据：该不变量由 X 守住，见评论第二节。',
+    highRiskDomains: ['crypto'],
+    externalReview: { performedBy: 'claude', evidenceRef: url, reviewedAt: '2026-10-25T09:00:00.000Z' },
+  }
+  const dr = {
+    required: true, status: 'self_play_blocked', performedBy: 'self-play', confidenceWeight: 0.6,
+    blocking: [{ id: 'i5', severity: 'Warning', reason: 'high_risk' + '_requires_external', domains: ['crypto'] }],
+    findings: [finding], tier: 'external', evidence: url, tierBasis: 'adjudicated-self-play-honored',
+  }
+  dr.adjudicationDigest = DIG.adjudicationDigest(dr.findings, dr.evidence)
+  const fx = makeRepo()
+  fx.write('.ccg/reviews/' + name(HEX40) + '.json', JSON.stringify({
+    schema: 1, mode: 'dual', changedFiles: ['scripts/x.js'], changedLines: 10,
+    reviewBackends: { critic: 'claude', proposer: 'opencode', from: { critic: 'list', proposer: 'list' } },
+    deepReview: dr,
+  }, null, 2))
+  fx.commit('derived artifact')
+  const r = runWatermark(fx.dir)
+  assert.strictEqual(r.rc, 0, r.out + r.err)
+  const line = watermarkLine(r.out)
+  assert.strictEqual(field(line, 'total'), '1', '派生产物必须进得了分母（退回白名单这里就是 0）')
+  assert.strictEqual(field(line, 'external-高危派生'), '1', '第三档必须由真 status 涨起来')
+  assert.strictEqual(field(line, 'external-直签'), '0')
+  assert.strictEqual(field(line, 'external-自扮演复核'), '0')
+})
+
 test('分档不等式检查必须真的会咬：判据与派生工具口径分裂时出声（反"恒真检查"）', () => {
-  // 这一条不测实现内部，测的是"当 by 里没有那两个键时会怎样"：
+  // 这一条不测实现内部，测的是"当 by 里缺任一分档键时会怎样"：
   // summarizeTierCoverage 若不导出分档，水位这里就会 NaN != 数字 ⇒ 必须打 WATERMARK-DEFECT 而不是静默。
   const sum = require('./check-pr-exec-record.js').summarizeTierCoverage([])
-  assert.equal(typeof sum.by['external(直签)'], 'number', '判据没导出分档键 ⇒ 水位的求和检查会退化成 NaN 比较')
-  assert.equal(sum.by['external(直签)'] + sum.by['external(自扮演+公开复核)'], sum.by.external,
-    '空集也必须满足不等式（"零违规"与"什么都没算"必须可区分）')
-  assert.match(sum.line, /\[external\(直签\)=0 external\(自扮演\+公开复核\)=0\]/, sum.line)
+  for (const k of ['external(直签)', 'external(自扮演+公开复核)', 'external(自扮演+公开复核+高危派生)']) {
+    assert.equal(typeof sum.by[k], 'number', '判据没导出分档键 ' + k + ' ⇒ 水位的求和检查会退化成 NaN 比较')
+  }
+  assert.equal(sum.by['external(直签)'] + sum.by['external(自扮演+公开复核)'] + sum.by['external(自扮演+公开复核+高危派生)'],
+    sum.by.external, '空集也必须满足三档不等式（"零违规"与"什么都没算"必须可区分）')
+  assert.match(sum.line, /\[external\(直签\)=0 external\(自扮演\+公开复核\)=0 external\(自扮演\+公开复核\+高危派生\)=0\]/, sum.line)
+})
+
+test('派生档必须走真实 status=self_play_blocked 进得了水位（反"构造出来的 0"）', () => {
+  // 只读评审 i3（Critical）的直接靶：采样域若按闭环白名单过滤，派生产物结构性进不了 total，
+  // 于是第三档恒 0、三档求锁由构造恒真 —— 一把永不红的锁，装饰的恰好是"有没有人走这条放宽路径"。
+  // ⚠ 本条 MUST NOT 用 status=cleared + 手写 honored basis 过测：那绕过的正是"域按 status 过滤"这一格。
+  const { deriveClosure } = require('./check-pr-exec-record.js')
+  const url = 'https://github.com/o/r/pull/4444#issuecomment-1'
+  const finding = {
+    id: 'i5', severity: 'Warning', verdict: 'dismissed',
+    rationale: '本轮 claude 复核逐条处置：该不变量由 X 守住，见评论第二节。',
+    highRiskDomains: ['crypto'],
+    externalReview: { performedBy: 'claude', evidenceRef: url, reviewedAt: '2026-10-25T09:00:00.000Z' },
+  }
+  const { adjudicationDigest, deliveryEvidence } = require('./lib/ccg-delivery-digest.js')
+  const dr = {
+    status: 'self_play_blocked', performedBy: 'self-play', confidenceWeight: 0.6,
+    blocking: [{ id: 'i5', severity: 'Warning', reason: 'high_risk_requires_external', domains: ['crypto'] }],
+    findings: [finding], tier: 'external', evidence: url,
+    tierBasis: 'adjudicated-self-play-honored',
+  }
+  dr.adjudicationDigest = adjudicationDigest(dr.findings, dr.evidence)
+  const rec = { mode: 'dual', reviewBackends: { critic: 'claude', proposer: 'opencode' }, deepReview: dr }
+  assert.equal(deriveClosure(rec).closed, true, '判据侧必须认这条派生（否则水位单独扩域就是两把尺）')
+  const sum = require('./check-pr-exec-record.js').summarizeTierCoverage([dr])
+  assert.equal(sum.total, 1)
+  assert.equal(sum.by['external(自扮演+公开复核+高危派生)'], 1, '第三档必须由真 status 涨起来')
+  assert.equal(sum.by['external(直签)'] + sum.by['external(自扮演+公开复核)'] + sum.by['external(自扮演+公开复核+高危派生)'], sum.by.external)
+  assert.ok(deliveryEvidence(dr.findings), '夹具自身可解析（防空转）')
 })

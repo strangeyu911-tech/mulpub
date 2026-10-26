@@ -1,0 +1,177 @@
+{
+  "sha": "2d5a636f6c700be05c27125a4773267d86b9f253",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 1379 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 1379,
+    "fileCount": 19,
+    "codeFileCount": 12,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 2,
+    "docSensitiveContentSample": [
+      "仓内已经有解决这个问题的机制——第二条出口的 `adjudicationDigest = adjudicated@sha256(deliveryEvidence(findings) ‖ NUL ‖ url)`",
+      "授权来源：用户在 2026-10-25 就「外部复核可解除阻断这件事住在仓外 vendor 脚本的一个本地补丁里、"
+    ],
+    "ccgSensitiveContentHits": 2,
+    "ccgSensitiveContentSample": [
+      "      \"仓内已经有解决这个问题的机制——第二条出口的 `adjudicationDigest = adjudicated@sha256(deliveryEvidence(findings) ‖ NUL ‖ url)`\",",
+      "      \"授权来源：用户在 2026-10-25 就「外部复核可解除阻断这件事住在仓外 vendor 脚本的一个本地补丁里、\""
+    ],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "34ab93f9c9d747593ac0eda424be9b7fa579d04997f60fb16e0172050fb59aad",
+  "decidedAt": "2026-10-25T21:07:57.818Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_blocked",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "domains": [
+          "auth"
+        ]
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "domains": [
+          "crypto"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "honorRejection is stateless; it only checks evidenceRef === boundEvidence (both attacker-controlled). No external authority verifies the review URL content. A forged self_play_blocked record with syntactically valid externalReview, verdict=dismissed, and matching rationale passes the pure function, and the before-state fingerprint defense (deepReviewFingerprint) only exists in evaluateDeepReviewDebt, not in the reader path.",
+        "highRiskDomains": [
+          "auth"
+        ],
+        "prosecution": "派生把「有没有做外部评审」这个事实换成「字段填得齐不齐」：honorRejection 是无纯函数，只看 evidenceRef 与 boundEvidence 逐字相等，而两格都由填写方写。deepReviewFingerprint 那道「本次真的产出新交付」只在转变核对里跑，读派生的那条路径不跑 ⇒ 一份不参与任何转变的静态伪造记录免检。",
+        "defense": "结论半句被实测否证：deriveClosure 要求 classifyEvidenceTier(dr, existsAt) 判 external（check-pr-exec-record.js:822），而该函数在 tierBasis 非空分支里就地重算并比对 adjudicationDigest（:988）。探针实测：一份齐备记录盖章后把任一条 verdict 改成 upheld 而不重算摘要，tier 立刻降 external-unverified、deriveClosure().closed=false ⇒ 内容绑定确实在读派生的路径上。剩下的「当场伪造一整份（含重算摘要）」是模块头注释 19-24 行、AGENTS.md「不是签名」与设计 D14 三处写明的声明边界，对第三方负责的是那条公开评论本身。",
+        "verdict": "dismissed",
+        "rationale": "三点定案：① 探针第 2 行给出读路径上确有内容绑定的实测证据（改 verdict 不重算摘要 ⇒ external-unverified、closed=false），与「no digest binding within the derivation check / only exists in evaluateDeepReviewDebt」直接矛盾；② 残余那一格不是本刀引入也不是本刀放过：它与已合并的 adjudicated-self-play 档共用同一份 adjudicationDigest 机制（写回器 ccg-review-writeback.js:238 两档同写、判据 :988 两档同验），并在设计 D14「判据侧接受派生 = 新增一条可伪造面，必须登记并尽量补同源约束」里逐条登记；③ 把「联网核真评论正文」加进 CI 判据属另一类改动（出站、凭据、不确定性），本仓口径是形状判据 + 公开产物 + 人工抽查，本刀不偷换这个口径。本条处置的公开出处即本 PR 那条评论的 i1 小节。",
+        "externalReview": {
+          "performedBy": "claude",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4453#issuecomment-6403500967",
+          "reviewedAt": "2026-10-25T21:26:19.991Z"
+        }
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "deriveClosure relies on dr.tierBasis === HONORED_TIER_BASIS, a user-writable string. There is no cryptographic binding between tierBasis and the blocking/findings content inside the pure function. The proposal admits this new forgery surface but does not close it with a digest binding within the derivation check.",
+        "highRiskDomains": [
+          "crypto"
+        ],
+        "prosecution": "tierBasis 是任何人可写的字符串。若派生只比这个词，第三档就成了「写对词就盖章」，而 proposal 自己承认新增了这条可伪造面，却没在派生判据里用摘要把它绑回 blocking/findings 的内容。",
+        "defense": "「does not close it with a digest binding within the derivation check」这句是错的。派生要求 tier=external，而 classifyEvidenceTier 在 tierBasis 非空分支执行 matchesAdjudicationDigest(dr)（:988），摘要由 sha256(deliveryEvidence(findings) + NUL + evidence) 构成、由写回器在盖章同刻写入（:238）。探针给两个方向的实测：改 verdict 不重算 ⇒ 降档拒派生；往 blocking 加一条没有复核的阻断不重算 ⇒ 由逐条复核那一格拒，红因 honor-item-absent 点名缺的是哪一格。「不是密码学签名」仍成立且已写明——摘要任何填写方可自算，它守的是盖章后内容漂移，不是鉴别伪造者。",
+        "verdict": "dismissed",
+        "rationale": "定案依据是探针表的实测而非措辞：摘要复核确实位于读派生的那条路径上（:988），且写回器与判据在同一轮里同写同验（:238）。同时如实记一条本刀发现的不对称，写进公开评论以免读数看起来比实际更强：摘要覆盖 findings + evidence，**不**覆盖 blocking 数组；blocking 由逐条复核负责（每条必须有主、externalReview 三格齐、verdict=dismissed、共享 URL 时 rationale 不得逐字重复），探针第 3 行正是这一格在出声。该不对称的根因可接受：blocking 是从 findings 派生出来的视图，绑住 findings 即绑住它的来源，而把 blocking 也纳入摘要会要求改动已合并档的摘要算法（属另一刀）。本条处置的公开出处即该评论的 i2 小节。",
+        "externalReview": {
+          "performedBy": "claude",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4453#issuecomment-6403500967",
+          "reviewedAt": "2026-10-25T21:26:19.992Z"
+        }
+      },
+      {
+        "id": "i3",
+        "severity": "Critical",
+        "finding": "deriveClosure accepts existsAt but never uses it, and does not verify base/head semantic change. The fingerprint check (deepReviewFingerprint) is only in evaluateDeepReviewDebt. A static forged record that never participates in a transition bypasses the defense entirely.",
+        "highRiskDomains": [],
+        "prosecution": "一个没被消费的参数比没有参数更坏：deriveClosure 收了 existsAt 却不做存在性核验，也不核 base/head 语义变化，于是「静态伪造、从不参与转变」的记录把 fingerprint 那道防线整条绕过。",
+        "defense": "措辞层否证：existsAt 被传进 classifyEvidenceTier（:822），该探针在 :993 把「仓内路径形态但对象取不到」降为 external-unverified。「bypasses the defense entirely」同样被否证——不参与任何转变的静态记录仍要过摘要自洽与逐条复核两道（探针第 2、3 行）。如实承认两半：对第三档 evidence 必为 URL，URL 不做文件系统检查，故 existsAt 在该档事实上不产生作用（设计使然，但该在调用点写明白，免得读者以为存在性已验）；新增 A 形态结构上没有 base 可比，语义指纹那道对它不拦，只进「未证实」账（:1345 起）。",
+        "verdict": "dismissed",
+        "rationale": "指控的结论「整条绕过」被实测否证，故 dismissed；但两半如实登记，不装作已闭合：① A 形态无 base 可比 ⇒ 只记「未证实」不判红，这条已写在设计 D14 与缺陷 G 那条循环论证的规避里，清偿路径是 tasks 7.5 的内容寻址再绑定；② existsAt 在 URL 档不产生作用这一格，我**不在本 PR 加注释**——加注释会改动已提交 diff，使本轮这份正在被裁决的产物与主干字节不同源（本仓口径：声明与字节必须同源），因此留作下一刀的一行注释，落点与本条依据都写在该 PR 评论里。定案用的是可重跑读数：探针表第 2/3 行，以及 :822/:993 的实参传递。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "The CLOSED_DEEP_REVIEW_STATUSES module now throws at load if self_play_blocked is present. This is a destructive initialization failure with no graceful path, risking total pipeline breakage if any future update temporarily includes the word.",
+        "highRiskDomains": [],
+        "prosecution": "加载期抛错没有降级出口：一旦有人临时把派生词加回闭环白名单，require 它的判据、裁决器、审计三处全部起不来，等于把整条 QM-6 链锁死。",
+        "defense": "这是刻意的 fail-loud，而「临时加回」不是一个存在的动作：加那个词的效果就是把派生判据整条旁路（该状态所有产物不再需要证据即算闭环），正是本刀要消灭的形态。出口确实存在且写在红文案里：改回白名单。模块注释另写明改它属「改谁来守门 ⇒ 人工过目，且须同次删掉派生判据」。防护不止一处：check-pr-exec-record.test.js 的反捷径逐字枚举锁 + 本模块加载期断言，变异 M10 实测 CAUGHT（9 条红、被指名 1 条），两把锁分别跑在 Gate 2b11 与 Gate 2c2。",
+        "verdict": "dismissed",
+        "rationale": "「没有 graceful path」不准确：出口是「改回白名单」，且红文案逐字写着这一步。真正的成本要如实报——这条断言一炸，三个消费方都起不来；但触发条件是「闭环口径被改成旁路」，那种状态下链子本来就不该继续判绿，这是应有代价不是缺陷。定案依据：M10 的 CAUGHT 记录（设计 D16 表第 5 列同时标注了 9 条红里只有 1 条是指名靶、另 8 条是牵连用例，并明写那 8 条不能替代逐字枚举锁）。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "Mutation defense claims M11 and M23 have separate red sets because they target different test suites, but both affect the same logical property (whether non-empty blocking on self-play is treated as closed). The proposal does not document isolation mechanisms (separate fixtures/processes) for mutation runs, so overlapping mutations could mask a single-point weakness.",
+        "highRiskDomains": [],
+        "prosecution": "在同一份工作树上原地改、原地还原，任何一次还原不干净都会污染后续变异的红集；而 M11 与 M23 打的是同一条逻辑性质（非空 blocking 在 self-play 下算不算闭环），重叠会让「某条判据失效」和「某条判据从未存在」读起来一模一样，proposal 也没写隔离机制（独立夹具 / 独立进程）。",
+        "defense": "隔离机制已经写了，就在设计 D16 开头三条护栏：动手前被测锁必须全绿且断言工作树 == HEAD；每轮 mutate 前重新断言当前字节 == 启动基线；查找串不唯一即拒、不按位置猜。并有现场证据——第一轮带着未提交的 i2 修复去跑，驱动当场 REFUSE: 工作树与 HEAD 不一致，还原基线不可信。重叠也不是未披露：D16 表第 5 列就叫「红集宽窄如实标注」，M11/M23/M10 分别写着防御重叠 / 重度防御重叠，并给出 M11 与 M23 指名靶不同、红集不相交（写回器套件 vs 判据套件）的判据，M10 那 8 条牵连用例明写不能替代逐字枚举锁。",
+        "verdict": "dismissed",
+        "rationale": "指控的事实前提「proposal does not document isolation mechanisms」不成立：D16 首段逐条写了三道护栏并附一次真实拒跑；同一张表的第 5 列就是重叠的披露位。汇总行给出 MUTATION-SUMMARY 跑了=20 未被指名抓住=0 驱动自身故障=0，即没有任何一条变异是因环境脏而「测不出」。不采的理由到此为止；这条指控里唯一有价值的提醒（还原必须在每轮重新断言，而不是只在开头断言一次）实现里已有，故无需改动。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "honorRejection builds a byId map with array pushes for duplicate IDs, making blocking × findings scanning O(n^2) in worst case. It is called inside evaluateDeepReviewDebt over many records, with no size guard.",
+        "highRiskDomains": [],
+        "prosecution": "判据本体每次 PR 都跑，honorRejection 里 byId 用数组 push 保留重复 id，blocking × findings 在最坏情况下退化成 O(n^2)，且没有任何规模上界；一次大交付就能把 required check 拖红。",
+        "defense": "复杂度这句读反了实现：byId 是一次 for (const f of findings) 建起来的 Map<id, finding[]>（lib/ccg-external-review-honor.js:139-144），之后每条 blocking 走 byId.get(id)，O(1) 查表，总代价 O(findings + blocking)。push 进数组只为保留「同 id 两条」这一格要出声的形态（honor-item-absent/ambiguous 的分界），不构成二次扫描。而这个 Map 恰恰是上一轮实现轴 i6 把逐条 filter 嵌套循环换掉的产物。规模现读：origin/main 抽样里单条记录最大 findings=8、最大 blocking=5，且判据只扫本次变更集内的 .ccg/reviews/*.json。",
+        "verdict": "dismissed",
+        "rationale": "定案靠读实现而不是靠印象：:139-144 是单趟建表 + 查表，指控所依据的那份嵌套 filter 形态在本 HEAD 上已不存在（它正是轮 2 i6 的采纳项）。规模上界另有实测数（findings 最大 8、blocking 最大 5），「no size guard」在这一格上不构成风险；真要谈规模防护，该防的是本次变更集内产物条数，而那由 PR 差量本身限定。探针脚本同批跑出这两个数，可重跑核对。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "auth"
+        ]
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "crypto"
+        ]
+      }
+    ],
+    "note": "自扮演裁决：2 条指控成立或需外部复核",
+    "at": "2026-10-25T21:26:57.488Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4453#issuecomment-6403500967",
+    "tierBasis": "adjudicated-self-play-honored",
+    "adjudicationDigest": "adjudicated@d8a3da77eaa6cc19b41172717a5ced31562ca7346f065b941c5ef44c8b8be5ec"
+  }
+}

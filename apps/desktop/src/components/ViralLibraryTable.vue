@@ -1,75 +1,84 @@
 <template>
-  <div class="cohere-content">
+  <div class="kb-library">
     <!-- 搜索栏 -->
-    <div style="display:flex;gap:8px;margin-bottom:12px">
-      <input v-model="search" class="cohere-input" :placeholder="t('knowledgeBase.searchPlaceholder')" @input="debouncedSearch" style="flex:1" />
+    <div class="mp-toolbar kb-toolbar">
+      <label class="mp-search kb-search">
+        <input v-model="search" :placeholder="t('knowledgeBase.searchPlaceholder')" :aria-label="t('knowledgeBase.searchPlaceholder')" @input="debouncedSearch" />
+      </label>
     </div>
-    <div class="cohere-card" style="overflow-x:auto">
-      <table class="kb-table">
-        <thead>
-          <tr>
-            <th style="width:50px">{{ t('knowledgeBase.colIndex') }}</th>
-            <th style="width:180px">{{ t('knowledgeBase.colTitle') }}</th>
-            <th style="width:80px">{{ t('knowledgeBase.colCover') }}</th>
-            <th style="width:100px">{{ t('knowledgeBase.colAuthor') }}</th>
-            <th style="width:200px">{{ t('knowledgeBase.colContent') }}</th>
-            <th style="width:120px">{{ t('knowledgeBase.colTags') }}</th>
-            <th style="width:70px" class="sortable" @click="sortBy('likes')">{{ t('knowledgeBase.colLikes') }}</th>
-            <th style="width:70px" class="sortable" @click="sortBy('collections')">{{ t('knowledgeBase.colCollections') }}</th>
-            <th style="width:70px" class="sortable" @click="sortBy('comments')">{{ t('knowledgeBase.colComments') }}</th>
-            <th style="width:70px" class="sortable" @click="sortBy('like_collect_ratio')">{{ t('knowledgeBase.colRatio') }}</th>
-            <th style="width:110px">{{ t('knowledgeBase.colPublishedAt') }}</th>
-            <th style="width:80px">{{ t('knowledgeBase.colPlatform') }}</th>
-            <th style="width:100px">{{ t('knowledgeBase.colActions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="13" style="padding:16px">
-              <UiSkeleton variant="table" :count="5" :columns="6" />
-            </td>
-          </tr>
-          <tr v-else-if="!items.length">
-            <td colspan="13">
-              <EmptyState
-                data-testid="viral-library-empty"
-                icon="TrendCharts"
-                :title="t('knowledgeBase.empty.viral.title')"
-                :description="t('knowledgeBase.empty.viral.message')"
-                :action-text="t('knowledgeBase.empty.viral.action')"
-                @action="emit('create')"
-              />
-            </td>
-          </tr>
-          <tr v-for="(item, idx) in items" :key="item.id">
-            <td>{{ (page - 1) * pageSize + idx + 1 }}</td>
-            <td :title="recrawlTooltip(item)">{{ item.title || '-' }}</td>
-            <td><img v-if="item.cover_url" :src="item.cover_url" style="width:60px;height:60px;object-fit:cover;border-radius:4px" /></td>
-            <td>{{ item.author || '-' }}</td>
-            <td>{{ (item.content || '').slice(0, 80) }}{{ (item.content || '').length > 80 ? '...' : '' }}</td>
-            <td>
-              <el-tag v-for="tag in (item.tags || [])" :key="tag" size="small" style="margin-right:4px">{{ tag }}</el-tag>
-            </td>
-            <td>{{ formatNum(item.likes) }}</td>
-            <td>{{ formatNum(item.collections) }}</td>
-            <td>{{ formatNum(item.comments) }}</td>
-            <td>{{ item.like_collect_ratio != null ? Number(item.like_collect_ratio).toFixed(1) : '-' }}</td>
-            <td>{{ item.published_at ? item.published_at.slice(0, 10) : '-' }}</td>
-            <td>{{ item.platform || '-' }}</td>
-            <td>
-              <button class="cohere-btn-ghost" @click="editItem(item)">{{ t('knowledgeBase.edit') }}</button>
-              <button class="cohere-btn-ghost danger" @click="deleteItem(item)">{{ t('knowledgeBase.delete') }}</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div class="mp-panel">
+      <div class="mp-table-wrap">
+        <table class="mp-table kb-table">
+          <thead>
+            <tr>
+              <th style="width:56px">{{ t('knowledgeBase.colIndex') }}</th>
+              <th style="width:200px">{{ t('knowledgeBase.colTitle') }}</th>
+              <th style="width:84px">{{ t('knowledgeBase.colCover') }}</th>
+              <th style="width:110px">{{ t('knowledgeBase.colAuthor') }}</th>
+              <th style="width:220px">{{ t('knowledgeBase.colContent') }}</th>
+              <th style="width:140px">{{ t('knowledgeBase.colTags') }}</th>
+              <th style="width:76px" class="sortable" @click="sortBy('likes')">{{ t('knowledgeBase.colLikes') }}</th>
+              <th style="width:76px" class="sortable" @click="sortBy('collections')">{{ t('knowledgeBase.colCollections') }}</th>
+              <th style="width:76px" class="sortable" @click="sortBy('comments')">{{ t('knowledgeBase.colComments') }}</th>
+              <th style="width:76px" class="sortable" @click="sortBy('like_collect_ratio')">{{ t('knowledgeBase.colRatio') }}</th>
+              <th style="width:112px">{{ t('knowledgeBase.colPublishedAt') }}</th>
+              <th style="width:88px">{{ t('knowledgeBase.colPlatform') }}</th>
+              <th style="width:120px">{{ t('knowledgeBase.colActions') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loading" class="mp-table-empty">
+              <td colspan="13" style="padding:16px">
+                <UiSkeleton variant="table" :count="5" :columns="6" />
+              </td>
+            </tr>
+            <tr v-else-if="!items.length" class="mp-table-empty">
+              <td colspan="13">
+                <EmptyState scaffold
+                  data-testid="viral-library-empty"
+                  icon="TrendCharts"
+                  :title="t('knowledgeBase.empty.viral.title')"
+                  :description="t('knowledgeBase.empty.viral.message')"
+                  :action-text="t('knowledgeBase.empty.viral.action')"
+                  @action="emit('create')"
+                />
+              </td>
+            </tr>
+            <tr v-for="(item, idx) in items" :key="item.id">
+              <td>{{ (page - 1) * pageSize + idx + 1 }}</td>
+              <td :title="recrawlTooltip(item)">{{ item.title || '-' }}</td>
+              <td>
+                <img v-if="item.cover_url" class="kb-cover" :src="item.cover_url" alt="" />
+                <span v-else>-</span>
+              </td>
+              <td>{{ item.author || '-' }}</td>
+              <td :title="item.content">{{ (item.content || '').slice(0, 80) }}{{ (item.content || '').length > 80 ? '...' : '' }}</td>
+              <td>
+                <span class="kb-tags">
+                  <span v-for="tag in (item.tags || [])" :key="tag" class="mp-chip">{{ tag }}</span>
+                </span>
+              </td>
+              <td>{{ formatNum(item.likes) }}</td>
+              <td>{{ formatNum(item.collections) }}</td>
+              <td>{{ formatNum(item.comments) }}</td>
+              <td>{{ item.like_collect_ratio != null ? Number(item.like_collect_ratio).toFixed(1) : '-' }}</td>
+              <td>{{ item.published_at ? item.published_at.slice(0, 10) : '-' }}</td>
+              <td>{{ item.platform || '-' }}</td>
+              <td>
+                <button type="button" class="mp-btn mp-btn--ghost mp-btn--sm" @click="editItem(item)">{{ t('knowledgeBase.edit') }}</button>
+                <button type="button" class="mp-btn mp-btn--danger mp-btn--sm" @click="deleteItem(item)">{{ t('knowledgeBase.delete') }}</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <!-- 分页 -->
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px">
-        <span>共 {{ total }} 条</span>
-        <div style="display:flex;gap:4px;align-items:center">
-          <button :disabled="page <= 1" @click="page--; loadData()">上一页</button>
-          <span>{{ page }} / {{ Math.max(1, Math.ceil(total / pageSize)) }}</span>
-          <button :disabled="page >= Math.ceil(total / pageSize)" @click="page++; loadData()">下一页</button>
+      <div class="mp-panel-footer kb-pagination">
+        <span>{{ t('knowledgeBase.totalItems', { total }) }}</span>
+        <div class="kb-pagination-actions">
+          <button type="button" class="mp-btn mp-btn--secondary mp-btn--sm" :disabled="page <= 1" @click="page--; loadData()">{{ t('knowledgeBase.prevPage') }}</button>
+          <span>{{ t('knowledgeBase.pageOf', { page, total: Math.max(1, Math.ceil(total / pageSize)) }) }}</span>
+          <button type="button" class="mp-btn mp-btn--secondary mp-btn--sm" :disabled="page >= Math.ceil(total / pageSize)" @click="page++; loadData()">{{ t('knowledgeBase.nextPage') }}</button>
         </div>
       </div>
     </div>

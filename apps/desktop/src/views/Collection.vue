@@ -25,9 +25,9 @@
             @click="switchTab('records')">{{ $t('collection.tabRecords') }}</button>
           <CollectionCreatorTab :active="activeTab === 'creator'" @select="switchTab('creator')" />
         </div>
-        <div class="page-subtitle">{{ $t('collection.pageSubtitle') }}</div>
+        <div class="page-subtitle">{{ activeTab === 'creator' ? $t('collection.creatorPageSubtitle') : $t('collection.pageSubtitle') }}</div>
       </div>
-      <div class="page-actions">
+      <div v-if="activeTab !== 'creator'" class="page-actions">
         <button class="cohere-btn-secondary" @click="importFromClipboard"><el-icon><DocumentCopy /></el-icon> {{ $t('collection.quickClipboard') }}</button>
         <button class="cohere-btn-primary" @click="createDraft">＋ {{ $t('collection.quickNewDraft') }}</button>
       </div>
@@ -347,7 +347,18 @@
 
     <!-- 文案库标签页（2026-09-16 合并：原「采集记录」+「文案库」两标签合一，以采集记录卡片为准） -->
     <!-- 博主监控：独立组件，避免把 2700+ 行的采集页继续堆胖 -->
-    <CreatorMonitor v-else-if="activeTab === 'creator'" />
+    <!-- 博主监控：独立组件，避免把 2700+ 行的采集页继续堆胖。
+         ui-consistency-polish（2026-10-26）：此前它是本页唯一没有 .cohere-content 包裹的 tab
+         ⇒ 内容贴左、没有留白、与其余 tab 完全不同。包进内容容器后由页面骨架统一留白。 -->
+    <div
+      v-else-if="activeTab === 'creator'"
+      id="collection-tabpanel-creator"
+      class="cohere-content collection-creator-panel"
+      role="tabpanel"
+      :aria-labelledby="'collection-tab-btn-creator'"
+    >
+      <CreatorMonitor />
+    </div>
     <!-- 快捷采集：启动器 + 指令管理；执行结果通过 onQuickCollected 走既有采集结果链路 -->
     <QuickCollectPanel v-else-if="activeTab === 'quick'" active @collected="onQuickCollected" />
     <div v-else-if="activeTab === 'records'" id="collection-tabpanel-records" class="cohere-content" role="tabpanel" :aria-labelledby="'collection-tab-btn-' + activeTab">
@@ -2675,6 +2686,3 @@ async function deleteLibraryRewrite (record) {
 }
 
 </style>
-
-
-

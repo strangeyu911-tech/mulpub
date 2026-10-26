@@ -1,98 +1,112 @@
 <template>
-  <div class="copy-library-page">
-    <header class="copy-library-header">
-      <h1 data-testid="copy-library-title">{{ t('copyLibrary.pageTitle') }}</h1>
-      <p class="copy-library-subtitle">{{ t('copyLibrary.pageSubtitle') }}</p>
-    </header>
+  <div class="mp-page copy-library-page">
+    <div class="mp-page-inner">
+      <header class="mp-page-header">
+        <div class="mp-page-heading">
+          <h1 data-testid="copy-library-title" class="mp-page-title">{{ t('copyLibrary.pageTitle') }}</h1>
+          <p class="mp-page-subtitle">{{ t('copyLibrary.pageSubtitle') }}</p>
+        </div>
+      </header>
 
-    <div class="copy-library-toolbar">
-      <div class="copy-library-filters" role="group" :aria-label="t('copyLibrary.filterLabel')">
-        <button
-          v-for="f in ORIGIN_FILTERS"
-          :key="f.value"
-          type="button"
-          class="copy-library-filter-btn"
-          :class="{ active: originFilter === f.value }"
-          :aria-pressed="originFilter === f.value"
-          :data-testid="'copy-library-filter-' + f.value"
-          @click="originFilter = f.value"
-        >{{ t(f.labelKey) }}</button>
+      <div class="mp-toolbar copy-library-toolbar">
+        <div class="mp-segmented copy-library-filters" role="group" :aria-label="t('copyLibrary.filterLabel')">
+          <button
+            v-for="f in ORIGIN_FILTERS"
+            :key="f.value"
+            type="button"
+            class="copy-library-filter-btn"
+            :class="{ active: originFilter === f.value }"
+            :aria-pressed="originFilter === f.value"
+            :data-testid="'copy-library-filter-' + f.value"
+            @click="originFilter = f.value"
+          >{{ t(f.labelKey) }}</button>
+        </div>
+        <label class="mp-search copy-library-search">
+          <input
+            v-model="searchQuery"
+            type="search"
+            data-testid="copy-library-search"
+            :placeholder="t('copyLibrary.searchPlaceholder')"
+            :aria-label="t('copyLibrary.searchAria')"
+          >
+        </label>
       </div>
-      <label class="copy-library-search">
-        <input
-          v-model="searchQuery"
-          type="search"
-          data-testid="copy-library-search"
-          :placeholder="t('copyLibrary.searchPlaceholder')"
-          :aria-label="t('copyLibrary.searchAria')"
+
+      <div v-if="loading" class="copy-library-grid" data-testid="copy-library-loading">
+        <UiSkeleton v-for="i in 6" :key="'copy-skeleton-' + i" variant="card" />
+      </div>
+
+      <div v-else-if="items.length === 0" class="mp-panel copy-library-empty-panel">
+        <EmptyState scaffold
+          data-testid="copy-library-empty"
+          icon="Document"
+          :title="t('copyLibrary.emptyTitle')"
+          :description="t('copyLibrary.emptyDesc')"
+          :action-text="t('copyLibrary.emptyAction')"
+          @action="goCollect"
+        />
+      </div>
+
+      <div v-else-if="filteredItems.length === 0" class="mp-panel copy-library-empty-panel">
+        <EmptyState scaffold
+          compact
+          data-testid="copy-library-filter-empty"
+          icon="Search"
+          :title="t('copyLibrary.filterEmptyTitle')"
+          :description="t('copyLibrary.filterEmptyDesc')"
+          :action-text="t('copyLibrary.filterEmptyAction')"
+          @action="originFilter = 'all'; searchQuery = ''"
+        />
+      </div>
+
+      <div v-else class="copy-library-grid" data-testid="copy-library-list">
+        <article
+          v-for="entry in renderedItems"
+          :key="entry.id"
+          class="copy-library-card"
+          :data-testid="'copy-library-item-' + entry.id"
+          role="button"
+          tabindex="0"
+          :aria-label="t('copyLibrary.viewDetailAria') + '：' + (entry.title || t('copyLibrary.untitled'))"
+          @click="openDetail(entry)"
+          @keydown.enter.prevent="openDetail(entry)"
+          @keydown.space.prevent="openDetail(entry)"
         >
-      </label>
+          <div class="copy-library-card-top">
+          <!-- 与改写区那枚入口的差别只剩「正文要不要回源」：可见性判据两边同形（无频道一律不出现），
+               但这里的正文按来源分档判——video 档列表态 content 只是预览，判据用 wordCount；
+               其余三档判 content.trim()。判据的唯一实现是下面的 canShowEpisodeEntry。 -->
+          <button
+            v-if="canShowEpisodeEntry(entry)"
+            type="button"
+            class="mp-btn mp-btn--ghost mp-btn--sm copy-library-podcast-entry"
+            :data-testid="'podcast-script-entry-' + entry.id"
+            :aria-label="t('podcast.episode.entry')"
+            @click.stop="openScriptEntry(entry)"
+          >{{ t('podcast.episode.entry') }}</button>
+            <span class="mp-chip copy-library-origin-badge" :class="'is-' + entry.origin">{{ originLabel(entry.origin) }}</span>
+            <span class="copy-library-title">{{ entry.title || t('copyLibrary.untitled') }}</span>
+            <el-icon class="copy-library-view-icon" aria-hidden="true"><View /></el-icon>
+          </div>
+          <p class="copy-library-content">{{ entry.content }}</p>
+          <div class="copy-library-meta">
+            <span>{{ t('copyLibrary.wordCount', { count: entry.wordCount }) }}</span>
+            <span v-if="entry.createdAt" class="copy-library-meta-sep" aria-hidden="true">·</span>
+            <span v-if="entry.createdAt">{{ formatTime(entry.createdAt) }}</span>
+            <template v-if="entry.metadata.truncated">
+              <span class="copy-library-meta-sep" aria-hidden="true">·</span>
+              <span :data-testid="'copy-library-truncated-' + entry.id">{{ t('copyLibrary.truncated') }}</span>
+            </template>
+          </div>
+        </article>
+      </div>
+
+      <!-- M-15：截断提示 + 加载更多（文案列表可能长期积累，一次全量渲染必然劣化） -->
+      <LoadMoreRow v-if="itemsTruncated" data-testid="load-more-copies"
+        :hint="t('copyLibrary.shownTruncated', { shown: renderedItems.length, total: filteredItems.length })"
+        :button-text="t('copyLibrary.loadMoreCopies')"
+        @more="copyRenderLimit += 35" />
     </div>
-
-    <div v-if="loading" class="copy-library-state" data-testid="copy-library-loading">{{ t('copyLibrary.loading') }}</div>
-
-    <EmptyState
-      v-else-if="items.length === 0"
-      data-testid="copy-library-empty"
-      icon="Document"
-      :title="t('copyLibrary.emptyTitle')"
-      :description="t('copyLibrary.emptyDesc')"
-    />
-
-    <EmptyState
-      v-else-if="filteredItems.length === 0"
-      compact
-      data-testid="copy-library-filter-empty"
-      icon="Search"
-      :title="t('copyLibrary.filterEmptyTitle')"
-      :description="t('copyLibrary.filterEmptyDesc')"
-      :action-text="t('copyLibrary.filterEmptyAction')"
-      @action="originFilter = 'all'; searchQuery = ''"
-    />
-
-    <div v-else class="copy-library-grid" data-testid="copy-library-list">
-      <article
-        v-for="entry in renderedItems"
-        :key="entry.id"
-        class="copy-library-card"
-        :data-testid="'copy-library-item-' + entry.id"
-        role="button"
-        tabindex="0"
-        :aria-label="t('copyLibrary.viewDetailAria') + '：' + (entry.title || t('copyLibrary.untitled'))"
-        @click="openDetail(entry)"
-        @keydown.enter.prevent="openDetail(entry)"
-        @keydown.space.prevent="openDetail(entry)"
-      >
-        <div class="copy-library-card-top">
-        <!-- 与改写区那枚入口的差别只剩「正文要不要回源」：可见性判据两边同形（无频道一律不出现），
-             但这里的正文按来源分档判——video 档列表态 content 只是预览，判据用 wordCount；
-             其余三档判 content.trim()。判据的唯一实现是下面的 canShowEpisodeEntry。 -->
-        <button
-          v-if="canShowEpisodeEntry(entry)"
-          type="button"
-          class="copy-library-podcast-entry"
-          :data-testid="'podcast-script-entry-' + entry.id"
-          :aria-label="t('podcast.episode.entry')"
-          @click.stop="openScriptEntry(entry)"
-        >{{ t('podcast.episode.entry') }}</button>
-          <span class="copy-library-origin-badge" :class="'is-' + entry.origin">{{ originLabel(entry.origin) }}</span>
-          <span class="copy-library-title">{{ entry.title || t('copyLibrary.untitled') }}</span>
-          <el-icon class="copy-library-view-icon" aria-hidden="true"><View /></el-icon>
-        </div>
-        <p class="copy-library-content">{{ entry.content }}</p>
-        <div class="copy-library-meta">
-          <span>{{ t('copyLibrary.wordCount', { count: entry.wordCount }) }}</span>
-          <span v-if="entry.createdAt"> · {{ formatTime(entry.createdAt) }}</span>
-          <span v-if="entry.metadata.truncated" :data-testid="'copy-library-truncated-' + entry.id"> · {{ t('copyLibrary.truncated') }}</span>
-        </div>
-      </article>
-    </div>
-
-    <!-- M-15：截断提示 + 加载更多（文案列表可能长期积累，一次全量渲染必然劣化） -->
-    <LoadMoreRow v-if="itemsTruncated" data-testid="load-more-copies"
-      :hint="t('copyLibrary.shownTruncated', { shown: renderedItems.length, total: filteredItems.length })"
-      :button-text="t('copyLibrary.loadMoreCopies')"
-      @more="copyRenderLimit += 35" />
   </div>
   <PodcastScriptEntry
     v-if="scriptEntry.openedOnce"
@@ -111,6 +125,7 @@ import { View } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadMoreRow from '@/components/LoadMoreRow.vue'
+import UiSkeleton from '@/components/UiSkeleton.vue'
 import { useNotify } from '@/composables/useNotify'
 import { story2videoGetProject } from '@/api/publisher'
 import { setCopyDetailHandoff } from '@/utils/copy-detail-handoff'
@@ -256,128 +271,10 @@ function formatTime (value) {
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString()
 }
 
+/** 空态下一步：没有文案时去采集页，而不是让用户停在空页面。 */
+function goCollect () {
+  router.push('/collection')
+}
+
 onMounted(() => { loadAll() })
 </script>
-
-<style scoped>
-.copy-library-page {
-  padding: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-.copy-library-header h1 {
-  margin: 0 0 4px;
-  font-size: var(--font-size-lg);
-}
-.copy-library-subtitle {
-  margin: 0 0 16px;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-}
-.copy-library-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-.copy-library-filters {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.copy-library-filter-btn {
-  padding: 4px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: transparent;
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-}
-.copy-library-filter-btn.active {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-.copy-library-search input {
-  padding: 4px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  min-width: 220px;
-  font-size: var(--font-size-sm);
-}
-.copy-library-state {
-  color: var(--color-text-secondary);
-  text-align: center;
-  padding: 40px 0;
-}
-.copy-library-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 12px;
-}
-.copy-library-card {
-  cursor: pointer;
-  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
-}
-.copy-library-card:hover,
-.copy-library-card:focus-visible {
-  border-color: var(--color-primary);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  outline: none;
-}
-.copy-library-view-icon {
-  margin-left: auto;
-  color: var(--color-text-secondary);
-  flex-shrink: 0;
-}
-.copy-library-card:hover .copy-library-view-icon {
-  color: var(--color-primary);
-}
-.copy-library-card-static {
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.copy-library-card-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.copy-library-origin-badge {
-  font-size: var(--font-size-xs);
-  padding: 1px 8px;
-  border-radius: 10px;
-  white-space: nowrap;
-  background: var(--color-bg-inset);
-  color: var(--color-text-secondary);
-}
-.copy-library-origin-badge.is-rewrite { color: var(--color-primary); }
-.copy-library-origin-badge.is-draft { color: var(--color-warning); }
-.copy-library-origin-badge.is-video { color: var(--color-info-text); }
-.copy-library-title {
-  font-weight: 600;
-  font-size: var(--font-size-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.copy-library-content {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--color-text-primary);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  white-space: pre-line;
-}
-.copy-library-meta {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
-}
-</style>

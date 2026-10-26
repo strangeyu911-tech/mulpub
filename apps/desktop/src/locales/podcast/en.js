@@ -3,7 +3,7 @@
  * 从 locales/en.js 拆出，键名与拆出前完全一致；zh/en 成对维护（CI Gate 7）。
  */
 export default {
-    pageTitle: 'Podcast RSS Channel',
+    pageTitle: 'Podcast RSS',
     picker: {
       sectionTitle: 'Podcast channels',
       current: 'Current channel',
@@ -25,7 +25,7 @@ export default {
       keepLegacy: 'Keep original data',
       migrationResolved: 'Migration conflict resolved',
     },
-    pageSubtitle: 'Podcast inclusion in RSS aggregators (Xiaoyuzhou / Apple / Spotify): configure the channel once → add episodes one by one → build & self-check the feed → submit the feed URL to each directory',
+    pageSubtitle: 'Set up a channel, add episodes, build and verify the feed, then submit it to podcast directories',
     channel: {
       sectionTitle: 'Channel Settings',
       sectionHint: 'Channel metadata is configured once and embedded into the feed. Validation results are shown by the feed self-check.',

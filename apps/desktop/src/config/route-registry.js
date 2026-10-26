@@ -370,11 +370,12 @@ export const ROUTE_REGISTRY = Object.freeze([
     entryFrom: null,
   },
   {
-    // 播客 RSS 频道（2026-10）：小宇宙等聚合端不是发布平台，独立"频道"实体走 RSS 订阅链路
+    // 播客 RSS（2026-10）：小宇宙等聚合端不是发布平台，独立"频道"实体走 RSS 订阅链路。
+    // 菜单标签与页面标题是两个语义：菜单用短标签「播客」，页面标题用「播客 RSS」。
     path: '/podcast',
     name: 'PodcastChannel',
     view: 'PodcastChannelView.vue',
-    navEntry: { key: 'podcast', group: SIDEBAR_GROUP_MORE, labelI18nKey: 'podcast.pageTitle', to: '/podcast', icon: Headset },
+    navEntry: { key: 'podcast', group: SIDEBAR_GROUP_MORE, labelI18nKey: 'sidebar.nav.podcast', to: '/podcast', icon: Headset },
     internal: false,
     entryFrom: null,
   },

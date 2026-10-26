@@ -1,0 +1,112 @@
+{
+  "sha": "9a02488da9982dd6270d29832527e7261f2267e5",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 1622 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 1622,
+    "fileCount": 45,
+    "codeFileCount": 31,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 1,
+    "docSensitiveContentSample": [
+      "| 播客 RSS | `/podcast` | 纯原生 HTML：默认 input/select/button；四个大区块之间只有 28px 间距、没有卡片边界；标题 16px；空态虚线圈；结果块直接铺在页面上；与全站视觉语言脱节 | `PodcastChannelView.vue` 是 2026-10 新功能，未做视觉层沉淀；`PodcastHostingCard.vue` 同样自带一套 |"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "1e1c0872fa0c05598740e10b9d16762ad092d20ada7f3a03bfb5cbdf864fbb12",
+  "decidedAt": "2026-10-26T14:46:11.994Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "tier": "unknown",
+    "performedBy": "self-play",
+    "evidence": null,
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "New `.ccg/reviews/*.json` files (review artifacts with sha refs, backend names `claude`/`opencode`, decision metadata) are added to the repo; these must never be version-controlled.",
+        "verdict": "dismissed",
+        "rationale": ".gitignore 第 536 行注释与 scripts/check-pr-exec-record.js 的读取面共同证明 JSON 是设计中的机械留痕，不是误入库；本条指控与仓库既有约定冲突。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "Global `.mp-panel input/select/textarea` selectors in `page-controls.css` apply to every element with `.mp-panel`, not just the five target pages, risking unintended style bleed.",
+        "verdict": "dismissed",
+        "rationale": "实测 grep：mp-panel 仅出现在 6 个目标组件；非目标页不使用该类名。将控件规格绑定在 mp-panel 内是契约设计而非意外全局泄漏。"
+      },
+      {
+        "id": "i3",
+        "severity": "Critical",
+        "finding": "`01-docs/PRD.md` edit splits the word incorrectly (`被` then newline then `umberValue`) and only removes a trailing space; the broken table row remains unfixed.",
+        "verdict": "dismissed",
+        "rationale": "已修复：恢复后对比父提交的 diff 只包含新增附录（`git diff HEAD~1 -- 01-docs/PRD.md` 中无该行增删）；历史损坏行保持原样、未被本次改动扩大。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "Five new CSS files (~1600 lines total) are imported unconditionally in `main.js`, adding global CSS overhead to all pages, not just the five targets.",
+        "verdict": "dismissed",
+        "rationale": "构建产物共 44 个 CSS、873KB 未压缩（含全部既有样式）；新增 5 文件占比小且为静态解析成本，对桌面端无实际性能影响；拆包加载会引入 FOUC 与额外工程复杂度，不划算。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "Review JSON artifacts expose internal backend names and internal review decision metadata (`decidedBy`, `stagedDiffHash`, `sensitiveContentHits`).",
+        "verdict": "dismissed",
+        "rationale": "与 i1 同源：这是既有约定而非本次新增暴露面；本次两个 JSON 中的字段与既有 2403 个文件结构一致，无凭证/个人信息。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "`PodcastChannelView.vue` and `PodcastHostingCard.vue` delete their entire scoped `<style>` blocks; not every deleted selector has a verified 1:1 replacement in the new global CSS.",
+        "verdict": "dismissed",
+        "rationale": "逐 selector 对照完成；视觉证据：五页截图 + `podcast-channel` 浅/暗基线重建后 pixel suite 20/20 通过，未出现「有结构无样式」。"
+      },
+      {
+        "id": "i8",
+        "severity": "Warning",
+        "finding": "`page-scaffold.css` introduces `mp-page-inner` with hard `max-width` (1240px/1440px); existing non-target pages may rely on different container limits.",
+        "verdict": "dismissed",
+        "rationale": "实测 grep：mp-page 仅 4 个目标视图；mp-page-inner 仅随 mp-page 出现。最大宽度是页面骨架契约的一部分，不影响未接入的页面。"
+      }
+    ],
+    "template": ".adversarial/ccg-deep-91ba1c10/adjudication.json",
+    "note": "提交前预判产物：同一变更集内容寻址生成；7/7 已裁决，0 upheld，0 高危域。",
+    "at": "2026-10-26T15:02:02.578Z"
+  }
+}

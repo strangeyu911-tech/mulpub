@@ -86,7 +86,7 @@ describe("KnowledgeBasePage 标签视图一致性", () => {
   it("个人知识库视图的添加按钮文案为「添加内容」", async () => {
     const w = mountPage();
     await clickTab(w, "个人知识库");
-    const addBtn = w.find(".page-actions .cohere-btn-primary");
+    const addBtn = w.find(".mp-page-actions .mp-btn--primary");
     expect(addBtn.text()).toContain("添加内容");
     expect(addBtn.text()).not.toContain("添加知识");
   });
@@ -126,7 +126,7 @@ describe("KnowledgeBasePage 用链接采集跳转", () => {
 
   it("弹窗触发 collect 后关闭弹窗并跳转 /collection", async () => {
     const w = mountPage();
-    await w.find(".page-actions .cohere-btn-primary").trigger("click");
+    await w.find(".mp-page-actions .mp-btn--primary").trigger("click");
     const dialog = w.findComponent(ViralFormDialog);
     expect(dialog.exists()).toBe(true);
     dialog.vm.$emit("collect");

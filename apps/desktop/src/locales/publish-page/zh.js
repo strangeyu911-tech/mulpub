@@ -16,6 +16,9 @@ export default {
     untitled: '无标题',
     updatedUnknown: '更新时间未知',
     platformCount: (ctx) => ctx.named('count') + ' 个平台',
+    // ui-consistency-polish（2026-10-26）：草稿页接入页面骨架后的面板标题与计数徽标
+    draftsListTitle: '草稿列表',
+    draftsCount: (ctx) => '共 ' + ctx.named('count') + ' 篇',
     // v2.0 机制 C1.3：平台数触顶提示。只播报、不改变选择；数值来自服务端 limits。
     platformLimitReached: '当前档位最多选择 {limit} 个平台，升级后可继续添加',
     platformLimitHint: '已选 {selected} / {limit} 个平台',

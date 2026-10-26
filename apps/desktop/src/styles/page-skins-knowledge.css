@@ -1,0 +1,65 @@
+/**
+ * page-skins-knowledge.css — 页面骨架层：知识库皮肤（ui-consistency-polish 2026-10-26）
+ * 只承载知识库页面独有的排列/尺寸；共用规则在 page-scaffold.css / page-controls.css。
+ * ============================================================================
+ */
+
+/* ---------------------------------------------------------------------------
+ * 1. 知识库（KnowledgeBasePage / ViralLibraryTable）
+ * ------------------------------------------------------------------------- */
+.kb-page .mp-page-inner {
+  gap: 16px;
+}
+
+.kb-tabs {
+  align-self: flex-start;
+}
+
+.kb-toolbar {
+  margin-bottom: 14px;
+}
+
+.kb-search {
+  width: 320px;
+}
+
+.kb-table {
+  min-width: 1180px;
+}
+
+.kb-table td .mp-btn + .mp-btn {
+  margin-left: 4px;
+}
+
+.kb-table tbody td {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-table .kb-cover {
+  width: 60px;
+  height: 60px;
+  border-radius: var(--r-sm);
+  object-fit: cover;
+  display: block;
+}
+
+.kb-table .kb-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.kb-pagination {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kb-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}

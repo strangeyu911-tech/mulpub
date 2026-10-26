@@ -1,7 +1,9 @@
 <template>
   <button
+    id="collection-tab-btn-creator"
     role="tab"
     :aria-selected="active"
+    aria-controls="collection-tabpanel-creator"
     class="collection-tab-btn"
     :class="{ active }"
     data-testid="collection-tab-creator"

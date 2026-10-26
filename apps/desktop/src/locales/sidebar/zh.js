@@ -67,5 +67,7 @@ export default {
       promptEval: '提示词评估',
       rewrite: '文案改写',
       modelProviders: '模型提供商',
+      // ui-consistency-polish（2026-10-26）：菜单用短标签「播客」，页面标题仍是「播客 RSS」
+      podcast: '播客',
     },
   }

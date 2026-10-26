@@ -3,7 +3,7 @@
  * 从 locales/zh.js 拆出，键名与拆出前完全一致；zh/en 成对维护（CI Gate 7）。
  */
 export default {
-    pageTitle: '播客 RSS 频道',
+    pageTitle: '播客 RSS',
     picker: {
       sectionTitle: '播客频道',
       current: '当前频道',
@@ -25,7 +25,7 @@ export default {
       keepLegacy: '保留原有数据',
       migrationResolved: '迁移冲突已处理',
     },
-    pageSubtitle: '经 RSS 订阅把播客收录进小宇宙 / Apple / Spotify 等聚合端：配置频道一次 → 逐期追加单集 → 生成并自检 Feed → 向分发端提交 Feed 地址',
+    pageSubtitle: '配置频道、逐期追加单集、生成并自检 Feed，再向聚合端提交订阅地址',
     channel: {
       sectionTitle: '频道设置',
       sectionHint: '频道元信息只需配置一次，生成 Feed 时写入。带校验的字段以自检结果为准。',

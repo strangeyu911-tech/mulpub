@@ -20,6 +20,7 @@ export default {
     loading: 'Loading...',
     emptyTitle: 'No copies yet',
     emptyDesc: 'Copies from collection, rewrite and video creation will appear here automatically',
+    emptyAction: 'Go to Collection',
     filterEmptyTitle: 'No matching copies',
     filterEmptyDesc: 'Try a different filter or keyword',
     filterEmptyAction: 'Clear filters',

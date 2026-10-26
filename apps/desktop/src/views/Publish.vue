@@ -3,47 +3,15 @@
   <!-- 文案详情模式提示条（copy-library-detail-entry） -->
   <CopyDetailBanner v-if="showCopyDetailBanner" @close="showCopyDetailBanner = false" />
     <template v-if="publishTab === 'drafts'">
-      <section class="publish-drafts-page" data-testid="publish-drafts-page" aria-labelledby="publish-drafts-title">
-        <header class="publish-drafts-header">
-          <div>
-            <div id="publish-drafts-title" class="page-title">{{ t('publishPage.draftsTitle') }}</div>
-            <div class="page-subtitle">{{ t('publishPage.draftsSubtitle') }}</div>
-          </div>
-          <UiButton data-testid="publish-drafts-back" variant="secondary" @click="goToPublish">{{ t('publishPage.backToPublish') }}</UiButton>
-        </header>
-
-        <div v-if="loadingDrafts" class="publish-drafts-state" data-testid="publish-drafts-loading">
-          <UiSkeleton variant="list" :count="3" />
-        </div>
-        <div v-else-if="drafts.length === 0" class="publish-drafts-state" data-testid="publish-drafts-empty">
-          <strong>{{ t('publishPage.noDrafts') }}</strong>
-          <span>{{ t('publishPage.draftsHint') }}</span>
-        </div>
-        <div v-else class="publish-drafts-list">
-          <article v-for="draft in drafts" :key="draft.id" class="publish-draft-card">
-            <div class="publish-draft-info">
-              <strong>{{ draft.title || t('publishPage.untitled') }}</strong>
-              <span>{{ draft.updatedAt || draft.updated_at ? new Date(draft.updatedAt || draft.updated_at).toLocaleString(getAppLocale() === 'en' ? 'en-US' : 'zh-CN') : t('publishPage.updatedUnknown') }}</span>
-              <span v-if="draft.platforms?.length" class="cohere-tag cohere-tag-info">{{ t('publishPage.platformCount', { count: draft.platforms.length }) }}</span>
-            </div>
-            <div class="publish-draft-actions">
-              <!-- S1c：单一发布出口。
-                   原整页草稿箱只有「继续编辑」+「删除」，而采集页草稿面板同时有
-                   「编辑」与「发布」两个按钮 —— 但两者最终都 push 到
-                   `/publish?draft=<id>`，是**同一个结果**。按规则 1
-                   「一个动作 = 一个结果 = 一个可见归属」，收敛为单个按钮「去发布」。
-                   该出口是替换采集页草稿面板后必须保留的能力（否则功能倒退）。 -->
-              <UiButton
-                :data-testid="`publish-draft-${draft.id}`"
-                variant="ghost"
-                size="sm"
-                @click="editDraft(draft)"
-              >{{ t('publishPage.openDraftToPublish') }}</UiButton>
-              <UiButton :data-testid="`delete-draft-${draft.id}`" variant="ghost" size="sm" @click="removeDraft(draft.id)">{{ t('publishPage.delete') }}</UiButton>
-            </div>
-          </article>
-        </div>
-      </section>
+      <!-- 草稿箱整页视图（ui-consistency-polish 2026-10-26）：骨架/行/空态已抽出为独立组件，
+           数据与事件仍由本页 usePublishDrafts 持有，行为不变。 -->
+      <PublishDraftsPage
+        :drafts="drafts"
+        :loading="loadingDrafts"
+        @open="editDraft"
+        @delete="removeDraft"
+        @back="goToPublish"
+      />
     </template>
 
     <template v-else>
@@ -709,7 +677,6 @@ import { useNotify } from '@/composables/useNotify'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import PodcastScriptEntryLauncher from '@/components/PodcastScriptEntryLauncher.vue'
-import { getAppLocale } from '@/i18n'
 import { usePlatformStore } from '@/stores/platforms'
 import { useRiskStore } from '@/stores/risk'
 import { useAccountStore } from '@/stores/accounts'
@@ -728,6 +695,7 @@ import CoverCropDialog from '@/components/CoverCropDialog.vue'
 import CoverThumbnail from '@/components/CoverThumbnail.vue'
 import CoverPreviewDialog from '@/components/CoverPreviewDialog.vue'
 import TopicTagManagerDialog from '@/components/TopicTagManagerDialog.vue'
+import PublishDraftsPage from '@/views/PublishDraftsPage.vue'
 import { useCoverPreview } from '@/composables/useCoverPreview'
 import { releaseEmbeddedViewsForOverlay, suspendEmbeddedViewsForOverlay } from '@/composables/useEmbeddedViewSuspension'
 import { usePlatformSelection } from '@/composables/usePlatformSelection'
@@ -1610,47 +1578,6 @@ defineExpose({
 .video-upload-zone.has-selected-video :deep(.el-icon--upload) { color: var(--success, #67c23a); }
 .video-upload-zone :deep(.el-icon--upload) { font-size: 48px; color: var(--muted, #909399); margin-bottom: 8px; }
 .video-cover-row { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
-.publish-drafts-page {
-  min-height: 100%;
-  padding: 24px;
-  background: var(--canvas, var(--color-bg-inset));
-}
-.publish-drafts-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-.publish-drafts-state {
-  min-height: 220px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px dashed var(--border-light, #e8e8ec);
-  border-radius: 10px;
-  background: var(--surface, #fff);
-  color: var(--muted, #73777d);
-  text-align: center;
-}
-.publish-drafts-state strong { color: var(--text-primary, #25252b); font-size: var(--font-size-base); }
-.publish-drafts-list { display: flex; flex-direction: column; gap: 10px; }
-.publish-draft-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px;
-  border: 1px solid var(--border-light, #e8e8ec);
-  border-radius: 10px;
-  background: var(--surface, #fff);
-}
-.publish-draft-info { min-width: 0; display: flex; align-items: center; gap: 12px; }
-.publish-draft-info strong { overflow: hidden; color: var(--text-primary, #25252b); text-overflow: ellipsis; white-space: nowrap; }
-.publish-draft-info span { color: var(--muted, #73777d); font-size: var(--font-size-xs); }
-.publish-draft-actions { display: flex; flex: 0 0 auto; gap: 6px; }
 .publish-section-toggle {
   width: 100%;
   min-height: 36px;
@@ -1749,11 +1676,6 @@ defineExpose({
   .publish-mode-tabs { flex: 1 1 100%; order: 2; }
   .publish-mode-tabs .publish-mode-tab { flex: 1 1 0; }
   .batch-mode-toggle { order: 3; }
-  .publish-drafts-page { padding: 16px 12px 24px; }
-  .publish-drafts-header,
-  .publish-draft-card { align-items: flex-start; flex-direction: column; }
-  .publish-draft-info { align-items: flex-start; flex-direction: column; gap: 4px; }
-  .publish-draft-actions { width: 100%; }
   .batch-metadata-grid { grid-template-columns: 1fr; }
 }
 </style>

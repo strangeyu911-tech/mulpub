@@ -20828,3 +20828,35 @@ DOM 采集失败时补真实昵称/ID/粉丝、DOM 成功时不调 HTTP、兜底
 - 自动化：`Home.test.js`、`Accounts.test.js`、`PublishHistory.test.js`、`PublishHistoryEntry.test.js`、`useAccountAddDeepLink.test.js`、`usePublishHistoryStatusFilter.test.js`、`Publish.history-entry-wiring.test.js`。
 - 手动：首页添加账号一次点击即弹层；发布页页头可进发布记录；四个状态标签即时切换且 URL 同步；四张统计卡可点；第 6 个快捷入口为「视频创作」；近期动态有链接可打开。
 - 文案：`home.videoCreation`、`home.statHint*`、`publishPage.publishHistory`、`historyPage.statusTabAll` 等 zh/en 成对。
+## 附录：五页 UI 一致性提升（2026-10-26，ui-consistency-polish）
+
+> 完整 PRD：`01-docs/PRD-UI-CONSISTENCY-2026-10-26.md`；设计规范：`01-docs/DESIGN-PAGE-SCAFFOLD-2026-10-26.md`。
+> 本节只记录**总 PRD 层的结论**；逐页显示项、校验、交互与验收以完整 PRD 为准。
+
+### 一、范围
+
+草稿页（`/publish?tab=drafts`）、博主监控页（`/collection?tab=creator`）、文案库（`/copy-library`）、知识库（`/knowledge-base`）、播客 RSS 频道（`/podcast`）。
+
+### 二、核心结论
+
+1. **不是五个独立问题，而是同一组系统性缺口**：页面骨架缺失、表面层级缺失、控件各写一套、状态表达粗糙、知识库 scoped 覆盖全局页头、播客命名与菜单不一致。
+2. **统一手段是一层页面骨架**：新增 `apps/desktop/src/styles/page-scaffold.css`（`mp-` 前缀、token-only），五页接入；不改业务逻辑、IPC、数据与校验。
+3. **知识库主按钮恢复品牌紫**：删除 `KnowledgeBasePage.vue` 对 `.cohere-page-header` / `cohere-btn-primary` 的 scoped 覆盖（原为 `--coral` 红）。
+4. **草稿页抽出独立组件** `PublishDraftsPage.vue`：既接入骨架，又满足 `Publish.vue` 1775 行门禁（净减行）。
+5. **播客改名**：左侧菜单「播客 RSS 频道」→「播客」；页面标题→「播客 RSS」；实现为新增 `sidebar.nav.podcast`，`podcast.pageTitle` 改值，菜单 key 不变。
+
+### 三、全局规格摘要
+
+- 页面最大宽度 1240px（知识库表格 1440px）；左右留白 32px；页头到首个面板 20px；面板间距 16px。
+- 标题 24px / 600 / -0.4px；副标题 13px / 1.6 / muted；面板标题 15px / 600；正文 13px / 1.65。
+- 面板 16px 圆角 + 1px `--hairline` + `--elevation-1`；列表行 14px 20px、hover `--surface-sunken`。
+- 按钮 34px（sm 28px）/ 10px 圆角；输入 36px / 10px 圆角；分段控件 pill。
+- 状态四态：loading 骨架、empty 图标+标题+说明+CTA、error `mp-notice--danger`、success `mp-notice--success`。
+
+### 四、验收摘要
+
+AC-01~AC-14 见完整 PRD §8：五页骨架一致、标题规格一致、面板规格一致、控件规格一致、空态完整、暗色可用、键盘可用、播客命名正确、业务行为不变、响应式无溢出、视觉回归通过、文案成对、无硬编码色、行数门禁通过。
+
+### 五、明确不做
+
+不改发布页主表单、采集页其他 tab、知识库弹窗内部字段结构；不引入新 UI 库；不改任何校验规则、IPC 契约、数据结构与数据库；不做移动端专属布局。

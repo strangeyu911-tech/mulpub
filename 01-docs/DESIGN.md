@@ -582,6 +582,21 @@ Primary CTAs and pills meet comfortable touch sizing through 12px-24px padding a
 - 不做动画、拖拽调宽、窄屏 68px 图标栏的第二种折叠形态、快捷键；OAuth 内嵌视图（`apps/desktop/electron/services/oauth-manager.js:86` 不传侧栏宽度）不跟随折叠，登记为已知限制。
 - 该按钮是全局可见 UI：`apps/desktop/tests/visual-testing/base-screenshots/` 中**含 TabBar 的基线**都会变化（并非全部 43 张都含壳层，例如 `first-run` 走 `.fullscreen-main`）；最终变化清单以 CI `Gate 7b` 点名为准，基线由 CI 同源渲染重建并逐张审核，不得声称「视觉中性」。
 
+## Page Scaffold（2026-10-26，ui-consistency-polish）
+
+> 完整规范：`01-docs/DESIGN-PAGE-SCAFFOLD-2026-10-26.md`；产品需求：`01-docs/PRD-UI-CONSISTENCY-2026-10-26.md`。
+
+新增 **页面骨架层** `apps/desktop/src/styles/page-scaffold.css`（加载于 `premium-design-system.css` 之后），为草稿 / 博主监控 / 文案库 / 知识库 / 播客 RSS 五页提供同一套布局与控件语言：
+
+- 页面：`mp-page` → `mp-page-inner`（1240px / 宽版 1440px）→ `mp-page-header`（24px 标题 + 13px 副标题 + 右侧动作）。
+- 表面：`mp-panel`（16px 圆角 / 1px `--hairline` / `--elevation-1`）、`mp-panel-header`、`mp-panel-body`、`mp-card`。
+- 列表：`mp-list` / `mp-row`（14px 20px / 64px 起 / hover `--surface-sunken`）/ `mp-row-title` / `mp-row-meta` / `mp-row-actions`。
+- 控件：`mp-btn`（primary / secondary / ghost / danger / sm）、`mp-segmented`、`mp-search`、`mp-field`、`mp-form-grid`。
+- 状态：`mp-chip`（brand / info / success / warning / danger）、`mp-notice`（四态）、`mp-hint`、升级后的 `EmptyState`。
+- 表格：`mp-table`（44px 表头 / 56px 行高 / 无斑马纹 / 发丝分隔）。
+
+硬约束：全部 `mp-` 前缀；只用 token；不改既有 `cohere-*` 类语义；页面视图不再写骨架级 padding；禁止硬编码颜色与 `!important`。
+
 ## Known Gaps
 
 - Exact proprietary font files are not bundled; use the documented fallbacks when implementing externally.

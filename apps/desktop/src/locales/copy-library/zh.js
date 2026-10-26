@@ -20,6 +20,7 @@ export default {
     loading: '加载中...',
     emptyTitle: '暂无文案',
     emptyDesc: '去采集、改写或创作视频后，文案会自动出现在这里',
+    emptyAction: '去采集',
     filterEmptyTitle: '没有匹配的文案',
     filterEmptyDesc: '换个筛选条件或关键词试试',
     filterEmptyAction: '清除筛选',

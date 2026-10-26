@@ -19,6 +19,14 @@ import './styles/member-center.css'
 // 组件口径（卡片/按钮/输入/徽章/统计卡）单独一层，便于与「类名契约」分离演进。
 import './styles/premium-components.css'
 import './styles/premium-design-system.css'
+// 页面骨架层（ui-consistency-polish）：草稿/博主监控/文案库/知识库/播客 RSS 共用。
+// 必须排在 premium-design-system.css 之后；只新增 mp-* 类名，不改既有 cohere-* 语义。
+// 拆成三份是为满足逐文件 500 行门禁：布局 / 控件 / 页面皮肤。
+import './styles/page-scaffold.css'
+import './styles/page-controls.css'
+import './styles/page-skins.css'
+import './styles/page-skins-knowledge.css'
+import './styles/page-skins-data.css'
 import App from './App.vue'
 import i18n from './i18n'
 import router from './router'

@@ -1,12 +1,15 @@
 <template>
-  <div class="podcast-channel-page">
-    <header class="podcast-header">
-      <h1 data-testid="podcast-page-title">{{ t('podcast.pageTitle') }}</h1>
-      <p class="podcast-subtitle">{{ t('podcast.pageSubtitle') }}</p>
-    </header>
+  <div class="mp-page podcast-channel-page">
+    <div class="mp-page-inner">
+      <header class="mp-page-header">
+        <div class="mp-page-heading">
+          <h1 data-testid="podcast-page-title" class="mp-page-title">{{ t('podcast.pageTitle') }}</h1>
+          <p class="mp-page-subtitle">{{ t('podcast.pageSubtitle') }}</p>
+        </div>
+      </header>
 
     <!-- 区块一：频道设置 -->
-    <section class="podcast-section" data-testid="podcast-channel-picker" aria-labelledby="podcast-picker-heading">
+    <section class="mp-panel podcast-section" data-testid="podcast-channel-picker" aria-labelledby="podcast-picker-heading">
       <h2 id="podcast-picker-heading">{{ t('podcast.picker.sectionTitle') }}</h2>
       <p v-if="migrationStatus === 'conflict'" class="podcast-error" data-testid="podcast-migration-conflict">
         {{ t('podcast.picker.migrationConflict') }}<span v-if="migrationConflicts.length" class="podcast-migration-files" data-testid="podcast-migration-files">{{ migrationConflicts.join(' / ') }}</span>
@@ -34,7 +37,7 @@
     </section>
     <PodcastHostingCard :channel-id="activeChannelId" :feed-sync="feedSync" data-testid="podcast-hosting-mount" @published="onFeedPublished" />
 
-    <section class="podcast-section" data-testid="podcast-channel-section" aria-labelledby="podcast-channel-heading">
+    <section class="mp-panel podcast-section" data-testid="podcast-channel-section" aria-labelledby="podcast-channel-heading">
       <h2 id="podcast-channel-heading">{{ t('podcast.channel.sectionTitle') }}</h2>
       <p class="podcast-hint">{{ t('podcast.channel.sectionHint') }}</p>
 
@@ -128,7 +131,7 @@
     </section>
 
     <!-- 区块二：单集管理 -->
-    <section class="podcast-section" data-testid="podcast-episodes-section" aria-labelledby="podcast-episodes-heading">
+    <section class="mp-panel podcast-section" data-testid="podcast-episodes-section" aria-labelledby="podcast-episodes-heading">
       <h2 id="podcast-episodes-heading">{{ t('podcast.episodes.sectionTitle') }}</h2>
       <p v-if="episodesError" class="podcast-error" data-testid="podcast-episodes-error">{{ errorText(episodesError) }}</p>
       <p v-if="stockSummary" class="podcast-hint" data-testid="podcast-stock-summary">
@@ -237,7 +240,7 @@
     </section>
 
     <!-- 区块三：发布与自检 -->
-    <section class="podcast-section" data-testid="podcast-publish-section" aria-labelledby="podcast-publish-heading">
+    <section class="mp-panel podcast-section" data-testid="podcast-publish-section" aria-labelledby="podcast-publish-heading">
       <h2 id="podcast-publish-heading">{{ t('podcast.publish.sectionTitle') }}</h2>
       <p class="podcast-hint">{{ t('podcast.publish.sectionHint') }}</p>
       <div class="podcast-actions">
@@ -278,7 +281,7 @@
     </section>
 
     <!-- 分发端提交指引 -->
-    <section class="podcast-section" data-testid="podcast-endpoints-section" aria-labelledby="podcast-endpoints-heading">
+    <section class="mp-panel podcast-section" data-testid="podcast-endpoints-section" aria-labelledby="podcast-endpoints-heading">
       <h2 id="podcast-endpoints-heading">{{ t('podcast.endpoints.sectionTitle') }}</h2>
       <p class="podcast-hint">{{ t('podcast.endpoints.sectionHint') }}</p>
       <p v-if="endpointsError" class="podcast-error" data-testid="podcast-endpoints-error">{{ errorText(endpointsError) }}</p>
@@ -313,6 +316,7 @@
         </article>
       </div>
     </section>
+    </div>
   </div>
 </template>
 
@@ -442,41 +446,3 @@ onMounted(async () => {
   if (episodesError.value) notifyError(errorText(episodesError.value))
 })
 </script>
-
-<style scoped>
-.podcast-channel-page { padding: 16px 24px; }
-.podcast-header h1 { margin: 0 0 4px; font-size: var(--font-size-lg); }
-.podcast-subtitle { margin: 0 0 16px; color: var(--el-text-color-secondary, #666); font-size: var(--font-size-sm); }
-.podcast-section { margin-bottom: 28px; }
-.podcast-section h2 { font-size: var(--font-size-md); margin: 0 0 8px; }
-.podcast-hint { color: var(--el-text-color-secondary, #888); font-size: var(--font-size-xs); margin: 4px 0; }
-.podcast-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
-.podcast-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--font-size-sm); }
-.podcast-field-wide { grid-column: 1 / -1; }
-.podcast-field input, .podcast-field textarea, .podcast-field select { padding: 6px 8px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 4px; font-size: var(--font-size-sm); }
-.podcast-actions { margin-top: 12px; display: flex; gap: 8px; }
-.podcast-actions button { padding: 6px 14px; border-radius: 4px; border: 1px solid var(--el-border-color, #dcdfe6); background: #fff; cursor: pointer; }
-.podcast-error { color: var(--el-color-danger, #d03050); font-size: var(--font-size-sm); }
-.podcast-empty { padding: 24px; text-align: center; color: var(--el-text-color-secondary, #888); border: 1px dashed var(--el-border-color, #dcdfe6); border-radius: 6px; font-size: var(--font-size-sm); }
-.podcast-episode-list { list-style: none; margin: 0; padding: 0; }
-.podcast-episode-row { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px solid var(--el-border-color-lighter, #eee); font-size: var(--font-size-sm); }
-.podcast-episode-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.podcast-episode-meta { color: var(--el-text-color-secondary, #888); font-size: var(--font-size-xs); }
-.podcast-episode-ops { display: flex; gap: 6px; align-items: center; }
-.podcast-episode-form { margin-top: 16px; padding: 12px; border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; }
-.podcast-result { margin-top: 12px; padding: 10px 12px; background: var(--el-fill-color-light, #f7f8fa); border-radius: 6px; font-size: var(--font-size-sm); }
-.podcast-result-fail { background: var(--el-color-danger-light-9, #fef0f0); }
-.podcast-feed-path { display: inline-block; max-width: 100%; word-break: break-all; margin-right: 8px; }
-.podcast-issue { margin: 2px 0; }
-.podcast-check-list { list-style: none; padding: 0; }
-.podcast-check-ok { color: var(--el-color-success, #18a058); margin-right: 6px; }
-.podcast-check-bad { color: var(--el-color-danger, #d03050); margin-right: 6px; }
-.podcast-endpoint-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-.podcast-endpoint-card { border: 1px solid var(--el-border-color, #dcdfe6); border-radius: 6px; padding: 12px; font-size: var(--font-size-sm); }
-.podcast-endpoint-card h3 { margin: 0 0 6px; font-size: var(--font-size-base); }
-.podcast-endpoint-badge { display: inline-block; background: var(--el-color-warning-light-9, #fdf6ec); color: var(--el-color-warning, #e6a23c); border-radius: 4px; padding: 2px 6px; font-size: var(--font-size-xs); }
-.podcast-endpoint-timing { color: var(--el-text-color-secondary, #888); font-size: var(--font-size-xs); }
-.podcast-endpoint-steps { margin: 8px 0; padding-left: 18px; }
-.podcast-endpoint-links a { margin-right: 10px; color: var(--el-color-primary, #2080f0); }
-.podcast-endpoint-nolink { color: var(--el-text-color-secondary, #888); font-size: var(--font-size-xs); }
-</style>

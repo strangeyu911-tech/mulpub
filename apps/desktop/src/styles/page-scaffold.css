@@ -1,0 +1,280 @@
+/**
+ * page-scaffold.css — 页面骨架层（ui-consistency-polish 2026-10-26）
+ * ============================================================================
+ * 定位：**页面级布局与表面**。加载顺序在 premium-design-system.css 之后。
+ * 控件（按钮/表单/徽标/表格）见 page-controls.css；页面特有皮肤见 page-skins.css。
+ *
+ * 边界：
+ *   - 只定义 `mp-` 前缀的页面骨架类，不改 cohere-* / Element Plus 既有语义；
+ *   - 只使用 tokens.css 的变量，禁止硬编码颜色；
+ *   - 不携带任何业务逻辑。
+ *
+ * 适用：草稿页 / 博主监控 / 文案库 / 知识库 / 播客 RSS。
+ * 规范：01-docs/DESIGN-PAGE-SCAFFOLD-2026-10-26.md
+ * ============================================================================
+ */
+
+/* ---------------------------------------------------------------------------
+ * 1. 页面骨架
+ * ------------------------------------------------------------------------- */
+.mp-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: transparent;
+}
+
+.mp-page-inner {
+  --mp-page-max: 1240px;
+  width: 100%;
+  max-width: var(--mp-page-max);
+  margin: 0 auto;
+  padding: 24px 32px 48px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mp-page--wide .mp-page-inner {
+  --mp-page-max: 1440px;
+}
+
+.mp-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  padding: 0 0 4px;
+}
+
+.mp-page-heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mp-page-title {
+  margin: 0;
+  font-family: var(--font-family-ui-display);
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.4px;
+  color: var(--color-text-strong);
+}
+
+.mp-page-subtitle {
+  margin: 0;
+  max-width: 760px;
+  font-family: var(--font-family-ui);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--color-text-muted);
+}
+
+.mp-page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.mp-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.mp-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------------------
+ * 2. 表面：面板 / 子卡片
+ * ------------------------------------------------------------------------- */
+.mp-panel {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--elevation-1);
+  overflow: hidden;
+}
+
+.mp-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+
+.mp-panel-heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mp-panel-title {
+  margin: 0;
+  font-family: var(--font-family-ui-display);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.2px;
+  color: var(--color-text-strong);
+}
+
+.mp-panel-hint {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+
+.mp-panel-body {
+  padding: 20px;
+}
+
+.mp-panel-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 12px 20px;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.mp-card {
+  padding: 16px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+
+/* ---------------------------------------------------------------------------
+ * 3. 列表行
+ * ------------------------------------------------------------------------- */
+.mp-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.mp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 14px 20px;
+  border-top: 1px solid var(--hairline-soft);
+  transition: background-color var(--motion-fast) var(--ease-default);
+}
+
+.mp-row:first-child {
+  border-top: none;
+}
+
+.mp-row:hover,
+.mp-row:focus-within {
+  background: var(--surface-sunken);
+}
+
+.mp-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.mp-row-title {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--color-text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+  opacity: 0.72;
+  transition: opacity var(--motion-fast) var(--ease-default);
+}
+
+.mp-row:hover .mp-row-actions,
+.mp-row:focus-within .mp-row-actions {
+  opacity: 1;
+}
+
+.mp-row-divider {
+  color: var(--color-border-strong);
+}
+
+/* ---------------------------------------------------------------------------
+ * 4. 响应式（布局）
+ * ------------------------------------------------------------------------- */
+@media (max-width: 1200px) {
+  .mp-page-inner {
+    padding: 20px 24px 40px;
+  }
+}
+
+@media (max-width: 900px) {
+  .mp-page-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .mp-page-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 720px) {
+  .mp-page-inner {
+    padding: 16px 16px 32px;
+  }
+
+  .mp-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mp-row-actions {
+    width: 100%;
+    opacity: 1;
+  }
+
+  .mp-panel-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-row {
+    transition: none;
+  }
+}

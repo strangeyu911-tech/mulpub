@@ -1,0 +1,296 @@
+/**
+ * page-skins.css — 页面骨架层：博主监控 / 文案库皮肤（ui-consistency-polish 2026-10-26）
+ * 只承载页面独有的排列/尺寸；共用规则在 page-scaffold.css / page-controls.css。
+ * ============================================================================
+ */
+
+/* ---------------------------------------------------------------------------
+ * 1. 博主监控（CreatorMonitor）
+ * ------------------------------------------------------------------------- */
+.creator-monitor {
+  padding: 4px 0 8px;
+}
+
+.creator-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  object-fit: cover;
+  background: var(--surface-sunken);
+  flex-shrink: 0;
+}
+
+.creator-avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--brand-gradient-soft);
+  color: var(--color-primary);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.creator-thumb {
+  width: 64px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  object-fit: cover;
+  background: var(--surface-sunken);
+  flex-shrink: 0;
+}
+
+.creator-thumb--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.creator-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.creator-name-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.creator-quality {
+  align-self: flex-start;
+}
+
+.creator-name {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--color-text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 420px;
+}
+
+.creator-platform-tag[data-platform="youtube"] {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.creator-platform-tag[data-platform="douyin"] {
+  background: var(--color-info-soft);
+  color: var(--color-info-text);
+}
+
+.creator-platform-tag[data-platform="xiaohongshu"] {
+  background: var(--color-warning-soft);
+  color: var(--color-warning-ink);
+}
+
+.creator-badge[data-tier="official"],
+.creator-quality[data-quality="full"] {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.creator-badge[data-tier="best_effort"],
+.creator-quality[data-quality="partial"] {
+  background: var(--color-warning-soft);
+  color: var(--color-warning-ink);
+}
+
+.creator-paused {
+  color: var(--color-danger);
+  font-size: var(--font-size-xs);
+}
+
+.creator-item {
+  cursor: pointer;
+}
+
+.creator-item.active {
+  background: var(--color-primary-light);
+}
+
+.creator-item.disabled {
+  opacity: 0.62;
+}
+
+.creator-item.active .creator-name {
+  color: var(--color-primary);
+}
+
+.creator-collected {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.creator-actions button {
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * 2. 文案库（CopyLibraryView）
+ * ------------------------------------------------------------------------- */
+.copy-library-toolbar {
+  margin-bottom: 2px;
+}
+
+.copy-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.copy-library-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--elevation-1);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-default),
+    box-shadow var(--motion-base) var(--ease-out-soft),
+    transform var(--motion-base) var(--ease-out-soft);
+}
+
+.copy-library-card:hover,
+.copy-library-card:focus-visible {
+  border-color: var(--hairline-strong);
+  box-shadow: var(--elevation-2);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.copy-library-card:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.copy-library-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.copy-library-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--color-text-strong);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.copy-library-view-icon {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  transition: color var(--motion-fast) var(--ease-default);
+}
+
+.copy-library-card:hover .copy-library-view-icon {
+  color: var(--color-primary);
+}
+
+.copy-library-content {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.copy-library-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline-soft);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.copy-library-origin-badge.is-collect {
+  background: var(--color-info-soft);
+  color: var(--color-info-text);
+}
+
+.copy-library-origin-badge.is-rewrite {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.copy-library-origin-badge.is-draft {
+  background: var(--color-warning-soft);
+  color: var(--color-warning-ink);
+}
+
+.copy-library-origin-badge.is-video {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.copy-library-search {
+  width: 280px;
+}
+
+.copy-library-filter-btn {
+  /* 视觉由 .mp-segmented button 统一提供；这里只保留测试锚点类名 */
+  background: transparent;
+}
+
+.copy-library-empty-panel {
+  padding: 8px;
+}
+
+.publish-draft-delete.ui-btn {
+  color: var(--color-danger);
+}
+
+.publish-draft-delete.ui-btn:hover {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+@media (max-width: 900px) {
+  .copy-library-search {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .creator-name {
+    max-width: none;
+    white-space: normal;
+  }
+
+  .copy-library-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .copy-library-card {
+    transition: none;
+  }
+}

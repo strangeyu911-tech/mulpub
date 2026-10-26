@@ -1,5 +1,5 @@
 <template>
-  <section class="podcast-hosting" data-testid="podcast-hosting-card" aria-labelledby="podcast-hosting-heading">
+  <section class="mp-panel podcast-hosting" data-testid="podcast-hosting-card" aria-labelledby="podcast-hosting-heading">
     <h2 id="podcast-hosting-heading">{{ t('podcast.hosting.sectionTitle') }}</h2>
     <p class="podcast-hosting-hint">{{ t('podcast.hosting.sectionHint') }}</p>
 
@@ -177,20 +177,3 @@ onMounted(async () => {
   await refillForm()
 })
 </script>
-
-<style scoped>
-.podcast-hosting { margin-bottom: 28px; }
-.podcast-hosting-hint,
-.podcast-hosting-note { margin: 6px 0; color: var(--el-text-color-secondary); font-size: var(--font-size-sm); }
-.podcast-hosting-state { margin: 6px 0; font-size: var(--font-size-sm); }
-.podcast-hosting-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
-.podcast-hosting-field { display: flex; flex-direction: column; gap: 4px; font-size: var(--font-size-sm); }
-.podcast-hosting-field input,
-.podcast-hosting-field select { padding: 4px 8px; border: 1px solid var(--el-border-color); border-radius: var(--radius-sm); }
-.podcast-hosting-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
-.podcast-hosting-actions button { padding: 4px 12px; border: 1px solid var(--el-border-color); border-radius: var(--radius-sm); background: var(--el-fill-color-blank); cursor: pointer; }
-.podcast-hosting-error { color: var(--el-color-danger); font-size: var(--font-size-sm); }
-.podcast-hosting-issues { margin: 6px 0; padding-left: 18px; color: var(--el-color-warning); font-size: var(--font-size-sm); }
-.podcast-hosting-check,
-.podcast-hosting-publish { margin: 6px 0; font-size: var(--font-size-sm); }
-</style>

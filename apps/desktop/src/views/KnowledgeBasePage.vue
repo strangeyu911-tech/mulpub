@@ -1,28 +1,35 @@
 <template>
-  <div class="cohere-page">
-    <div class="cohere-page-header">
-      <div>
-        <div class="page-title">{{ t('knowledgeBase.title') }}</div>
-        <div class="page-subtitle">{{ subtitleText }}</div>
-      </div>
-      <div class="page-actions" style="display:flex;gap:8px">
-        <button v-if="activeTab === 'viral'" class="cohere-btn-primary" @click="showViralForm = true">＋ {{ t('knowledgeBase.addViral') }}</button>
-        <button v-if="activeTab === 'personal'" class="cohere-btn-primary" @click="showPersonalForm = true">＋ {{ t('knowledgeBase.addPersonal') }}</button>
-        <button v-if="activeTab === 'personal'" class="cohere-btn-secondary" @click="triggerBatchImport">📁 {{ t('knowledgeBase.batchImport') }}</button>
-        <button class="cohere-btn-secondary" @click="handleExport">🪶 {{ t('knowledgeBase.exportToFeishu') }}</button>
-      </div>
-    </div>
+  <div class="mp-page mp-page--wide kb-page">
+    <div class="mp-page-inner">
+      <header class="mp-page-header">
+        <div class="mp-page-heading">
+          <h1 class="mp-page-title">{{ t('knowledgeBase.title') }}</h1>
+          <p class="mp-page-subtitle">{{ subtitleText }}</p>
+        </div>
+        <div class="mp-page-actions">
+          <button v-if="activeTab === 'viral'" type="button" class="mp-btn mp-btn--primary" @click="showViralForm = true">＋ {{ t('knowledgeBase.addViral') }}</button>
+          <button v-if="activeTab === 'personal'" type="button" class="mp-btn mp-btn--primary" @click="showPersonalForm = true">＋ {{ t('knowledgeBase.addPersonal') }}</button>
+          <button v-if="activeTab === 'personal'" type="button" class="mp-btn mp-btn--secondary" @click="triggerBatchImport">{{ t('knowledgeBase.batchImport') }}</button>
+          <button type="button" class="mp-btn mp-btn--secondary" @click="handleExport">{{ t('knowledgeBase.exportToFeishu') }}</button>
+        </div>
+      </header>
 
-    <div class="cohere-content">
-      <div class="kb-tabs" style="display:flex;gap:4px;margin-bottom:16px;background:var(--soft-stone,#f5f5f5);border-radius:8px;padding:3px">
-        <button class="kb-tab-btn" :class="{ active: activeTab === 'viral' }" @click="activeTab = 'viral'">{{ t('knowledgeBase.tabViral') }}</button>
-        <button class="kb-tab-btn" :class="{ active: activeTab === 'pattern' }" @click="activeTab = 'pattern'">{{ t('knowledgeBase.tabPattern') }}</button>
-        <button class="kb-tab-btn" :class="{ active: activeTab === 'personal' }" @click="activeTab = 'personal'">{{ t('knowledgeBase.tabPersonal') }}</button>
+      <div class="mp-segmented kb-tabs" role="tablist" :aria-label="t('knowledgeBase.title')">
+        <button
+          v-for="tab in KB_TABS"
+          :key="tab.key"
+          type="button"
+          role="tab"
+          class="kb-tab-btn"
+          :class="{ active: activeTab === tab.key }"
+          :aria-selected="activeTab === tab.key"
+          @click="activeTab = tab.key"
+        >{{ t(tab.labelKey) }}</button>
       </div>
 
       <!-- F-204：模式提取积压提示条（deferred>0 才出现；IPC 失败静默隐藏，fail-open） -->
-      <div v-if="activeTab === 'viral' && queueDeferred > 0" class="kb-queue-backlog" data-testid="pattern-queue-backlog">
-        {{ t('knowledgeBase.patternQueueBacklog', { n: queueDeferred }) }}
+      <div v-if="activeTab === 'viral' && queueDeferred > 0" class="mp-notice mp-notice--warning" data-testid="pattern-queue-backlog">
+        <span class="mp-notice-text">{{ t('knowledgeBase.patternQueueBacklog', { n: queueDeferred }) }}</span>
       </div>
       <ViralLibraryTable v-if="activeTab === 'viral'" ref="viralRef" @create="showViralForm = true" />
       <PatternAnalysisPanel v-if="activeTab === 'pattern'" ref="patternRef" />
@@ -55,6 +62,12 @@ import PersonalFormDialog from '@/components/PersonalFormDialog.vue'
 const { t } = useI18n()
 const router = useRouter()
 const activeTab = ref('viral')
+/** 页签定义：渲染与顺序的唯一来源（避免三个按钮各写一遍条件）。 */
+const KB_TABS = Object.freeze([
+  { key: 'viral', labelKey: 'knowledgeBase.tabViral' },
+  { key: 'pattern', labelKey: 'knowledgeBase.tabPattern' },
+  { key: 'personal', labelKey: 'knowledgeBase.tabPersonal' },
+])
 // F-204：deferred 计数（页头提示条）；挂载时拉一次，失败保持 0（不打扰）
 const queueDeferred = ref(0)
 async function loadQueueStats () {
@@ -174,55 +187,3 @@ async function handleExport() {
   }
 }
 </script>
-
-<style scoped>
-.cohere-page { padding: 0; }
-.cohere-page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface, #fff);
-}
-.page-title { font-size: var(--font-size-md); font-weight: 600; color: var(--text-primary); }
-.page-subtitle { font-size: var(--font-size-xs); color: var(--muted); margin-top: 2px; }
-.cohere-btn-primary {
-  padding: 8px 16px;
-  background: var(--coral, #f56c6c);
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-}
-.cohere-btn-secondary {
-  padding: 8px 16px;
-  background: var(--soft-stone, #f5f5f5);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-}
-.cohere-content { padding: 12px 20px; }
-.kb-tab-btn {
-  flex: 1;
-  padding: 8px 16px;
-  border: none;
-  background: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  color: var(--muted);
-  transition: all 0.15s;
-}
-.kb-tab-btn.active {
-  background: var(--surface, #fff);
-  color: var(--text-primary);
-  font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-}
-</style>

@@ -21,6 +21,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import CreatorAddDialog from './CreatorAddDialog.vue'
+import EmptyState from '@/components/EmptyState.vue'
 import {
   credentialBannerKey as credentialBannerKeyOf,
   followErrorKey,
@@ -83,6 +84,12 @@ function platformLabel (id) {
   if (p && p.label) return p.label
   const key = platformLocaleKey(id)
   return key ? t(key) : id
+}
+
+/** 无头像时的首字母占位：避免列表出现「左边空白」的断列。 */
+function creatorInitial (c) {
+  const name = String((c && (c.display_name || c.external_id)) || '').trim()
+  return name ? name.slice(0, 1).toUpperCase() : '?'
 }
 
 /** 领域 reason → 文案（查表逻辑在 creator-monitor-copy.js，本层只做 t() 与平台名注入） */
@@ -314,78 +321,87 @@ async function loadPlatforms () {
 </script>
 
 <template>
-  <div class="creator-monitor" data-testid="creator-monitor">
-    <div v-if="degraded" class="creator-degraded" data-testid="creator-degraded">
-      <span>{{ degraded }}</span>
-      <button class="cohere-btn-secondary" data-testid="creator-retry" @click="loadCreators">
+  <div class="creator-monitor mp-stack" data-testid="creator-monitor">
+    <div v-if="degraded" class="mp-notice mp-notice--warning" data-testid="creator-degraded">
+      <span class="mp-notice-text">{{ degraded }}</span>
+      <button type="button" class="mp-btn mp-btn--secondary mp-btn--sm" data-testid="creator-retry" @click="loadCreators">
         {{ $t('collection.creatorRetry') }}
       </button>
     </div>
 
     <!-- 凭证四态横幅：只在非 ok 且服务已就绪时出现 -->
-    <div v-if="credentialBannerKey" class="creator-credential-banner" data-testid="creator-credential-banner">
-      <span data-testid="creator-credential-status-text">{{ $t(credentialBannerKey) }}</span>
-      <button class="cohere-btn-secondary" data-testid="creator-credential-open" @click="credentialVisible = true">
+    <div v-if="credentialBannerKey" class="mp-notice" data-testid="creator-credential-banner">
+      <span class="mp-notice-text" data-testid="creator-credential-status-text">{{ $t(credentialBannerKey) }}</span>
+      <button type="button" class="mp-btn mp-btn--secondary mp-btn--sm" data-testid="creator-credential-open" @click="credentialVisible = true">
         {{ $t('collection.creatorCredentialOpen') }}
       </button>
     </div>
 
     <!-- 正文腿缺依赖：非阻塞，仅告知（发现与采集不受影响） -->
-    <p v-if="transcriptHint" class="creator-dependency-hint" data-testid="creator-dependency-hint">
+    <p v-if="transcriptHint" class="mp-hint" data-testid="creator-dependency-hint">
       {{ transcriptHint }}
     </p>
 
     <!-- 博主列表 -->
-    <section class="creator-panel">
-      <header class="creator-panel-head">
-        <h3>{{ $t('collection.creatorListTitle') }}</h3>
-        <button class="cohere-btn-secondary" data-testid="creator-add" @click="openAddDialog">
-          {{ $t('collection.creatorAddSubmit') }}
+    <section class="mp-panel creator-panel">
+      <header class="mp-panel-header">
+        <div class="mp-panel-heading">
+          <h3 class="mp-panel-title">{{ $t('collection.creatorListTitle') }}</h3>
+          <p class="mp-panel-hint">{{ $t('collection.creatorListCount', { count: creators.length }) }}</p>
+        </div>
+        <button type="button" class="mp-btn mp-btn--secondary mp-btn--sm" data-testid="creator-add" @click="openAddDialog">
+          {{ $t('collection.creatorAddButton') }}
         </button>
       </header>
 
-      <p v-if="!loading && creators.length === 0" class="creator-empty" data-testid="creator-empty">
-        <strong>{{ $t('collection.creatorEmptyTitle') }}</strong>
-        <span>{{ $t('collection.creatorEmptyDesc') }}</span>
-      </p>
+      <EmptyState scaffold
+        v-if="!loading && creators.length === 0"
+        data-testid="creator-empty"
+        icon="User"
+        :title="$t('collection.creatorEmptyTitle')"
+        :description="$t('collection.creatorEmptyDesc')"
+        :action-text="$t('collection.creatorAddButton')"
+        @action="openAddDialog"
+      />
 
-      <ul v-else class="creator-list" data-testid="creator-list">
+      <ul v-else class="mp-list" data-testid="creator-list">
         <li
           v-for="c in creators"
           :key="c.id"
-          class="creator-item"
+          class="mp-row creator-item"
           :class="{ active: c.id === activeCreatorId, disabled: c.enabled === 0 }"
           :data-testid="'creator-item-' + c.id"
           @click="activeCreatorId = c.id; loadDiscoveries()"
         >
           <img v-if="c.avatar_url" class="creator-avatar" :src="c.avatar_url" alt="" />
-          <div class="creator-meta">
-            <span class="creator-name">
+          <span v-else class="creator-avatar creator-avatar--fallback" aria-hidden="true">{{ creatorInitial(c) }}</span>
+          <div class="mp-row-main creator-meta">
+            <div class="creator-name-line">
               <!-- 平台徽标（PRD §7）：多平台列表混排时必须一眼可分 -->
-              <span class="creator-platform-tag" :data-testid="'creator-platform-' + (c.platform || 'youtube')" :data-platform="c.platform || 'youtube'">
+              <span class="mp-chip creator-platform-tag" :data-testid="'creator-platform-' + (c.platform || 'youtube')" :data-platform="c.platform || 'youtube'">
                 {{ platformLabel(c.platform || 'youtube') }}
               </span>
-              {{ c.display_name || c.external_id }}
-            </span>
-            <span class="creator-badge" :data-tier="c.capability_tier">
-              {{ $t(capKey(c.capability_tier)) }}
-            </span>
-            <span v-if="c.status === 'fatal_paused' || c.status === 'auto_paused'" class="creator-paused">
+              <span class="creator-name">{{ c.display_name || c.external_id }}</span>
+              <span class="mp-chip creator-badge" :data-tier="c.capability_tier">
+                {{ $t(capKey(c.capability_tier)) }}
+              </span>
+              <span v-if="c.pendingCount > 0" class="mp-chip mp-chip--brand" data-testid="creator-pending">
+                {{ $t('collection.creatorPendingBadge', { count: c.pendingCount }) }}
+              </span>
+            </div>
+            <div v-if="c.status === 'fatal_paused' || c.status === 'auto_paused'" class="mp-row-meta creator-paused">
               {{ $t(c.status === 'fatal_paused' ? 'collection.creatorFatalPaused' : 'collection.creatorAutoPaused',
                      { times: c.consecutive_failures || 0, reason: c.paused_reason || '' }) }}
-            </span>
+            </div>
           </div>
-          <span v-if="c.pendingCount > 0" class="creator-badge-num" data-testid="creator-pending">
-            {{ $t('collection.creatorPendingBadge', { count: c.pendingCount }) }}
-          </span>
-          <div class="creator-actions" @click.stop>
-            <button data-testid="creator-check-now" @click="checkNow(c)">
+          <div class="mp-row-actions creator-actions" @click.stop>
+            <button type="button" class="mp-btn mp-btn--ghost mp-btn--sm" data-testid="creator-check-now" @click="checkNow(c)">
               {{ $t('collection.creatorCheckNow') }}
             </button>
-            <button data-testid="creator-toggle" @click="togglePause(c)">
+            <button type="button" class="mp-btn mp-btn--ghost mp-btn--sm" data-testid="creator-toggle" @click="togglePause(c)">
               {{ $t(c.enabled === 0 ? 'collection.creatorResume' : 'collection.creatorPause') }}
             </button>
-            <button data-testid="creator-unfollow" @click="unfollow(c)">
+            <button type="button" class="mp-btn mp-btn--danger mp-btn--sm" data-testid="creator-unfollow" @click="unfollow(c)">
               {{ $t('collection.creatorUnfollow') }}
             </button>
           </div>
@@ -394,11 +410,15 @@ async function loadPlatforms () {
     </section>
 
     <!-- 发现列表 -->
-    <section class="creator-panel">
-      <header class="creator-panel-head">
-        <h3>{{ $t('collection.creatorTab') }}</h3>
+    <section class="mp-panel creator-panel">
+      <header class="mp-panel-header">
+        <div class="mp-panel-heading">
+          <h3 class="mp-panel-title">{{ $t('collection.creatorTab') }}</h3>
+          <p class="mp-panel-hint">{{ $t('collection.creatorDiscoveriesCount', { count: discoveries.length }) }}</p>
+        </div>
         <button
-          class="cohere-btn-primary"
+          type="button"
+          class="mp-btn mp-btn--primary mp-btn--sm"
           data-testid="creator-collect-all"
           :disabled="collecting || !hasDiscoveries"
           @click="collectAll"
@@ -407,22 +427,30 @@ async function loadPlatforms () {
         </button>
       </header>
 
-      <p v-if="!discovering && discoveries.length === 0" class="creator-empty" data-testid="creator-no-new">
-        {{ $t('collection.creatorNoNewWorks', { interval: '60' }) }}
-      </p>
+      <EmptyState scaffold
+        v-if="!discovering && discoveries.length === 0"
+        compact
+        data-testid="creator-no-new"
+        icon="VideoCamera"
+        :title="$t('collection.creatorNoNewTitle')"
+        :description="$t('collection.creatorNoNewDesc', { interval: '60' })"
+      />
 
-      <ul v-else class="creator-discoveries" data-testid="creator-discoveries">
-        <li v-for="d in discoveries" :key="d.id" class="creator-discovery" :data-testid="'discovery-' + d.id">
+      <ul v-else class="mp-list" data-testid="creator-discoveries">
+        <li v-for="d in discoveries" :key="d.id" class="mp-row creator-discovery" :data-testid="'discovery-' + d.id">
           <img v-if="d.thumbnail_url" class="creator-thumb" :src="d.thumbnail_url" alt="" />
-          <div class="creator-meta">
-            <span class="creator-title">{{ d.title }}</span>
-            <span class="creator-quality" :data-quality="d.content_quality">
+          <span v-else class="creator-thumb creator-thumb--fallback" aria-hidden="true">▶</span>
+          <div class="mp-row-main creator-meta">
+            <span class="mp-row-title creator-title" :title="d.title">{{ d.title }}</span>
+            <span class="mp-chip creator-quality" :data-quality="d.content_quality">
               {{ $t(qualityKey(d.content_quality)) }}
             </span>
           </div>
-          <div class="creator-actions">
+          <div class="mp-row-actions creator-actions">
             <button
               v-if="d.collect_state === 'pending'"
+              type="button"
+              class="mp-btn mp-btn--primary mp-btn--sm"
               data-testid="creator-collect-one"
               @click="collectOne(d)"
             >
@@ -450,33 +478,3 @@ async function loadPlatforms () {
     />
   </div>
 </template>
-
-<style scoped>
-.creator-monitor { display: flex; flex-direction: column; gap: 16px; }
-.creator-panel { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 12px; }
-.creator-panel-head { display: flex; justify-content: space-between; align-items: center; }
-.creator-list, .creator-discoveries { list-style: none; margin: 8px 0 0; padding: 0; }
-.creator-item, .creator-discovery { display: flex; gap: 12px; align-items: center; padding: 8px; border-bottom: 1px solid var(--border, #f3f4f6); cursor: pointer; }
-.creator-item.active { background: var(--el-fill-color-light, #f5f7fa); }
-.creator-item.disabled { opacity: 0.6; }
-.creator-avatar, .creator-thumb { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
-.creator-meta { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-.creator-name, .creator-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.creator-platform-tag {
-  display: inline-block;
-  padding: 0 6px;
-  margin-right: 6px;
-  border: 1px solid var(--border, #dcdfe6);
-  border-radius: 4px;
-  font-size: var(--font-size-xs);
-  font-weight: 400;
-  vertical-align: middle;
-}
-.creator-badge, .creator-quality, .creator-badge-num, .creator-collected { font-size: var(--font-size-xs); }
-.creator-paused { color: var(--el-color-danger, #f56c6c); font-size: var(--font-size-xs); }
-.creator-degraded { display: flex; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--el-color-warning, #e6a23c); border-radius: 4px; }
-.creator-credential-banner { display: flex; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--el-color-info, #909399); border-radius: 4px; }
-.creator-dependency-hint { margin: 0; color: var(--el-text-color-secondary, #909399); font-size: var(--font-size-xs); }
-.creator-empty { display: flex; flex-direction: column; gap: 4px; color: var(--el-text-color-secondary, #909399); }
-.creator-actions { display: flex; gap: 8px; }
-</style>

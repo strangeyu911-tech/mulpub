@@ -672,8 +672,8 @@ enclosure 解析序（`resolveEnclosure`）：`audioUrl` → `resolvedAudioUrl` 
 | `podcast.hosting.secretKeepPlaceholder` | 留空 = 沿用已存的凭证 | Leave blank to keep the stored credential |
 | `podcast.hosting.sectionHint` | 凭证全局一份，跨频道共用；发布时按频道写各自的 feed 路径。 | Credentials are stored once and shared across channels; publishing writes a feed path per channel. |
 | `podcast.hosting.sectionTitle` | 对象存储托管 | Object storage hosting |
-| `podcast.pageSubtitle` | 经 RSS 订阅把播客收录进小宇宙 / Apple / Spotify 等聚合端：配置频道一次 → 逐期追加单集 → 生成并自检 Feed → 向分发端提交 Feed 地址 | Podcast inclusion in RSS aggregators (Xiaoyuzhou / Apple / Spotify): configure the channel once → add episodes one by one → build & self-check the feed → submit the feed URL to each directory |
-| `podcast.pageTitle` | 播客 RSS 频道 | Podcast RSS Channel |
+| `podcast.pageSubtitle` | 配置频道、逐期追加单集、生成并自检 Feed，再向聚合端提交订阅地址 | Set up a channel, add episodes, build and verify the feed, then submit it to podcast directories |
+| `podcast.pageTitle` | 播客 RSS | Podcast RSS |
 | `podcast.picker.create` | 新建频道 | New channel |
 | `podcast.picker.created` | 频道已创建 | Channel created |
 | `podcast.picker.current` | 当前频道 | Current channel |

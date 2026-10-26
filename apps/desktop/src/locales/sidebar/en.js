@@ -67,5 +67,7 @@ export default {
       promptEval: 'Prompt Evaluation',
       rewrite: 'Rewrite',
       modelProviders: 'Model Providers',
+      // ui-consistency-polish (2026-10-26): short menu label; page title stays "Podcast RSS"
+      podcast: 'Podcast',
     },
   }

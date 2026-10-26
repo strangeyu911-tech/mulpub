@@ -1,0 +1,63 @@
+{
+  "sha": "91ba1c107dca31c79d87358e4d7179cf1b5f1aed",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 0 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 5,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 2,
+    "docSensitiveContentSample": [
+      "| i2 | Critical | `.mp-panel input/select/textarea` 可能外溢 | dismissed | 全仓 `mp-panel` 仅 6 个目标组件使用；非目标页不挂该类名，规则不命中 |",
+      "| i5 | Warning | 评审 JSON 暴露后端名/内部字段 | dismissed | 与 i1 同源；无凭据/用户数据，字段结构与既有 2403 个文件一致 |"
+    ],
+    "ccgSensitiveContentHits": 2,
+    "ccgSensitiveContentSample": [
+      "        \"finding\": \"Global `.mp-panel input/select/textarea` selectors in `page-controls.css` apply to every element with `.mp-panel`, not just the five target pages, risking unintended style bleed.\",",
+      "        \"finding\": \"Global `.mp-panel input/select/textarea` selectors in `page-controls.css` apply to every element with `.mp-panel`, not just the five target pages, risking unintended style bleed.\","
+    ],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "166b3030deffd26f9ddfb1b7d080a2b5bfe03a371b1c664a7b9052e1614275b8",
+  "decidedAt": "2026-10-26T15:05:28.017Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

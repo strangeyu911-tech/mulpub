@@ -5580,3 +5580,247 @@ publish   → publish_log                                      ← P2b
    ⇒ 代码的对齐是**近似**的，不是真 monospace。
 6. **渲染耗时**：每张程序化素材一次 ffmpeg ⇒ 10 镜最多 10 次调用 ⇒ 本地约几秒量级
    （实测单张 0.1~0.3 秒；远小于 Remotion 渲染本身）。
+
+---
+
+## 二十、流水线阶段执行器接线完整性（2026-10-26，change: pipeline-stage-executor-wiring）
+
+> 文档分工（外部评审 i5，2026-10-26）：本节只写**产品/运行时契约**（用户可见行为、数据校验、交互、显示项、提示文字）。
+> 变更动机、方案对比与实现细节见 `openspec/changes/pipeline-stage-executor-wiring/proposal.md`；
+> 执行证据见 `openspec/records/pipeline-stage-executor-wiring.md`。三处不重复同一份「为什么」。
+
+### 20.1 需求概述与背景
+
+视频创作模块的每条流水线由 `apps/desktop/electron/services/pipeline-engine.js` 的 `PIPELINES` 定义，`stageDefs[].type` 指向具体阶段执行器。执行器由 `container.setup.js` 在启动期通过 `registerXStages(engine)` 注册到 `StageExecutor`。
+
+2026-10-26 审计发现：`StageExecutor.execute()` 对**未注册**的 `stage.type` 返回
+
+```js
+{ success: true, output: null, checkpoint: true }
+```
+
+即把「没有执行器」伪装成「人工检查点通过」。由此产生三类问题：
+
+1. **运行时假成功**：流水线以 `status=completed` 结束，但缺失阶段没有产出；用户看到成功、实际为空跑。
+2. **测试假绿**：既有测试均为逐阶段 + mock 执行器，没有任何断言覆盖「PIPELINES 的每个 stage.type 是否都有真实执行器」。
+3. **诊断不可见**：只有运行到该阶段时才有一条 `warn` 日志，重启后默认日志级别几乎不可见。
+
+本变更把「流水线能跑通」从人工判断升级为**机械断言 + 运行期 fail closed + 启动期自检 + 用户可读错误**四层闭环。
+
+### 20.2 术语与范围
+
+| 术语 | 定义 |
+|------|------|
+| 内置执行器 | `StageExecutor._buildBuiltinExecutors()` 注册的 10 类：`split` / `optimize` / `optimize_batch` / `generate_assets` / `compose` / `publish` / `fetch_pipeline` / `call_skill` / `manual_checkpoint` / `custom` |
+| 自定义执行器 | 各 `*-stages.js` 通过 `pipelineEngine.registerStageExecutor(type, fn)` 注册的阶段实现 |
+| 已接线 | `stage.type` 命中内置执行器或自定义执行器之一 |
+| 未接线 | `stageDefs` 中存在 `type`，但 `hasExecutor(type) === false` |
+| 占位流水线 | `screen-demo`：注册了 `stages` 清单但**没有** `stageDefs`，`listPipelines()` 返回 `available:false`，前端按「开发中」灰显且禁止启动 |
+
+**范围**：内置 `PIPELINES`（15 条）+ 运行时通过 `registerPipeline()` 注册的自定义流水线。`video-clone` 走独立 IPC 引擎（`video-clone:run`），不在本判据内；其执行链由 `video-clone-engine` 自身测试覆盖。
+
+### 20.3 功能逻辑
+
+#### 20.3.1 运行期 fail closed（`StageExecutor.execute`）
+
+判定顺序：
+
+1. 取 `stage.type || 'manual_checkpoint'`（无 `type` 的旧阶段保持原语义）；
+2. 命中自定义执行器 → 执行；
+3. 命中内置执行器 → 执行；
+4. **都未命中 → 返回失败**，不执行任何兜底动作，不写 `output`。
+
+失败返回对象（稳定契约）：
+
+```js
+{
+  success: false,
+  error: 'PIPELINE_STAGE_EXECUTOR_MISSING: no executor registered for stage type "<type>" (stage "<name>")',
+  errorCode: 'PIPELINE_STAGE_EXECUTOR_MISSING',
+  messageParams: { stageName: '<name>', stageType: '<type>' }
+}
+```
+
+`pipeline-engine._executeStage` 经 `buildStageFailureError()` 把 `errorCode` / `messageParams` 上抛，最终落库到 `run.error` / `run.errorCode` / `run.errorParams`（详见 §20.9）。
+
+#### 20.3.2 执行器查询 API
+
+| API | 签名 | 语义 |
+|-----|------|------|
+| `hasExecutor` | `(stageType: string) => boolean` | 内置 ∪ 自定义；空串/null/非字符串一律 `false` |
+| `listExecutorTypes` | `() => string[]` | 去重 + 排序后的全集；顺序稳定，便于断言失败时打印清单 |
+
+#### 20.3.3 接线诊断（`PipelineEngine.listUnwiredStageTypes`）
+
+返回数组，元素结构：
+
+```ts
+// 逐阶段诊断
+{ pipeline: string, stage: string, type: string, reason?: 'INVALID_STAGE_TYPE' }
+// 执行器整体未配置时的单条哨兵（形状与上面一致，不附加额外字段）
+{ pipeline: '*', stage: '*', type: '*', reason: 'STAGE_EXECUTOR_NOT_CONFIGURED' }
+```
+
+约束：
+
+- **空数组** 才表示全部内置流水线阶段已接线；
+- 遍历 `PIPELINES` 与 `_customPipelines`；
+- 跳过没有 `stageDefs` 的占位流水线（如 `screen-demo`）；
+- `stageDefs` 中**完全没有 `type` 字段**的项按 `MANUAL_CHECKPOINT` 处理并跳过；
+- `type` 存在但非法（空串/纯空白/null/数字/数组/对象）⇒ 产出 `reason: 'INVALID_STAGE_TYPE'` 条目（`type` 用安全占位，如 `[non-string:number]`）；
+- **`stageExecutor` 未配置时不得返回空数组**——返回**单条** `pipeline='*'` 哨兵（`reason: 'STAGE_EXECUTOR_NOT_CONFIGURED'`），既避免「没装执行器」被读成「全部正常」，也避免逐阶段展开产生几十条假阳性。
+
+#### 20.3.4 启动期自检
+
+`container.setup.js` 在全部 `registerXStages` 完成后调用 `engine.listUnwiredStageTypes()`：
+
+- 结果为空 → 不输出额外日志（避免正常启动刷屏）；
+- 非空 → `logger.error('container', '流水线阶段执行器接线不完整（N 项）: pipeline.stage → type; ...')`，完整清单一次打印。
+
+**为什么是 error 而非 warn**：接线不完整属于装配缺陷，不是可恢复的运行时噪声；且该日志只在启动期出现一次，不会造成日志污染。
+
+### 20.4 数据校验
+
+| 校验点 | 规则 | 失败表现 |
+|--------|------|----------|
+| `stage.type` 取值（三态，2026-10-26 统一） | ① **完全没有 `type` 字段**（`undefined`）→ 旧流水线，按 `MANUAL_CHECKPOINT`；② 非空字符串（`trim()` 后非空）→ 正常查执行器；③ **`type` 存在但不是合法非空字符串**（`null` / `''` / 纯空白 / `0` / 数组 / 对象 / 循环引用对象）→ 配置错误 | ① 成功且 `checkpoint:true`；② 未注册 → `PIPELINE_STAGE_EXECUTOR_MISSING`；③ 执行 fail closed（`PIPELINE_STAGE_EXECUTOR_MISSING`，`messageParams.stageType` 为安全字符串化原值，超长截断 200 字符），诊断条目 `reason='INVALID_STAGE_TYPE'` |
+| `hasExecutor` 入参 | 非字符串或空串 → `false` | 不抛错；调用方按「未接线」处理 |
+| `listUnwiredStageTypes` 的 `stageExecutor` | 必须存在且实现 `hasExecutor` | 返回单条 `pipeline='*'` 哨兵（`STAGE_EXECUTOR_NOT_CONFIGURED`），不返回空数组、不逐阶段展开 |
+| 流水线 `stageDefs` | 非数组 → 视为无阶段定义（占位流水线） | 不参与接线判定；`listPipelines().available=false` |
+| `listExecutorTypes` 返回值 | 首次计算后缓存并 `Object.freeze` | 调用方修改会抛错（严格模式）或被静默忽略（非严格）；注册新执行器时缓存自动失效 |
+| `messageParams` | 必须为普通对象（非数组） | `buildStageFailureError` 丢弃非法值，`run.errorParams` 为 `null` |
+| 历史记录 `errorCode` | 必须在 `PIPELINE_ERROR_KEY_MAP` 白名单内 | 未命中 → 回落到 `formatPipelineError` 文本归一化（兼容存量数据） |
+| locale 文案 | zh/en 必须成对存在 `stage_executor_missing` | CI Gate 7 `check-locale-sync.js` 判红 |
+
+### 20.5 端到端流程
+
+**启动期（每次应用启动）**
+
+```
+container.setup 创建 PipelineEngine
+  → registerStory2VideoStages / registerExplainerStages / ... / registerFilmRenderStage
+  → engine.listUnwiredStageTypes()
+      ├─ [] → 静默通过
+      └─ 非空 → logger.error 打印完整清单（pipeline.stage → type）
+```
+
+**运行期（用户启动一条流水线）**
+
+```
+pipeline:startOrchestrated
+  → 逐阶段 StageExecutor.execute({ stage, params, context })
+      ├─ 自定义/内置命中 → 正常执行
+      └─ 都未命中 → success:false + errorCode=PIPELINE_STAGE_EXECUTOR_MISSING
+            → PipelineEngine 把 errorCode/messageParams 写入 run
+            → run.status=failed（不进入 completed）
+            → 历史卡片按 errorCode 渲染自然语言文案
+            → 「从断点继续」按既有失败语义可用（不属于内容政策类阻断）
+```
+
+**历史记录展示（应用重启后）**
+
+```
+pipeline:history 返回 run.errorCode=PIPELINE_STAGE_EXECUTOR_MISSING
+  → CreateViewHistory.formatError(item)
+      → PIPELINE_ERROR_KEY_MAP[errorCode] = 'story2video.stage_executor_missing'
+      → t('story2video.stage_executor_missing') 渲染中文/英文文案
+  → 若历史库仅有英文原文（无 errorCode）
+      → formatPipelineError 的**第一条**规则命中 → 同一 key
+```
+
+**弹窗/通知**
+
+```
+formatStory2VideoNotification({ errorCode: 'PIPELINE_STAGE_EXECUTOR_MISSING' })
+  → STORY2VIDEO_NOTIFICATION_KEYS.STAGE_EXECUTOR_MISSING
+  → t('story2video.stage_executor_missing')
+```
+
+### 20.6 交互逻辑
+
+| 场景 | 交互 |
+|------|------|
+| 正常安装、全部接线 | 用户无感知；启动日志无新增 error |
+| 接线缺失导致阶段失败 | 流水线状态为「生成失败」；历史卡片显示错误原因；不显示「成功」 |
+| 用户点击失败卡片 | 按既有失败语义：可「从断点继续」；重试仍失败则再次显示同一文案（不伪造成功） |
+| 用户打开历史记录 | 文案已本地化，不出现 `PIPELINE_STAGE_EXECUTOR_MISSING`、stage type 等英文技术字符串 |
+| 用户切换 zh/en | 文案随 locale 切换，key 一致 |
+| 占位流水线 `screen-demo` | 卡片灰显「开发中」；详情页启动按钮禁用；不进入执行链 |
+
+### 20.7 显示项
+
+| 位置 | 显示项 |
+|------|--------|
+| 启动日志 | `[ERROR] container 流水线阶段执行器接线不完整（N 项）: pipeline.stage → type; ...`（仅异常时） |
+| 历史记录卡片 | 状态「生成失败」；失败原因文案（见 §20.8）；失败时间；既有阶段进度条保持 |
+| 流水线选择卡 | `screen-demo`：可用性徽标「开发中」+ 悬停提示「该流水线尚未实现执行引擎」 |
+| 通知/弹窗 | 标题沿用流水线本地化名称；正文为 §20.8 文案 |
+
+### 20.8 提示文字（zh/en 原文）
+
+**中文（`apps/desktop/src/locales/story2video/zh.js` → `stage_executor_missing`）**
+
+> 流水线的某个阶段缺少可用的执行组件，本次生成已停止。请先尝试重启应用；若仍失败，请将本提示反馈给技术支持，并附上应用版本号。
+
+**英文（`apps/desktop/src/locales/story2video/en.js` → `stage_executor_missing`）**
+
+> A pipeline stage has no available execution component, so this run has been stopped. Try restarting the app first; if it still fails, report this message to support along with your app version.
+
+**要求**：
+
+- 不展示 `stage type` / `stage name` / 堆栈等技术细节（技术细节保留在 `run.error` 与日志）；
+- 给出低风险、可执行的动作：重启应用 → 反馈技术支持（附版本号）；
+- **不把根因归咎于「安装不完整/版本不匹配」**（真实根因多为部署缺注册器或代码漏注册，重装并不保证修复）；
+- 不承诺「一定可修复」，不使用绝对化措辞。
+
+### 20.9 错误码与数据结构
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `run.status` | `'failed'` | 不进入 `completed` |
+| `run.error` | `string` | `PIPELINE_STAGE_EXECUTOR_MISSING: no executor registered for stage type "<type>" (stage "<name>")` |
+| `run.errorCode` | `'PIPELINE_STAGE_EXECUTOR_MISSING'` | 稳定机器码 |
+| `run.errorParams` | `{ stageName: string, stageType: string }` | 渲染端本地化/诊断用，不直接展示 |
+| `PIPELINE_ERROR_KEY_MAP` | `Record<string, string>` | `COMPOSE_*` 全集 + `PIPELINE_STAGE_EXECUTOR_MISSING → story2video.stage_executor_missing` |
+| `STORY2VIDEO_NOTIFICATION_KEYS.STAGE_EXECUTOR_MISSING` | `'story2video.stage_executor_missing'` | 通知 key |
+
+### 20.10 测试与验收
+
+**新增回归锁** `apps/desktop/electron/tests/pipeline-executor-wiring.test.js`（20 例 = 15 个 `it` 块，其中 1 个 `it.each` 展开 6 例）：
+
+1. `PIPELINE_DEFINITIONS` 已导出且覆盖 ≥15 条内置流水线；
+2. 每条带 `stageDefs` 的流水线，其 `stage.type` 均被**生产注册器**接线；
+3. `listUnwiredStageTypes()` 返回 `[]`；
+4. `screen-demo` 允许无 `stageDefs` 且 `available=false`；
+5. 未知 `stage.type` 返回 `success:false` + `errorCode=PIPELINE_STAGE_EXECUTOR_MISSING` + `messageParams`；
+6. 显式 `manual_checkpoint` 仍成功且 `checkpoint:true`；
+7. 无 `type` 的旧阶段仍按 `manual_checkpoint` 成功；
+8. **单一真源**：注册器清单与注册动作收敛到 `electron/services/pipeline-stage-registrars.js`，生产 `container.setup.js` 与测试 import 同一份 `PIPELINE_STAGE_REGISTRARS`（不再手工镜像、不再正则解析源码）；
+9. **引擎侧传播**：未知阶段失败后 `run.status=failed`，`run.errorCode` / `run.errorParams` 落库且可经 `getRunSnapshot` 读回；
+10. **非法 type 诊断**：`type` 存在但不是非空字符串（0/null/数组/对象）⇒ 诊断条目 `INVALID_STAGE_TYPE`；只有「完全没有 type 字段」的旧阶段才按 `manual_checkpoint` 跳过；
+11. **非法显式 type 执行 fail closed**：`''` / 纯空白 / `0` / `null` / `[]` / `{}` 六种取值逐一验证「不退回 manual_checkpoint」；
+12. **循环引用对象**作为 `type` 时仍返回失败、不抛异常（错误构造路径绝不抛错）；
+13. **执行器未配置哨兵**：返回单条 `STAGE_EXECUTOR_NOT_CONFIGURED`，既不返回空数组也不逐阶段假阳性；
+14. **变异反证自动化**：在内存里漏注册 `videogen` ⇒ `listUnwiredStageTypes()` 必须非空（含 `animation.videogen_concept` / `hybrid.videogen_merge`），不依赖人工改源码。
+
+**增强既有测试**：
+
+- `electron/tests/stage-executor.test.js`：`hasExecutor` / `listExecutorTypes`（含空值、自定义注册、去重）；
+- `src/utils/pipeline-error-formatter.test.js`：新增 5 例（key 命中、规则排序契约、行为面优先级、en locale、存量原文）；
+- `src/views/history-utils.test.js`：`PIPELINE_ERROR_KEY_MAP` 继承 `COMPOSE_*` + 新增码。
+
+**变异反证（实测）**：完整注册 `ALL_REGISTERED_UNWIRED=0`；移除 `registerVideoGenStages` 后 `listUnwiredStageTypes()` 返回 **16 项**（animation / avatar-spokesperson / character-animation / hybrid 的 `videogen_*` 阶段）；恢复后 **0**。CI 内由第 12 条测试自动复现该反证。
+
+**既有基线（2026-10-26 实测）**：
+
+- 15 个相关测试文件 / **415 tests passed**（`pipeline-engine.test.js` + 13 个 `*-stages.test.js` + `story2video-stages-aspect-ratio`）；
+- 新增/增强测试全绿；
+- `container.setup.test.js`、`pipeline-story2video-contract.test.js`、`CreateViewHistory.test.js`、`story2video-notifications.test.js`、`i18n.test.js` 全绿。
+
+### 20.11 边界与已知限制
+
+1. **只覆盖启动期静态注册**：若未来引入「运行时动态注册执行器」，`PIPELINE_STAGE_REGISTRARS` 与判据需同步扩展；当前所有阶段均在 `container.setup.js` 一次性注册。
+2. **`video-clone` 不在本判据内**：它走独立 IPC 引擎，不经过 `PipelineEngine` 的 `stageDefs` 编排；其自身测试独立。
+3. **`screen-demo` 是显式占位**：没有 `stageDefs` 不代表接线缺陷，前端已按「开发中」禁用；若未来实现，必须补 `stageDefs` 并同步 `PIPELINE_STAGE_REGISTRARS`。
+4. **本变更不校验 provider 可用性**：接线完整性只回答「阶段有没有实现」，不回答「模型 Key 是否配好」「ffmpeg 是否存在」。后者由 `pipeline-model-preflight`、各阶段自身 fail-closed 与 `framework-smoke` 流水线负责。
+5. **不改变既有失败语义**：`PIPELINE_STAGE_EXECUTOR_MISSING` 不属于内容政策类，历史卡片仍允许「从断点继续」；若执行器缺失未修复，续跑会再次失败并显示同一文案。

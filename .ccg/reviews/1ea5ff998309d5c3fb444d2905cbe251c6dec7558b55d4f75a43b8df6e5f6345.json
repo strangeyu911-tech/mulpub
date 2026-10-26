@@ -1,0 +1,122 @@
+{
+  "sha": "325a34de46188702b3d0ff99eb7f3df5a12f54bb",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 252 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 252,
+    "fileCount": 2,
+    "codeFileCount": 2,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "1ea5ff998309d5c3fb444d2905cbe251c6dec7558b55d4f75a43b8df6e5f6345",
+  "decidedAt": "2026-10-26T17:08:05.020Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "`cloneDeep` creates empty `{}` for Date/RegExp (loses data) and passes functions by reference; `deepFreeze` could freeze original instances. Silent corruption if `PIPELINES` contains non-JSON types.",
+        "highRiskDomains": [],
+        "prosecution": "若 PIPELINES 含 Date/RegExp/Map/Set，cloneDeep 会把它们变成空对象 `{}` 或丢键，导致 PIPELINE_DEFINITIONS 与真实定义不一致，接线诊断读取错误的 stageDefs。",
+        "defense": "PIPELINES 是源码内静态对象字面量，只含数组/对象/字符串/数字/布尔；实测遍历 PIPELINE_DEFINITIONS 的类型集合只有 `[object Array],[object Object]`。没有 Date/RegExp/Map/Set/函数入口。",
+        "verdict": "dismissed",
+        "rationale": "当前数据形态已实测为纯 JSON；「未来若加入非 JSON 类型」属假设性风险，不是本 PR 缺陷。若未来引入，需同时扩展 cloneDeep 并补单测，属独立变更。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "4 new `.ccg/reviews/*.json` and 2 `openspec/*.md` files are added to tracked source, embedding review metadata/proposal text into the repo tree.",
+        "highRiskDomains": [],
+        "prosecution": "把 4 个 `.ccg/reviews/*.json` 与 2 个 openspec 文档纳入源码树，会让仓库体积与评审元数据耦合，源码目录不再干净。",
+        "defense": "`.ccg/reviews/*.json` 是本仓强制的执行记录载体：`scripts/check-pr-exec-record.js` 按 PR 差量读取它判定 QM-6 闭环，`.gitignore` 也未排除；openspec 记录是 AGENTS.md 规定的唯一强制载体。移除会让门禁直接判红。",
+        "verdict": "dismissed",
+        "rationale": "指控与本仓门禁契约相反：这些文件不是可选元数据，而是 `check-pr-exec-record` 与质量节拍的必需证据；不能移到 `.git/` 或 CI 存储。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "`cloneDeep` uses `getOwnPropertyNames` only, ignoring `getOwnPropertySymbols`; symbol-keyed properties in `PIPELINES` are silently dropped.",
+        "highRiskDomains": [],
+        "prosecution": "cloneDeep 只遍历 getOwnPropertyNames，symbol 键会被静默丢弃；若 PIPELINES 用 symbol 作为配置键，接线诊断会读不到。",
+        "defense": "PIPELINES 全部是对象字面量字符串键，无 symbol 键；实测克隆后的 PIPELINE_DEFINITIONS 键集合与原对象一致（Object.keys 对拍）。",
+        "verdict": "dismissed",
+        "rationale": "当前数据无 symbol 键；symbol 键在此静态配置中不是合法输入形态。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "Test reads `container.setup.js` via `fs.readFileSync` and asserts syntax patterns (`registerXStages` absence), coupling test to file path/text layout.",
+        "highRiskDomains": [],
+        "prosecution": "测试用 fs.readFileSync 读取 container.setup.js 并断言源码文本，文件路径/格式调整就会误报，属于脆弱的实现耦合测试。",
+        "defense": "该用例只作为「单一真源不得被绕过」的补充结构锁；同一测试文件已有行为面证据：用生产 `registerAllPipelineStages` 装配真实 StageExecutor，遍历 `PIPELINE_DEFINITIONS.stageDefs` 断言全部已接线、`listUnwiredStageTypes()===[]`。源码锁断言的是禁止 `registerXStages(engine)` 字面量，路径为仓内固定文件。",
+        "verdict": "dismissed",
+        "rationale": "行为面覆盖已存在且更强；源码锁是防回归的冗余层，误报只会在 container.setup.js 路径/写法变更时出现，属可接受的显式提醒。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "`PIPELINE_STAGE_REGISTRARS` freezes the array wrapper but inner `{name,register}` objects remain mutable; modifying `.register` alters production behavior.",
+        "highRiskDomains": [],
+        "prosecution": "PIPELINE_STAGE_REGISTRARS 只冻结数组外层，内部 `{name, register}` 对象仍可被改写；若有代码把 `.register` 换成别的函数，生产注册行为会被静默改变。",
+        "defense": "该数组只在 `electron/services/pipeline-stage-registrars.js` 内定义并由 `registerAllPipelineStages` 读取；没有任何外部写入路径，测试也不修改它。模块不暴露给 renderer。",
+        "verdict": "dismissed",
+        "rationale": "无实际可变入口；冻结外层已阻止 push/splice 这类结构性改动。深冻结内部对象属加固建议，不是当前缺陷。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "`describeStageType` truncates at 200 chars; error messages can cut off stage identifiers, reducing debuggability of broken configurations.",
+        "highRiskDomains": [],
+        "prosecution": "describeStageType 截断到 200 字符，超长 stage type 会被截断，错误文案无法看到完整标识，排查配置错误变难。",
+        "defense": "stage.type 是内部枚举式短字符串（最长约 40 字符），200 字符上限只防日志被整份配置撑爆；`run.error` 与 `messageParams.stageType` 保留同一描述值，超长输入本身已属异常配置。",
+        "verdict": "dismissed",
+        "rationale": "正常枚举值远低于上限；截断是有意的日志安全边界，不是缺陷。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-26T17:13:02.706Z",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4515#issuecomment-6422013606"
+  }
+}

@@ -125,6 +125,11 @@ function resolveMessageKey (notification, fallbackKey) {
   if (notification?.errorCode === 'PIPELINE_USER_INPUT_REQUIRED') {
     return STORY2VIDEO_NOTIFICATION_KEYS.NEEDS_USER_INPUT
   }
+  // 阶段执行器未接线（2026-10-26 pipeline-executor-wiring）：fail closed 的稳定码，
+  // 必须映射到可操作文案，不得落到 operation_failed 兜底。
+  if (notification?.errorCode === 'PIPELINE_STAGE_EXECUTOR_MISSING') {
+    return STORY2VIDEO_NOTIFICATION_KEYS.STAGE_EXECUTOR_MISSING
+  }
   if (Number(notification?.code) === -3 || Number(notification?.errorCode) === -3) return STORY2VIDEO_NOTIFICATION_KEYS.ACCESS_DENIED
   if (ACCESS_DENIED_PATTERN.test(raw)) return STORY2VIDEO_NOTIFICATION_KEYS.ACCESS_DENIED
   // 明确的用量窗口耗尽优先于 429；仅凭普通 429 仍走 RATE_LIMITED。

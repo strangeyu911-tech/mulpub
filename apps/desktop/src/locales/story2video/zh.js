@@ -98,6 +98,10 @@ export default {
     compose_scene_media_unreadable: '第 {scene} 个场景的画面素材已失效或不可读取。请重新生成该场景的图片或视频素材后再从断点继续。',
     compose_scene_audio_unreadable: '第 {scene} 个场景的旁白音频已失效或不可读取。请重新生成该场景的语音后再从断点继续。',
     operation_failed: '当前操作未能完成，请稍后再试。',
+    // 阶段执行器未接线（2026-10-26 pipeline-executor-wiring）：
+    // StageExecutor 对未注册的 stage.type 已改为 fail closed（errorCode=PIPELINE_STAGE_EXECUTOR_MISSING）。
+    // 不给用户技术栈细节，只给出低风险、可执行的恢复动作（不承诺「重装即可解决」）。
+    stage_executor_missing: '流水线的某个阶段缺少可用的执行组件，本次生成已停止。请先尝试重启应用；若仍失败，请将本提示反馈给技术支持，并附上应用版本号。',
     invalid_params: '流水线参数校验失败，请检查配置项是否有效后重试。',
     unknown_error: '当前操作未能完成，请稍后再试。',
     needs_user_input: '生成内容触发了内容安全审核，需要您修改文案后重新生成。请检查场景文案是否有敏感内容，修改后点击「从断点继续」。',

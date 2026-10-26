@@ -28,6 +28,15 @@ const PIPELINE_ERROR_NS = 'story2video'
  * 规则从上到下匹配，首个命中即返回。
  */
 const RULES = [
+  // 阶段执行器未接线（2026-10-26 pipeline-executor-wiring）。
+  // ⛔ 必须排在**所有**规则与「短自然语言直出」分支之前：主进程原文形如
+  // `PIPELINE_STAGE_EXECUTOR_MISSING: no executor registered for stage type "x" (stage "y")`，
+  // 长度 <120 且无技术标记，若不先拦会原样透出到历史卡片（英文技术文本泄漏）。
+  {
+    pattern: /PIPELINE_STAGE_EXECUTOR_MISSING/i,
+    key: 'stage_executor_missing',
+    extract () { return {} },
+  },
   // 402 余额不足
   {
     pattern: /insufficient_balance_error|Error code:\s*402|error.*402.*insufficient/i,

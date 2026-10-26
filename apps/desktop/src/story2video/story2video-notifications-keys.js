@@ -99,6 +99,9 @@ export const STORY2VIDEO_NOTIFICATION_KEYS = Object.freeze({
   UNKNOWN_ERROR: 'story2video.unknown_error',
   PIPELINE_NOT_IMPLEMENTED: 'story2video.pipeline_not_implemented',
   PIPELINE_CONCURRENCY_LIMIT: 'story2video.pipeline_concurrency_limit',
+  // 阶段执行器未接线（2026-10-26 pipeline-executor-wiring）：
+  // StageExecutor 对未知 stage.type 已改为 fail closed，errorCode=PIPELINE_STAGE_EXECUTOR_MISSING。
+  STAGE_EXECUTOR_MISSING: 'story2video.stage_executor_missing',
   // 启动参数校验失败（2026-09-04）：normalizeStory2VideoTextParams 抛出的通用 Error 没有 .code 时兜底
   INVALID_PARAMS: 'story2video.invalid_params',
   // 断点恢复失败（pipeline-engine resumeOrchestration errorCode 契约）

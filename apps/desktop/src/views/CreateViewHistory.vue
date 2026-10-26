@@ -311,7 +311,7 @@ import { getAppLocale } from '@/i18n'
 import zhLocale from '@/locales/zh'
 import enLocale from '@/locales/en'
 import { getPipelineMode, getPipelineName, getPipelineStage } from '@/i18n/pipeline-labels'
-import { CONTENT_POLICY_ERROR_PATTERN, HISTORY_STATUSES, RESUME_BLOCKING_ERROR_PATTERN, SORT_MODES, SORT_OPTIONS, collectDuplicateTitleIdentities, COMPOSE_ERROR_KEY_MAP, contentPolicyScenes, filterHistoryByStatus, historyDisplayTime, historyStatusCounts } from './history-utils'
+import { CONTENT_POLICY_ERROR_PATTERN, HISTORY_STATUSES, RESUME_BLOCKING_ERROR_PATTERN, SORT_MODES, SORT_OPTIONS, collectDuplicateTitleIdentities, COMPOSE_ERROR_KEY_MAP, PIPELINE_ERROR_KEY_MAP, contentPolicyScenes, filterHistoryByStatus, historyDisplayTime, historyStatusCounts } from './history-utils'
 import { formatPipelineError } from '@/utils/pipeline-error-formatter'
 import { truncate } from '@multi-publish/shared-utils/src/text-length'
 
@@ -393,9 +393,9 @@ export default {
       // 稳定错误码优先（2026-10-20 error-message-user-friendly-audit）：
       // run.errorCode/errorParams 由主进程落库，按码渲染本地化文案；
       // 缺失时回落 formatPipelineError 的文本归一化（兼容历史库存量数据）。
-      // 错误码 → locale key 用显式映射表（COMPOSE_ERROR_KEY_MAP），不做字符串拼接猜测——
-      // 拼错会静默渲染成 key 原文。
-      const stableKey = COMPOSE_ERROR_KEY_MAP[item.errorCode] || ''
+      // 错误码 → locale key 用显式映射表（PIPELINE_ERROR_KEY_MAP = COMPOSE_* + 其余流水线稳定码），
+      // 不做字符串拼接猜测——拼错会静默渲染成 key 原文。
+      const stableKey = PIPELINE_ERROR_KEY_MAP[item.errorCode] || ''
       const stableParams = item.errorParams && typeof item.errorParams === 'object' ? item.errorParams : null
       // ⛔ 优先级（CCG 外部评审 i5，2026-10-20）：稳定码在前、原文归一化在后。
       // 上一版写 `result.key || stableKey`（原文优先），与本 change 的 spec

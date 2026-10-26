@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  COMPOSE_ERROR_KEY_MAP,
   CONTENT_POLICY_ERROR_PATTERN,
   HISTORY_STATUSES,
   HISTORY_TIME_KEYS,
+  PIPELINE_ERROR_KEY_MAP,
   RESUME_BLOCKING_ERROR_PATTERN,
   collectContentPolicySceneNumbers,
   contentPolicyScenes,
@@ -12,6 +14,18 @@ import {
   policySceneQuery,
   sortHistoryByEffectiveTime,
 } from './history-utils'
+
+describe('PIPELINE_ERROR_KEY_MAP', () => {
+  it('保留全部 COMPOSE_* 映射（不丢既有能力）', () => {
+    for (const [code, key] of Object.entries(COMPOSE_ERROR_KEY_MAP)) {
+      expect(PIPELINE_ERROR_KEY_MAP[code]).toBe(key)
+    }
+  })
+
+  it('PIPELINE_STAGE_EXECUTOR_MISSING 映射到可操作文案 key', () => {
+    expect(PIPELINE_ERROR_KEY_MAP.PIPELINE_STAGE_EXECUTOR_MISSING).toBe('story2video.stage_executor_missing')
+  })
+})
 
 describe('history-utils', () => {
   it('uses the first valid candidate time and rejects null/invalid values', () => {

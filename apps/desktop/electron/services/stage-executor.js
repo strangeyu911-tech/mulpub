@@ -38,6 +38,49 @@ function _firstDefined(...values) {
   return values.find(value => value !== undefined && value !== null);
 }
 
+/**
+ * 安全描述一个可能来自配置/外部的阶段类型值（用于日志与 error 文案）。
+ *
+ * 约束（2026-10-26）：
+ *   - **绝不抛异常**：本函数处在 fail-closed 的错误构造路径上，抛错会绕过
+ *     `{success:false}` 契约；
+ *   - **绝不调用自定义 toString / JSON.stringify**：外部对象可能借 toString
+ *     注入换行或控制符（日志注入），循环引用还会让 JSON.stringify 抛错；
+ *   - 非字符串只输出固定占位（类型名），不泄漏对象结构；
+ *   - 字符串保留原文，但控制字符转义为 `\uXXXX`（防日志换行注入），超长截断到 200 字符。
+ *
+ * @param {unknown} value
+ * @returns {string} 可安全拼接的片段
+ */
+function escapeControlChars(text) {
+  let out = '';
+  for (const ch of text) {
+    const code = ch.codePointAt(0);
+    // C0（0x00-0x1F）、DEL（0x7F）与 C1（0x80-0x9F）都可能构成日志控制序列
+    // （C1 的 U+009B 即 CSI），一律转义。
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) {
+      out += '\\u' + code.toString(16).padStart(4, '0');
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+function describeStageType(value) {
+  let text;
+  if (typeof value === 'string') {
+    text = escapeControlChars(value);
+  } else if (value === null) {
+    text = '[non-string:null]';
+  } else if (Array.isArray(value)) {
+    text = '[non-string:array]';
+  } else {
+    text = '[non-string:' + typeof value + ']';
+  }
+  return text.length > 200 ? text.slice(0, 200) + '…' : text;
+}
+
 function _isPlainObject(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
@@ -255,6 +298,8 @@ class StageExecutor {
     this._customExecutors = new Map();
     this._composeParallelTasks = new Map();
     this._builtinExecutors = this._buildBuiltinExecutors();
+    // 执行器类型清单缓存：注册时失效，读取时冻结返回（避免每次调用重建 Set/排序）。
+    this._executorTypesCache = null;
   }
 
   /**
@@ -267,7 +312,43 @@ class StageExecutor {
       throw new Error('Executor must be a function');
     }
     this._customExecutors.set(stageType, fn);
+    // 注册变化必须让类型清单缓存失效，否则诊断会读到旧集合。
+    this._executorTypesCache = null;
     this.log.info('StageExecutor', 'Registered custom executor: ' + stageType);
+  }
+
+  /**
+   * 是否已有该阶段类型的执行器（内置或自定义）。
+   *
+   * 供「接线完整性」诊断使用：`pipelineEngine.listUnwiredStageTypes()` 与
+   * `electron/tests/pipeline-executor-wiring.test.js` 都只通过本方法判断，
+   * 不各自维护第二份类型清单（避免两份白名单互相漂移）。
+   *
+   * @param {string} stageType
+   * @returns {boolean}
+   */
+  hasExecutor(stageType) {
+    if (typeof stageType !== 'string' || !stageType) return false;
+    return this._customExecutors.has(stageType) || this._builtinExecutors.has(stageType);
+  }
+
+  /**
+   * 返回当前已注册的全部阶段类型（内置 + 自定义，去重后排序）。
+   * 用于诊断与回归锁；顺序稳定，便于断言失败时打印可读清单。
+   *
+   * 结果按注册状态缓存并冻结：首次调用 O(n log n)，之后 O(1)；
+   * 调用方不得修改返回数组（已冻结）。仅供启动期自检 / 测试使用。
+   *
+   * @returns {ReadonlyArray<string>}
+   */
+  listExecutorTypes() {
+    if (!this._executorTypesCache) {
+      this._executorTypesCache = Object.freeze(Array.from(new Set([
+        ...this._builtinExecutors.keys(),
+        ...this._customExecutors.keys(),
+      ])).sort());
+    }
+    return this._executorTypesCache;
   }
 
   /**
@@ -293,7 +374,29 @@ class StageExecutor {
    * @returns {Promise<{success: boolean, output?: any, error?: string, checkpoint?: boolean}>}
    */
   async execute({ runId, stage, params, context, onProgress }) {
-    const stageType = stage.type || STAGE_TYPES.MANUAL_CHECKPOINT;
+    const rawStageType = stage && stage.type;
+    const stageName = (stage && stage.name) || 'unknown';
+
+    // 契约（2026-10-26 pipeline-executor-wiring）：
+    //   1) **完全没有 type 字段**（undefined）⇒ 旧流水线，按 MANUAL_CHECKPOINT；
+    //   2) type 存在但不是非空字符串（null / '' / 0 / 数组 / 对象）⇒ 配置错误，fail closed；
+    //   3) 非空字符串 ⇒ 正常查执行器，未注册同样 fail closed。
+    // 旧实现用 `stage.type || MANUAL_CHECKPOINT` 把 2) 也当成了人工检查点，
+    // 于是「写错的 type」和「本来就没有 type」在运行期无法区分。
+    if (rawStageType !== undefined && (typeof rawStageType !== 'string' || !rawStageType.trim())) {
+      const describedType = describeStageType(rawStageType);
+      this.log.error('StageExecutor',
+        'Invalid stage type ' + describedType + ' (stage ' + describeStageType(stageName) + ') — fail closed');
+      return {
+        success: false,
+        error: 'PIPELINE_STAGE_EXECUTOR_MISSING: invalid stage type ' +
+          describedType + ' (stage ' + describeStageType(stageName) + ')',
+        errorCode: 'PIPELINE_STAGE_EXECUTOR_MISSING',
+        messageParams: { stageName, stageType: describedType },
+      };
+    }
+
+    const stageType = rawStageType === undefined ? STAGE_TYPES.MANUAL_CHECKPOINT : rawStageType;
 
     // 自定义执行器优先
     const customFn = this._customExecutors.get(stageType);
@@ -304,9 +407,23 @@ class StageExecutor {
     // 内置执行器
     const builtinFn = this._builtinExecutors.get(stageType);
     if (!builtinFn) {
-      this.log.warn('StageExecutor',
-        'Unknown stage type: ' + stageType + ', fallback to manual_checkpoint');
-      return { success: true, output: null, checkpoint: true };
+      // ⛔ fail closed
+      //
+      // 旧行为是 `return { success: true, output: null, checkpoint: true }` ——
+      // 把「没有执行器」伪装成「人工检查点已通过」。后果是整条流水线以
+      // status=completed 结束，但该阶段什么都没做，且所有测试仍然是绿的。
+      // 这里必须返回失败：让断链在第一次运行时可见，而不是在生产里静默产出空结果。
+      // 日志字段统一走 JSON.stringify：stageName/stageType 来自配置，
+      // 直接拼引号会被内容里的 `"` 或换行污染日志行。
+      this.log.error('StageExecutor',
+        'Unknown stage type ' + describeStageType(stageType) + ' (stage ' + describeStageType(stageName) + ') — fail closed');
+      return {
+        success: false,
+        error: 'PIPELINE_STAGE_EXECUTOR_MISSING: no executor registered for stage type ' +
+          describeStageType(stageType) + ' (stage ' + describeStageType(stageName) + ')',
+        errorCode: 'PIPELINE_STAGE_EXECUTOR_MISSING',
+        messageParams: { stageName, stageType },
+      };
     }
 
     return this._safeRun(builtinFn, { runId, stage, params, context, onProgress });
@@ -1010,4 +1127,4 @@ function hasValidBatchOptimizePrompt(item) {
   return typeof prompt === 'string' && prompt.trim().length > 0;
 }
 
-module.exports = { StageExecutor, STAGE_TYPES, normalizeBatchOptimizeResult, normalizeStageProgress };
+module.exports = { StageExecutor, STAGE_TYPES, normalizeBatchOptimizeResult, normalizeStageProgress, describeStageType };

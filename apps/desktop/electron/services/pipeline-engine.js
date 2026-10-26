@@ -19,6 +19,7 @@
 
 const os = require('os');
 const { StageExecutor, STAGE_TYPES } = require('./stage-executor');
+const { buildPipelineDefinitions, listUnwiredStageTypes } = require('./pipeline-wiring-diagnostics');
 const { cleanupRunInputDir, cleanupImportedMediaPaths } = require('./story2video-paths');
 const {
   STORY2VIDEO_PIPELINE,
@@ -84,7 +85,6 @@ const PIPELINES = [
     category: 'generated',
     stages: ['research', 'proposal', 'script', 'scenes', 'assets', 'editing', 'compose', 'publish'],
     estimatedCost: 'medium',
-    // 真实编排：LLM 规划链（explainer-stages.js 注册）→ 图片+旁白 → FFmpeg 合成 → 发布（可选）
     stageDefs: [
       {
         name: 'research',
@@ -164,7 +164,6 @@ const PIPELINES = [
     category: 'talking_head',
     stages: ['upload', 'transcribe', 'captions', 'render'],
     estimatedCost: 'low',
-    // 真实编排：视频+文案 → 分句 → SRT 字幕 → FFmpeg 烧录（talkinghead-stages.js 注册）
     stageDefs: [
       {
         name: 'upload',
@@ -202,7 +201,6 @@ const PIPELINES = [
     category: 'cinematic',
     stages: ['ingest', 'grade', 'compose', 'render'],
     estimatedCost: 'medium',
-    // 真实编排：本地 FFmpeg 调色→淡入淡出+分辨率合成→渲染（cinematic-stages.js 注册）
     stageDefs: [
       {
         name: 'ingest',
@@ -240,7 +238,6 @@ const PIPELINES = [
     category: 'animation',
     stages: ['concept', 'storyboard', 'animate', 'render'],
     estimatedCost: 'high',
-    // 真实编排：LLM 概念→分镜→视频生成 provider（未配置时 fail closed 引导设置）→FFmpeg 合成（videogen-stages.js 注册）
     stageDefs: [
       { name: 'concept', type: 'videogen_concept', description: '创意概念与角色设定', checkpointRequired: false, options: { kind: 'animation' } },
       { name: 'storyboard', type: 'videogen_storyboard', description: '分镜场景规划', checkpointRequired: false, options: { kind: 'animation' } },
@@ -268,7 +265,6 @@ const PIPELINES = [
     category: 'animation',
     stages: ['character_design', 'rigging', 'animate', 'render'],
     estimatedCost: 'high',
-    // 真实编排：LLM 角色设计→概念校验→视频生成 provider→FFmpeg 合成（videogen-stages.js 注册）
     stageDefs: [
       { name: 'character_design', type: 'videogen_concept', description: '角色设计', checkpointRequired: false, options: { kind: 'character-animation' } },
       { name: 'rigging', type: 'videogen_storyboard', description: '角色动作分镜', checkpointRequired: false, options: { kind: 'character-animation' } },
@@ -282,7 +278,6 @@ const PIPELINES = [
     category: 'screen_recording',
     stages: ['analyze', 'extract', 'caption', 'export'],
     estimatedCost: 'low',
-    // 真实编排：本地 FFmpeg 场景检测→逐段剪辑→标题→合并导出（clipfactory-stages.js 注册）
     stageDefs: [
       {
         name: 'analyze',
@@ -320,7 +315,6 @@ const PIPELINES = [
     category: 'cinematic',
     stages: ['research', 'ingest', 'edit', 'narrate', 'render'],
     estimatedCost: 'medium',
-    // 真实编排：LLM 纪录片大纲→场景规划→图片+旁白→资源校验→FFmpeg 合成（documentary-stages.js 注册）
     stageDefs: [
       {
         name: 'research',
@@ -380,7 +374,6 @@ const PIPELINES = [
     category: 'hybrid',
     stages: ['plan', 'generate', 'merge', 'render'],
     estimatedCost: 'high',
-    // 真实编排：LLM 方案→视频生成 provider→FFmpeg 拼接（videogen-stages.js 注册）
     stageDefs: [
       { name: 'plan', type: 'videogen_script', description: '混合方案与解说文案', checkpointRequired: false, options: {} },
       { name: 'generate', type: 'videogen_storyboard', description: '生成场景规划', checkpointRequired: false, options: { kind: 'hybrid' } },
@@ -394,7 +387,6 @@ const PIPELINES = [
     category: 'hybrid',
     stages: ['transcribe', 'translate', 'tts', 'sync'],
     estimatedCost: 'medium',
-    // 真实编排：源视频+文案→分句时间段→LLM 翻译→TTS 配音→FFmpeg 替换音轨（localization-stages.js 注册）
     stageDefs: [
       {
         name: 'transcribe',
@@ -486,7 +478,6 @@ const PIPELINES = [
     category: 'custom',
     stages: ['verify', 'report'],
     estimatedCost: 'low',
-    // 真实编排：验证工具链 → 生成冒烟测试视频与报告（smoketest-stages.js 注册）
     stageDefs: [
       {
         name: 'verify',
@@ -864,6 +855,11 @@ class PipelineEngine {
         }))
       : [];
     return builtIn.concat(custom);
+  }
+
+  /** 接线完整性诊断（实现见 pipeline-wiring-diagnostics.js） */
+  listUnwiredStageTypes() {
+    return listUnwiredStageTypes(this, PIPELINES);
   }
 
   /** 获取单个流水线详情 */
@@ -2760,16 +2756,19 @@ function prepareResumeParams(params, pipelineName) {
   return restored
 }
 
-/**
- * 生成 story2video 流水线运行 ID（同时作为视频创作项目 ID）。
- * 格式：base36 时间戳(8位) + '_' + base36 随机后缀(4位) ≈ 13 字符。
- * 相比旧格式 'run_' + Date.now() + '_' + 随机(共22位) 缩短约 40%，
- * 且去掉了无运行时代码依赖的 'run_' 前缀；base36 时间戳定宽、字典序即时间序，
- * 保留唯一性与时序可排序性，并满足 SAFE_ID 校验、可作磁盘目录名。
- */
+/** 生成 story2video 运行 ID（base36 时间戳 + 随机后缀，约 13 字符）。 */
 function generateRunId() {
   return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6)
 }
 
-module.exports = { PipelineEngine, STAGE_TYPES, computeDefaultMaxConcurrentRuns, prepareResumeParams, generateRunId };
+const PIPELINE_DEFINITIONS = buildPipelineDefinitions(PIPELINES);
+
+module.exports = {
+  PipelineEngine,
+  STAGE_TYPES,
+  computeDefaultMaxConcurrentRuns,
+  prepareResumeParams,
+  generateRunId,
+  PIPELINE_DEFINITIONS,
+};
 

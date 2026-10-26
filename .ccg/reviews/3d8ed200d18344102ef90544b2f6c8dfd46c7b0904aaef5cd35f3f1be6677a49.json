@@ -1,0 +1,92 @@
+{
+  "sha": "9283c2d35afeb36fe4523574019044b8ce457151",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 851 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 851,
+    "fileCount": 19,
+    "codeFileCount": 15,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "3d8ed200d18344102ef90544b2f6c8dfd46c7b0904aaef5cd35f3f1be6677a49",
+  "decidedAt": "2026-10-26T16:48:04.711Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "pipeline-executor-wiring.test.js expects `new PipelineEngine({log}).stageExecutor` falsy, but constructor always creates `this.stageExecutor`; test 'stageExecutor 未配置时' will always fail.",
+        "highRiskDomains": [],
+        "prosecution": "若 PipelineEngine 构造函数无条件创建 StageExecutor，则 `new PipelineEngine({ log })` 的 stageExecutor 非空，测试中的 `expect(engine.stageExecutor).toBeFalsy()` 会立即失败，导致本 PR 新增的 20 例回归锁整体变红、CI 无法合并。",
+        "defense": "pipeline-engine.js:777-793 明确分支：`if (deps.stageExecutor) ... else if (this.serviceBus) new StageExecutor(...) else this.stageExecutor = null`。`new PipelineEngine({ log })` 未传 serviceBus，走 else 分支为 null。实测 `pnpm exec vitest run electron/tests/pipeline-executor-wiring.test.js` 20 例全绿（含该哨兵用例），不是跳过。",
+        "verdict": "dismissed",
+        "rationale": "指控基于「构造函数总是创建执行器」的错误假设；源码分支与实测运行结果（20/20 通过）都反证该场景成立。可复现：运行上述命令即可看到 `stageExecutor 未配置时返回单条哨兵` 用例通过。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "pipeline-engine.js `cloneDeep` only handles arrays/plain objects via `getOwnPropertyNames`; misses `Map`, `Set`, `Date`, `RegExp`, symbol keys. If `PIPELINES` ever includes these, clone breaks silently.",
+        "highRiskDomains": [],
+        "prosecution": "cloneDeep 仅处理数组与普通对象；若 PIPELINES 含 Map/Set/Date/RegExp 或 symbol 键，会克隆成空对象/丢键，导致 PIPELINE_DEFINITIONS 失真，接线锁读取错误的 stageDefs。",
+        "defense": "PIPELINES 是源码内静态对象字面量，只含数组/对象/字符串/数字/布尔（实测遍历 PIPELINE_DEFINITIONS 得到的类型集合为 `[object Array],[object Object]`）；没有任何 Map/Set/Date/RegExp/symbol 键入口。该导出仅用于诊断与测试，不改运行引擎。",
+        "verdict": "dismissed",
+        "rationale": "「若未来加入非 JSON 类型」是假设性风险，不是当前缺陷；当前数据形态已实测为纯 JSON。若未来引入，需同时扩展 cloneDeep 并补测试，属独立变更。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "New test file mixes ES `import` (vitest) with `require()` calls; other `electron/tests/*.test.js` use `function()` style consistently.",
+        "highRiskDomains": [],
+        "prosecution": "新测试文件混用 ES import（vitest）与 require()，与 electron/tests 下其他文件的风格不一致，可能造成 lint/维护混乱。",
+        "defense": "`electron/tests/stage-executor.test.js` 本身就是同一模式：第 2 行 `import { describe, expect, it, vi } from 'vitest'`，第 4/14/15 行继续用 `require(...)`。这是本仓 electron 测试的既有约定（ESM 测试入口 + CJS 模块 require）。",
+        "verdict": "dismissed",
+        "rationale": "「其他文件一致用 function() 风格」不成立；同目录最大测试文件即 import+require 混用。风格与仓内约定一致，无需改动。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-26T16:53:15.877Z",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4515#issuecomment-6422013606"
+  }
+}

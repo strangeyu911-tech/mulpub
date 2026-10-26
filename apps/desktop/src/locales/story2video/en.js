@@ -99,6 +99,9 @@ export default {
     compose_scene_media_unreadable: 'The visual material for scene {scene} is no longer available or cannot be read. Regenerate that scene image or video, then resume from the breakpoint.',
     compose_scene_audio_unreadable: 'The narration audio for scene {scene} is no longer available or cannot be read. Regenerate that scene voice, then resume from the breakpoint.',
     operation_failed: 'Could not complete the request. Please try again.',
+    // Pipeline stage executor not wired (2026-10-26 pipeline-executor-wiring).
+    // StageExecutor now fails closed for unknown stage types; keep the copy actionable and free of stack details.
+    stage_executor_missing: 'A pipeline stage has no available execution component, so this run has been stopped. Try restarting the app first; if it still fails, report this message to support along with your app version.',
     invalid_params: 'Pipeline parameter validation failed. Please check your configuration and try again.',
     unknown_error: 'Could not complete the request. Please try again.',
     needs_user_input: 'The generated content triggered a content safety review and needs your input. Check the scene copy for sensitive content, edit it, then resume from the breakpoint.',

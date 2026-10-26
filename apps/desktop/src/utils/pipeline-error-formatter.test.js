@@ -229,3 +229,35 @@ describe('formatPipelineError — compose 预检失败（error-message-user-frie
     expect(r.params.limitMb).toBe('512MB')
   })
 })
+
+// 2026-10-26 pipeline-executor-wiring：
+// StageExecutor 对未注册阶段类型改为 fail closed（errorCode=PIPELINE_STAGE_EXECUTOR_MISSING）。
+// 主进程原文形如 `PIPELINE_STAGE_EXECUTOR_MISSING: no executor registered for stage type "x" (stage "y")`，
+// 长度 <120 且无技术标记——若不显式拦截，会命中「短自然语言直出」分支把英文原文直接显示给用户。
+describe('formatPipelineError — 阶段执行器未接线', () => {
+  const raw = 'PIPELINE_STAGE_EXECUTOR_MISSING: no executor registered for stage type "videogen_generate" (stage "animate")'
+
+  it('映射到可操作文案 key，不直出英文原文', () => {
+    const r = formatPipelineError(raw)
+    expect(r.key).toBe('story2video.stage_executor_missing')
+    expect(r.message).toBe('')
+  })
+
+  // 2026-10-26：排序只用**行为**断言（见下条），不再断言数组下标。
+  // 位置断言只能证明「它排第一」，证明不了「具体规则真的先于泛化规则」。
+  it('同时含阶段码与 compose 失败文本时仍落到阶段规则（行为面优先级）', () => {
+    const r = formatPipelineError('PIPELINE_STAGE_EXECUTOR_MISSING: no executor (stage "x"); compose failed: ffmpeg exit 1')
+    expect(r.key).toBe('story2video.stage_executor_missing')
+    expect(r.message).toBe('')
+  })
+
+  it('en locale 命中同一 key（文案由 i18n 提供，不在 formatter 内硬编码）', () => {
+    const r = formatPipelineError(raw, { locale: 'en-US' })
+    expect(r.key).toBe('story2video.stage_executor_missing')
+  })
+
+  it('历史库中缺少 errorCode、仅剩原文的存量数据同样能归一化', () => {
+    const r = formatPipelineError('PIPELINE_STAGE_EXECUTOR_MISSING: no executor registered for stage type "x" (stage "y")')
+    expect(r.key).toBe('story2video.stage_executor_missing')
+  })
+})

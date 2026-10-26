@@ -92,22 +92,11 @@ const SplitterBridge = require('../services/splitter-bridge');
 const PromptBridge = require('../services/prompt-bridge');
 const ServiceBus = require('../services/service-bus');
 const PluginRegistry = require('../services/plugin-registry');
-const { registerStory2VideoStages } = require('../services/story2video-stages');
+// 阶段注册器的单一真源：生产装配与「接线完整性」回归锁共用同一份清单（2026-10-26）。
+const { registerAllPipelineStages } = require('../services/pipeline-stage-registrars');
 const { ApiUsageGovernor } = require('../services/api-usage-governor');
 const { PROVIDER_LIMITS } = require('../services/governor-provider-limits');
 const { RunStateStore } = require('../services/run-state-store');
-const { registerExplainerStages } = require('../services/explainer-stages');
-const { registerClipFactoryStages } = require('../services/clipfactory-stages');
-const { registerCinematicStages } = require('../services/cinematic-stages');
-const { registerSmokeTestStages } = require('../services/smoketest-stages');
-const { registerTalkingHeadStages } = require('../services/talkinghead-stages');
-const { registerDocumentaryStages } = require('../services/documentary-stages');
-const { registerLocalizationStages } = require('../services/localization-stages');
-const { registerVideoGenStages } = require('../services/videogen-stages');
-const { registerPodcastRepurposeStages } = require('../services/podcast-repurpose-stages');
-const { registerFilmEngineeringStages } = require('../services/film-engineering/film-engineering-stages');
-const { registerFilmVideoStages } = require('../services/film-engineering/video-gen');
-const { registerFilmRenderStage } = require('../services/film-engineering/film-render');
 
 function createContainer(options) {
   const container = new Container();
@@ -165,22 +154,37 @@ function createContainer(options) {
             c.get('logger').warn('container', 'story-context-rules 加载异常（保持内置）: ' + (e instanceof Error ? e.message : String(e)));
           }
         }
-        registerStory2VideoStages(engine);
-        registerExplainerStages(engine);
-        registerClipFactoryStages(engine);
-        registerCinematicStages(engine);
-        registerSmokeTestStages(engine);
-        registerTalkingHeadStages(engine);
-        registerDocumentaryStages(engine);
-        registerLocalizationStages(engine);
-        registerVideoGenStages(engine);
-        registerPodcastRepurposeStages(engine);
-        registerFilmEngineeringStages(engine);
-        registerFilmVideoStages(engine);
-        registerFilmRenderStage(engine);
+        const logger = c.get('logger');
+        // 单一真源：注册器清单与注册动作都在 pipeline-stage-registrars.js，
+        // 回归锁 import 同一份清单，不再镜像 container.setup.js。
+        const stageRegistrationFailures = registerAllPipelineStages(engine);
+        if (stageRegistrationFailures.length > 0) {
+          const failureDetail = stageRegistrationFailures
+            .map((item) => item.name + ': ' + item.error)
+            .join('; ');
+          if (logger && typeof logger.error === 'function') {
+            logger.error('container', '流水线阶段注册器执行失败（' + stageRegistrationFailures.length + ' 项；应用仍会启动，但相关流水线不可用）: ' + failureDetail);
+          }
+        }
+
+        // 接线完整性自检（2026-10-26 pipeline-executor-wiring）：
+        // 注册完成后逐条核对 PIPELINES.stageDefs 的 type 是否有执行器。
+        // 断链必须出声——StageExecutor 已改为 fail closed，但启动期就记录
+        // 完整清单能把「第一次运行才炸」提前到「启动日志可见」。
+        const unwiredStageTypes = typeof engine.listUnwiredStageTypes === 'function'
+          ? engine.listUnwiredStageTypes()
+          : [];
+        if (unwiredStageTypes.length > 0) {
+          const detail = unwiredStageTypes
+            .map((item) => item.pipeline + '.' + item.stage + ' → ' + item.type + (item.reason ? ' (' + item.reason + ')' : ''))
+            .join('; ');
+          if (logger && typeof logger.error === 'function') {
+            logger.error('container', '流水线阶段执行器接线不完整（' + unwiredStageTypes.length + ' 项；应用仍会启动，但相关流水线不可用）: ' + detail);
+          }
+        }
       } catch (e) {
         c.get("logger").warn("container",
-          "registerStory2VideoStages failed: " + (e instanceof Error ? e.message : String(e)));
+          "流水线阶段注册失败: " + (e instanceof Error ? e.message : String(e)));
       }
     }
     return engine;

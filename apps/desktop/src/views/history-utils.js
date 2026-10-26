@@ -360,6 +360,27 @@ export const COMPOSE_ERROR_KEY_MAP = Object.freeze({
 })
 
 /**
+ * 流水线终态稳定错误码 → locale 文案 key（历史卡片统一入口）。
+ *
+ * 2026-10-26 pipeline-executor-wiring：`PIPELINE_STAGE_EXECUTOR_MISSING` 是
+ * StageExecutor 对未注册阶段类型的 fail-closed 错误码。历史卡片必须按码渲染
+ * 自然语言（与 compose_* 同一条链路），否则会落回 `formatPipelineError` 的
+ * 短文本直出分支，把英文技术原文展示给用户。
+ *
+ * 新增非 COMPOSE_* 的流水线错误码时加在这里；纯 COMPOSE_* 仍维护在
+ * `COMPOSE_ERROR_KEY_MAP`（保持既有调用点与单测不变）。
+ *
+ * 浅拷贝契约（2026-10-26）：源表 `COMPOSE_ERROR_KEY_MAP` 已
+ * `Object.freeze`，运行时不可被改写；这里的展开得到独立对象，两边不会互相影响。
+ * 新增/修改映射必须改源码（不存在「运行时静默漂移」路径），并有
+ * `history-utils.test.js` 的「保留全部 COMPOSE_* 映射」用例兜底。
+ */
+export const PIPELINE_ERROR_KEY_MAP = Object.freeze({
+  ...COMPOSE_ERROR_KEY_MAP,
+  PIPELINE_STAGE_EXECUTOR_MISSING: 'story2video.stage_executor_missing',
+})
+
+/**
  * 内容政策/需要用户输入类失败的统一门控关键字（与主进程 pipeline-engine.js
  * resumeOrchestration 的判定对齐）：命中即判定为不可原样恢复，必须修改文案后重新生成。
  * content 与 policy 之间允许空格/下划线/连字符或不带分隔符（content policy / content_policy /

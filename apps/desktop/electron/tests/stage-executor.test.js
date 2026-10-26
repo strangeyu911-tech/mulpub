@@ -57,6 +57,27 @@ it('StageExecutor 无参构造应抛错', function () {
   expect(() => new StageExecutor()).toThrow(/serviceBus/);
 });
 
+it('hasExecutor / listExecutorTypes 反映内置与自定义执行器（2026-10-26 pipeline-executor-wiring）', function () {
+  const executor = new StageExecutor({ serviceBus: makeMockServiceBus() });
+  // 内置类型默认存在
+  ok(executor.hasExecutor(STAGE_TYPES.SPLIT), 'split 应为内置执行器');
+  ok(executor.hasExecutor(STAGE_TYPES.MANUAL_CHECKPOINT), 'manual_checkpoint 应为内置执行器');
+  // 未注册类型不存在
+  eq(executor.hasExecutor('not_registered_stage_type'), false);
+  eq(executor.hasExecutor(''), false);
+  eq(executor.hasExecutor(null), false);
+  // 自定义注册后立刻可见
+  executor.register('custom_probe_stage', async () => ({ success: true }));
+  ok(executor.hasExecutor('custom_probe_stage'), '注册后应出现在 hasExecutor');
+  const types = executor.listExecutorTypes();
+  ok(Array.isArray(types), 'listExecutorTypes 应返回数组');
+  ok(types.includes(STAGE_TYPES.SPLIT), '应包含内置类型');
+  ok(types.includes('custom_probe_stage'), '应包含自定义类型');
+  // 去重：重复注册同一类型不应产生重复项
+  executor.register('custom_probe_stage', async () => ({ success: true }));
+  eq(types.filter((type) => type === 'custom_probe_stage').length, 1);
+});
+
 // ============================================================
 // 2. 内置执行器测试
 // ============================================================
@@ -1015,7 +1036,7 @@ it('MANUAL_CHECKPOINT 阶段返回 checkpoint: true', async function () {
   eq(result.output, null);
 });
 
-it('未知 stage.type 回退为 MANUAL_CHECKPOINT', async function () {
+it('未知 stage.type 必须 fail closed，不得伪装成 MANUAL_CHECKPOINT（2026-10-26 pipeline-executor-wiring）', async function () {
   const bus = makeMockServiceBus();
   const exec = new StageExecutor({ serviceBus: bus, log: { info() {}, warn() {}, error() {}, notify() {} } });
   const result = await exec.execute({
@@ -1024,8 +1045,13 @@ it('未知 stage.type 回退为 MANUAL_CHECKPOINT', async function () {
     params: {},
     context: {},
   });
-  eq(result.success, true);
-  eq(result.checkpoint, true);
+  // 旧行为是 success:true + checkpoint:true（整条流水线会「成功但没有产出」），
+  // 现改为失败，让断链在第一次运行时可见。
+  eq(result.success, false);
+  eq(result.errorCode, 'PIPELINE_STAGE_EXECUTOR_MISSING');
+  eq(result.checkpoint, undefined);
+  eq(result.messageParams.stageName, 'unknown_stage');
+  eq(result.messageParams.stageType, 'totally_unknown_type');
 });
 
 it('无 stage.type 回退为 MANUAL_CHECKPOINT（向后兼容）', async function () {
@@ -1163,8 +1189,20 @@ it('startOrchestrated 手动模式（autoAdvance=false）只创建 run', async f
 it('startOrchestrated + autoAdvance 自动执行全部阶段（旧流水线回退为 checkpoint）', async function () {
   const bus = makeMockServiceBus();
   const pe = new PipelineEngine({ serviceBus: bus, log: { info() {}, warn() {}, error() {}, notify() {} } });
-  // framework-smoke 有 2 个阶段：verify, report（无 stage.type，回退为 MANUAL_CHECKPOINT）
-  const r = await pe.startOrchestrated('framework-smoke', { autoAdvance: true });
+  // 用一条**自定义**「无 stageDefs」流水线验证旧语义：stages 有值、stageDefs 缺失
+  // ⇒ 每个 stage.type 为 undefined ⇒ 走 MANUAL_CHECKPOINT
+  // （与「未知 type」不同，后者已 fail closed）。
+  // ⛔ 不用 framework-smoke：它已有 stageDefs（smoketest_verify/report），
+  // 在本测试未注册执行器的前提下会命中 PIPELINE_STAGE_EXECUTOR_MISSING。
+  // ⛔ 也不用 screen-demo：它是产品里 available=false 的占位流水线，
+  // 用它当「可启动」样本会把「引擎允许启动开发中流水线」编码成测试契约。
+  pe.registerPipeline({
+    name: 'legacy-no-stage-defs',
+    description: '旧版无 stageDefs 流水线（兼容性探针）',
+    category: 'custom',
+    stages: ['record', 'annotate', 'render'],
+  });
+  const r = await pe.startOrchestrated('legacy-no-stage-defs', { autoAdvance: true });
   eq(r.success, true);
   eq(r.paused, true, '应在第一个 MANUAL_CHECKPOINT 暂停');
   ok(r.results.length >= 1, '至少执行了 1 个阶段');

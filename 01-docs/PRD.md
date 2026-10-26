@@ -20860,3 +20860,37 @@ AC-01~AC-14 见完整 PRD §8：五页骨架一致、标题规格一致、面板
 ### 五、明确不做
 
 不改发布页主表单、采集页其他 tab、知识库弹窗内部字段结构；不引入新 UI 库；不改任何校验规则、IPC 契约、数据结构与数据库；不做移动端专属布局。
+## 视频创作流水线阶段执行器接线完整性（2026-10-26，change: pipeline-stage-executor-wiring）
+
+### 一、结论先行
+
+- **接线层**：除显式「开发中」的 `screen-demo`（无 `stageDefs`，`available=false`）外，14 条具备 `stageDefs` 的内置流水线，其每个 `stage.type` 均已由 `pipeline-stage-registrars.js` 的 `registerAllPipelineStages` 统一注册。
+- **旧缺陷**：`StageExecutor` 曾对未注册阶段**静默返回成功**（`success:true, checkpoint:true`），会让断链表现为「流水线成功但没有产出」，且所有测试仍绿。
+- **本次修复**：未知阶段改为 fail closed（`errorCode=PIPELINE_STAGE_EXECUTOR_MISSING`），并新增**接线完整性回归锁**、启动期自检、用户可读错误文案。
+
+### 二、功能与交互要点
+
+| 维度 | 合同 |
+|------|------|
+| 启动期自检 | 全部 `registerAllPipelineStages` 完成后调用 `listUnwiredStageTypes()`；非空以 `logger.error` 打印完整清单（`pipeline.stage → type`） |
+| 运行期 | 未知 `stage.type` → 阶段失败；`run.status=failed`，不进入 `completed` |
+| 兼容语义 | 显式 `manual_checkpoint` 与**无 `type` 字段**的旧阶段仍按原语义成功 |
+| 数据校验 | `stage.type` 必须非空字符串才参与判定；`stageExecutor` 未配置时 `listUnwiredStageTypes()` 不得返回空数组（单条 `pipeline='*'` 哨兵，`reason='STAGE_EXECUTOR_NOT_CONFIGURED'`） |
+| 历史记录 | `PIPELINE_ERROR_KEY_MAP` 按 `run.errorCode` 渲染 `story2video.stage_executor_missing`；无 `errorCode` 的存量数据由 `formatPipelineError` 首条规则归一化 |
+| 通知/弹窗 | `PIPELINE_STAGE_EXECUTOR_MISSING → STORY2VIDEO_NOTIFICATION_KEYS.STAGE_EXECUTOR_MISSING` |
+| 显示项 | 历史卡片状态「生成失败」+ 本地化失败原因；启动日志仅在异常时输出 |
+| 提示文字（zh） | 「流水线的某个阶段缺少可用的执行组件，本次生成已停止。请先尝试重启应用；若仍失败，请将本提示反馈给技术支持，并附上应用版本号。」 |
+| 提示文字（en） | "A pipeline stage has no available execution component, so this run has been stopped. Try restarting the app first; if it still fails, report this message to support along with your app version." |
+
+### 三、验收与证据
+
+- 新增 `apps/desktop/electron/tests/pipeline-executor-wiring.test.js`（20 例）：用生产注册器装配真实 `StageExecutor`，断言每条流水线 `stageDefs` 全部已接线、`listUnwiredStageTypes()` 为空、未知类型 fail closed、`manual_checkpoint` 与无 type 旧阶段兼容。
+- 变异反证：移除 `registerVideoGenStages` → 未接线清单返回 **16 项**；恢复 → **0**。
+- 回归：24 个相关测试文件 / **748 tests passed**；新增与增强测试全绿。
+- 详细 PRD：见 `01-docs/PRD-video-creation.md` §二十（20.1–20.11，含数据校验、流程、功能逻辑、交互逻辑、显示项、提示文字）。
+- OpenSpec：`openspec/changes/pipeline-stage-executor-wiring/proposal.md`；执行记录 `openspec/records/pipeline-stage-executor-wiring.md`。
+
+### 四、边界
+
+- 接线完整性只回答「阶段是否实现」，不回答「provider Key / ffmpeg 是否就绪」；后者由 `pipeline-model-preflight`、各阶段 fail-closed 与 `framework-smoke` 覆盖。
+- `video-clone` 走独立 IPC 引擎，不在 `PipelineEngine` 的 `stageDefs` 判据内。

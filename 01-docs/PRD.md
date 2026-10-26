@@ -20752,3 +20752,50 @@ DOM 采集失败时补真实昵称/ID/粉丝、DOM 成功时不调 HTTP、兜底
 - 缓存刻意做成"一次渲染一份"而不是跨渲染常驻：平台名/图标来自**异步加载**的 platform store，常驻 Map 会把默认标签永久钉住 —— 那是把性能修复换成一处静默显示缺陷。
 - 新增 `PublishHistory.row-view.test.js` 4 条（形状 + 同源 + 模板零裸调用与正向对偶 + metricValue 不入缓存），反证两个被禁形态各自指名变红、还原逐字节相同。既有 `PublishHistory.test.js` 一字未改仍全绿 ⇒ 渲染结果未变。
 - 同批否证两条审计建议：2.2①「谓词改读防抖值」与该视图 84 条既有契约（筛选即时一致）冲突 ⇒ 退回人工裁决不硬改；2.2③「加 renderLimit」实测已由分页 + 既有「加载更多」承担。
+
+---
+
+## 附录：模型额度用尽时的来源切换策略（2026-10-26，model-quota-fallback）
+
+> 完整 PRD：`01-docs/PRD-MODEL-QUOTA-FALLBACK-2026-10-26.md`；技术设计：`01-docs/DESIGN-MODEL-QUOTA-FALLBACK-2026-10-26.md`。
+> 本节只记录**总 PRD 层的结论**；细节、文案、验收以完整 PRD 为准。
+
+### 一、三问结论
+
+1. **能拿到错误码吗？** 能拿到大部分主流供应商的结构化错误（OpenAI `insufficient_quota`、DeepSeek `402 Insufficient Balance`、Anthropic `400 credit balance is too low`、MiniMax HTTP 200 + `1004/2056`、Gemini `RESOURCE_EXHAUSTED` 等），但**不保证每家都能区分「额度/到期/限流」**。桌面端在适配器层已把 401/402/429 与 MiniMax 业务码归一为 `ProviderError`；本方案新增统一 `accessState`，**能识别的绝不漏报，识别不了的绝不误报**。
+2. **用户选官方之后怎么控制？** **不是永久切官方，也不是继续死磕用户模型**。采用「BYOK 永远优先 + 官方仅任务级兜底」：官方只覆盖当前任务后续未开始的调用；不修改用户默认模型；新任务回到 BYOK；断点续跑保留本任务的来源覆盖。
+3. **要不要设置？** **要**。`modelQuotaFallbackPolicy` 三档：`ask`（默认，每次询问）/ `official`（额度错误时自动用官方兜底）/ `byok`（绝不自动用官方）。`official` 档仍受任务级积分上限约束（默认 500 积分），且 `credential_invalid` **永远询问**。
+
+### 二、来源优先级【规划中】
+
+- 用户显式指定 > 模型设置默认 > 任务级官方覆盖（仅当前任务）> 官方兜底（仅额度/凭据失败且政策允许）> 失败并给出可操作提示【规划中】
+- 官方模型**永不作为默认来源**；官方兜底不修改 `model_providers.is_default` / `user_default_model`【规划中】
+- 新任务永远先走 BYOK；上一任务的官方覆盖不继承【规划中】
+
+### 三、错误状态与兜底资格【规划中】
+
+| 状态 | 是否兜底 | 自动档是否可自动 |
+|---|---|---|
+| `quota_exhausted` | ✅ | ✅（受积分上限约束） |
+| `credential_invalid` | ✅ 仅询问 | ❌ 永远询问 |
+| `rate_limited` | ❌ | ❌ |
+| `transient` | ❌ | ❌ |
+| `content_policy` | ❌ | ❌ |
+| `provider_error` / `unknown` | ❌ | ❌ |
+
+### 四、设置与任务级控制【规划中】
+
+- 设置键 `modelQuotaFallbackPolicy`（`ask`/`official`/`byok`，默认 `ask`）与 `officialCreditCapPerTask`（默认 500，范围 1–100000）【规划中】
+- 任务级覆盖 `runContext.modelSourceOverrides[capability]`：只活在当前 run + 检查点，不落 `model_providers`【规划中】
+- 切换前落检查点；只在下一次调用前切；已产生部分输出的调用不重试【规划中】
+- 官方调用 `byok=0` + 幂等键 `runId:stageId:attempt`；官方失败不自动换回 BYOK【规划中】
+
+### 五、上线 gate【规划中】
+
+- 官方算力代理 D-① 未落地前，**不单独上线设置项与「使用官方模型」按钮**；避免用户选了却不可用【规划中】
+- P1 先交付「错误分类 + 去更新设置」；P2 与 D-① / U-12 / U-13 同批交付官方兜底；P3 开放自动档与 LLM 官方供给（若 U-1 决定做）【规划中】
+
+### 六、验收与文档【规划中】
+
+- 完整验收 AC-01~AC-20 见 `01-docs/PRD-MODEL-QUOTA-FALLBACK-2026-10-26.md` §11【规划中】
+- 文案 zh/en 成对、日志不泄露 API Key、官方 Key 客户端零持有【规划中】

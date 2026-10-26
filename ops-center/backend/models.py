@@ -287,6 +287,11 @@ class UserFeedback(Base):
     client_id_hash = Column(String(64), default="")
     app_version = Column(String(64), default="")
     platform = Column(String(32), default="")
+    # 分诊字段（2026-10-26）：category 是 6 类枚举之一（未知落 'other'），
+    # source 标记来源入口（member-center / settings / ''）。两列都可空默认 ''，
+    # 存量行不需要回填——列表把空值显示成「未分类」。
+    category = Column(String(32), default="")
+    source = Column(String(32), default="")
     status = Column(String(16), default="new")
     created_at = Column(String, default=lambda: datetime.datetime.utcnow().isoformat())
 

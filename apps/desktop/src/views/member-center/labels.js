@@ -45,6 +45,20 @@ export function planLabelOf(t, plan) {
   return t('memberCenter.planCustom')
 }
 
+/**
+ * 档位 id → 排序值（free:0 / standard:1 / pro:2）。
+ *
+ * 只做 id→rank 的**保守映射**：未知 id 返回 null（不可购买、也不标「当前」）。
+ * 与 planLabelOf 放在同一处，是因为两者都是「档位 → 展示/比较」的纯函数，
+ * 从 Subscription.vue 抽出来也让它能单独被测（该组件已撞 500 行门禁）。
+ */
+export function planRankOf(planId) {
+  if (planId === 'free') return 0
+  if (planId === 'standard') return 1
+  if (planId === 'pro') return 2
+  return null
+}
+
 // ── feature / quota 本地化（P0-4 / C1-09）─────────────────────────
 // 服务端 features 是英文 feature 名、quota 键形为 `${feature}_monthly`
 // （plan-matrix.js 派生段）。本地化键与服务端键**逐字符同形**，

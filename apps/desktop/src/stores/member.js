@@ -29,6 +29,11 @@ function normalizeSession(row) {
     deviceName: typeof source.device_name === 'string' ? source.device_name.slice(0, 100) : null,
     createdAt: typeof source.created_at === 'string' || typeof source.created_at === 'number' ? source.created_at : null,
     lastSeenAt: typeof source.last_seen_at === 'string' || typeof source.last_seen_at === 'number' ? source.last_seen_at : null,
+    // 当前设备标记（方案 P1-4 / C1-13）。**必须白名单保留**——曾经漏掉这一行，
+    // 导致服务端与主进程都算好了、组件却永远读不到，徽章在生产环境从未出现过。
+    // 严格 === true：'true' / 1 / undefined 一律落 false。保守取值只会退回
+    // 「未能识别当前设备」中性态（合法态），绝不把不确定升格成「这台是当前设备」。
+    is_current: source.is_current === true,
   }
 }
 

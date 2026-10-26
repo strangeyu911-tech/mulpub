@@ -34,7 +34,13 @@
         </div>
         <span v-if="isProActive" class="member-center-plan-check" data-testid="member-center-pro-active" aria-hidden="true">✓</span>
       </div>
-      <p class="member-center-upgrade-hint">{{ t('memberCenter.upgradeHint') }}</p>
+      <!-- P1-b：升级提示按档位收敛。对 Pro 用户说「解锁全平台发布…」是错误陈述
+           （用户已经拥有），也会让人怀疑会员是否生效。 -->
+      <p
+        v-if="!isProActive"
+        class="member-center-upgrade-hint"
+        data-testid="member-center-upgrade-hint"
+      >{{ t('memberCenter.upgradeHint') }}</p>
     </section>
 
     <!-- 快捷入口：把「概览」变成真正的导览页 -->

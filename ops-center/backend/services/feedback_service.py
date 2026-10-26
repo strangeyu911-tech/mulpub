@@ -18,6 +18,23 @@ from config import settings
 from models import FeedbackAttachment, UserFeedback
 
 ZIP_MAGIC = b"PK\x03\x04"
+# 反馈分类白名单（与桌面 HelpSupport.vue 的 CATEGORIES、主进程 feedback.js 的
+# FEEDBACK_CATEGORIES 三处同型）。**未知值落 'other' 而不是 400**：分类只是分诊
+# 辅助，客户端版本旧于服务端时不该让整条反馈丢掉。
+FEEDBACK_CATEGORIES = frozenset({"account", "payment", "publish", "ai", "ui", "other"})
+SAFE_SOURCE = re.compile(r"^[a-z0-9_-]{1,32}$")
+
+
+def _normalize_category(value: str | None) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    return text if text in FEEDBACK_CATEGORIES else "other"
+
+
+def _normalize_source(value: str | None) -> str:
+    text = str(value or "").strip()
+    return text if SAFE_SOURCE.fullmatch(text) else ""
 SAFE_CLIENT_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 SAFE_LOG_NAME = re.compile(r"^app-[0-9]{4}-[0-9]{2}-[0-9]{2}\.log$")
 
@@ -98,6 +115,8 @@ async def create_feedback(
     client_id: str = "",
     app_version: str = "",
     platform: str = "",
+    category: str = "",
+    source: str = "",
     log_archive: UploadFile | None = None,
 ) -> dict:
     clean_message = _validate_message(message)
@@ -112,6 +131,8 @@ async def create_feedback(
         client_id_hash=hashlib.sha256(clean_client.encode("utf-8")).hexdigest() if clean_client else "",
         app_version=_validate_text(app_version, 64, "app_version"),
         platform=_validate_text(platform, 32, "platform"),
+        category=_normalize_category(category),
+        source=_normalize_source(source),
         status="new",
         created_at=now,
     )
@@ -147,7 +168,13 @@ async def create_feedback(
             except OSError:
                 pass
         raise
-    return {"id": feedback_id, "created_at": now, "has_logs": log_archive is not None}
+    return {
+        "id": feedback_id,
+        "created_at": now,
+        "has_logs": log_archive is not None,
+        "category": row.category,
+        "source": row.source,
+    }
 
 
 def _attachment_dict(attachment: FeedbackAttachment | None) -> dict | None:
@@ -162,14 +189,22 @@ def _attachment_dict(attachment: FeedbackAttachment | None) -> dict | None:
     }
 
 
-async def list_feedback(db: AsyncSession, limit: int, offset: int) -> dict:
+async def list_feedback(db: AsyncSession, limit: int, offset: int, category: str | None = None) -> dict:
     from sqlalchemy import func
-    total = (await db.execute(select(func.count(UserFeedback.id)))).scalar_one()
+    # 分类过滤：空串/None/'all' 都表示不过滤（前端「全部」传空）。
+    wanted = _normalize_category(category) if category else ""
+    condition = UserFeedback.category == wanted if wanted else None
+    count_stmt = select(func.count(UserFeedback.id))
+    if condition is not None:
+        count_stmt = count_stmt.where(condition)
+    total = (await db.execute(count_stmt)).scalar_one()
+    stmt = select(UserFeedback, FeedbackAttachment).outerjoin(
+        FeedbackAttachment, FeedbackAttachment.feedback_id == UserFeedback.id
+    )
+    if condition is not None:
+        stmt = stmt.where(condition)
     rows = (await db.execute(
-        select(UserFeedback, FeedbackAttachment)
-        .outerjoin(FeedbackAttachment, FeedbackAttachment.feedback_id == UserFeedback.id)
-        .order_by(UserFeedback.created_at.desc())
-        .offset(offset).limit(limit)
+        stmt.order_by(UserFeedback.created_at.desc()).offset(offset).limit(limit)
     )).all()
     items = []
     for feedback, attachment in rows:
@@ -179,6 +214,8 @@ async def list_feedback(db: AsyncSession, limit: int, offset: int) -> dict:
             "message_preview": preview,
             "app_version": feedback.app_version,
             "platform": feedback.platform,
+            "category": feedback.category or "",
+            "source": feedback.source or "",
             "status": feedback.status,
             "has_logs": attachment is not None,
             "created_at": feedback.created_at,
@@ -200,6 +237,8 @@ async def get_feedback(db: AsyncSession, feedback_id: str) -> tuple[dict, Feedba
         "message": feedback.message,
         "app_version": feedback.app_version,
         "platform": feedback.platform,
+        "category": feedback.category or "",
+        "source": feedback.source or "",
         "status": feedback.status,
         "created_at": feedback.created_at,
         "attachment": _attachment_dict(attachment),

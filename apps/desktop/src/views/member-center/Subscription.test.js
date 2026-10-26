@@ -93,6 +93,25 @@ describe('member-center/Subscription', () => {
     stateChangedHandlers.length = 0
   })
 
+  // ── 降档：产品明确不支持 ⇒ 只给说明、不给按钮 ──────────────────────
+  // 为什么断言「没有按钮」：留一张点不动的卡（或一个点了没反应的按钮）比不给入口更糟，
+  // 它会让用户以为产品有 bug。这里锁住形状：只有文案，没有可点击的降档控件。
+  it('价目区给出降档说明，且不提供任何可点击的降档控件', async () => {
+    identityCtx.entitlement = { plan: 'pro', features: [], source: 'online', expiresAt: null, quota: null, limits: { plan_rank: 2 } }
+    identityCtx.plans = [
+      { id: 'free', label: '免费版', priceMonthlyCents: 0, priceYearlyCents: 0, currency: 'CNY' },
+      { id: 'standard', label: '标准版', priceMonthlyCents: 5900, priceYearlyCents: 59000, currency: 'CNY' },
+      { id: 'pro', label: '专业版', priceMonthlyCents: 9900, priceYearlyCents: 99000, currency: 'CNY' },
+    ]
+    const { wrapper } = await mountSubscription()
+    const hint = wrapper.find('[data-testid="member-center-downgrade-hint"]')
+    expect(hint.exists()).toBe(true)
+    expect(hint.text()).toBe('memberCenter.planDowngradeHint')
+    expect(wrapper.findAll('[data-testid^="plan-downgrade"]')).toHaveLength(0)
+    // standard 卡（低于当前档）不可购买、也不标「当前方案」
+    expect(wrapper.get('[data-testid="plan-standard"]').attributes('aria-disabled')).toBe('true')
+  })
+
   // ── 价目三态（从壳层迁入后的落点）────────────────────────────────
   describe('价目三态', () => {
     it('plans === null → 「暂不可用」，不渲染卡片列表', async () => {

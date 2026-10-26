@@ -35,7 +35,8 @@
               <th>{{ t('memberCenter.ordersColPlan') }}</th>
               <th>{{ t('memberCenter.ordersColAmount') }}</th>
               <th>{{ t('memberCenter.ordersColStatus') }}</th>
-              <th aria-label="actions"></th>
+              <!-- 操作列表头：视觉上留空，但读屏要能播报（硬编码英文在中文界面是 i18n 泄漏） -->
+              <th :aria-label="t('memberCenter.ordersColActions')"></th>
             </tr>
           </thead>
           <tbody>

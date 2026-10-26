@@ -100,6 +100,50 @@ async def test_feedback_ingest_requires_catalog_key_and_valid_message():
 
 
 @pytest.mark.asyncio
+async def test_feedback_category_and_source_are_stored_and_filterable():
+    """分诊字段（2026-10-26）：分类/来源入库、未知分类落 other、可按分类过滤。
+
+    为什么未知分类不 400：分类是**分诊辅助**，客户端版本旧于服务端时多送一个
+    枚举值不应该让整条反馈丢掉；落 other 至少还能被人工看到。
+    """
+    async with _client() as client:
+        headers = {"X-Catalog-Key": "catalog-test-key"}
+        first = await client.post(
+            "/api/v1/feedback",
+            data={"message": "支付后权益没到账", "category": "payment", "source": "member-center"},
+            headers=headers,
+        )
+        assert first.status_code == 200, first.text
+        assert first.json()["category"] == "payment"
+
+        second = await client.post(
+            "/api/v1/feedback",
+            data={"message": "界面显示错位", "category": "ui", "source": "member-center"},
+            headers=headers,
+        )
+        assert second.status_code == 200, second.text
+
+        third = await client.post(
+            "/api/v1/feedback",
+            data={"message": "未知分类也要能进来", "category": "brand-new", "source": "Bad Source!"},
+            headers=headers,
+        )
+        assert third.status_code == 200, third.text
+        assert third.json()["category"] == "other"
+        assert third.json()["source"] == ""
+
+        listing = await client.get("/api/v1/feedback", headers=_admin_headers())
+        items = {item["message_preview"]: item for item in listing.json()["items"]}
+        assert items["支付后权益没到账"]["category"] == "payment"
+        assert items["支付后权益没到账"]["source"] == "member-center"
+
+        filtered = await client.get("/api/v1/feedback?category=payment", headers=_admin_headers())
+        assert filtered.status_code == 200
+        assert filtered.json()["total"] == 1
+        assert filtered.json()["items"][0]["category"] == "payment"
+
+
+@pytest.mark.asyncio
 async def test_feedback_ingest_admin_detail_and_attachment_download():
     archive = _zip_bytes()
     async with _client() as client:

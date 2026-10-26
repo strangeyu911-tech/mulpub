@@ -18,6 +18,8 @@ async def ingest_feedback(
     client_id: str = Form(""),
     app_version: str = Form(""),
     platform: str = Form(""),
+    category: str = Form(""),
+    source: str = Form(""),
     log_archive: UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
     _key: None = Depends(require_catalog_key),
@@ -35,6 +37,8 @@ async def ingest_feedback(
             client_id=client_id,
             app_version=app_version,
             platform=platform,
+            category=category,
+            source=source,
             log_archive=log_archive,
         )
     except ValueError as exc:
@@ -45,10 +49,11 @@ async def ingest_feedback(
 async def list_feedback(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    category: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_admin),
 ):
-    return await feedback_service.list_feedback(db, limit, offset)
+    return await feedback_service.list_feedback(db, limit, offset, category)
 
 
 @router.get("/api/v1/feedback/{feedback_id}")

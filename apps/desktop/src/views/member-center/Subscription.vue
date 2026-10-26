@@ -94,6 +94,12 @@
       </ul>
     </section>
 
+    <!-- 降档说明（P1-b / 产品裁决：不支持自助降档）。刻意是纯文案不是按钮——
+         按钮会暗示「点了能降」，那是假承诺。 -->
+    <p class="member-center-downgrade-hint" data-testid="member-center-downgrade-hint">
+      {{ t('memberCenter.planDowngradeHint') }}
+    </p>
+
     <!-- 激活码兑换（2026-10-24 从壳层迁入） -->
     <section class="member-center-redeem" data-testid="member-center-redeem">
       <h3 class="member-center-plans-title">{{ t('memberCenter.redeemTitle') }}</h3>
@@ -147,7 +153,7 @@ import { useI18n } from 'vue-i18n'
 import { useIdentityStore } from '@/stores/identity'
 import { useMemberStore } from '@/stores/member'
 import { onIdentityStateChanged } from '@/api/identity'
-import { featureLabelOf, formatExpiresAt, graceState, planLabelOf } from './labels'
+import { featureLabelOf, formatExpiresAt, graceState, planLabelOf, planRankOf } from './labels'
 import { REDEEM_CODE_MAX_LENGTH, REDEEM_CODE_PATTERN, REDEEM_ERR_FORMAT_LOCAL, normalizeRedeemInput } from './constants'
 
 // 异步组件：弹窗只在用户点「购买」后才需要。同步 import 会让会员中心的每次挂载
@@ -175,15 +181,6 @@ const currentRank = computed(() => {
   const rank = entitlement.value?.limits?.plan_rank
   return Number.isInteger(rank) ? rank : null
 })
-
-function planRankOf(planId) {
-  // 服务端 plans catalog 与 PLAN_RANK 同序（free/standard/pro）。
-  // 这里只做 id→rank 的保守映射；未知 id 返回 null（不可购买、不标当前）。
-  if (planId === 'free') return 0
-  if (planId === 'standard') return 1
-  if (planId === 'pro') return 2
-  return null
-}
 
 function isCurrentPlan(planId) {
   if (currentRank.value === null) return false

@@ -51,6 +51,57 @@ describe('member store', () => {
     expect(store.sessions).toHaveLength(1)
   })
 
+  // ── is_current 归一化（2026-10-26，P0-1）────────────────────────────
+  // 服务端与主进程都会下发 is_current，但 store 的白名单归一化曾把它整字段丢掉，
+  // 导致「当前设备」徽章在生产环境永不出现。这组断言锁的就是那一层。
+  it('loadSessions 保留 is_current: true（当前设备标记必须穿透归一化）', async () => {
+    window.electronAPI = {
+      identitySessions: vi.fn().mockResolvedValue({
+        code: 0,
+        data: { sessions: [{ id: 1, device_id: 'dev-1', is_current: true }] },
+      }),
+    }
+    const store = await loadStore()
+    await store.loadSessions()
+    expect(store.sessions[0].is_current).toBe(true)
+  })
+
+  it('loadSessions 保留 is_current: false（不得因「本地能比对上」改写）', async () => {
+    window.electronAPI = {
+      identitySessions: vi.fn().mockResolvedValue({
+        code: 0,
+        data: { sessions: [{ id: 1, device_id: 'dev-1', is_current: false }] },
+      }),
+    }
+    const store = await loadStore()
+    await store.loadSessions()
+    expect(store.sessions[0].is_current).toBe(false)
+  })
+
+  it('loadSessions 缺 is_current 字段时保守落 false（不猜当前设备）', async () => {
+    window.electronAPI = {
+      identitySessions: vi.fn().mockResolvedValue({
+        code: 0,
+        data: { sessions: [{ id: 1, device_id: 'dev-1' }] },
+      }),
+    }
+    const store = await loadStore()
+    await store.loadSessions()
+    expect(store.sessions[0].is_current).toBe(false)
+  })
+
+  it('loadSessions 对非布尔 is_current 落 false（"true" 字符串不算当前设备）', async () => {
+    window.electronAPI = {
+      identitySessions: vi.fn().mockResolvedValue({
+        code: 0,
+        data: { sessions: [{ id: 1, device_id: 'dev-1', is_current: 'true' }] },
+      }),
+    }
+    const store = await loadStore()
+    await store.loadSessions()
+    expect(store.sessions[0].is_current).toBe(false)
+  })
+
   it('markNotificationsRead 成功后本地清零未读', async () => {
     window.electronAPI = {
       identityNotificationsMarkRead: vi.fn().mockResolvedValue({ code: 0, data: { ids: [1, 2] } }),

@@ -7,6 +7,8 @@ export function listFeedback(params = {}) {
     params: {
       limit: params.limit ?? 20,
       offset: params.offset ?? 0,
+      // 分类筛选（2026-10-26）：空/undefined 不传，服务端即不过滤。
+      ...(params.category ? { category: params.category } : {}),
     },
   }).then(response => response.data)
 }

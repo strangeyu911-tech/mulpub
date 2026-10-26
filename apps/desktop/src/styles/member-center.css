@@ -1,5 +1,28 @@
 /* 会员中心共享样式（七栏壳与子视图共用，避免 scoped 样式跨组件失效与色值字面量扩散） */
 
+/* 单栏容器（未登录空态 / 身份服务未启用）。
+   这两处模板一直引用 .member-center-single，但样式从未定义过——
+   等于「布局意图存在、实现丢了」（P2 遗留）。补回：内容居中 + 可读宽度上限。 */
+.member-center-single {
+  display: flex;
+  justify-content: center;
+}
+
+.member-center-single > .member-center-card {
+  width: 100%;
+  max-width: 560px;
+}
+
+/* 订阅页「降档联系客服」说明（P1-b）。放在共享表而不是组件 scoped：
+   会员中心的所有 .member-center-* 视觉规则本就集中在这里，且 Subscription.vue
+   已撞 500 行门禁——新样式不该再把组件推过线。 */
+.member-center-downgrade-hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+
 .member-center-layout {
   display: flex;
   gap: var(--space-lg);

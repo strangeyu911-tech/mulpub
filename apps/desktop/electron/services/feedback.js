@@ -139,7 +139,17 @@ function collectLogArchive({ log, loggerModule = log, tempDir = os.tmpdir() } = 
   return { filePath, bytes: archive.length, fileCount: names.length }
 }
 
-async function submitFeedback({ opsCenterSync, log, message, includeLogs, appVersion, platform, loggerModule = log, tempDir } = {}) {
+/**
+ * 反馈分类白名单（与 HelpSupport.vue 的 CATEGORIES、运营中心 feedback_service 的
+ * FEEDBACK_CATEGORIES **三处同型**）。主进程这里只做「只放行已知值」的收窄，
+ * 不合法一律落 ''——分类是分诊辅助，不该因为一个字段就丢掉整条反馈。
+ */
+const FEEDBACK_CATEGORIES = new Set(['account', 'payment', 'publish', 'ai', 'ui', 'other'])
+
+/** 来源标签：区分「会员中心帮助与支持」与「设置页」两个入口。 */
+const SOURCE_PATTERN = /^[a-z0-9_-]{0,32}$/
+
+async function submitFeedback({ opsCenterSync, log, message, includeLogs, appVersion, platform, category, source, loggerModule = log, tempDir } = {}) {
   const cleanMessage = String(message || '').trim()
   if (!cleanMessage) return { code: -1, message: '反馈内容不能为空' }
   if (cleanMessage.length > MAX_MESSAGE_LENGTH) return { code: -1, message: '反馈内容过长' }
@@ -157,6 +167,11 @@ async function submitFeedback({ opsCenterSync, log, message, includeLogs, appVer
     form.set('message', cleanMessage)
     form.set('app_version', String(appVersion || '').slice(0, 64))
     form.set('platform', String(platform || '').slice(0, 32))
+    // 分诊字段（2026-10-26）：不在白名单的分类落 ''，不合法来源落 ''。
+    const cleanCategory = FEEDBACK_CATEGORIES.has(String(category || '')) ? String(category) : ''
+    if (cleanCategory) form.set('category', cleanCategory)
+    const cleanSource = SOURCE_PATTERN.test(String(source || '')) ? String(source) : ''
+    if (cleanSource) form.set('source', cleanSource)
     if (archive) {
       const bytes = fs.readFileSync(archive.filePath)
       form.set('log_archive', new Blob([bytes], { type: 'application/zip' }), 'logs.zip')

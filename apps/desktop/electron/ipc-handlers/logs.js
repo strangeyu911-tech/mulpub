@@ -50,6 +50,10 @@ function registerHandlers(ipcMain, deps) {
         loggerModule: log,
         message: data.message,
         includeLogs: data.includeLogs === true,
+        // 分诊字段透传（2026-10-26）：会员中心反馈带 category + source，
+        // 设置页的旧调用不传 ⇒ undefined ⇒ 服务端落 ''，向后兼容。
+        category: data.category,
+        source: data.source,
         appVersion,
         platform: process.platform,
       })

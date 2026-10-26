@@ -1,0 +1,61 @@
+{
+  "sha": "4729a93a0f701fc21f628d42355492e0bade869f",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 1041 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 1041,
+    "fileCount": 30,
+    "codeFileCount": 26,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 11,
+    "docSensitiveContentHits": 9,
+    "docSensitiveContentSample": [
+      "- 运营中心后端：`POST /api/v1/feedback`（`X-Catalog-Key` 鉴权）+ `GET /api/v1/feedback`（admin 分页）+ 详情 + 附件下载",
+      "| 分类 | `el-select`，6 选 1，**必填** | 账号与登录 / 支付与订单 / 发布失败 / AI 功能 / 界面与体验 / 其他 |",
+      "| `memberCenter.feedbackDiagnosticsHint` | 诊断信息不含账号密码，可放心附带。 |"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "ac58bd6bb52612f054a59ae50a7c5dca637621183196272f46af16a714f0dd03",
+  "decidedAt": "2026-10-26T04:17:58.299Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

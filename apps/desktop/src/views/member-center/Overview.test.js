@@ -54,6 +54,24 @@ describe('member-center/Overview（Phase 2 真概览）', () => {
     emitSpy.mockClear()
   })
 
+  // P1-b：升级提示必须按档位收敛。对 Pro 用户说「解锁全平台发布…」是错误陈述
+  // （用户已经拥有了），而且会让人怀疑自己的会员是不是没生效。
+  it('pro 用户不显示升级提示（已拥有，不该再被告知去解锁）', async () => {
+    const wrapper = await mountOverview(
+      { plan: 'pro', features: [], source: 'online', expiresAt: 1893456000, quota: null },
+      FREE,
+    )
+    expect(wrapper.find('[data-testid="member-center-upgrade-hint"]').exists()).toBe(false)
+  })
+
+  it('免费用户显示升级提示', async () => {
+    const wrapper = await mountOverview(
+      { plan: 'free', features: [], source: 'online', expiresAt: null, quota: null },
+      FREE,
+    )
+    expect(wrapper.find('[data-testid="member-center-upgrade-hint"]').exists()).toBe(true)
+  })
+
   it('pro entitlement：权益摘要同源显示 planPro + pro 徽标点亮', async () => {
     const wrapper = await mountOverview(
       { plan: 'pro', features: [], source: 'online', expiresAt: 1893456000, quota: null },

@@ -146,12 +146,27 @@ watch(
 )
 
 onMounted(() => {
-  // 从 URL query 读初始分区（深链浅实现：只读一次，不双向同步）
+  // 从 URL query 读初始分区（正向：URL → state）
   const section = route.query.section
   if (typeof section === 'string' && MEMBER_SECTIONS.some((s) => s.key === section)) {
     activeKey.value = section
   }
+  // 深链进来必须**同时**触发该分区的加载。
+  // 只设 activeKey 不加载的后果：刷新停在「账号与安全」时设备列表是空的，
+  // 用户看到「暂无设备」的假空态——数据在服务端明明存在（P0-2）。
+  loadForSection(activeKey.value)
 })
+
+/**
+ * 各分区的「进入即加载」动作（唯一真源）。
+ * 参数化而不是写死在 activate 里，是为了让导航点击与深链进入走**同一条**路径——
+ * 两份实现迟早只修一处。
+ */
+function loadForSection(key) {
+  if (key === 'messages') return memberStore.loadNotifications()
+  if (key === 'account') return memberStore.loadSessions()
+  return undefined
+}
 
 // 登出 / 身份服务禁用 / 切换账号（sub 变化）→ 复位 member store。
 // 不复位的后果：切号后新账号看到上个账号的会话设备与通知。
@@ -185,6 +200,26 @@ watch(activeKey, (key) => {
   routerReplace({ query: { ...route.query, section: key } })
 })
 
+/**
+ * 反向同步（state ← URL）：外部把 ?section= 改掉时必须真的切过去。
+ *
+ * 为什么必须有：Vue Router 对「同路径仅 query 变化」**复用组件实例、不重挂**，
+ * onMounted 不会再跑。缺这一条时，页面内点「升级 Pro」（它走 router.push）会
+ * 只改 URL、界面纹丝不动——正是 P0-3 那个死按钮。
+ *
+ * 防回环：上方 watch(activeKey) 写 URL 时也会进到这里，靠 key 相等早退切断。
+ */
+watch(
+  () => route.query.section,
+  (section) => {
+    if (typeof section !== 'string' || !section) return
+    if (!MEMBER_SECTIONS.some((entry) => entry.key === section)) return
+    if (section === activeKey.value) return
+    activeKey.value = section
+    loadForSection(section)
+  },
+)
+
 // 子视图（订单页空态）的导航请求。`redeem` 不是独立分区——激活码卡片常驻在订阅页上方，
 // 所以切到订阅分区即可，用户落眼就是激活码输入框。
 function onChildNavigate (key) {
@@ -193,8 +228,7 @@ function onChildNavigate (key) {
 
 function activate(key) {
   activeKey.value = key
-  if (key === 'messages') memberStore.loadNotifications()
-  else if (key === 'account') memberStore.loadSessions()
+  loadForSection(key)
 }
 
 // ⚠️ 激活码核销（redeemCode / redeemResult / canSubmitRedeem / REDEEM_ERROR_KEYS /

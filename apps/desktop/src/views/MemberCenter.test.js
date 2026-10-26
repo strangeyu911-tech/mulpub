@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick, reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 vi.mock('vue-i18n', () => ({
@@ -18,7 +19,9 @@ const MemberViewsStub = new Proxy({}, {
 vi.mock('./member-center/views', () => ({ MEMBER_VIEWS: MemberViewsStub }))
 
 const routerPush = vi.fn()
-const routeQuery = {}
+// 响应式：P0-3 的 URL→state 同步靠 watch(route.query.section)，
+// 普通对象在测试里改了也不会触发 watcher，会造出「测试没覆盖」的假象。
+const routeQuery = reactive({})
 const routerReplace = vi.fn()
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: routerPush, replace: routerReplace }),
@@ -78,6 +81,10 @@ function setAuthenticatedIdentity(identityStore, overrides = {}) {
 describe('MemberCenter', () => {
   let identityStore
 
+  beforeEach(() => {
+    delete routeQuery.section
+  })
+
   afterEach(() => {
     delete window.electronAPI
   })
@@ -116,6 +123,36 @@ describe('MemberCenter', () => {
     await wrapper.get('[data-testid="member-center-nav-account"]').trigger('click')
     expect(wrapper.find('[data-testid="member-view-stub-Overview"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="member-view-stub-AccountSecurity"]').exists()).toBe(true)
+  })
+
+  // ── P0-2：深链进入必须触发该分区的加载（否则是假空态）──────────────
+  it('深链 ?section=account 首屏加载设备并渲染该分区', async () => {
+    routeQuery.section = 'account'
+    const { wrapper, memberStore } = await mountMemberCenter()
+    identityStore = (await import('@/stores/identity')).useIdentityStore()
+    setAuthenticatedIdentity(identityStore)
+    await wrapper.vm.$nextTick()
+    await nextTick()
+    expect(wrapper.find('[data-testid="member-view-stub-AccountSecurity"]').exists()).toBe(true)
+    expect(memberStore.loadSessions).toHaveBeenCalled()
+  })
+
+  // ── P0-3：页面内 query 变化必须真的切 tab ────────────────────────────
+  // 断言的**不是** router.push 被调用（那只能证明「意图发生了」），
+  // 而是订阅分区真的渲染出来——升级 CTA 死按钮正是从这个缝里漏掉的。
+  it('页面内 route.query.section 变化会真的切到对应分区', async () => {
+    const { wrapper } = await mountMemberCenter()
+    identityStore = (await import('@/stores/identity')).useIdentityStore()
+    setAuthenticatedIdentity(identityStore)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="member-view-stub-Overview"]').exists()).toBe(true)
+
+    routeQuery.section = 'subscription'
+    await nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="member-view-stub-Subscription"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="member-view-stub-Overview"]').exists()).toBe(false)
   })
 
   it('消息栏激活时加载并渲染通知列表', async () => {

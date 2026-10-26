@@ -5,10 +5,28 @@
         <h1>用户反馈</h1>
         <span class="page-count">共 {{ total }} 条</span>
       </div>
-      <el-button type="primary" :loading="loading" @click="loadFeedback">
-        <el-icon><Refresh /></el-icon>
-        刷新
-      </el-button>
+      <div class="header-actions">
+        <!-- 分类筛选（2026-10-26）：运营按问题类型分诊，避免在长列表里逐条翻 -->
+        <el-select
+          v-model="categoryFilter"
+          placeholder="全部分类"
+          clearable
+          class="category-filter"
+          @change="handleCategoryChange"
+        >
+          <el-option label="全部分类" value="" />
+          <el-option
+            v-for="option in CATEGORY_OPTIONS"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+        <el-button type="primary" :loading="loading" @click="loadFeedback">
+          <el-icon><Refresh /></el-icon>
+          刷新
+        </el-button>
+      </div>
     </div>
 
     <el-alert
@@ -36,6 +54,16 @@
       >
         <el-table-column prop="created_at" label="提交时间" width="188">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column label="分类" width="120">
+          <template #default="{ row }">
+            <el-tag
+              v-if="row.category"
+              size="small"
+              :type="categoryTagType(row.category)"
+            >{{ categoryLabel(row.category) }}</el-tag>
+            <span v-else class="muted">未分类</span>
+          </template>
         </el-table-column>
         <el-table-column label="消息摘要" min-width="300">
           <template #default="{ row }">
@@ -91,6 +119,10 @@
           <el-descriptions-item label="反馈 ID">{{ detail.id }}</el-descriptions-item>
           <el-descriptions-item label="提交时间">{{ formatTime(detail.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ statusLabel(detail.status) }}</el-descriptions-item>
+        <el-descriptions-item label="分类">
+          {{ detail.category ? categoryLabel(detail.category) : '未分类' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="来源">{{ sourceLabel(detail.source) }}</el-descriptions-item>
         </el-descriptions>
 
         <el-divider content-position="left">设备信息</el-divider>
@@ -142,8 +174,22 @@ import { onMounted, ref } from 'vue'
 import { apiErrorMessage } from '../api/http'
 import { downloadFeedbackAttachment, getFeedback, listFeedback } from '../api/feedback'
 
+// 分类枚举：与桌面 HelpSupport.vue / 主进程 feedback.js / 后端
+// feedback_service.FEEDBACK_CATEGORIES 同型（四层同一份词表）。
+const CATEGORY_OPTIONS = [
+  { value: 'account', label: '账号与登录' },
+  { value: 'payment', label: '支付与订单' },
+  { value: 'publish', label: '发布失败' },
+  { value: 'ai', label: 'AI 功能' },
+  { value: 'ui', label: '界面与体验' },
+  { value: 'other', label: '其他' },
+]
+const CATEGORY_LABELS = Object.fromEntries(CATEGORY_OPTIONS.map((option) => [option.value, option.label]))
+const SOURCE_LABELS = { 'member-center': '会员中心', settings: '设置页' }
+
 const items = ref([])
 const total = ref(0)
+const categoryFilter = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
@@ -171,6 +217,7 @@ async function loadFeedback() {
     const data = await listFeedback({
       limit: pageSize.value,
       offset: (currentPage.value - 1) * pageSize.value,
+      category: categoryFilter.value,
     })
     if (requestSequence !== listRequestSequence) return
     items.value = Array.isArray(data.items) ? data.items : []
@@ -181,6 +228,26 @@ async function loadFeedback() {
   } finally {
     if (requestSequence === listRequestSequence) loading.value = false
   }
+}
+
+function categoryLabel(value) {
+  return CATEGORY_LABELS[value] || value
+}
+
+function categoryTagType(value) {
+  if (value === 'payment') return 'warning'
+  if (value === 'publish') return 'danger'
+  if (value === 'account') return 'info'
+  return 'success'
+}
+
+function sourceLabel(value) {
+  return SOURCE_LABELS[value] || value || '未知来源'
+}
+
+function handleCategoryChange() {
+  currentPage.value = 1
+  void loadFeedback()
 }
 
 function handleSizeChange(size) {
@@ -281,6 +348,14 @@ function statusLabel(status) {
 </script>
 
 <style scoped>
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.category-filter {
+  width: 160px;
+}
 .feedback-page {
   min-width: 760px;
 }

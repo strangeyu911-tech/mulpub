@@ -4,7 +4,7 @@
       <div class="member-center-card-title">{{ t('memberCenter.quotaCardTitle') }}</div>
       <div class="member-center-quota-grid">
         <div v-for="entry in quotaEntries" :key="entry.key" class="member-center-quota-item">
-          <span class="member-center-quota-label">{{ entry.key }}</span>
+          <span class="member-center-quota-label">{{ entry.label }}</span>
           <span class="member-center-quota-value">{{ entry.value }}</span>
         </div>
       </div>
@@ -19,6 +19,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useIdentityStore } from '@/stores/identity'
+import { quotaLabelOf, quotaValueText } from './labels'
 
 const { t } = useI18n()
 const identityStore = useIdentityStore()
@@ -30,7 +31,11 @@ const quotaEntries = computed(() => {
     .filter(([, value]) => value !== null && value !== undefined)
     .map(([key, value]) => ({
       key,
-      value: typeof value === 'object' ? JSON.stringify(value) : String(value),
+      // 本地化走 labels.js 的单一真源（P0-4 / C1-09）：已知键映射成中文，
+      // 未知键原样回退——服务端加新配额时不显示空白、也不把裸英文键丢给用户。
+      label: quotaLabelOf(t, key),
+      // -1 是 plan-matrix 的「不限」语义；null/undefined 上面已过滤。
+      value: quotaValueText(t, value),
     }))
 })
 </script>

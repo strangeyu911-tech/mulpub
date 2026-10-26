@@ -378,3 +378,33 @@ openspec 变更：`wechat-native-payment`（status: in-progress，含对上游 M
 - [ ] 【v4】UpgradeModal 退役时三个 locale 键（paymentChannelUnavailable / activationCodeMigrated / trialUnavailable）zh/en 成对删除。
 - [ ] 【v4】graceUntil 存在时权益卡显示宽限期中性态；`paymentChannelUnavailable` 假陈述文案随 modal 退役删除。
 - [ ] 【v4】支付成功回调后权益刷新有兜底（load() 返回 false 时不停留在「支付成功但显示免费版」）。
+
+---
+
+## 11. 2026-10-26 复核补充（Phase 1-3 合并后的第二次现况核查）
+
+> 本节由**逐文件复核主干代码**得出，不是对 10-19 结论的照抄。前序四个 PR（#4395 / #4428 / #4448 / #4461）与后续 #4474 合并后，仍有三个缺陷**在代码层真实存在**，且都属于「看起来做完了、实际没生效」型。
+
+### 11.1 新发现（已在本轮修复，见 `openspec/changes/member-center-feedback-and-fixes/`）
+
+| 编号 | 缺陷 | 证据 | 逃逸原因 |
+| --- | --- | --- | --- |
+| P0-1′ | `is_current` 被 store 白名单整字段丢弃 ⇒ 当前设备徽章**从未显示**，且**始终**显示「未能识别当前设备」 | `stores/member.js` 的 `normalizeSession` 返回字段不含 `is_current`；`AccountSecurity.vue` 读的正是它 | `AccountSecurity.test.js` mock 掉整个 store 直接注入 `is_current`，从未经过归一化层；`member.test.js` 对该层零字段断言 |
+| P0-2′ | 深链 `?section=account` 首屏不加载设备 ⇒ 假空态「暂无设备」 | `MemberCenter.vue` 的 `onMounted` 只设 `activeKey`，`loadSessions()` 只在 `activate()`（仅导航点击） | 无「深链进入后有数据」用例 |
+| P0-3′ | 页面内点「升级 Pro」只改 URL、界面不切换（死按钮） | 无 `watch(route.query.section → activeKey)`；同路径仅 query 变化不重挂组件 | 测试只断言 `router.push` 被调用，不断言 tab 真的切了 |
+
+### 11.2 顺带修复的 P1/P2
+
+- `UsageQuota.vue` 绕过 `labels.js` 已有的 `quotaLabelOf` / `quotaValueText` ⇒ 用户看到 `cloud_publish_monthly`、`-1`
+- `Overview.vue` 的升级提示对 Pro 用户照常显示（文案「解锁全平台发布…」）
+- `OrdersBilling.vue` 的 `aria-label="actions"` 硬编码英文
+- `.member-center-single` 被模板引用两处、样式从未定义
+
+### 11.3 产品裁决（2026-10-26）
+
+- **降档：不支持自助**。UI 只写「如需降档，请联系客服」，**不提供操作入口**——按钮会暗示「点了能降」，是假承诺。
+- **帮助与支持**：从死页改为内置反馈表单（分类 / 描述 / 联系方式 / 诊断一键复制 + 默认附带 / 可选日志），提交进入运营中心「用户反馈」，并按**分类 + 来源**分诊。
+
+### 11.4 结论
+
+`§10 DoD` 的勾选状态**不再单独可信**：它记录的是「当时代码写了什么」，不保证「今天仍然生效」。凡涉及跨层字段（服务端 → 主进程 → store → 组件）的条目，验收必须落到**端到端断言**（含归一化层），否则同类缺陷会继续从 mock 缝隙里逃逸。

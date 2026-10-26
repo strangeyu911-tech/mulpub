@@ -115,6 +115,7 @@ function apiKeyOwnerSubject(key) {
 }
 
 const { pageParams } = require("./auth/page-params");
+const { handleListSessions, handleRevokeOneSession } = require("./auth/member-session-routes");
 
 function requestPath(req) {
   return String(req && req.url ? req.url : "/").split("?", 1)[0];
@@ -951,7 +952,7 @@ class PublishApiServer {
       if (await this._handleMemberCheckout(req, res, method, url)) return;
       if (await this._handleMemberOrderDetail(req, res, method, url)) return;
       if (url === "/api/v1/me/orders" || url === "/api/v1/me/notifications" || url === "/api/v1/me/notifications/read" ||
-        url === "/api/v1/me/sessions" || url === "/api/v1/me/sessions/revoke-others" || url === "/api/v1/me/profile") {
+        url === "/api/v1/me/sessions" || url === "/api/v1/me/sessions/revoke" || url === "/api/v1/me/sessions/revoke-others" || url === "/api/v1/me/profile") {
         const commerceRepository = this._commerceRepository();
         if (!commerceRepository) { this._json(res, 503, { error: "BUSINESS_USER_REPOSITORY_NOT_CONFIGURED" }); return; }
         const userId = this._memberUserId(req);
@@ -978,12 +979,9 @@ class PublishApiServer {
             this._json(res, 200, { ids: await commerceRepository.markNotificationsRead(userId) });
             return;
           }
-          if (method === "GET" && url === "/api/v1/me/sessions") {
-            // is_current（P1-4）：X-Device-ID 命中⇒该行 true；无头/未知⇒全 false（C1-13 合法态）
-            const deviceId = this._deviceIdFrom(req);
-            this._json(res, 200, { sessions: (await commerceRepository.listActiveSessions(userId)).map((r) => ({ ...r, is_current: !!deviceId && r.device_id === deviceId })) });
-            return;
-          }
+          if (method === "GET" && url === "/api/v1/me/sessions") return handleListSessions(this, req, res, commerceRepository, userId);
+          // 单设备下线（2026-10-26）：归属校验走 SQL 条件（别人的 id ⇒ 404），不许踢当前设备
+          if (method === "POST" && url === "/api/v1/me/sessions/revoke") return handleRevokeOneSession(this, req, res, commerceRepository, userId);
           if (method === "POST" && url === "/api/v1/me/sessions/revoke-others") {
             // 只认经正则校验的 X-Device-ID：若改用未校验的 body.deviceId，任意串都无匹配会话，
             // IS DISTINCT FROM 语义下会把当前会话一起下线（自断登录态）。

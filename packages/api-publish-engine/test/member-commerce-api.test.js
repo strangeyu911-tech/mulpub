@@ -55,6 +55,17 @@ function createRepositoryStub() {
     },
     async upsertSession(record) { this.calls.push(['upsertSession', record]); return { id: 'ses-x', ...record } },
     async revokeOtherSessions(userId, keepDeviceId) { this.calls.push(['revokeOthers', userId, keepDeviceId]); return ['ses-old'] },
+    // 单设备下线（2026-10-26）：默认有一台「别人的当前设备」可按 sessionId 查到
+    async getSession(userId, sessionId) {
+      this.calls.push(['getSession', userId, sessionId])
+      if (sessionId === this.foreignSessionId) return null
+      if (sessionId === this.currentSessionId) return { id: sessionId, device_id: 'device-aaaaaaaaaaaa' }
+      return { id: sessionId, device_id: 'device-other' }
+    },
+    async revokeSession(userId, sessionId) {
+      this.calls.push(['revokeSession', userId, sessionId])
+      return [sessionId]
+    },
     async updateProfile(id, patch) { this.calls.push(['updateProfile', id, patch]); return { id, display_name: patch.display_name, avatar_url: patch.avatar_url } },
   }
 }
@@ -184,6 +195,36 @@ async function main() {
     const revoke = await request(port, 'POST', '/api/v1/me/sessions/revoke-others', 'member-write', {}, { 'X-Device-ID': 'device-aaaaaaaaaaaa' })
     assert.strictEqual(revoke.status, 200)
     assert.deepStrictEqual(revoke.body.revoked, ['ses-old'])
+    // ── 单设备下线（2026-10-26）───────────────────────────────────────
+    // 安全红线：归属不符一律 404（不是 403——403 等于确认「这个 id 真实存在」，
+    // 是一个存在性探针）；当前设备不许踢（否则自断登录态）。
+    const SID = 'ses-' + 'a'.repeat(32)
+    const revokeOne = await request(port, 'POST', '/api/v1/me/sessions/revoke', 'member-write', { sessionId: SID }, { 'X-Device-ID': 'device-aaaaaaaaaaaa' })
+    assert.strictEqual(revokeOne.status, 200, JSON.stringify(revokeOne.body))
+    assert.deepStrictEqual(revokeOne.body.revoked, [SID])
+
+    const revokeBadId = await request(port, 'POST', '/api/v1/me/sessions/revoke', 'member-write', { sessionId: 'not-a-session' }, { 'X-Device-ID': 'device-aaaaaaaaaaaa' })
+    assert.strictEqual(revokeBadId.status, 400, '形状不合法必须 400')
+    assert.strictEqual(revokeBadId.body.error, 'SESSION_ID_INVALID')
+
+    const revokeNoDevice = await request(port, 'POST', '/api/v1/me/sessions/revoke', 'member-write', { sessionId: SID })
+    assert.strictEqual(revokeNoDevice.status, 400, '缺 X-Device-ID 无法判定当前设备')
+    assert.strictEqual(revokeNoDevice.body.error, 'DEVICE_ID_REQUIRED')
+
+    // 目标就是当前设备：拒绝
+    const currentSid = 'ses-' + 'b'.repeat(32)
+    service.repository.currentSessionId = currentSid
+    const revokeCurrent = await request(port, 'POST', '/api/v1/me/sessions/revoke', 'member-write', { sessionId: currentSid }, { 'X-Device-ID': 'device-aaaaaaaaaaaa' })
+    assert.strictEqual(revokeCurrent.status, 400)
+    assert.strictEqual(revokeCurrent.body.error, 'CANNOT_REVOKE_CURRENT_DEVICE')
+
+    // 别人的会话：404（不泄露存在性）
+    const foreignSid = 'ses-' + 'c'.repeat(32)
+    service.repository.foreignSessionId = foreignSid
+    const revokeForeign = await request(port, 'POST', '/api/v1/me/sessions/revoke', 'member-write', { sessionId: foreignSid }, { 'X-Device-ID': 'device-aaaaaaaaaaaa' })
+    assert.strictEqual(revokeForeign.status, 404, '不属于自己的会话必须 404')
+    assert.strictEqual(revokeForeign.body.error, 'SESSION_NOT_FOUND')
+
     const profile = await request(port, 'PATCH', '/api/v1/me/profile', 'member-write', { displayName: '新名字' })
     assert.strictEqual(profile.status, 200)
     assert.strictEqual(profile.body.user.displayName, '新名字')

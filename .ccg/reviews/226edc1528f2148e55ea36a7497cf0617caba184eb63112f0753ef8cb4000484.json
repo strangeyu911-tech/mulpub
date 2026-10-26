@@ -1,0 +1,64 @@
+{
+  "sha": "ba223285a115db556df4b5cfc1f836295b87cde1",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 281 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 281,
+    "fileCount": 18,
+    "codeFileCount": 14,
+    "sensitivePathHits": [
+      "packages/api-publish-engine/src/auth/member-session-routes.js",
+      "packages/api-publish-engine/src/auth/postgres-commerce-store.js"
+    ],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 5,
+    "docSensitiveContentSample": [
+      "UPDATE identity_user_sessions SET revoked_at = NOW()",
+      "SELECT ... FROM identity_user_sessions WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL",
+      "UPDATE identity_user_sessions SET revoked_at = NOW()"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "226edc1528f2148e55ea36a7497cf0617caba184eb63112f0753ef8cb4000484",
+  "decidedAt": "2026-10-26T09:13:20.727Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

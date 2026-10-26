@@ -444,6 +444,16 @@ class CommerceMethods {
     return result.rows || []
   }
 
+  /** 单条会话（归属校验写在 WHERE：别人的 id 查不到 ⇒ 上层 404，不泄露存在性）。 */
+  async getSession(userId, sessionId) {
+    const r = await this.pool.query(`SELECT id, device_id, device_name, created_at, last_seen_at FROM identity_user_sessions WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`, [sessionId, userId])
+    return (r.rows || [])[0] || null
+  }
+  /** 作废单条会话；revoked_at IS NULL ⇒ 并发重复点击幂等（第二次 0 行）。 */
+  async revokeSession(userId, sessionId) {
+    const r = await this.pool.query(`UPDATE identity_user_sessions SET revoked_at = NOW() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL RETURNING id`, [sessionId, userId])
+    return (r.rows || []).map((row) => row.id)
+  }
   async revokeOtherSessions(userId, keepDeviceId) {
     const result = await this.pool.query(
       `UPDATE identity_user_sessions SET revoked_at = NOW()

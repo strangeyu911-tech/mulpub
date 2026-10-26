@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { reactive, ref } from 'vue'
 
@@ -35,6 +35,8 @@ const memberCtx = reactive({
   loading: false,
   error: null,
   revokeOtherSessions: vi.fn(async () => 1),
+  // 单设备下线（2026-10-26）
+  revokeSession: vi.fn(async () => true),
 })
 vi.mock('@/stores/member', () => ({
   useMemberStore: () => memberCtx,
@@ -145,5 +147,43 @@ describe('member-center/AccountSecurity', () => {
       const rows = wrapper.findAll('.member-center-list-item')
       expect(rows[0].text()).not.toContain('memberCenter.currentDevice')
     })
+  })
+})
+
+describe('单设备下线（逐行下线）', () => {
+  const CURRENT = 'ses-' + 'a'.repeat(32)
+  const OTHER = 'ses-' + 'b'.repeat(32)
+
+  beforeEach(() => {
+    memberCtx.error = null
+    memberCtx.revokeSession = vi.fn(async () => true)
+    memberCtx.sessions = [
+      { id: CURRENT, deviceId: 'dev-cur', deviceName: '我的笔记本', is_current: true, lastSeenAt: '2026-10-24T00:00:00Z' },
+      { id: OTHER, deviceId: 'dev-old', deviceName: '旧笔记本', is_current: false, lastSeenAt: '2026-10-20T00:00:00Z' },
+    ]
+  })
+
+  it('当前设备行不渲染「下线」按钮，其他设备行渲染', async () => {
+    const wrapper = await mountAccountSecurity()
+    expect(wrapper.find('[data-testid="session-revoke-' + CURRENT + '"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="session-revoke-' + OTHER + '"]').exists()).toBe(true)
+  })
+
+  it('点「下线」把该行会话 id 交给 store，并显示成功提示', async () => {
+    const wrapper = await mountAccountSecurity()
+    await wrapper.get('[data-testid="session-revoke-' + OTHER + '"]').trigger('click')
+    await flushPromises()
+
+    expect(memberCtx.revokeSession).toHaveBeenCalledWith(OTHER)
+    expect(wrapper.get('[data-testid="session-revoke-one-result"]').text()).toBe('memberCenter.sessionsRevokeOneSuccess')
+  })
+
+  it('store 返回 false 时不显示成功提示（失败不能伪装成成功）', async () => {
+    memberCtx.revokeSession = vi.fn(async () => false)
+    const wrapper = await mountAccountSecurity()
+    await wrapper.get('[data-testid="session-revoke-' + OTHER + '"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="session-revoke-one-result"]').exists()).toBe(false)
   })
 })

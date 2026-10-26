@@ -336,6 +336,11 @@
   list-style: none;
 }
 
+/* 单设备下线按钮（2026-10-26）：不参与 flex 拉伸，避免把设备名挤成两行 */
+.member-center-session-revoke {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 .member-center-list-item {
   display: flex;
   align-items: flex-start;

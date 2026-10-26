@@ -240,8 +240,9 @@ describe('preload 子模块方法数', () => {
 
   // 两处各自把总键数从 339 推到 340：#4202 加 onOfflineLost（离线横幅），
   // 本 PR 加 renderAiVideoCapabilities（视频能力查询）⇒ 合并后为 341。
-  it('合并后 api 总键数应为 341（2026-10-24：= 339 + onOfflineLost(#4202) + renderAiVideoCapabilities；339 = 2026-10-20 338 + aiRewriteCancel）', () => {
-    expect(Object.keys(api).length).toBe(341)
+  // 2026-10-26：+ identitySessionsRevokeOne（单设备下线）⇒ 342。
+  it('合并后 api 总键数应为 342（2026-10-26：= 341 + identitySessionsRevokeOne；341 = 2026-10-24 339 + onOfflineLost(#4202) + renderAiVideoCapabilities；339 = 2026-10-20 338 + aiRewriteCancel）', () => {
+    expect(Object.keys(api).length).toBe(342)
     // 新键必须真实存在于聚合入口，防止「改了数字但方法没接上」
     expect(Object.keys(api)).toContain('identityRedeemCode')
     expect(Object.keys(api)).toContain('historyGetRepublishSnapshot')

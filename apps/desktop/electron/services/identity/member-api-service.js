@@ -30,6 +30,9 @@ const ME_API_PATHS = new Map([
   ['/api/v1/me/checkout', { methods: ['POST'] }],
   // 订单列表（会员中心「订单与账单」页）。只读；分页由服务端 limit 固定 50。
   ['/api/v1/me/orders', { methods: ['GET'] }],
+  // 单设备下线（2026-10-26）：路径固定、目标 sessionId 放 body —— 与
+  // /me/sessions/revoke-others 同形态，不打穿「参数不得含 /」的前缀白名单。
+  ['/api/v1/me/sessions/revoke', { methods: ['POST'] }],
 ])
 
 /**

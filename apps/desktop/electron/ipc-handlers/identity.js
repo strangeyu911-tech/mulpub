@@ -82,9 +82,13 @@ function registerIdentityHandlers(ipcMain, deps = {}) {
       // body 白名单：renderer 只能贡献 `code` 这一个字符串字段，其余键一律丢弃。
       // ME_API_PATHS 已经锁死路径与方法，这里再锁 body 形状——两层都要有，
       // 因为 renderer 是不可信输入源，将来加字段时也不该顺手把整包透传上去。
-      const body = method && method !== 'GET'
-        ? { code: payload && typeof payload.code === 'string' ? payload.code : '' }
-        : undefined
+      // body 白名单：默认只允许 `code`（激活码）。新增通道用 buildBody 显式声明
+      // 自己的形状——绝不整包透传（renderer 是不可信输入源）。
+      const body = options.buildBody
+        ? options.buildBody(payload)
+        : (method && method !== 'GET'
+          ? { code: payload && typeof payload.code === 'string' ? payload.code : '' }
+          : undefined)
       const response = await memberApiService.request({ subject, path: apiPath, method, body })
       // 归一化钩子（当前只用于设备会话的 is_current 打标）：放在 IPC 边界做，
       // 渲染层因此永远拿不到"需要猜顺序"的原始列表。normalize 抛错时
@@ -102,6 +106,11 @@ function registerIdentityHandlers(ipcMain, deps = {}) {
   // 传了会让 payload 多出 method/body 两个键，改变既有 IPC 响应形状。
   ipcMain.handle('identity:sessions', memberApiHandler('/api/v1/me/sessions', undefined, { normalize: markCurrentSession }))
   ipcMain.handle('identity:sessions-revoke-others', memberApiHandler('/api/v1/me/sessions/revoke-others'))
+  // 单设备下线（2026-10-26）：只允许 sessionId 一个字符串字段。
+  ipcMain.handle('identity:sessions-revoke-one', memberApiHandler('/api/v1/me/sessions/revoke', 'POST', {
+    requireSubject: true,
+    buildBody: (payload) => ({ sessionId: payload && typeof payload.sessionId === 'string' ? payload.sessionId : '' }),
+  }))
   ipcMain.handle('identity:notifications', memberApiHandler('/api/v1/me/notifications'))
   ipcMain.handle('identity:notifications-mark-read', memberApiHandler('/api/v1/me/notifications/read'))
   // 激活码核销。成功响应里的 idempotent / plan / periodEnd 必须原样回传渲染层：

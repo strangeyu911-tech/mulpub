@@ -419,3 +419,14 @@ openspec 变更：`wechat-native-payment`（status: in-progress，含对上游 M
 - 旧服务端无 `total`/`hasMore` 时主进程本地兜底
 
 **仍然未做**：单设备下线（服务端只有 `revoke-others`，缺按会话作废的单设备端点）。
+
+### 11.6 2026-10-26 后续补做：单设备下线
+
+§11.5 结尾记的「仍然未做：单设备下线」已落地（`member-center-session-revoke`）：
+
+- 服务端 `POST /api/v1/me/sessions/revoke`（body `{ sessionId }`）——沿用 `revoke-others` 的「动词后缀 + body 带参」形态，不打穿「参数不得含 `/`」的前缀白名单
+- **归属校验写进 SQL 条件**：别人的会话 id 一律 404（不用 403，避免存在性探针）
+- **拒绝下线当前设备**（400 `CANNOT_REVOKE_CURRENT_DEVICE`）：否则误点即自断登录态；UI 同时不为当前设备渲染按钮
+- 渲染层每台非当前设备一个「下线」按钮；成功后重拉列表（以服务端为准，不本地删行）
+
+**顺带修掉同类缺陷**：`normalizeSession` 把会话 `id` 强转 `Number`，而真实主键是 `ses-<hex>` 字符串 ⇒ id 变 null，下线拿不到目标。已改为字符串优先。

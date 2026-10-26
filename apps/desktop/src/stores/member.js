@@ -24,7 +24,12 @@ function normalizeNotification(row) {
 function normalizeSession(row) {
   const source = row && typeof row === 'object' ? row : {}
   return {
-    id: Number.isFinite(Number(source.id)) ? Number(source.id) : null,
+    // 会话主键在服务端是 'ses-<32位hex>' 字符串（sessionRecordId 派生）。
+    // 旧写法 `Number.isFinite(Number(source.id))` 对字符串求值得 NaN ⇒ id 变成 null，
+    // 单设备下线就拿不到目标 id（点了没反应）。字符串优先、数字向后兼容。
+    id: typeof source.id === 'string' && source.id
+      ? source.id
+      : (Number.isFinite(Number(source.id)) ? Number(source.id) : null),
     deviceId: typeof source.device_id === 'string' ? source.device_id.slice(0, 200) : null,
     deviceName: typeof source.device_name === 'string' ? source.device_name.slice(0, 100) : null,
     createdAt: typeof source.created_at === 'string' || typeof source.created_at === 'number' ? source.created_at : null,
@@ -128,6 +133,22 @@ export const useMemberStore = defineStore('member', () => {
     })
   }
 
+  /**
+   * 单设备下线（2026-10-26）。
+   * 服务端按「会话归属」校验（别人的 id ⇒ 404），当前设备会被服务端 400 拒绝；
+   * 渲染层两层防护：当前设备那行按钮置灰 + 这里再挡一次。
+   * 成功后重拉列表——以服务端为准，不本地删行（那只是「看起来下线了」）。
+   */
+  async function revokeSession(sessionId) {
+    if (typeof sessionId !== 'string' || !sessionId) return false
+    const response = await safeInvoke('identitySessionsRevokeOne', { sessionId }, (code) => { error.value = code })
+    if (response === null) return false
+    if (!responseOk(response)) { setError(response); return false }
+    error.value = null
+    await loadSessions()
+    return true
+  }
+
   async function revokeOtherSessions() {
     const response = await safeInvoke('identitySessionsRevokeOthers', undefined, (code) => { error.value = code })
     if (response === null) return false
@@ -172,6 +193,6 @@ export const useMemberStore = defineStore('member', () => {
   return {
     notifications, unreadCount, sessions, error, loading,
     loadNotifications, markNotificationsRead,
-    loadSessions, revokeOtherSessions, redeemCode, $reset,
+    loadSessions, revokeSession, revokeOtherSessions, redeemCode, $reset,
   }
 })

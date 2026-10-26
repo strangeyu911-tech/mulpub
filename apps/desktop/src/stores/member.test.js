@@ -102,6 +102,21 @@ describe('member store', () => {
     expect(store.sessions[0].is_current).toBe(false)
   })
 
+  // 单设备下线（2026-10-26）暴露的同类缺陷：真实会话主键是 'ses-<hex>' 字符串，
+  // 旧归一化强转 Number 会得 NaN ⇒ id 变 null ⇒ 下线按钮拿不到目标。
+  it('loadSessions 保留字符串型会话 id（ses-<hex>），不强转数字', async () => {
+    const sid = 'ses-' + 'a'.repeat(32)
+    window.electronAPI = {
+      identitySessions: vi.fn().mockResolvedValue({
+        code: 0,
+        data: { sessions: [{ id: sid, device_id: 'dev-1' }] },
+      }),
+    }
+    const store = await loadStore()
+    await store.loadSessions()
+    expect(store.sessions[0].id).toBe(sid)
+  })
+
   it('markNotificationsRead 成功后本地清零未读', async () => {
     window.electronAPI = {
       identityNotificationsMarkRead: vi.fn().mockResolvedValue({ code: 0, data: { ids: [1, 2] } }),

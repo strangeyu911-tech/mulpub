@@ -236,6 +236,11 @@ async def ingest_usage_events(db: AsyncSession, body: dict) -> dict:
             row["charge_status"] = CHARGE_STATUS_NOT_APPLICABLE
             row["charge_error"] = ""
         else:
+            # ⚠ `ambiguous_specs` 收集「因 spec 歧义被排除」的卡：
+            #   同一 model 下有多档价、而事件**没带 spec** ⇒ 这批卡全都不用（缺价告警）
+            #   ⇒ 把原因一并报出来，否则告警只会说「缺 per_second 的价」，
+            #   看不出真因是「上游/桌面端没传 spec」。
+            ambiguous_specs: List[str] = []
             cards = await load_effective_cards(
                 db,
                 provider_id=str(row["provider_id"]),
@@ -243,6 +248,7 @@ async def ingest_usage_events(db: AsyncSession, body: dict) -> dict:
                 category=str(row["action_type"] or row["category"]),
                 spec=str(row["spec"]),
                 quality_tier=str(row["quality_tier"]),
+                ambiguous_specs=ambiguous_specs,
             )
             counts = token_counts_from_event(row)
             result = compute_cost_micros(cards, counts)
@@ -254,14 +260,17 @@ async def ingest_usage_events(db: AsyncSession, body: dict) -> dict:
             if result.has_missing_price:
                 # ⚠ 缺价必须**被点名**：静默算 0 看起来像「免费」。
                 missing_price.extend(result.missing_units)
-                missing_detail.append(
-                    {
-                        "event_id": row["event_id"],
-                        "provider_id": row["provider_id"],
-                        "model": row["model"],
-                        "missing_units": list(result.missing_units),
-                    }
-                )
+                detail: Dict[str, object] = {
+                    "event_id": row["event_id"],
+                    "provider_id": row["provider_id"],
+                    "model": row["model"],
+                    "missing_units": list(result.missing_units),
+                }
+                if ambiguous_specs:
+                    # ⚠ 「缺维度」与「没建卡」是**两种缺价**，处置不同：前者补上 spec 即可，
+                    #   后者要建卡 ⇒ 必须分开报，否则运营会去建卡（建了也没用）。
+                    detail["ambiguous_specs"] = sorted(set(ambiguous_specs))
+                missing_detail.append(detail)
             # ── 扣分状态（唯一真源：resolve_charge_state）──
             row["charge_status"], row["charge_error"] = resolve_charge_state(
                 byok=bool(row.get("byok")),
@@ -298,6 +307,11 @@ async def ingest_usage_events(db: AsyncSession, body: dict) -> dict:
         "ingested": ingested,
         "duplicate": duplicate,
         "missing_price": sorted(set(missing_price)),
+        # ⚠ 缺价的**结构化诊断**（限量 20 条，与日志同量）。
+        #   为什么要结构化：缺价有两种真因 ——「事件没带 spec（补上即可）」与「没建卡（要建卡）」
+        #   ⇒ 处置完全不同 ⇒ 只有分开报，运营才知道该做什么。
+        #   之前只进日志 ⇒ 调用方（未来的官方算力代理）拿不到 ⇒ 无法据此给用户可操作提示。
+        "missing_detail": missing_detail[:20],
         # 待扣条数（可观测：事件落库后有多少笔等着补扣执行体去扣）
         "charge_pending": sum(
             1 for r in validated if r.get("charge_status") == CHARGE_STATUS_PENDING

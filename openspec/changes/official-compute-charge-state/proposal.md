@@ -47,7 +47,7 @@
 - **桌面端**：
   - `electron/services/usage-reporter.js`（`setOwnerSubjectProvider` + 事件带 `user_id`）
   - `electron/bootstrap/phase3-services.js`（挂 provider）
-  - `electron/bootstrap.js`（把 `ctx.usageReporter` 传给 phase3）
+  - `electron/bootstrap.js`（把 `context.usageReporter` 传给 phase3）
   - `electron/services/usage-reporter.test.js`（+2 例）、`electron/bootstrap/phase3-services.test.js`（+1 例）
 - **文档**：`01-docs/PRD-OFFICIAL-COMPUTE-CHARGE-STATE-2026-10-25.md`（口径 / 判定顺序 / 9 条数据校验 / 11 条验收 / 8 条遗留边界）
 - **不触碰**：扣分端点（#4458 已做）、价格卡、会员定价、发放链路、任何用户可见界面与文案

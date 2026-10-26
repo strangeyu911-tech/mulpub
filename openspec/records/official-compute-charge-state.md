@@ -8,7 +8,7 @@ date: 2026-10-25
 
 | 门禁 | 状态 | Fresh 证据 |
 |------|------|-----------|
-| 变更类型与隔离 | 混合 PR（运行时代码 + 文档） | worktree `mp-worktrees/mp-official-compute-charge-trigger`、裸分支 `official-compute-charge-state`；`classify-docs-only` ⇒ docs-only=false |
+| 变更类型与隔离 | 混合 PR（运行时代码 + 文档） | worktree `mp-worktrees/mp-official-compute-charge-trigger`、裸分支 `official-compute-charge-trigger`；`classify-docs-only` ⇒ docs-only=false |
 | 第一性原因（QM-5 ①） | 通过 | 回源码逐条核对三件事：① `ModelUsageEvent` 没有任何「该不该扣」的字段；② `credit_consume_service.consume_credit` 的 `ref_id` 契约写着「= `model_usage_events.id`」⇒ 事件表必须能承载扣分流程；③ ⚠ **`POST /api/v1/usage/events` 只认静态 `X-Catalog-Key`，请求里没有任何用户身份** ⇒ 事件体的 `user_id` 是**客户端自称**的 ⇒ 拿它扣分 = 允许恶意客户端扣别人的积分 |
 | 逃逸分析（QM-5 ②） | 已封 | **安全锁**：客户端来源**绝不可**进入 `pending`（2 条纯函数断言 + 1 条集成断言）；变异 **M1 去掉来源判定 ⇒ 立刻红**。另有 M2 BYOK / M3 缺价 / M4 成本 0 / M5 迁移少列 / M6 不报 user_id / M7 不挂 provider —— **7 组变异全部被抓住** |
 | 修复 + 回归保护（QM-5 ④） | 通过 | 服务端：`models_credit` 补 11 列 + 5 状态常量 + 2 来源常量；`usage_event_service.resolve_charge_state()` **纯函数**（客户端入口与将来的代理入口共用一份）；`credit_usage_event_migration` 幂等 ALTER；响应带 `charge_pending` / `charge_unbillable` 读数。桌面端：`usage-reporter.setOwnerSubjectProvider()` 后绑定 + 事件带 `user_id`；phase3 挂同一个 provider |

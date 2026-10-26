@@ -32,12 +32,12 @@
 
 - [x] `electron/services/usage-reporter.js`：`setOwnerSubjectProvider()` + 事件带 `user_id`（拿不到留空）
 - [x] `electron/bootstrap/phase3-services.js`：挂 provider（后绑定）+ `startServices` 签名加 `usageReporter`
-- [x] `electron/bootstrap.js`：传 `usageReporter: ctx.usageReporter`
+- [x] `electron/bootstrap.js`：传 `usageReporter: context.usageReporter`
 
 ## 4. 验证
 
 - [x] ops-center 定向：`pytest tests/test_usage_event_charge_state.py tests/test_usage_event_service.py` ⇒ **25/25 绿**
-- [x] 桌面端定向：`usage-reporter.test.js` + `phase3-services.test.js` ⇒ **49/49 绿**
+- [x] 桌面端定向：`usage-reporter.test.js` + `phase3-services.test.js` ⇒ **52/52 绿**
 - [x] **变异验证 7 组全部 CAUGHT**（M1 来源判定 / M2 BYOK / M3 缺价 / M4 成本 0 / M5 迁移少列 / M6 不报 user_id / M7 不挂 provider）
 - [x] 仓内门禁：`check-max-lines` / `check-debt-budget` / `check-no-brand-residue` / `check-doc-abs-paths` / `check-gate-record-debt` / `check-pr-exec-record`
 - [x] 两口径 numstat 逐文件相等；U+FFFD 全文扫描 = 0

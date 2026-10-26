@@ -208,6 +208,7 @@ async def load_effective_cards(
     at: Optional[str] = None,
     spec: str = "",
     quality_tier: str = "",
+    ambiguous_specs: Optional[List[str]] = None,
 ) -> Dict[str, PriceCard]:
     """加载某 provider/model/category 在时刻 `at` 生效的价格卡。
 
@@ -216,6 +217,16 @@ async def load_effective_cards(
 
     生效判定：`effective_from <= at` 且（`effective_to` 为空 或 `effective_to > at`）。
     同一 unit 命中多条时取 `effective_from` 最新的一条。
+
+    ⚠️ **缺维度即报错**（同 model 多档价时，调用方必须传真实 `spec`）：
+    同一个 `model_id` 下存在 **≥2 个不同 spec** 的卡，而调用方**没传 spec** 时，
+    这批卡**一个都不参与匹配** ⇒ 落进 `missing_units` ⇒ **缺价告警**。
+    理由：按 `effective_from` 挑一张 = **拿别的规格的价冒充**
+    （H3 768P ¥0.50/秒 vs 2K ¥0.80/秒 ⇒ 差 60%），而缺价告警是可见的、错账是不可见的。
+    ⇒ **通用卡（`spec` 为空串）不受影响** —— 它的语义就是「一价通吃」。
+    ⚠️ 这条同时意味着：**日桶回算（`model_usage_daily` 结构上没有 model/spec 维度）
+    对「同模型多档价」的场景结构性不可用** ⇒ 官方算力成本账**必须走事件级**
+    （`model_usage_events` 有 model/spec/duration_seconds）。
     """
     moment = at or _now_iso()
     rows = (
@@ -237,6 +248,25 @@ async def load_effective_cards(
         return True
 
     candidates = [c for c in rows if _dim_ok(c)]
+    # ⚠️ **缺维度即报错**：调用方没传 spec，而同 model 下有多档价 ⇒ 这批卡全都不用。
+    #   （详见 docstring；`ambiguous_specs` 供调用方把「因歧义被排除」的原因报出来。）
+    if not spec:
+        specs_by_model: Dict[str, set] = {}
+        for c in candidates:
+            if c.spec:
+                specs_by_model.setdefault(c.model_id, set()).add(c.spec)
+        ambiguous = {mid for mid, specs in specs_by_model.items() if len(specs) >= 2}
+        if ambiguous:
+            kept: List[ModelPriceCard] = []
+            for c in candidates:
+                if c.spec and c.model_id in ambiguous:
+                    if ambiguous_specs is not None:
+                        ambiguous_specs.append(
+                            "%s/%s/%s" % (provider_id, c.model_id or "*", c.spec)
+                        )
+                    continue
+                kept.append(c)
+            candidates = kept
     by_unit: Dict[str, Tuple[int, str, PriceCard]] = {}
     for card in candidates:
         if card.effective_from > moment:

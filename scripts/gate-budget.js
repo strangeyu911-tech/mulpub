@@ -101,19 +101,27 @@ function waitExitBudgetMin (text) {
 }
 
 const PROVENANCE = {
-  collectedAt: '2026-10-11T08:22:54Z',
+  // ★ 2026-10-25 重采样（probe 实跑，2026-10-25T16:06:09Z）：P3-1 接线片（#4466）落地后，
+  //   分片开始顺带采覆盖率 ⇒ 插桩开销进了观测 ⇒ 本块数值由「陈旧观测」刷新为「当前观测」。
+  //   ⚠ **预算值 45 分不动**（理由见 01-docs 的登记）：规则只规定「预算 ≥ 观测最大 × 1.5」，
+  //     而 45 ≥ 23.67 × 1.5 = 35.5 成立、且不贴脸（23.67 < 36）、探针 alarms=0
+  //     ⇒ 没有触发「必须重定数」的条件 ⇒ 不该动被执行的阈值。
+  //   ⭐ 刷新的必要性：上一版的 priorBudgetMin=30 锚着**已失效的截尾阈值**
+  //     （采样窗口已整体处于 45 分档内）⇒ 且 gate4MaxSuccessMin=29.88 让门禁余量看起来只剩 0.02 分
+  //     ⇒ 下一位读代码的人会据此误判预算的余量。
+  collectedAt: '2026-10-25T16:06:09Z',
   workflowId: '306371582',
-  events: 'push(branch=main) n=40 + pull_request n=60 合并计数（探针同口径；只算 push 面是 33）',
-  priorBudgetMin: 30,          // 采样窗口内实际生效的预算（截尾判据以它为锚）
-  currentBudgetMin: 45,        // 本次抬到的值（抬完的窗口内 censored=0 属预期）
-  gate4SuccessN: 69,
-  gate4MaxSuccessMin: 29.88,
-  censoredUnderPriorBudgetN: 9,
+  events: 'push(branch=main) n=40 / pull_request n=60',
+  priorBudgetMin: 45,          // 采样窗口内实际生效的预算（截尾判据以它为锚）；本窗口整体处于 45 分档
+  currentBudgetMin: 45,        // 预算值本次未改（规则满足、无贴脸告警）
+  gate4SuccessN: 73,
+  gate4MaxSuccessMin: 2.45,
+  censoredUnderPriorBudgetN: 0,
   censoredUnderCurrentBudgetN: 0,
-  gate4CensoredNote: '被杀样本时长截尾，只证 ≥priorBudgetMin，不进 max；抬价后的窗口内 current 档为 0 属预期',
-  shardMaxSuccessMin: 29.77,
-  gate4OverheadMaxMin: 1.38,
-  shardOverheadMaxMin: 1.38,
+  gate4CensoredNote: '被杀样本时长截尾，只证 ≥priorBudgetMin，不进 max；本采样窗口整体处于 45 分档 ⇒ 两档截尾计数均为 0 属预期（上一版窗口在 30 分档下有 9 条截尾样本，已不在本窗口内）',
+  shardMaxSuccessMin: 23.67,
+  gate4OverheadMaxMin: 1.55,
+  shardOverheadMaxMin: 1.93,
   multiplier: SAFETY_MULTIPLIER,
   remeasureCmd: 'node scripts/gate-budget-probe.js --check',
 }

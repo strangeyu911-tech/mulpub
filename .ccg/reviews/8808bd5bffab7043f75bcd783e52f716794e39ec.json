@@ -55,7 +55,7 @@
   },
   "deepReview": {
     "required": true,
-    "status": "self_play_blocked",
+    "status": "needs_revision",
     "performedBy": "self-play",
     "confidenceWeight": 0.6,
     "requiresExternalReview": [
@@ -137,6 +137,15 @@
       }
     ],
     "note": "自扮演裁决：4 条指控成立或需外部复核",
-    "at": "2026-10-24T15:39:44.374Z"
+    "at": "2026-10-24T15:39:44.374Z",
+    "closureNote": "第 2 轮人工收口：外部 critic=claude 对新 head 再出 11 条，4 条 Warning 全部 upheld 且已修 —— i1 记录把显示值当精确值写进等式（改区间陈述 + 给出精确复算路径）；i2 判据读的是截断后的 stderr（改读 rawStderr 全文、打印仍截断，一正一反两条锁 + M10/M11）；i3 第 1 轮补的正控方向写反了，样本量下限现在真进判据（正控/反控 + M16）；i4 \"有界\"只限次数不限总时长，退避是 O(n²)（新增 120s 硬上限 + 出声 + 对偶锁 + M12）。7 条 Info 亦逐条处置，见执行记录 §6。本轮 blocking 里 i1/i3/i4 是 self_play_upheld、i2 是 high_risk_requires_external，故 4729a93a0 的 honoring 通道按设计不适用（它只解\"全部为高危复核且外部判 dismissed\"）。status 改为 needs_revision 的依据是**用户人工判定**（见 humanClosure）。",
+    "humanClosure": {
+      "round": 2,
+      "authorizedBy": "user",
+      "authorizedVerbatim": "按 needs_revision 人工收口，合",
+      "authorizedAt": "2026-10-25",
+      "recordedIn": "https://github.com/Colinchiu007/mulpub/pull/4398#issuecomment-6407767644",
+      "note": "本字段由 follow-up PR 落笔，记录的是人工授权这一事实；原裁决（adjudicatedBy=self-play、confidenceWeight=0.6、blocking、findings）逐项未改。"
+    }
   }
 }

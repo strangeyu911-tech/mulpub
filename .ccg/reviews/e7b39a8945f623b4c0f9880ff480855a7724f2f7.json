@@ -51,7 +51,7 @@
   },
   "deepReview": {
     "required": true,
-    "status": "self_play_blocked",
+    "status": "needs_revision",
     "performedBy": "self-play",
     "confidenceWeight": 0.6,
     "requiresExternalReview": [],
@@ -120,6 +120,15 @@
       }
     ],
     "note": "自扮演裁决：4 条指控成立或需外部复核",
-    "at": "2026-10-24T14:52:58.323Z"
+    "at": "2026-10-24T14:52:58.323Z",
+    "closureNote": "第 1 轮人工收口：外部 critic=claude 出 11 条，其中 4 条 Warning 经裁决全部 upheld 且已修 —— i1 尾换行被补丁脚本吃掉（补回 + 形状自证锁 + M11）；i2「新档不得被悄悄扶正」那条锁让它自己声明的出路不可达（改判据 + 正控/反控 + M12）；i3 attempts=3 被称\"够用下界\"而现场自证残余失败率约 51%（抬到 5 并写明算法）；i4 HTTP 5xx 只认单空格形态（扩到 HTTP/1.1 500、HTTP/2 503 三正控 + 五负控 + M10）。本轮 status 由 self_play_blocked 改为 needs_revision 的依据是**用户人工判定**（见 humanClosure），不是 agent 自签：自扮演出口对\"成立且已修\"结构性给不出闭环值。",
+    "humanClosure": {
+      "round": 1,
+      "authorizedBy": "user",
+      "authorizedVerbatim": "按 needs_revision 人工收口，合",
+      "authorizedAt": "2026-10-25",
+      "recordedIn": "https://github.com/Colinchiu007/mulpub/pull/4398#issuecomment-6407767644",
+      "note": "本字段由 follow-up PR 落笔，记录的是人工授权这一事实；原裁决（adjudicatedBy=self-play、confidenceWeight=0.6、blocking、findings）逐项未改。"
+    }
   }
 }

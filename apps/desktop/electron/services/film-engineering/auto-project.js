@@ -227,6 +227,16 @@ function createProject (opts) {
     characterNames: Array.isArray(s.characterNames) ? s.characterNames.slice() : [],
     refPaths: Array.isArray(s.refPaths) ? s.refPaths.slice() : [],
     seconds: Number(s.seconds) || Number(plan.seconds) || 5,
+    // ★ M0′.3（2026-10-25）：逐镜镜长（吸附到可选档位）**必须落盘**。
+    //   ⚠ 为什么这一行是**本片的关键**：出片消费端（auto-runner / video-gen）读的是
+    //   **project.shots**，不是 plan.shots ⇒ 本文件的落盘白名单是**唯一的传输层**。
+    //   ⇒ 白名单里没有它 ⇒ 规划期算出的 effectiveSeconds **在传输层被丢掉**
+    //   ⇒ 出片恒读到 undefined ⇒ 回落 shot.seconds ⇒ **整个 M0′.3 是 no-op**。
+    //   ⇒ 教训（复核方抓到的）：新增字段只加在「生产者」侧 = **死字段**；
+    //   ⇒ **必须同时证明「传输层透传」与「消费端读到」**（见 auto-runner.test.js 的端到端用例）。
+    ...(Number.isFinite(Number(s.effectiveSeconds)) && Number(s.effectiveSeconds) > 0
+      ? { effectiveSeconds: Number(s.effectiveSeconds) }
+      : {}),
     status: 'pending',
     outputPath: null,
     error: null,
@@ -290,7 +300,15 @@ function readProject (opts) {
 function touchShot (shot, patch) {
   if (Object.prototype.hasOwnProperty.call(patch, 'prompt')) shot.prompt = String(patch.prompt)
   if (Object.prototype.hasOwnProperty.call(patch, 'refPaths')) shot.refPaths = patch.refPaths.map(String)
-  if (Object.prototype.hasOwnProperty.call(patch, 'seconds')) shot.seconds = Number(patch.seconds)
+  if (Object.prototype.hasOwnProperty.call(patch, 'seconds')) {
+    shot.seconds = Number(patch.seconds)
+    // ★ M0′.3（2026-10-25）：改整档时**清掉逐镜吸附镜长** ⇒ 出片回落到新的整档。
+    //   ⚠ 为什么必须清：`effectiveSeconds` 是**从台词推出**的吸附值（≤ 整档）。
+    //   ⇒ 用户把整档从 10 改成 5 而不清它 ⇒ 出片仍按 8 秒走（8 > 5）
+    //   ⇒ 违反「镜长只减不增」⇒ **必须**在改整档时让逐镜镜长一起回落。
+    //   ⇒ 语义：**用户显式选择优先于系统推导**。
+    delete shot.effectiveSeconds
+  }
   if (Object.prototype.hasOwnProperty.call(patch, 'title')) shot.title = String(patch.title)
 }
 

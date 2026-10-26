@@ -23,6 +23,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { mapWithModelBudget, withModelBudget } = require('../model-call-scheduler')
+const { resolveShotSeconds } = require('./shot-effective-seconds')
 const { emitStageStart, emitStageItem, emitStageComplete } = require('../stage-progress')
 const { resolveProviderDefaultModel } = require('../model-provider-manager')
 const {
@@ -354,7 +355,8 @@ function registerFilmVideoStages (pipelineEngine) {
           fn: (shot, index) => withModelBudget(
             { governor, type: 'video', providerId: providerCfg.providerId, model: providerCfg.model },
             () => generateShotVideo({
-              shot, index, runDir, aspect, seconds, providerCfg,
+              // ★ M0′.3：逐镜镜长（吸附到可选档位）优先于 stage 级 seconds
+              shot, index, runDir, aspect, seconds: resolveShotSeconds(shot, seconds), providerCfg,
               refMap, mediaRoot, refWarnings,
               sleep: _testSleep, download: _testDownload, log,
             }),
@@ -367,7 +369,8 @@ function registerFilmVideoStages (pipelineEngine) {
         results = []
         for (let i = 0; i < shots.length; i++) {
           results.push(await generateShotVideo({
-            shot: shots[i], index: i, runDir, aspect, seconds, providerCfg,
+            // ★ M0′.3：逐镜镜长优先（存量 corpus 镜没有 effectiveSeconds ⇒ 回落 stage 级 seconds）
+            shot: shots[i], index: i, runDir, aspect, seconds: resolveShotSeconds(shots[i], seconds), providerCfg,
             refMap, mediaRoot, refWarnings,
             sleep: _testSleep, download: _testDownload, log,
           }))

@@ -372,3 +372,35 @@ describe('F-I · auto-project · 方法论上下文的落盘口径', () => {
     expect(JSON.stringify(miss).length).toBeLessThan(1024)
   })
 })
+
+// ===== M0′.3：逐镜吸附镜长的落盘与编辑（传输层 + 「只减不增」）=====
+
+describe('auto-project · M0′.3 逐镜镜长的传输层', () => {
+  it('⭐ 落盘白名单透传 effectiveSeconds（漏了它 ⇒ 出片永远读不到）', () => {
+    const plan = fakePlan('auto-eff')
+    plan.shots[0].effectiveSeconds = 8
+    plan.shots[0].seconds = 10
+    const p = createProject({ plan, taskId: 'auto-eff', now: '2026-10-25T00:00:00.000Z' })
+    expect(p.shots[0].effectiveSeconds).toBe(8)   // ⭐ 传输层没丢
+    expect(p.shots[0].seconds).toBe(10)
+  })
+
+  it('⭐ 落盘时没有 effectiveSeconds 的镜 ⇒ **不凭空造字段**（存量形态不变）', () => {
+    const plan = fakePlan('auto-eff-2')   // 分镜没有 effectiveSeconds
+    const p = createProject({ plan, taskId: 'auto-eff-2', now: '2026-10-25T00:00:00.000Z' })
+    expect(p.shots.every((s) => s.effectiveSeconds === undefined)).toBe(true)
+  })
+
+  it('⭐ 改整档 seconds ⇒ **清掉**逐镜吸附镜长（否则镜长会 > 整档，违反「只减不增」）', () => {
+    const plan = fakePlan('auto-eff-3')
+    plan.shots[0].effectiveSeconds = 8
+    plan.shots[0].seconds = 10
+    const p = createProject({ plan, taskId: 'auto-eff-3', now: '2026-10-25T00:00:00.000Z' })
+    expect(p.shots[0].effectiveSeconds).toBe(8)
+    const r = updateShot(p, { shotIndex: 0, patch: { seconds: 5 }, mediaRoot: MEDIA_ROOT })
+    expect(r.ok).toBe(true)
+    // ⭐ 整档改成 5 后，逐镜镜长必须回落（出片按 5 走，而不是残留的 8）
+    expect(r.shot.effectiveSeconds).toBeUndefined()
+    expect(r.shot.seconds).toBe(5)
+  })
+})

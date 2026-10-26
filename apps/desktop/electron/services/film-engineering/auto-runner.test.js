@@ -586,3 +586,67 @@ describe('auto-runner · 熔断等待后能恢复', () => {
     expect(statuses.some((s) => s.state === 'normal')).toBe(true)
   })
 })
+
+// ══════════════════════════════════════════════════════════════════════════
+// M0′.3：出片**消费逐镜镜长**（吸附到可选档位），而不是用户选的整档
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('auto-runner · M0′.3 出片消费逐镜镜长', () => {
+  // ⚠️ 饱和度观测窗口是**模块级**的（进程内共享）⇒ 上一组用例留下的「饱和」会被继承
+  //   ⇒ 触发真等（最长 5 分钟）⇒ 用例挂满 10s 超时。
+  //   ⇒ 每例前必须重置（生产侧对应 `auto-start` 的重置，已在 #4446 落地）。
+  const { resetProviderSaturation } = require('../adapters/_base/provider-saturation')
+  beforeEach(() => { resetProviderSaturation('minimax') })
+
+  it('⭐ 出片用逐镜 effectiveSeconds；没有该字段的镜回落 shot.seconds（存量行为不变）', async () => {
+    const root = tmpRoot()
+    const seen = []
+    const project = makeProject(2)
+    // 第一镜：用户选 10 秒档，但台词短 ⇒ 规划期吸附到 effectiveSeconds=8
+    project.shots[0].seconds = 10
+    project.shots[0].effectiveSeconds = 8
+    const batch = { runId: 'auto/auto-1/b0', shotIds: project.shots.map((s) => s.shotId) }
+    await runAutoBatch({
+      batch, project, aiGenerator: fakeAiGenerator(), log: null,
+      deps: {
+        _testGenerateShotVideo: async ({ shot, index, runDir, seconds }) => {
+          seen.push({ index, seconds })
+          const p = path.join(runDir, shotFileName(index))
+          fs.writeFileSync(p, 'FAKE')
+          return { index, shotId: shot.shotId, success: true, path: p }
+        },
+        _testRunDir: (runId) => path.join(root, runId),
+        _testSleep: async () => {},
+      },
+      onShotProgress: () => {},
+    })
+    const first = seen.find((x) => x.index === 0)
+    const second = seen.find((x) => x.index === 1)
+    expect(first.seconds).toBe(8)    // ⭐ 逐镜 effectiveSeconds
+    expect(second.seconds).toBe(5)   // 没有 effectiveSeconds ⇒ 回落 shot.seconds
+  })
+
+  it('存量项目（逐镜没有 effectiveSeconds）⇒ 出片镜长与改动前逐字一致', async () => {
+    const root = tmpRoot()
+    const seen = []
+    const project = makeProject(2)   // 逐镜没有 effectiveSeconds（存量形态）
+    expect(project.shots.every((s) => s.effectiveSeconds === undefined)).toBe(true)
+    const batch = { runId: 'auto/auto-1/b0', shotIds: project.shots.map((s) => s.shotId) }
+    await runAutoBatch({
+      batch, project, aiGenerator: fakeAiGenerator(), log: null,
+      deps: {
+        _testGenerateShotVideo: async ({ shot, index, runDir, seconds }) => {
+          seen.push({ index, seconds })
+          const p = path.join(runDir, shotFileName(index))
+          fs.writeFileSync(p, 'FAKE')
+          return { index, shotId: shot.shotId, success: true, path: p }
+        },
+        _testRunDir: (runId) => path.join(root, runId),
+        _testSleep: async () => {},
+      },
+      onShotProgress: () => {},
+    })
+    expect(seen.find((x) => x.index === 0).seconds).toBe(8)   // makeProject 的 shot[0].seconds
+    expect(seen.find((x) => x.index === 1).seconds).toBe(5)
+  })
+})

@@ -474,3 +474,29 @@ describe('film_generate_videos - 有效并发默认 = 1', () => {
     expect(maxInFlight).toBe(1)
   })
 })
+
+// ══════════════════════════════════════════════════════════════════════════
+// M0′.3：全量出片路径**逐镜**消费 effectiveSeconds（吸附到可选档位）
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('film_generate_videos - M0′.3 逐镜镜长（effectiveSeconds）', () => {
+  it('⭐ 逐镜有 effectiveSeconds ⇒ 帧数按它映射（8 秒档 ⇒ 201 帧），而不是 stage 级 seconds', async () => {
+    const engine = makeEngine()
+    const shot = { ...makeShot(0), effectiveSeconds: 8 }
+    await runInput(engine, 'run-m03', [shot], { seconds: 10 })
+    const submits = engine._calls.filter((c) => c.method === 'generateVideo')
+    expect(submits).toHaveLength(1)
+    // 8 秒档 ⇒ 201 帧（若仍按 stage 级 10 秒 ⇒ 241 帧）
+    expect(submits[0].payload.numFrames).toBe(201)
+  })
+
+  it('存量 corpus 镜（没有 effectiveSeconds）⇒ 帧数仍按 stage 级 seconds（行为不变）', async () => {
+    const engine = makeEngine()
+    const shot = { ...makeShot(0) }
+    expect(shot.effectiveSeconds).toBeUndefined()
+    await runInput(engine, 'run-m03-legacy', [shot], { seconds: 10 })
+    const submits = engine._calls.filter((c) => c.method === 'generateVideo')
+    expect(submits).toHaveLength(1)
+    expect(submits[0].payload.numFrames).toBe(241)   // 10 秒档 ⇒ 241 帧
+  })
+})

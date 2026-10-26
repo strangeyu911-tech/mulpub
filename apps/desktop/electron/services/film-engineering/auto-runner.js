@@ -22,6 +22,7 @@ const { probeClip } = require('./film-render')
 const { PRODUCTION_BATCH_CONCURRENCY } = require('./production-runner')
 const { PRODUCTION_BATCH_SIZE } = require('./production-driver')
 const { readSaturation } = require('../adapters/_base/provider-saturation')
+const { resolveShotSeconds } = require('./shot-effective-seconds')
 
 /**
  * 视频 provider 的**有效并发**（PRD §3.2.5.3 缺陷①，2026-10-25 实测落地）
@@ -248,7 +249,9 @@ async function runAutoBatch (opts) {
         index: job.i,
         runDir,
         aspect: project.aspect,
-        seconds: Number(shot.seconds) || Number(project.seconds) || 5,
+        // ★ M0′.3：出片**消费逐镜镜长**（吸附到可选档位），而不是用户选的整档
+        //   ⇒ 台词短的镜不会被撑长；回落链见 shot-effective-seconds.js（存量行为不变）。
+        seconds: resolveShotSeconds(shot, project.seconds),
         providerCfg,
         refMap,
         mediaRoot: project.mediaRoot,
@@ -363,7 +366,8 @@ async function regenerateOneShot (opts) {
     index: inBatchIndex,
     runDir: stageDir,
     aspect: project.aspect,
-    seconds: Number(shot.seconds) || Number(project.seconds) || 5,
+    // ★ M0′.3：同上（单镜重生成走同一条镜长口径）
+    seconds: resolveShotSeconds(shot, project.seconds),
     providerCfg,
     refMap: buildRefMap(project),
     mediaRoot: project.mediaRoot,

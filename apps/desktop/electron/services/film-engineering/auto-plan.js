@@ -32,7 +32,8 @@ const {
 const {
   sha256, buildShotFingerprint, buildPayloadHash, buildPlanId, buildRefsFingerprint,
 } = require('./auto-plan-fingerprint')
-const { resolveShotDurationMs, DEFAULT_TIERS: DEFAULT_DURATION_TIERS } = require('./shot-duration')
+const { resolveDurationTiers, resolveShotDurations } = require('./shot-effective-seconds')
+const { DEFAULT_TIERS: DEFAULT_DURATION_TIERS } = require('./shot-duration')
 const {
   MIN_SENTENCE_CHUNK_LENGTH,
   splitIntoChunks,
@@ -235,9 +236,7 @@ function planAutoShots (input) {
   // v7 对抗评审第二轮 i3：初版用 AUTO_SHOT_SECONDS 兼当档位表，于是「用户可选的 seconds 输入域」
   // 与「模型支持的时长档」被绑成同一个东西，资产承诺 12s 而自动模式最高只有 10s。
   // 两者语义不同：前者是输入白名单（validateAutoInputs 用），后者是能力表。
-  const durationTiers = Array.isArray(o.durationTiers) && o.durationTiers.length > 0
-    ? o.durationTiers.map(Number).filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b)
-    : DEFAULT_DURATION_TIERS
+  const durationTiers = resolveDurationTiers(o.durationTiers)
   const durationMaxSec = Math.max(...durationTiers)
 
   // 影视工程 v2 · F-I：规划期接方法论资产（零 provider 调用）。
@@ -259,28 +258,18 @@ function planAutoShots (input) {
       })
       : null
     const refPaths = bound[i] ? bound[i].refPaths : []
-    // v7 批次一 F2 + F34：给每镜补 durationMs（来源优先级链）。
-    // 自动模式下还没有 TTS 实测，故走 formula（按本镜文案推算）→ tier（o.seconds 兜底）。
-    // 传 text 而非 dialogue：beat.text 通常是「动作 + 台词」混排，
-    // resolveShotDurationMs 会按引号抽取真正被念出的部分（v7 对抗评审 i1），避免整段按语速高估。
-    // 这是**纯增量**：原先 `seconds` 的语义与 plannedDurationSec 一律不动，
-    // 消费方可以继续只读 seconds；需要更细的时长就读 durationMs。
-    const duration = resolveShotDurationMs(
+    // 逐镜时长的**来源链解析 + 出片要消费的镜长**（决策点在 shot-effective-seconds.js）。
+    // · v7 批次一 F2 + F34：给每镜补 durationMs（来源优先级链）——
+    //   自动模式下还没有 TTS 实测，故走 formula（按本镜文案推算）→ tier（o.seconds 兜底）。
+    //   传 text 而非 dialogue：beat.text 通常是「动作 + 台词」混排，
+    //   resolveShotDurationMs 会按引号抽取真正被念出的部分（v7 对抗评审 i1），避免整段按语速高估。
+    // · M0′（2026-10-24）：容量基准 = **用户所选的单镜档位**，不是物理上限。
+    // · M0′.3（2026-10-25）：`effectiveSeconds` = 出片**消费**的镜长（吸附到可选档位）。
+    // ⚠ 既有 `seconds` 的语义与 plannedDurationSec 一律不动（纯增量）。
+    const { duration, effectiveSeconds } = resolveShotDurations(
       { text: beat.text, emotion: beat.emotion },
-      {
-        tiers: durationTiers,
-        maxSec: durationMaxSec,
-        defaultSec: Number(o.seconds),
-        // M0′（2026-10-24）：容量基准 = **用户所选的单镜档位**，不是物理上限——
-        // 出片镜长用的是全局 o.seconds（auto-runner.js:163/231），不是逐镜推算值。
-        capacitySec: Number(o.seconds),
-        // v7 对抗评审第二轮 i4：beat.text 常是纯动作描述 ⇒ 没有引号就不走 formula，
-        // 否则会给动作配语速、让 120 字的无台词动作镜误触发「必须拆解台词」。
-        requireQuotedDialogue: true,
-      },
+      { tiers: durationTiers, maxSec: durationMaxSec, defaultSec: Number(o.seconds), capacitySec: Number(o.seconds) },
     )
-    // M0′.1：容量不足的镜要**逐镜**给出可执行出口（R3.5）——
-    // 逐镜是消费方唯一能看到「哪一镜念不完」的粒度（plan 级只给汇总）。
     const capacityOverflow = duration.ok && duration.capacityOverflow === true
     const shotWarnings = buildShotDurationWarnings(duration, { selectableSeconds: AUTO_SHOT_SECONDS })
     return {
@@ -315,6 +304,8 @@ function planAutoShots (input) {
       durationMs: duration.ok ? duration.durationMs : Math.round(Number(o.seconds) * 1000),
       durationSec: duration.ok ? duration.durationSec : Number(o.seconds),
       durationSource: duration.ok ? duration.source : 'tier',
+      // M0′.3：出片**消费**的逐镜镜长（吸附到可选档位）⇒ 消费方读这个字段，不读 durationSec
+      effectiveSeconds,
       durationRawSec: duration.ok && Number.isFinite(duration.rawSec) ? duration.rawSec : null,
       // M0′：本镜的容量判定结果与基准（供 plan 级汇总与 UI 逐镜展示）
       capacityOverflow,

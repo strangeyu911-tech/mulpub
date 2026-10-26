@@ -23,7 +23,7 @@ date: 2026-10-25
 | QM-6 CCG 双模型外部评审 | 未执行 | 本机无 `codeagent-wrapper`；不以自审冒充通过 |
 | 远程同步 | 由门禁推导 | 本行**不需要事后改写**：合并后门禁按主干历史推导归属（`scripts/lib/merge-ledger.js`）；合并后 main push 的回读证据写在 PR 评论里，不写回本文件 |
 
-## 二、变异验证读数（4 组，全部「注进去必红、还原后必绿」）
+## 二、变异验证读数（5 组，全部「注进去必红、还原后必绿」）
 
 | # | 变异 | 结果 |
 |---|---|---|
@@ -62,9 +62,29 @@ date: 2026-10-25
 - **三态的覆盖靠单测，不靠视觉用例**：CI 的视觉套件跑的是**真实应用**（无账号 ⇒ 粉丝位是「—」）
   ⇒ 三态（ready/pending/error）的渲染由**组件单测**覆盖，视觉用例只守「没崩、没变形」。
 
-## 五、CHANGELOG 条目
+## 五、合并后订正（本 PR 的合并信息与两处口径不一致）
 
-# feat(dashboard): 账号粉丝上屏 —— 三态分开，口径标在槽位上
+| 项 | 值 |
+|---|---|
+| PR | #4465 |
+| merge SHA | `ee2412d9bd229c2147d358197d4a4cd5f7fadfbf`（merged_at 2026-10-25T19:55:33Z） |
+| 远端分支 | `dashboard-followers-ui` 已删（HTTP 404） |
+| CI | 22 项 check 全绿（QG Visual / QG Static / QG Coverage / 两个 shard / Gate Result …） |
+| 合并闸门 | `check-main-red --pr 4465` ⇒ `verdict=OK exit=0`（prFail=0 mainFail=0 newRed=0 prPending=0） |
+
+**两处口径不一致，本 PR 订正**：
+
+1. **CHANGELOG 标题曾写「口径标在槽位上」** ⇒ 实际实现是「口径标在**卡片副标题**上」
+   （第一版做了槽位旁的小标签，被 `check-font-size-scale` 判「新增 font-size 字面量（10px）」而红
+   ⇒ 改走 PRD 本来的机制：副标题）⇒ 本次订正标题措辞。
+   ⚠️ 主干上的 **merge commit 标题**（「…口径标在槽位上 (#4465)」）是 GitHub 从 PR 标题取的
+   ⇒ **改不了**（禁止 force-push main）⇒ 以本文件与 CHANGELOG 聚合源（执行记录）为准。
+2. **tasks §6 的 `data-testid` 一行曾写 `platform-<平台>-fans-scope`** ⇒ 该 testid 随小标签方案一起被撤
+   ⇒ 现存的是槽位值 `platform-<平台>-fans` 与副标题 `platform-meta` ⇒ 一并订正。
+
+## 六、CHANGELOG 条目
+
+# feat(dashboard): 账号粉丝上屏 —— 三态分开，口径标在卡片副标题
 
 - 粉丝位此前只有「有值 / 「—」」两态：「没采过」与「采失败了」在界面上长得一样 ⇒ 用户以为功能坏了。现在分成三态：拿到真值显示数字；没采过显示「—」+「尚未采集粉丝数据」；采失败显示「—」+「粉丝数据暂时无法获取（原因）」，且给的是可读原因而不是内部错误码。
 - 粉丝的**口径标注走卡片副标题**：`followersScope`（账号级）在**三个状态下都出现**

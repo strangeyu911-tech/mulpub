@@ -60,16 +60,16 @@
 - [x] `apps/desktop/src/features/dashboard/PlatformDataGrid.vue`：读 `followers`；三态（数字 / 「—」+未采集 / 「—」+失败原因）；粉丝位单独标注账号级口径
 - [x] `packages/shared-utils`… → `apps/desktop/src/features/dashboard/dashboard-panels-model.js`：**粉丝三态进模型**（ready / pending / error + 失败原因 token）⇒ 界面才分得清「没采过」与「采失败」
 - [x] `apps/desktop/src/locales/dashboard/{zh,en}.js`：`followersPending` / `followersUnavailable` / `followersUnavailableReason` / `followersAsOf` / `followersScope`（成对）＋ 3 条失败原因文案
-- [x] `data-testid` 供视觉用例选择（`platform-<平台>-fans-scope`，不依赖中文占位符）
+- [x] `data-testid` 供视觉用例选择（槽位值 `platform-<平台>-fans` + 副标题 `platform-meta`；不依赖中文占位符）
 - [x] 像素基线：**从 CI artifact 收割**（run `40199253540`；本机截图一律不入库）← 本片改了 KPI 说明文案 ⇒ 基线已过期，已随本片收割
-- [x] ⚠️ `Dashboard.vue` / `tokens.css` **零改动**（口径标签样式落在组件的 scoped style 里）
+- [x] ⚠️ `Dashboard.vue` / `tokens.css` **零改动**（口径标注走**既有副标题** ⇒ 零新增字号、零新增 CSS）
 
 ## 7. 收口
 
 - [x] PR-1 开 PR → CI 全绿 → squash 合并 → 回读远端内容级锚点（#4455，merge `84a2f5e2`）
-- [ ] PR-2 开 PR → CI 全绿 → squash 合并 → 基线从 CI artifact 收割（本片）
-- [ ] 执行记录回填（「远程同步」行保持 `由门禁推导`）
-- [ ] 三处记忆沉淀（agent / user / EverOS）
+- [x] PR-2 开 PR → CI 全绿 → squash 合并 → 基线从 CI artifact 收割（#4465，merge `ee2412d9`）
+- [x] 执行记录回填（`openspec/records/dashboard-followers-ui.md`；「远程同步」行保持 `由门禁推导`）
+- [x] 三处记忆沉淀（agent / user / EverOS）
 
 ## 8. 待拍板（阻塞 §6 的最终取值，不阻塞 §2-§5）
 

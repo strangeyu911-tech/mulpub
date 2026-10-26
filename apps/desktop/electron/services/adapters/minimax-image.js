@@ -211,7 +211,14 @@ class MinimaxImageAdapter extends BaseAdapter {
             : isQuota ? ERROR_CODES.QUOTA_EXCEEDED
               : ERROR_CODES.PROVIDER_ERROR,
         statusMsg,
-        { providerId: this.id, statusCode: Number(baseResp.status_code) },
+        {
+          providerId: this.id,
+          // P1：MiniMax 的业务错误是 HTTP 200 + base_resp.status_code（不是 HTTP 状态码）。
+          // statusCode 保留历史字段，httpStatus/providerCode 负责把两个维度分开。
+          statusCode: Number(baseResp.status_code),
+          httpStatus: 200,
+          providerCode: Number(baseResp.status_code),
+        },
       )
     }
 

@@ -1,7 +1,7 @@
 # DESIGN：模型额度用尽处理策略 —— 技术设计与落地形态（2026-10-26）
 
 > **文档性质**：技术设计（Design）。配套 PRD：`01-docs/PRD-MODEL-QUOTA-FALLBACK-2026-10-26.md`（下称 PRD）。
-> **状态**：📝 设计定案，**未实现**。本 PR 仅文档；实现分 P1/P2/P3 三阶段。
+> **状态**：🚧 **P1a 已实现**（`model-access-failure.js` + `userErrorCode` + 适配器 `httpStatus/providerCode` + 精确文案 + 动作）；**P1b / P2 / P3 未实现**。实际落地见 §3.1「P1a 已落地」与执行记录 `openspec/records/model-quota-p1.md`。
 > **上游依赖**：`01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（D-① 官方算力代理 **未落地**）。
 > **日期**：2026-10-26
 
@@ -74,7 +74,7 @@
 
 ### 3.1 `model-access-failure.js`（P1，主进程纯函数）
 
-路径建议：`apps/desktop/electron/services/model-access-failure.js`
+路径：`apps/desktop/electron/services/adapters/_base/model-access-failure.js`（与 `provider-error.js` 同层；避免适配器基类反向依赖 `electron/services` 业务层）
 
 ```js
 /**
@@ -104,14 +104,22 @@ function parseRetryAfterMs(headers) : number|null
 **与现有 `classifyProviderFailure` 的关系**：
 - `classifyProviderFailure` 返回 `quota` / `rate` / `transient` / `content_policy` / `other`，服务于**重试/熔断**。
 - `classifyModelAccessFailure` 返回更细的 `AccessState` + `quotaKind`，服务于**用户提示/官方兜底**。
-- 两者共用 `provider-error.js` 的文本模式，但**不互相调用**（避免循环依赖）；由测试锁住「quota 集合一致」。
+- 两者**各自独立实现**文本模式（`classifyProviderFailure` 在 `provider-error.js`，产品级分类器在新模块）；不互相 require，避免循环依赖；由测试锁住两套枚举的「quota 语义交集」。这样改一套重试策略不会静默改变用户提示。
 
 **关键实现点**：
 - `context.statusCode` 目前被 MiniMax 业务码复用（1004/2056）。P1 必须新增 `context.httpStatus` 与 `context.providerCode` 两个字段，**保留 `statusCode` 向后兼容**（历史测试断言 `context.statusCode === 1004`）。
 - 适配器改造点：`minimax-image.js`、`minimax-tts.js`、`minimax.js`、`minimax-h3-v2.js` 在抛 `ProviderError` 时补 `{ providerCode: Number(baseResp.status_code), httpStatus: 200 }`。
 - 其他适配器只需补 `httpStatus`（若 `fromHttpStatus` 已带 `statusCode`，可映射）。
 
-### 3.2 `model-quota-policy.js`（P1，主进程纯函数）
+**P1a 已落地（2026-10-26）**：
+- 文件已按本节路径创建；导出 `ACCESS_STATES` / `QUOTA_KINDS` / `MODEL_ACCESS_PRODUCT_CODES` / `classifyModelAccessFailure` / `normalizeProviderCode` / `normalizeHttpStatus` / `parseRetryAfterMs` / `sanitizeErrorMessage` / `quotaKindFromText`。
+- `provider-error.js` 只做 re-export（`classifyModelAccessFailure`），`model-provider-manager` 从既有 `provider-error` require 解构，**没有新增 require 扇出**。
+- `callAdapter` 返回新增字段：`userErrorCode`（产品级精确码）、`messageParams.provider`、`accessState`、`quotaKind`、`providerCode`、`httpStatus`、`fallbackEligible`、`askOnly`；`errorCode` 仍为 `ProviderError.code`（历史枚举），保证 `story2video-notifications` 等旧消费方不回归。
+- `fromHttpStatus` 写 `statusCode` + `httpStatus` 两个字段；MiniMax 图片/TTS/视频写 `httpStatus:200` + `providerCode: base_resp.status_code`。
+- 渲染端 `formatUserError` 的候选顺序为 `userErrorCode → errorCode → 数值码 → pattern`；未知 `userErrorCode` 会回落到已知 `errorCode`，不吞错。
+- **未实现**：`model-quota-policy.js`、`model-quota-coordinator.js`、设置读写、弹窗、任务级覆盖、检查点。它们属于 P1b。
+
+### 3.2 `model-quota-policy.js`（P1b，主进程纯函数）
 
 路径建议：`apps/desktop/electron/services/model-quota-policy.js`
 

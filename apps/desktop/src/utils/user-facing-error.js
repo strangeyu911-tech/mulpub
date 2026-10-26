@@ -30,6 +30,13 @@ export const USER_ERROR_CODES = Object.freeze({
   IO_ERROR: 'IO_ERROR',
   RATE_LIMITED: 'RATE_LIMITED',
   QUOTA_EXCEEDED: 'QUOTA_EXCEEDED',
+  // P1：模型额度/凭据失败的产品级精确码（主进程 callAdapter 以 userErrorCode 下发）。
+  // 与 QUOTA_EXCEEDED 并存：errorCode 仍保留 ProviderError 历史枚举供旧消费方识别。
+  MODEL_QUOTA_EXHAUSTED: 'MODEL_QUOTA_EXHAUSTED',
+  MODEL_QUOTA_PLAN_WINDOW: 'MODEL_QUOTA_PLAN_WINDOW',
+  MODEL_QUOTA_PLAN_EXPIRED: 'MODEL_QUOTA_PLAN_EXPIRED',
+  MODEL_CREDENTIAL_INVALID: 'MODEL_CREDENTIAL_INVALID',
+  MODEL_RATE_LIMITED: 'MODEL_RATE_LIMITED',
   PROVIDER_EXISTS: 'PROVIDER_EXISTS',
   ADAPTER_NOT_FOUND: 'ADAPTER_NOT_FOUND',
   PROVIDER_NOT_FOUND: 'PROVIDER_NOT_FOUND',
@@ -189,26 +196,38 @@ function toRawText (input) {
 
 /**
  * 把 IPC 错误（或异常）格式化为当前语言的用户可见文案。
- * @param {*} input - { code, errorCode, message } | Error | string
+ * @param {*} input - { code, errorCode, userErrorCode, message } | Error | string
  * @param {{ locale?: string, fallback?: string }} [options]
- * @returns {{ errorCode: string, message: string, matched: 'errorCode'|'code'|'pattern'|'passthrough'|'fallback' }}
+ * @returns {{ errorCode: string, message: string, matched: 'userErrorCode'|'errorCode'|'code'|'pattern'|'passthrough'|'fallback' }}
  */
 export function formatUserError (input, options = {}) {
   const locale = normalizeLocale(options.locale || defaultLocale())
   const messageFor = (code) => localeMessageSource(locale, `userErrors.${code}`)
   const rawText = toRawText(input)
 
-  // 1. 稳定 errorCode（仅识别 catalog 中已知码，避免把内部码当文案）
-  if (input && typeof input === 'object' && typeof input.errorCode === 'string') {
-    const known = USER_ERROR_CODES[input.errorCode]
-    const message = known ? messageFor(input.errorCode) : null
-    if (message) {
+  // 1. 稳定错误码（仅识别 catalog 中已知码，避免把内部码当文案）
+  //    `userErrorCode` 是 P1 的产品级精确码（MODEL_QUOTA_* / MODEL_CREDENTIAL_INVALID），
+  //    优先于历史 `errorCode`（QUOTA_EXCEEDED / AUTH_FAILED 等）——后者继续留给旧消费方识别。
+  if (input && typeof input === 'object') {
+    // 候选顺序：userErrorCode（P1 精确码）→ errorCode（历史枚举）。
+    // 未知的 userErrorCode 不得吞掉已知的 errorCode；两者都未知才继续走数值/pattern。
+    const candidates = [input.userErrorCode, input.errorCode]
+      .filter((code) => typeof code === 'string' && code)
+      .filter((code, index, list) => list.indexOf(code) === index)
+    for (const candidate of candidates) {
+      const known = USER_ERROR_CODES[candidate]
+      const message = known ? messageFor(candidate) : null
+      if (!message) continue
       // 插值参数：后端 params（或 messageParams）替换文案中的 {param} 占位符
       const params = { ...(input.params || {}), ...(input.messageParams || {}) }
       const interpolated = Object.keys(params).length
         ? message.replace(/\{(\w+)\}/g, (m, k) => (params[k] !== undefined ? String(params[k]) : m))
         : message
-      return { errorCode: input.errorCode, message: interpolated, matched: 'errorCode' }
+      return {
+        errorCode: candidate,
+        message: interpolated,
+        matched: candidate === input.userErrorCode ? 'userErrorCode' : 'errorCode',
+      }
     }
   }
 

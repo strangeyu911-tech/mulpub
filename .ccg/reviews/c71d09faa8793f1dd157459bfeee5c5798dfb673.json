@@ -1,0 +1,60 @@
+{
+  "sha": "c71d09faa8793f1dd157459bfeee5c5798dfb673",
+  "layer": "diff",
+  "mode": "skip",
+  "reason": "改动全部命中文档白名单 → 走 §11.2b docs-only 快通道",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 1,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 4,
+    "ccgSensitiveContentSample": [
+      "  \"reason\": \"变更 62 行（≤ 200）但命中 auth/数据库/加密：敏感内容 4 处\",",
+      "      \"      \\\"  \\\\\\\"reason\\\\\\\": \\\\\\\"变更 63 行（≤ 200）但命中 auth/数据库/加密：敏感内容 3 处\\\\\\\",\\\",\",",
+      "      \"      \\\"      \\\\\\\"      \\\\\\\\\\\\\\\"| 动作 | `AiWriterPanel.vue` | 上述额度/凭据码给「前往模型设置」；`MODEL_RATE_LIMITED` 不给按钮 |\\\\\\\\\\\\\\\",\\\\\\\",\\\",\","
+    ],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-26T11:49:27.318Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": false,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

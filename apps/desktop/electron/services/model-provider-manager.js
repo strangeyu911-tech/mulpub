@@ -324,8 +324,8 @@ class ModelProviderManager {
       const latency_ms = Date.now() - startTime
       const errorMsg = e.message || String(e)
       this._writeLog(provider, method, 'error', latency_ms, errorMsg)
-      // ProviderError 透传
-      const { ProviderError, ERROR_CODES } = require('./adapters/_base/provider-error')
+      const { ProviderError, ERROR_CODES, buildModelAccessErrorEnvelope } = require('./adapters/_base/provider-error')
+      const accessEnvelope = buildModelAccessErrorEnvelope(e, { providerId, providerName: provider.name || providerId, providerConfig: provider.config })
       if (e instanceof ProviderError) {
         // 超时/网络错误也记为模型服务异常（配合有界超时兜底，便于前端提示与日志定位）
         if (e.code === ERROR_CODES.TIMEOUT || e.code === ERROR_CODES.NETWORK_ERROR) {
@@ -338,12 +338,12 @@ class ModelProviderManager {
           })
         }
         if (providerRunContext && typeof providerRunContext.openIfQuota === 'function') providerRunContext.openIfQuota(providerId, e)
-        return { code: -1, error: e, message: e.message }
+        return { code: -1, error: e, message: e.message, errorCode: e.code, ...accessEnvelope }
       }
       // 普通 Error 包装
       if (providerRunContext && typeof providerRunContext.openIfQuota === 'function') providerRunContext.openIfQuota(providerId, e)
       log.error('ModelProviderManager', `callAdapter ${providerId}.${method} failed: ${e.message}`)
-      return { code: -1, message: e.message }
+      return { code: -1, message: e.message, ...accessEnvelope }
     }
   }
 

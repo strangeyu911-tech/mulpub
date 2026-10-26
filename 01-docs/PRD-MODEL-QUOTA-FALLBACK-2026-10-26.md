@@ -1,7 +1,7 @@
 # PRD：模型额度用尽时的来源切换策略（model-quota-fallback）
 
 > **文档性质**：产品需求 + 决策记录（PRD）。本文件是「用户自带模型 Key（BYOK）」与「平台官方模型（消耗官方积分）」之间**优先级与切换控制**的单一真源。
-> **状态**：📝 逻辑定案，**未实现**。本 PR 只交付 PRD / 设计 / 决策记录，不改运行时代码。
+> **状态**：🚧 **P1a 已实现**（错误识别 + 精确提示 + 「前往模型设置」动作）；**P1b / P2 / P3 未实现**。P1a 见 §13.1 与执行记录 `openspec/records/model-quota-p1.md`。官方兜底仍受 D-11 约束（官方算力代理 D-① 未落地，设置项与「使用官方模型」按钮不上线）。
 > **关联设计**：`01-docs/DESIGN-MODEL-QUOTA-FALLBACK-2026-10-26.md`
 > **上游依赖**：`01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（D-① 官方算力代理，**未落地**）、`01-docs/PRD-CREDIT-CONSUME-API-2026-10-25.md`（扣分端点，已实现）、`01-docs/PRD-OFFICIAL-COMPUTE-CHARGE-STATE-2026-10-25.md`（扣分状态机，已实现）
 > **日期**：2026-10-26
@@ -698,12 +698,33 @@ runContext.modelSourceOverrides = {
 
 | 阶段 | 内容 | 依赖 | 是否本 PR |
 |---|---|---|---|
-| **P0（本 PR）** | 决策定案 + PRD + 设计 + 验收标准 | 无 | ✅ 仅文档 |
-| **P1** | 统一错误分类器（`model-access-failure`）+ 产品级错误码 + 设置读写 + 弹窗组件 + 任务级覆盖 + 检查点；官方按钮按能力 gate 禁用 | 无（可先于官方算力） | ❌ 下一 PR |
+| **P0** | 决策定案 + PRD + 设计 + 验收标准 | 无 | ✅ 已随 PR #4497 合并（仅文档） |
+| **P1a（本 PR）** | 统一错误分类器（`model-access-failure.js`）+ 产品级 `userErrorCode` + `httpStatus`/`providerCode` 分离 + 精确文案 + 「前往模型设置」动作 | 无（可先于官方算力） | ✅ 本 PR 实现 |
+| **P1b** | 设置读写 + 弹窗组件 + 任务级覆盖 + 检查点；官方按钮按能力 gate 禁用 | 无（可先于官方算力） | ❌ 下一 PR |
 | **P2** | 官方算力代理 D-① + 余额读通道 U-13 + 价格卡 U-12 + 官方调用客户端 + `byok=0` + 扣分 | D-① / U-12 / U-13 | ❌ 与官方算力同批 |
 | **P3** | 自动档 `official` 全量开放 + 任务积分上限 + 埋点看板 + LLM 官方供给（若 U-1 决定做） | P2 + U-1 | ❌ |
 
-**上线 gate**：P1 的设置项与「使用官方模型」按钮**不得早于 P2 单独上线**（D-11）。P1 可先交付「错误分类 + 去更新设置」的提示，但设置项隐藏。
+**上线 gate**：P1 的设置项与「使用官方模型」按钮**不得早于 P2 单独上线**（D-11）。P1a 只交付「错误分类 + 精确提示 + 去更新设置」，设置项与官方按钮均不出现。
+
+### 13.1 P1a 落地记录（2026-10-26）
+
+**范围**：只做「用户能看懂 + 能去改」；不做官方兜底、不做设置、不做任务级覆盖。
+
+| 层 | 实际实现 | 说明 |
+|---|---|---|
+| 分类器 | `apps/desktop/electron/services/adapters/_base/model-access-failure.js`（新增，与 `provider-error.js` 同层） | 7 状态 + 4 额度子类 + `productCode` / `reasonKey` / `fallbackEligible` / `askOnly` / `safeMessage` / `retryAfterMs`；规则表可注入，避免适配器基类反向依赖业务层 |
+| 复用出口 | `provider-error.js` re-export `classifyModelAccessFailure` | 避免 `model-provider-manager` 新增 require 扇出（`check-debt-budget` 只降不升） |
+| 调用入口 | `model-provider-manager.callAdapter` 错误分支 | 返回 `errorCode`（历史枚举）、`userErrorCode`（产品级精确码）、`messageParams.provider`、`accessState`、`quotaKind`、`providerCode`、`httpStatus`、`fallbackEligible`、`askOnly` |
+| 适配器 | MiniMax 图片/TTS/视频 | `context.httpStatus=200` + `context.providerCode=base_resp.status_code`；`statusCode` 保留兼容 |
+| 渲染端 | `user-facing-error.js` + `locales/user-errors/{zh,en}.js` | `userErrorCode` 优先于 `errorCode`；新增 `MODEL_QUOTA_EXHAUSTED` / `_PLAN_WINDOW` / `_PLAN_EXPIRED` / `MODEL_CREDENTIAL_INVALID` / `MODEL_RATE_LIMITED` 五条成对文案 |
+| 动作 | `AiWriterPanel.vue` | 上述额度/凭据码给「前往模型设置」；`MODEL_RATE_LIMITED` 不给按钮 |
+| 兼容 | `errorCode` 保持 `QUOTA_EXCEEDED` / `AUTH_FAILED` / `RATE_LIMITED` | `story2video-notifications` 等既有消费方继续识别，不被精确码替换 |
+
+**数据校验（P1a 已实现）**：`providerCode` 只接受 `[A-Za-z0-9_.: -]{1,64}`；`httpStatus` 只接受 100–599；`retryAfterMs` 只接受 0–7 天；错误文本截断 500 字符并脱敏 `sk-` / `Bearer` / `api_key`；分类器内部异常一律降级 `unknown`。
+
+**测试**：`model-access-failure.test.js` 21 例；`provider-error.test.js` 新增 2 例；`model-provider-call-adapter.test.js` 新增 4 例；`user-facing-error.test.js` 新增 8 例；`AiWriterPanel.error-action.test.js` 新增 1 例。P1a 相关 154 例全绿（详见执行记录）。
+
+**P1a 明确不做**：官方模型按钮 / 设置项 / 弹窗 / 任务级覆盖 / 检查点 / 积分上限。理由见 D-11：官方算力代理 D-① 未落地，先上设置是空承诺。
 
 ---
 

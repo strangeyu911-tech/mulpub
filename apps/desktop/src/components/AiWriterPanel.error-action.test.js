@@ -101,6 +101,20 @@ describe('AiWriterPanel 错误卡的动作位（阶段 1.10b）', () => {
     }
   })
 
+  it('P1 模型额度/凭据精确码给动作；限流不给', async () => {
+    for (const code of [
+      'MODEL_QUOTA_EXHAUSTED',
+      'MODEL_QUOTA_PLAN_WINDOW',
+      'MODEL_QUOTA_PLAN_EXPIRED',
+      'MODEL_CREDENTIAL_INVALID',
+    ]) {
+      const w = await openRewriteTabAndFail({ errorCode: code, message: 'raw detail' })
+      expect(w.find('[data-testid="panel-error-action"]').exists(), code + ' 的解决路径在模型设置').toBe(true)
+    }
+    const limited = await openRewriteTabAndFail({ errorCode: 'MODEL_RATE_LIMITED', message: 'raw detail' })
+    expect(limited.find('[data-testid="panel-error-action"]').exists(), '限流不该给「前往模型设置」').toBe(false)
+  })
+
   it('panelError 的既有字符串契约不被破坏（三处既有断言仍按字符串读）', async () => {
     const wrapper = await openRewriteTabAndFail({ errorCode: 'LLM_KEY_MISSING' })
     const alert = wrapper.find('[role="alert"]')

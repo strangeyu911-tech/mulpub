@@ -238,12 +238,18 @@ const selectedStyle = ref("polish")
 const enhancedResult = ref("")
 const summary = ref("")
 const panelError = ref("")
-// 阶段 1.10b：错误码 → 站内动作。只列「有直达意义」的两码；其余一律不给按钮 ——
-// 给一个无关的「前往设置」比不给更糟（用户会以为配额/网络问题也能在设置里解决）。
+// 阶段 1.10b：错误码 → 站内动作。只列「解决路径确实在模型设置」的码；其余一律不给按钮 ——
+// 给一个无关的「前往设置」比不给更糟（用户会以为网络/限流问题也能在设置里解决）。
+// P1：额度/套餐/凭据失败的解决路径 = 模型设置里换模型或更新 Key，因此纳入；
+// 限流（MODEL_RATE_LIMITED）不给按钮。
 // 通道复用既有 goToProviders()（配置横幅已在用），不新写第二份外链/协议判据。
 const ERROR_ACTION_LABEL_BY_CODE = {
   LLM_KEY_MISSING: "rewritePage.goToModelSettings",
   API_KEY_NOT_CONFIGURED: "rewritePage.goToModelSettings",
+  MODEL_QUOTA_EXHAUSTED: "rewritePage.goToModelSettings",
+  MODEL_QUOTA_PLAN_WINDOW: "rewritePage.goToModelSettings",
+  MODEL_QUOTA_PLAN_EXPIRED: "rewritePage.goToModelSettings",
+  MODEL_CREDENTIAL_INVALID: "rewritePage.goToModelSettings",
 }
 const panelErrorCode = ref("")
 const panelErrorActionLabel = computed(() => ERROR_ACTION_LABEL_BY_CODE[panelErrorCode.value] || "")

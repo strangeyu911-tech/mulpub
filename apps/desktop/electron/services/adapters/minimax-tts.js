@@ -121,7 +121,11 @@ function classifyBaseRespError (message, providerId, statusCode) {
             : ERROR_CODES.PROVIDER_ERROR
   return new ProviderError(code, msg || 'MiniMax \u8bed\u97f3\u5408\u6210\u5931\u8d25', {
     providerId,
-    ...(statusCode != null ? { statusCode: Number(statusCode) } : {}),
+    // P1：MiniMax 的业务错误是 HTTP 200 + base_resp.status_code。
+    // statusCode 保留历史字段，httpStatus/providerCode 分开两个维度。
+    ...(statusCode != null
+      ? { statusCode: Number(statusCode), httpStatus: 200, providerCode: Number(statusCode) }
+      : {}),
   })
 }
 

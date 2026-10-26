@@ -43,6 +43,56 @@ describe('formatUserError — errorCode 优先', () => {
   })
 })
 
+describe('formatUserError — 模型访问失败（P1 userErrorCode 优先）', () => {
+  it('userErrorCode 优先于历史 errorCode，并插值 provider', () => {
+    const result = formatUserError({
+      errorCode: 'QUOTA_EXCEEDED',
+      userErrorCode: 'MODEL_QUOTA_EXHAUSTED',
+      message: 'Insufficient Balance',
+      messageParams: { provider: 'OpenAI' },
+    }, { locale: 'zh' })
+    expect(result.errorCode).toBe('MODEL_QUOTA_EXHAUSTED')
+    expect(result.matched).toBe('userErrorCode')
+    expect(result.message).toContain('OpenAI')
+    expect(result.message).toContain('额度或余额')
+  })
+
+  it.each([
+    ['MODEL_QUOTA_PLAN_WINDOW', '套餐用量窗口'],
+    ['MODEL_QUOTA_PLAN_EXPIRED', '套餐已到期'],
+    ['MODEL_CREDENTIAL_INVALID', 'API Key 无效或已过期'],
+    ['MODEL_RATE_LIMITED', '请求过于频繁'],
+  ])('%s → 具体原因文案', (userErrorCode, expected) => {
+    const result = formatUserError({
+      userErrorCode,
+      message: 'raw technical',
+      messageParams: { provider: 'MiniMax' },
+    }, { locale: 'zh' })
+    expect(result.errorCode).toBe(userErrorCode)
+    expect(result.message).toContain(expected)
+    expect(result.message).toContain('MiniMax')
+  })
+
+  it('英文文案带 provider', () => {
+    const result = formatUserError({
+      userErrorCode: 'MODEL_CREDENTIAL_INVALID',
+      messageParams: { provider: 'OpenAI' },
+    }, { locale: 'en' })
+    expect(result.message).toContain('OpenAI')
+    expect(result.message).toContain('invalid or expired')
+  })
+
+  it('userErrorCode 未知时回落到 errorCode', () => {
+    const result = formatUserError({
+      userErrorCode: 'FUTURE_UNKNOWN',
+      errorCode: 'QUOTA_EXCEEDED',
+      message: 'raw',
+    }, { locale: 'zh' })
+    expect(result.errorCode).toBe('QUOTA_EXCEEDED')
+    expect(result.matched).toBe('errorCode')
+  })
+})
+
 describe('formatUserError — 数值 code 映射', () => {
   it.each([
     [-3, USER_ERROR_CODES.AUTH_REQUIRED],

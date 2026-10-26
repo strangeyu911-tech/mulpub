@@ -58,6 +58,27 @@ describe('ProviderError content-policy classification', () => {
     })
   })
 })
+
+describe('fromHttpStatus — P1 httpStatus / providerCode 维度分离', () => {
+  it('HTTP 402 同时写 statusCode 与 httpStatus，providerCode 保留调用方传入值', () => {
+    const error = fromHttpStatus(402, 'Insufficient Balance', { providerId: 'deepseek', providerCode: 'Insufficient Balance' })
+    expect(error.context.statusCode).toBe(402)
+    expect(error.context.httpStatus).toBe(402)
+    expect(error.context.providerCode).toBe('Insufficient Balance')
+  })
+
+  it('HTTP 401 不把业务码字段串成 httpStatus', () => {
+    const error = fromHttpStatus(401, 'Invalid api key', { providerId: 'minimax-image', providerCode: 1004 })
+    expect(error.context.httpStatus).toBe(401)
+    expect(error.context.providerCode).toBe(1004)
+  })
+
+  it('非 HTTP 入参（业务码/网络哨兵 0）不得污染 httpStatus（正确性审查 i3）', () => {
+    expect(fromHttpStatus(1004, 'business code').context.httpStatus).toBeNull()
+    expect(fromHttpStatus(0, 'ECONNRESET').context.httpStatus).toBeNull()
+  })
+})
+
 describe('classifyProviderFailure — 空响应/缺失数据按瞬时错误处理', () => {
   const { classifyProviderFailure } = require('./provider-error')
 

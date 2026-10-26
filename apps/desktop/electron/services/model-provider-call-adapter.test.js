@@ -577,6 +577,112 @@ describe('ModelProviderManager — P3.2 callAdapter 集成', () => {
     })
   })
 
+  describe('callAdapter — P1 模型访问失败产品级字段', () => {
+    function registerThrowingAdapter (providerId, name, errorFactory) {
+      manager.createProvider({
+        id: providerId, name, category: 'llm',
+        api_key: 'sk-test', models: ['gpt-4o'],
+      })
+      manager.registerAdapter(providerId, () => ({
+        id: providerId,
+        supports: (m) => m === 'chatCompletion',
+        chatCompletion: vi.fn(async () => { throw errorFactory() }),
+      }))
+    }
+
+    it('额度错误：errorCode 保留 QUOTA_EXCEEDED，userErrorCode 升级为 MODEL_QUOTA_EXHAUSTED', async () => {
+      const { ProviderError, ERROR_CODES } = require('./adapters/_base/provider-error')
+      registerThrowingAdapter('openai', 'OpenAI', () => new ProviderError(
+        ERROR_CODES.QUOTA_EXCEEDED,
+        'Insufficient Balance',
+        { providerId: 'openai', httpStatus: 402, providerCode: 'insufficient_quota' },
+      ))
+
+      const result = await manager.callAdapter('openai', 'chatCompletion', { model: 'gpt-4o', messages: [] })
+      expect(result.code).toBe(-1)
+      expect(result.errorCode).toBe('QUOTA_EXCEEDED')
+      expect(result.userErrorCode).toBe('MODEL_QUOTA_EXHAUSTED')
+      expect(result.accessState).toBe('quota_exhausted')
+      expect(result.quotaKind).toBe('balance')
+      expect(result.httpStatus).toBe(402)
+      expect(result.providerCode).toBe('insufficient_quota')
+      expect(result.fallbackEligible).toBe(true)
+      expect(result.askOnly).toBe(false)
+      expect(result.messageParams).toEqual({ provider: 'OpenAI' })
+    })
+
+    it('凭据错误：userErrorCode=MODEL_CREDENTIAL_INVALID 且 askOnly=true', async () => {
+      const { ProviderError, ERROR_CODES } = require('./adapters/_base/provider-error')
+      registerThrowingAdapter('openai', 'OpenAI', () => new ProviderError(
+        ERROR_CODES.AUTH_FAILED,
+        'Invalid API key',
+        { providerId: 'openai', httpStatus: 401 },
+      ))
+
+      const result = await manager.callAdapter('openai', 'chatCompletion', { messages: [] })
+      expect(result.errorCode).toBe('AUTH_FAILED')
+      expect(result.userErrorCode).toBe('MODEL_CREDENTIAL_INVALID')
+      expect(result.accessState).toBe('credential_invalid')
+      expect(result.askOnly).toBe(true)
+      expect(result.fallbackEligible).toBe(true)
+    })
+
+    it('AUTH_FAILED 文本带「套餐已到期」仍判凭据错误（深评 i6：认证错误不得升级成 quota）', async () => {
+      const { ProviderError, ERROR_CODES } = require('./adapters/_base/provider-error')
+      registerThrowingAdapter('openai', 'OpenAI', () => new ProviderError(
+        ERROR_CODES.AUTH_FAILED,
+        '套餐已到期，请续费',
+        { providerId: 'openai', httpStatus: 403 },
+      ))
+
+      const result = await manager.callAdapter('openai', 'chatCompletion', { messages: [] })
+      expect(result.userErrorCode).toBe('MODEL_CREDENTIAL_INVALID')
+      expect(result.accessState).toBe('credential_invalid')
+      expect(result.askOnly).toBe(true)
+    })
+
+    it('provider.config.provider_code_rules 可扩展供应商业务码（深评 i4）', async () => {
+      const { ProviderError, ERROR_CODES } = require('./adapters/_base/provider-error')
+      manager.createProvider({
+        id: 'acme-llm', name: 'Acme', category: 'llm',
+        api_key: 'sk-test', models: ['acme-1'],
+        config: {
+          provider_code_rules: [
+            { provider: 'acme', codes: ['E_QUOTA'], state: 'quota_exhausted', quotaKind: 'balance' },
+          ],
+        },
+      })
+      manager.registerAdapter('acme-llm', () => ({
+        id: 'acme-llm',
+        supports: (m) => m === 'chatCompletion',
+        chatCompletion: vi.fn(async () => {
+          throw new ProviderError(ERROR_CODES.QUOTA_EXCEEDED, 'custom quota', {
+            providerId: 'acme-llm', httpStatus: 200, providerCode: 'E_QUOTA',
+          })
+        }),
+      }))
+
+      const result = await manager.callAdapter('acme-llm', 'chatCompletion', { messages: [] })
+      expect(result.userErrorCode).toBe('MODEL_QUOTA_EXHAUSTED')
+      expect(result.accessState).toBe('quota_exhausted')
+      expect(result.quotaKind).toBe('balance')
+    })
+
+    it('纯限流：userErrorCode=MODEL_RATE_LIMITED 且 fallbackEligible=false', async () => {
+      const { ProviderError, ERROR_CODES } = require('./adapters/_base/provider-error')
+      registerThrowingAdapter('openai', 'OpenAI', () => new ProviderError(
+        ERROR_CODES.RATE_LIMITED,
+        'Too Many Requests',
+        { providerId: 'openai', httpStatus: 429 },
+      ))
+
+      const result = await manager.callAdapter('openai', 'chatCompletion', { messages: [] })
+      expect(result.userErrorCode).toBe('MODEL_RATE_LIMITED')
+      expect(result.accessState).toBe('rate_limited')
+      expect(result.fallbackEligible).toBe(false)
+    })
+  })
+
   describe('callAdapter — testConnection 升级', () => {
     it('testConnection 通过 callAdapter 调用 Adapter', async () => {
       manager.createProvider({

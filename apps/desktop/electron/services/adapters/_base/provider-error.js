@@ -204,6 +204,11 @@ function hasContentPolicyContextSignal(context) {
  */
 function fromHttpStatus(status, message, context = {}) {
   const statusCode = Number(status)
+  // 本函数只接受 HTTP 状态：0 是网络错误哨兵，100..599 才是 HTTP。
+  // 供应商业务码（MiniMax 1004/2056 等）必须走 `context.providerCode`，不得从 status 参数混入。
+  const httpStatus = Number.isInteger(statusCode) && statusCode >= 100 && statusCode <= 599
+    ? statusCode
+    : null
   const errorMessage = typeof message === 'string' ? message : String(message || '')
   let code
   // Authentication, rate-limit and transport failures must never be retried as
@@ -225,7 +230,10 @@ function fromHttpStatus(status, message, context = {}) {
   } else {
     code = ERROR_CODES.PROVIDER_ERROR
   }
-  return new ProviderError(code, errorMessage, { ...context, statusCode })
+  // `statusCode` 保留为历史字段（既有消费方/测试依赖）；`httpStatus` 是 P1 新增的
+  // 显式 HTTP 维度。供应商业务码（如 MiniMax 1004/2056）不得写进这两个字段——
+  // 它们由适配器以 `providerCode` 单独传入，否则「HTTP 200 + 业务码」会被展示成 HTTP 1004。
+  return new ProviderError(code, errorMessage, { ...context, statusCode, httpStatus })
 }
 
 const RATE_LIMIT_MESSAGE_PATTERN = /\brate[\s_-]?limit\b|too\s+many\s+requests|限流|请求频率|rate_limit|Error\s+code:\s*429|rpm\s+exhausted|429\s+Too\s+Many/i
@@ -307,4 +315,62 @@ function classifyProviderFailure(error) {
   return 'other'
 }
 
-module.exports = { ProviderError, ERROR_CODES, fromHttpStatus, hasStrictContentPolicySignal, classifyContentPolicyType, normalizeContentPolicySignal, classifyProviderFailure, RATE_LIMIT_MESSAGE_PATTERN, QUOTA_MESSAGE_PATTERN, TRANSIENT_MESSAGE_PATTERN, SENSITIVE_TYPE_SIGNAL_MAP }
+// ─── P1：模型额度/凭据失败的产品级分类器（与重试分类器分工见 model-access-failure.js）──
+// 从本文件 re-export，消费方（model-provider-manager callAdapter）无需新增 require 扇出。
+// 分类器与 provider-error 同层（adapters/_base），避免适配器基类反向依赖 electron/services 业务层；
+// 这也让 model-provider-manager 从既有 require 里解构，不新增 require 扇出。
+const {
+  classifyModelAccessFailure,
+  ACCESS_STATES,
+  QUOTA_KINDS,
+  MODEL_ACCESS_PRODUCT_CODES,
+} = require('./model-access-failure')
+
+/**
+ * 构造 callAdapter 错误返回里的产品级字段。
+ * 放在本文件是为了让 model-provider-manager 不新增 require 扇出、也不因内联对象超过点名行数目标。
+ * @param {*} error
+ * @param {{ providerId?: string, providerName?: string, providerConfig?: object, providerCodeRules?: object[] }} [options]
+ */
+function buildModelAccessErrorEnvelope (error, options = {}) {
+  const providerId = options.providerId || ''
+  const providerCodeRules = Array.isArray(options.providerCodeRules)
+    ? options.providerCodeRules
+    : (options.providerConfig && Array.isArray(options.providerConfig.provider_code_rules)
+        ? options.providerConfig.provider_code_rules
+        : null)
+  const access = classifyModelAccessFailure(error, {
+    providerId,
+    ...(providerCodeRules ? { providerCodeRules } : {}),
+  })
+  return {
+    // `errorCode` 由调用方保留 ProviderError 历史枚举；`userErrorCode` 才是渲染端精确码。
+    userErrorCode: access.productCode || undefined,
+    messageParams: { provider: options.providerName || providerId },
+    accessState: access.state,
+    quotaKind: access.quotaKind,
+    providerCode: access.providerCode,
+    httpStatus: access.httpStatus,
+    fallbackEligible: access.fallbackEligible,
+    askOnly: access.askOnly,
+  }
+}
+
+module.exports = {
+  ProviderError,
+  ERROR_CODES,
+  fromHttpStatus,
+  hasStrictContentPolicySignal,
+  classifyContentPolicyType,
+  normalizeContentPolicySignal,
+  classifyProviderFailure,
+  classifyModelAccessFailure,
+  buildModelAccessErrorEnvelope,
+  ACCESS_STATES,
+  QUOTA_KINDS,
+  MODEL_ACCESS_PRODUCT_CODES,
+  RATE_LIMIT_MESSAGE_PATTERN,
+  QUOTA_MESSAGE_PATTERN,
+  TRANSIENT_MESSAGE_PATTERN,
+  SENSITIVE_TYPE_SIGNAL_MAP,
+}

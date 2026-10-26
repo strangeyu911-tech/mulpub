@@ -1,0 +1,61 @@
+{
+  "sha": "e2e89441a83183f39a935c6a9ec4935bfa5cec53",
+  "layer": "diff",
+  "mode": "skip",
+  "reason": "改动全部命中文档白名单 → 走 §11.2b docs-only 快通道",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 4,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 9,
+    "docSensitiveContentSample": [
+      "2. **双轴**：额度轴（平台数、发布量、并发、设备、云账号、AI 额度）+ 功能轴（自动化、产出质量、商业化授权、治理）。只有量变的升档是最弱升档理由，每档相对下一档至少解锁一个「质变」。",
+      "| 「4K / 去水印 / 商用授权」 | 尚未接入档位（当前是全局运营开关或法务条款） | 「规划中，上线后另行公告」 |",
+      "- **卖什么**：商用授权、多版本改写、品牌模板、导出无水印/打包、完整白标。"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "36e0e13e39f2875a6fc2a023cf8a25f24de509cb7c52be0db1b9f2b9cd508399",
+  "decidedAt": "2026-10-26T13:25:24.115Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": false,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

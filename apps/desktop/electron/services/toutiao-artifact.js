@@ -27,10 +27,15 @@ const LIST_ENDPOINTS = Object.freeze([
   '/mp/agw/creator_center/list/v2',
   '/mp/agw/creator_center/list',
   '/mp/agw/statistic/v2/item/list',
+  // 2026-10-23：视频作品列表（图文端点不含视频）
+  '/mp/agw/creator_center/list/v2?type=video',
+  '/mp/agw/creator_center/list?type=video',
 ])
 
 /** 作品管理页（兜底：端点都不可用时看页面 DOM） */
-const WORKS_PAGE = 'https://mp.toutiao.com/profile_v4/graphic/articles'
+// 2026-10-23 实测：视频发布后去 graphic/articles（图文列表）查作品必然 0 命中 => 假阴性。
+// 视频作品在 manage/content/video。
+const WORKS_PAGE = 'https://mp.toutiao.com/profile_v4/manage/content/video'
 
 /**
  * 在页面内请求作品列表端点并按文本搜标题。
@@ -49,7 +54,7 @@ async function probeEndpoints (win, title) {
     + '    if(!r.ok)continue;'
     + '    var t=await r.text();'
     + '    if(t&&t.indexOf(want)>=0)return {ok:true,hitEndpoint:eps[i],detail:"len="+t.length};'
-    + '  }catch(e){}'
+    + '  }catch (e) { void 0 }'
     + '}'
     + 'return {ok:false,detail:"no-endpoint-hit"}'
     + '})()'

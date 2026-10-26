@@ -1,0 +1,61 @@
+{
+  "sha": "d3cfd858572cf2af404d00320f09f409c782ccab",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 1765 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 1765,
+    "fileCount": 30,
+    "codeFileCount": 26,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 11,
+    "docSensitiveContentHits": 17,
+    "docSensitiveContentSample": [
+      "- 登录态写入**应用凭证库**（加密存储 / 账号分区），而 RPA 发布页读取的是 **Electron 浏览器 session 的 cookie**。",
+      "PUT  https://finderassistancea.video.qq.com/applyuploaddfs -> 404（无鉴权请求体 {}）",
+      "2. **`/applyuploaddfs` 路径在该主机上不存在**（404 而非 401/403，说明不是鉴权拦截）。"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "8a58e83fe282eb04e5e775203e5e5e3d2a583215e8be8ed3316a2097623e7beb",
+  "decidedAt": "2026-10-26T02:09:16.755Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

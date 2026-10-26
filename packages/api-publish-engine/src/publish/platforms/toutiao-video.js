@@ -139,17 +139,8 @@ class ToutiaoVideoError extends Error {
 }
 
 /** 调用方给的是本地封面文件（给不出平台侧 URI）吗？仅用于错误文案区分 */
-function hasLocalCoverOnly (coverInputs) {
-  const local = coverInputs.filter(Boolean)
-  return local.length > 0 && local.every((x) => typeof x === 'string')
-}
 
-/** 从 cookie 串取 key 的值（`; ` 分隔，取第一个 '=' 之后到下一个 ';'） */
-function cookieValue (cookie, key) {
-  const s = String(cookie || '')
-  const m = s.match(new RegExp('(?:^|;\\s*)' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'))
-  return m ? m[1].trim() : ''
-}
+const { cookieValue } = require('./toutiao-video-runtime')
 
 class ToutiaoVideoChain {
   /**
@@ -168,6 +159,8 @@ class ToutiaoVideoChain {
     this.cookie = opts.cookie || ''
     this.userAgent = opts.userAgent || UA
     this.logger = opts.logger || console
+    this._csrf = opts.csrf || '' // 2026-10-24：允许调用方注入页面运行时令牌
+    this.pagePost = opts.pagePost || null // 页面内执行发稿请求（secsdk 会为该请求签名）
     this.region = opts.region || REGION
     this.appId = opts.appId === undefined ? TT_APP_ID : opts.appId
     this.mpBase = opts.mpBase || MP_BASE
@@ -184,24 +177,65 @@ class ToutiaoVideoChain {
   }
 
   /** 平台用户 id：优先 cookie 的 uid_tt，其次构造时注入值 */
-  resolveUid () {
-    return cookieValue(this.cookie, 'uid_tt') || String(this._uidFallback || '')
+  resolveUid () { return require('./toutiao-video-runtime').resolveUid(this) }
+
+  /**
+   * 2026-10-24：写接口需要 x-csrf-token；cookie 里没有 xigua_csrf_token 时按字节系通用做法自举：
+   * HEAD 一个写域路径并带 x-secsdk-csrf-request:1，从响应头 x-ware-csrf-token 取（形如 v1,v2 ⇒ 取第二段）。
+   * 失败只记录不抛错——真正的判定仍由平台响应决定。
+   */
+  async ensureCsrf () {
+    if (this._csrf) return this._csrf
+    // 竞品链路（PRD 8.31）：头条视频发布前先问平台要 token。
+    // 端点 https://mp.toutiao.com/ugc/publish/video/v1/get_token/ —— 我方此前完全没有这一步。
+    try {
+      const tk = await this.mp.request({
+        method: 'get', url: '/ugc/publish/video/v1/get_token/',
+        headers: { Cookie: this.cookie, 'User-Agent': this.userAgent, Referer: this.mpBase + '/profile_v4/xigua/upload-video' },
+        validateStatus: function (st) { return st >= 200 && st < 500 }
+      })
+      const d = (tk && tk.data) || {}
+      const nested = d.data && typeof d.data === 'object' ? d.data : {}
+      const cand = d.token || d.csrf_token || nested.token || nested.csrf_token || ''
+      if (this.logger) this.logger.log('toutiao get_token status=' + (tk && tk.status) + ' keys=' + Object.keys(d).join(',') + ' nested=' + Object.keys(nested).join(',') + ' hasToken=' + Boolean(cand))
+      if (cand) { this._csrf = String(cand); return this._csrf }
+    } catch (eTk) { if (this.logger) this.logger.log('toutiao get_token failed: ' + String((eTk && eTk.message) || '').slice(0, 60)) }
+    if (this._csrf) return this._csrf
+    // force-bootstrap（2026-10-24）：cookie 里的令牌可能已过期；先自举，失败才回落到 cookie。
+    const fromCookie = pickCsrfToken(this.cookie)
+    const pool = ['/mp/agw/article/wtt/list', '/profile_v4/xigua/upload-video', '/profile_v4/manage/content/video', '/xigua/api/upload/getAuthKey/', '/api/pc/feed/']
+    const _attempts = []
+    for (const p of pool) {
+      try {
+        const res = await this.mp.request({
+          method: 'head', url: p,
+          headers: { Cookie: this.cookie, 'User-Agent': this.userAgent, Referer: this.mpBase + '/profile_v4/xigua/upload-video', Origin: this.mpBase, 'x-secsdk-csrf-request': '1', 'x-secsdk-csrf-version': '1.2.7' },
+          validateStatus: (st) => st >= 200 && st < 500,
+        })
+        const hdr = (res.headers || {})
+        const raw = hdr['x-ware-csrf-token'] || hdr['x-csrf-token'] || hdr['x-tt-token'] || ''
+        if (this.logger) this.logger.log('toutiao csrf probe ' + p + ' status=' + res.status + ' hdrs=' + Object.keys(hdr).filter(function(k){return k.indexOf('csrf')>=0||k.indexOf('token')>=0}).join(',') + ' raw=' + String(raw).slice(0,40))
+        const tok = String(raw).split(',')[1] || String(raw)
+        if (tok) { this._csrf = tok; if (this.logger) this.logger.log('toutiao csrf bootstrapped from ' + p); return tok }
+      } catch (eCsrf) { _attempts.push(p + '=ERR:' + String(eCsrf && eCsrf.message || '').slice(0,60)) }
+    }
+    if (fromCookie) { this._csrf = fromCookie; if (this.logger) this.logger.log('toutiao csrf fallback to cookie value'); return fromCookie }
+    // csrf-html-fallback（2026-10-24）：令牌不在 cookie、HEAD 也不下发时，抓创作页 HTML 找。
+    try {
+      const page = await this.mp.request({
+        method: 'get', url: '/profile_v4/xigua/upload-video',
+        headers: { Cookie: this.cookie, 'User-Agent': this.userAgent },
+        validateStatus: (st) => st >= 200 && st < 500,
+      })
+      const html = String((page && page.data) || '')
+      const mm = html.match(/csrf[_-]?token["'\s:=]+([A-Za-z0-9%._-]{8,})/i)
+      if (mm && mm[1]) { this._csrf = decodeURIComponent(mm[1]); if (this.logger) this.logger.log('toutiao csrf from html'); return this._csrf }
+      _attempts.push('html:no-token len=' + html.length)
+    } catch (eH) { _attempts.push('html:ERR:' + String((eH && eH.message) || '').slice(0, 50)) }
+    throw new Error('csrf-bootstrap-failed ' + (_attempts.length ? _attempts.join(' | ') : 'no-attempts'))
   }
 
-  _mpHeaders (extra) {
-    const h = {
-      Cookie: this.cookie,
-      'User-Agent': this.userAgent,
-      Referer: this.mpBase + '/profile_v4/xigua/upload-video',
-      Origin: this.mpBase,
-    }
-    // 写接口必须带 CSRF 头（2026-10-19 真机实证）：头名与 cookie 来源、
-    // 以及「不带 / 用错 cookie 一律 403 invalid csrf token」的对照证据，
-    // 全部写在 `toutiao-video-publish.js#pickCsrfToken` 的注释里（单一事实源）。
-    const csrf = pickCsrfToken(this.cookie)
-    if (csrf) h[CSRF_HEADER] = csrf
-    return Object.assign(h, extra || {})
-  }
+  _mpHeaders (extra) { return require('./toutiao-video-runtime').mpHeaders(this, extra) }
 
   /**
    * Step 0：fail-closed 前置校验（**零请求**）
@@ -253,17 +287,7 @@ class ToutiaoVideoChain {
    * 构造 ApplyUploadInner 查询串（**独立成方法供契约测试直击三处头条差异**）。
    * @param {{size:number, spaceName:string, uid:string|number, suffix?:string}} o
    */
-  _applyQueryFor (o) {
-    return buildApplyQuery({
-      size: o.size,
-      spaceName: o.spaceName,
-      appId: this.appId,
-      uid: o.uid,
-      // 头条独有：EnOID=1（抓包逐字）；抖音不带
-      innerOid: true,
-      suffix: o.suffix,
-    })
-  }
+  _applyQueryFor (o) { return require('./toutiao-video-runtime').applyQueryFor(this, o) }
 
   /**
    * Step 2-5：apply → 分片 → finish → CommitUploadInner → Vid
@@ -322,19 +346,15 @@ class ToutiaoVideoChain {
    * 实现与证据说明见 `toutiao-video-probes.js#fetchPosterList`。
    * @param {string} vid
    */
-  async getPosterList (vid) {
-    if (!vid) throw new ToutiaoVideoError('toutiao-video: getPosterList 需要 vid')
-    return fetchPosterList(this.mp, this._mpHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }), vid, this.logger)
-  }
+  async getPosterList (vid) { return require('./toutiao-video-cover').getPosterList(this, vid) }
+
+  async getVideoThumb (vid) { return require('./toutiao-video-cover').getVideoThumb(this, vid) }
 
   /**
    * 只读前置闸门：发布权限 + 审核延迟。
    * 实现与语义见 `toutiao-video-probes.js#probePublishAuth`（取不到 ⇒ unknown，不阻断）。
    */
-  async checkPublishAuth () {
-    this._assertPreconditions()
-    return probePublishAuth(this.mp, this._mpHeaders({ Accept: 'application/json' }), this.logger)
-  }
+  async checkPublishAuth () { return require('./toutiao-video-cover').checkPublishAuth(this) }
 
   /**
    * Step ⑥：PublishVideo 投稿。
@@ -342,12 +362,23 @@ class ToutiaoVideoChain {
    * （旧实现按 `status===0 && data.item_id` 判定，字段名是错的 —— 头像是 PascalCase 的 `ItemId`。）
    */
   async publish (postData) {
-    const res = await this.mp.request({
+    if (this.logger) { try { this.logger.log('toutiao cookieNames=' + String(this.cookie||'').split(';').map(function(x){return x.split('=')[0].trim()}).filter(Boolean).join(',')) } catch (_eN) {} }
+      if (this.logger) this.logger.log('toutiao PublishVideo begin bodyLen=' + String(JSON.stringify(postData)).length)
+    let res = null
+      // page-publish（2026-10-24）：优先在页面内执行，由 secsdk 为该请求签名
+      try { var _lg = this.logger && (this.logger.log || this.logger.info); if (_lg) _lg.call(this.logger, 'pagePost_type=' + typeof this.pagePost) } catch (_eL) {}
+        if (this.pagePost) { try { const pr = await this.pagePost(PUBLISH_PATH, JSON.stringify(postData)); if (pr) { let d = pr.body; try { d = JSON.parse(pr.body) } catch (_eP) {} ; res = { status: pr.status, data: d } } } catch (_ePp) { if (this.logger) this.logger.log('toutiao page-publish threw: ' + String((_ePp && _ePp.message) || '').slice(0, 60)) } }
+      if (!res) res = await this.mp.request({
       method: 'post', url: PUBLISH_PATH,
+        timeout: 30000,
       data: JSON.stringify(postData), maxBodyLength: Infinity,
       headers: this._mpHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }),
+        // 头名与长度取证（不打印值）
+        // （由下方 res 后日志对比验证是否真的带上）
       validateStatus: (s) => s >= 200 && s < 500,
     })
+      if (this.logger) this.logger.log('toutiao PublishVideo status=' + (res && res.status) + ' body=' + String(JSON.stringify(res && res.data)).slice(0, 220))
+      if (this.logger) { try { var _hh = this._mpHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }); this.logger.log('toutiao PublishVideo headers=' + Object.keys(_hh).filter(function(k){return /csrf/i.test(k)}).map(function(k){return k+':len'+String(_hh[k]||'').length}).join(',')) } catch (_eH) {} }
     const p = parsePublishResponse(res.data)
     if (p.ok) {
       return { success: true, mode: 'api', platform: 'toutiao', publishId: p.itemId }
@@ -367,24 +398,14 @@ class ToutiaoVideoChain {
   /** 全链编排 */
   async run (taskData, opts = {}) {
     this._assertPreconditions()
+    // 2026-10-24：getAuthKey 也需要 x-csrf-token，必须在任何写请求之前取到。
+    await this.ensureCsrf()
     const td = taskData || {}
     const videoPath = td.video && td.video.path
     if (!videoPath) throw new ToutiaoVideoError('toutiao-video: taskData.video.path required')
     if (!fs.existsSync(videoPath)) {
       throw new ToutiaoVideoError('toutiao-video: video file not found: ' + videoPath)
     }
-    // 封面来源（调用方显式给出时优先用）
-    //
-    // ⚠️ 判据必须与 buildToutiaoPublishBody 接受封面来源**完全一致**，否则会出现
-    // 「调用方给了 opts.thumbUri 却被本地闸门拦掉」这种自相矛盾（自扮演裁决 i1）。
-    const coverInputs = [
-      opts.cover && opts.cover.path, // 封面文件（未来 imagex 上传用）
-      opts.cover,                    // 直接给封面对象
-      opts.thumbUri,                 // 直接给封面 StoreUri（已上传）
-      td.cover,
-      td.coverPath,
-    ]
-    const hasCallerCover = coverInputs.some((x) => Boolean(x))
     const uid = this.resolveUid()
 
     // 闸门 1-2（只读·可选）：发布权限 / 账号未完善。取不到不阻断，但把结论如实带出去。
@@ -393,48 +414,22 @@ class ToutiaoVideoChain {
     const gate = buildPublishGateResult(auth)
     if (gate) return gate
 
+    // 2026-10-24：getAuthKey 需要 csrf 头，必须在第一处写请求之前取到；
+    // 位置放在文件校验与权限闸门之后 —— 否则破坏「文件不存在⇒零请求」「无权限⇒上传前返回」两条契约。
+    await this.ensureCsrf()
     const creds = await this.getAuthKey()
     const vid = await this.uploadVideo(videoPath, creds, uid, opts.onProgress)
     if (opts.onProgress) opts.onProgress(80, '视频已上传，正在提交')
 
-    // 闸门 5（封面必填）在上传之后：推荐封面按 vid 生成（bundle 原文「视频上传完毕后才能生成推荐封面」）。
-    // 顺序：调用方平台 URI ⇒ 推荐封面 ⇒ **本地封面上传（image_temp 五步链，见 cover 模块）** ⇒ 失败。
-    // ⚠️ 判据是「有没有可用 **URI**」而非「有没有封面字段」：曾用 hasCallerCover 触发回落，
-    // coverPath 让回落被跳过、thumbUri 又空 ⇒ 必失败（判据用错，自扮演裁决留档）。
-    let thumbUri = opts.thumbUri || (td.cover && td.cover.uri) || ''
-    let thumbUrl = opts.thumbUrl || (td.cover && td.cover.url) || ''
-    const hasUsableCoverUri = Boolean(thumbUri)
-    let posters = null
-    if (!hasUsableCoverUri && !opts.skipCoverCheck) {
-      posters = await this.getPosterList(vid).catch((e) => {
-        this.logger && this.logger.warn && this.logger.warn(
-          'toutiao-video: GetPosterList 不可用，回落失败: ' + String(e && e.message).slice(0, 120))
-        return null
-      })
-      if (posters && posters.picked && posters.picked.uri) {
-        thumbUri = posters.picked.uri
-        if (opts.onProgress) opts.onProgress(85, '已自动选用平台推荐封面')
-      }
-    }
-    if (!thumbUri && !opts.skipCoverCheck) {
-      // 本地封面 ⇒ image_temp 五步链上传并登记；平台 URI 直接用；都没有 ⇒ 回落推荐封面（上方已试）。
-      // 判据与接线体都在 toutiao-video-cover.js（本文件行数闸余量不足，勿搬回）。
-      const localCover = pickLocalCoverPath(coverInputs)
-      if (localCover) {
-        if (opts.onProgress) opts.onProgress(85, '正在上传本地封面')
-        const { uploadLocalCoverFor } = require('./toutiao-video-cover')
-        thumbUri = (await uploadLocalCoverFor(this, localCover, { onProgress: opts.onProgress })).uri
-      }
-    }
-    if (!thumbUri && !opts.skipCoverCheck) {
-      const hint = hasLocalCoverOnly(coverInputs)
-        ? '调用方提供了本地封面文件但上传失败，且平台推荐封面不可用'
-        : '调用方未提供 cover/thumbUri'
-      throw new ToutiaoVideoError(
-        '头条视频发布需要封面图（平台必填）：平台未生成推荐封面，且' + hint
-        + '。平台侧原文：该视频需要上传一个封面'
-      )
-    }
+    // 闸门 5（封面必填）：判据与回落顺序整体下沉到 toutiao-video-cover.js#resolveCoverForRun
+    // （2026-10-26 行数门禁：本文件硬限 500 行，勿搬回）。
+    const _cover = await require('./toutiao-video-cover').resolveCoverForRun(this, {
+      vid, opts, td, onProgress: opts.onProgress,
+      coverInputs: [opts.cover && opts.cover.path, opts.cover, opts.thumbUri, td.cover, td.coverPath],
+    })
+    const thumbUri = _cover.thumbUri
+    const thumbUrl = _cover.thumbUrl
+    const posters = _cover.posters
 
     const body = this.buildPublishBody(td, {
       vid,

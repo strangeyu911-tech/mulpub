@@ -213,7 +213,104 @@ async function uploadLocalCoverFor (chain, imagePath, o) {
   })
 }
 
+/** 判据：调用方只给了本地路径（没有已上传的 URI）。 */
+function hasLocalCoverOnly (coverInputs) {
+  const local = (coverInputs || []).filter(Boolean)
+  return local.length > 0 && local.every((x) => typeof x === 'string')
+}
+
+/**
+ * 取平台推荐封面（GetPosterList）。从 toutiao-video.js 下沉（2026-10-26 行数门禁）。
+ */
+async function getPosterList (chain, vid) {
+  if (!vid) throw new Error('toutiao-video: getPosterList 需要 vid')
+  const { fetchPosterList } = require('./toutiao-video-probes')
+  return fetchPosterList(chain.mp, chain._mpHeaders({ 'Content-Type': 'application/json', Accept: 'application/json' }), vid, chain.logger)
+}
+
+/**
+ * 取视频自带缩略图（参考产品 getVideoCover$1 等价实现，2026-10-25 逆向取证）。
+ * GET /mp/agw/article_material/video/get_thumb?vid=<vid>（AGW 族，cookie 鉴权，无需 csrf）。
+ */
+async function getVideoThumb (chain, vid) {
+  if (!vid) return ''
+  const res = await chain.mp.request({
+    method: 'get',
+    url: 'https://mp.toutiao.com/mp/agw/article_material/video/get_thumb?vid=' + encodeURIComponent(String(vid)),
+    headers: chain._mpHeaders({
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      Referer: 'https://mp.toutiao.com/profile_v4/graphic/publish',
+    }),
+    timeout: 15000,
+  })
+  const items = res && res.data && res.data.items
+  if (!Array.isArray(items) || !items.length) return ''
+  const it = items[0] || {}
+  if (typeof it === 'string') return it
+  return String(it.uri || it.Uri || it.url || it.Url || '')
+}
+
+/** 只读前置闸门：发布权限 + 审核延迟。取不到 ⇒ unknown，不阻断。 */
+async function checkPublishAuth (chain) {
+  chain._assertPreconditions()
+  const { probePublishAuth } = require('./toutiao-video-probes')
+  return probePublishAuth(chain.mp, chain._mpHeaders({ Accept: 'application/json' }), chain.logger)
+}
+
+/**
+ * 解析封面 URI（原 toutiao-video.js#run 内的闸门 5 整段，2026-10-26 下沉）。
+ * 顺序：调用方 URI ⇒ 平台推荐封面 ⇒ 视频自带缩略图 ⇒ 本地封面五步链 ⇒ 抛出。
+ * @returns {Promise<{thumbUri:string, thumbUrl:string, posters:object|null}>}
+ */
+async function resolveCoverForRun (chain, input) {
+  const o = input || {}
+  const opts = o.opts || {}
+  const td = o.td || {}
+  const coverInputs = o.coverInputs || []
+  let thumbUri = opts.thumbUri || (td.cover && td.cover.uri) || ''
+  let thumbUrl = opts.thumbUrl || (td.cover && td.cover.url) || ''
+  const hasUsableCoverUri = Boolean(thumbUri)
+  let posters = null
+  if (!hasUsableCoverUri && !opts.skipCoverCheck) {
+    posters = await getPosterList(chain, o.vid).catch(function (e) {
+      if (chain.logger && chain.logger.warn) chain.logger.warn('toutiao-video: GetPosterList 不可用，回落失败: ' + String(e && e.message).slice(0, 120))
+      return null
+    })
+    if (posters && posters.picked && posters.picked.uri) {
+      thumbUri = posters.picked.uri
+      if (o.onProgress) o.onProgress(85, '已自动选用平台推荐封面')
+    }
+  }
+  if (!thumbUri && !opts.skipCoverCheck) {
+    try {
+      const t = await getVideoThumb(chain, o.vid)
+      if (t) { thumbUri = t; if (o.onProgress) o.onProgress(85, '已取视频缩略图作封面') }
+    } catch (e) {
+      if (chain.logger && chain.logger.warn) chain.logger.warn('toutiao-video: get_thumb 不可用: ' + String((e && e.message) || '').slice(0, 100))
+    }
+  }
+  if (!thumbUri && !opts.skipCoverCheck) {
+    const localCover = pickLocalCoverPath(coverInputs)
+    if (localCover) {
+      if (o.onProgress) o.onProgress(85, '正在上传本地封面')
+      thumbUri = (await uploadLocalCoverFor(chain, localCover, { onProgress: o.onProgress })).uri
+    }
+  }
+  if (!thumbUri && !opts.skipCoverCheck) {
+    const hint = hasLocalCoverOnly(coverInputs)
+      ? '调用方提供了本地封面文件但上传失败，且平台推荐封面与视频缩略图都不可用'
+      : '调用方未提供 cover/thumbUri'
+    const E = require('./toutiao-video').ToutiaoVideoError
+    throw new E('头条视频发布需要封面图（平台必填）：平台未生成推荐封面，且' + hint + '。平台侧原文：该视频需要上传一个封面')
+  }
+  return { thumbUri: thumbUri, thumbUrl: thumbUrl, posters: posters }
+}
+
 module.exports = {
+  resolveCoverForRun,
+  getPosterList,
+  getVideoThumb,
+  checkPublishAuth,
   VAS_BASE,
   AUTH_KEY_TYPE,
   pickImageTempCreds,

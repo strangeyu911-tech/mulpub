@@ -124,6 +124,7 @@ const budgetMs = Number.isFinite(bytes) && bytes > 0 ? computeBudgetMs(bytes, { 
         prevPagePercent = signal.pagePercent
         stableSince = now
       }
+      if (this._uploadConfirmed) { log.info('RpaView', '[' + platform + '] upload confirmed via publishBtnAfter, skip polling'); return true }
       const decision = decideUploadWait({
         elapsedMs: now - startedAt,
         budgetMs,
@@ -194,8 +195,45 @@ const budgetMs = Number.isFinite(bytes) && bytes > 0 ? computeBudgetMs(bytes, { 
         this._emitProgress(platform, 'uploading file...', 25)
         // 逐候选定位文件输入（上传落地页常有多个 input[type=file]，首个未必负责视频）
         const fileSel = await this._resolveSelector(win, inputs, 15000, 3000)
-        if (!fileSel) { if (!retry.retry('file_upload')) break; await this._sleep(2000); continue }
+        if (!fileSel) {
+          // 2026-10-23 诊断：视频号上传卡在重试循环且未进入 _setFileInput ⇒ 打印页面真实 input。
+          try {
+            const shape = await win.webContents.executeJavaScript('(function(){var a=[].slice.call(document.querySelectorAll("input[type=file]"));return a.map(function(e){return (e.accept||"-")+"|"+(e.className||"").toString().slice(0,24)}).join(" ; ")||"NONE"})()', true)
+            log.warn('RpaView', '[' + platform + '] file inputs on page: ' + shape)
+          } catch (_e9) { /* 诊断失败忽略 */ }
+          // 2026-10-23：视频号页面无 input[type=file]，改走 CDP 文件选择器拦截。
+          if (platform === 'tencent_video') { // chooserGuard
+            let chooserDone = false
+            try { chooserDone = await this._uploadViaFileChooser(win, article.video_path) }
+            catch (_e10) { log.warn('RpaView', '[tencent_video] chooser threw: ' + _e10.message) }
+            // dropViaCdpGuard：视频号上传区是纯拖拽区（点击不弹原生选择器），改用 CDP 真实拖放。
+            if (!chooserDone && typeof this._dropViaCdp === 'function') {
+              let dropped2 = false
+              try { dropped2 = await this._dropViaCdp(win, article.video_path, '[class*=upload],[class*=dragger],[class*=drop],div[class*=empty],[class*=uploader],[class*=add]') }
+              catch (_e11) { log.warn('RpaView', '[tencent_video] cdp-drop threw: ' + _e11.message) }
+              if (dropped2) {
+                const ok2 = await this._waitForVideoUploadComplete(win, platform, 600000, { fileBytes: readVideoFileBytes(article.video_path) }).catch(() => false)
+                if (ok2) { fillReport.upload = { ok: true }; retry.markDone('file_upload'); this._emitProgress(platform, 'file uploaded', 40); break }
+              }
+            }
+            if (chooserDone) {
+              const ok = await this._waitForVideoUploadComplete(win, platform, 600000, { fileBytes: readVideoFileBytes(article.video_path) }).catch(() => false)
+              fillReport.upload = ok ? { ok: true } : { ok: false, detail: '选择器注入后未等到上传完成信号' }
+              if (ok) { retry.markDone('file_upload'); this._emitProgress(platform, 'file uploaded', 40); break }
+            }
+          }
+          if (!retry.retry('file_upload')) break
+          await this._sleep(2000); continue
+        }
         await this._setFileInput(win, article.video_path, fileSel)
+        // 2026-10-23：视频号即使 _setFileInput 返回成功，页面仍可能不接受文件（截图实证）。
+        // always try the chooser：无条件再用 CDP 文件选择器注入一次，作为第二通道。
+        if (platform === 'tencent_video' && typeof this._uploadViaFileChooser === 'function') {
+          try {
+            const ok2 = await this._uploadViaFileChooser(win, article.video_path)
+            log.info('RpaView', '[tencent_video] chooser second pass: ' + ok2)
+          } catch (_e8) { log.warn('RpaView', '[tencent_video] chooser second pass failed: ' + _e8.message) }
+        }
         // 完成判定：百家号看「预览/编辑器/发布按钮可用」，其余平台走上传等待器
         let uploadDone
         if (platform === 'baijiahao') {
@@ -262,6 +300,145 @@ const budgetMs = Number.isFinite(bytes) && bytes > 0 ? computeBudgetMs(bytes, { 
       return empty
     }
   },
+
+  /**
+   * 2026-10-23（视频号实测 file inputs on page: NONE）：上传器没有 input[type=file]，
+   * 点击上传区才由 JS 动态创建并弹出文件选择器。用 CDP 拦截选择器，直接把文件交给它。
+   * 判据：Page.fileChooserOpened 事件拿到 backendNodeId ⇒ DOM.setFileInputFiles 成功。
+   */
+  async _uploadViaFileChooser(win, filePath, clickSelectors) {
+    const path = require('path')
+    const dbg = win.webContents.debugger
+    let attachedHere = false
+    try {
+      // attachGuard（2026-10-23）：attach 必须在 try 内——发布网络捕获已附着同一 target 时
+      // attach 会抛「Another debugger is already attached」，此前它写在外面导致整轮静默。
+      if (!dbg.isAttached()) { dbg.attach('1.3'); attachedHere = true }
+      await dbg.sendCommand('Page.enable')
+      // deep-input：在 pierce 后的节点树里找 input[type=file]（含 shadow root），直接 setFileInputFiles。
+      try {
+        const deepDoc = await dbg.sendCommand('DOM.getDocument', { depth: -1, pierce: true })
+        let _inputNodeId = 0
+        const walkDeep = (n) => {
+          if (!n || _inputNodeId) return
+          if (n.nodeName === 'INPUT') {
+            const a = n.attributes || []
+            for (let i = 0; i < a.length; i += 2) { if (a[i] === 'type' && String(a[i+1]).toLowerCase() === 'file') { _inputNodeId = n.nodeId; return } }
+          }
+          const kids = [].concat(n.children || [], n.shadowRoots || [])
+          for (const k of kids) walkDeep(k)
+        }
+        let _wujieShadow = 0
+        const findWujie = (n) => {
+          if (!n || _wujieShadow) return
+          const a = n.attributes || []
+          for (let i = 0; i < a.length; i += 2) { if (a[i] === 'class' && String(a[i+1]).indexOf('wujie_iframe') >= 0) { if (n.shadowRoots && n.shadowRoots[0]) { _wujieShadow = n.shadowRoots[0].nodeId; return } } }
+          const kids = [].concat(n.children || [], n.shadowRoots || [])
+          for (const k of kids) findWujie(k)
+        }
+        findWujie(deepDoc.root)
+        if (_wujieShadow) {
+          try {
+            const wq = await dbg.sendCommand('DOM.querySelector', { nodeId: _wujieShadow, selector: '.upload input[type="file"]' })
+            if (wq && wq.nodeId) { _inputNodeId = wq.nodeId; log.info('RpaView', 'cdp-drop: wujie-shadow input found nodeId=' + _inputNodeId) }
+          } catch (_eWq) { void 0 }
+        }
+        walkDeep(deepDoc.root)
+        if (_inputNodeId) {
+          await dbg.sendCommand('DOM.setFileInputFiles', { files: [require('path').resolve(filePath)], nodeId: _inputNodeId })
+          log.info('RpaView', 'cdp-drop: deep-input setFileInputFiles ok nodeId=' + _inputNodeId + ' (not returning; fall through to shadow-scan)')
+        }
+        log.info('RpaView', 'cdp-drop: deep-input found no file input')
+      } catch (eD) { log.warn('RpaView', 'cdp-drop: deep-input failed ' + (eD && eD.message ? eD.message.slice(0,80) : '')) }
+      // shadow-scan：上传区不在普通 DOM（主帧只出页头、编辑器 iframe 恒空），改递归穿透 shadowRoot。
+      try {
+        const sv = await win.webContents.executeJavaScript("(function(){var out={found:false};var seen=0;function walk(root,depth){if(!root||depth>8||seen>4000)return null;var els;try{els=root.querySelectorAll('*')}catch(e){return null}for(var i=0;i<els.length;i++){var e=els[i];seen++;var t='';try{t=e.innerText||''}catch (e2) { void 0 }if(t&&(t.indexOf('上传时长')>=0||t.indexOf('添加视频')>=0||t.indexOf('点击上传')>=0)){return e}var cn='';try{cn=String(e.className||'')}catch (e3) { void 0 }if(cn&&(cn.indexOf('upload')>=0||cn.indexOf('dragger')>=0||cn.indexOf('drop')>=0)){return e}if(e.shadowRoot){var r=walk(e.shadowRoot,depth+1);if(r)return r}}return null}var cands=[];function collect(root,depth){if(!root||depth>8)return;var els;try{els=root.querySelectorAll('*')}catch(e){return}for(var i=0;i<els.length;i++){var e=els[i];var t='';try{t=e.innerText||''}catch (e2) { void 0 }var cn='';try{cn=String(e.className||'')}catch (e3) { void 0 }var isHit=(t&&(t.indexOf('上传时长')>=0||t.indexOf('点击上传')>=0))||(cn&&(cn.indexOf('dragger')>=0||cn.indexOf('drop')>=0||cn.indexOf('upload')>=0));if(isHit){var r0=e.getBoundingClientRect();var area=r0.width*r0.height;if(area>=400&&area<=400000)cands.push({e:e,area:area})}if(e.shadowRoot)collect(e.shadowRoot,depth+1)}}collect(document,0);cands.sort(function(a,b){return a.area-b.area});var hit=cands.length?cands[0].e:walk(document,0);if(!hit)return out;hit.setAttribute('data-mp-drop','1');var r=hit.getBoundingClientRect();return {found:true,x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),w:Math.round(r.width),h:Math.round(r.height),via:'shadow-scan'}})()", true)
+        log.info('RpaView', 'cdp-drop: shadow-scan ' + JSON.stringify(sv))
+        if (sv && sv.found && sv.w > 0 && sv.h > 0) {
+          // click-chooser-first：CDP 真鼠标点击 + 选择器拦截（isTrusted=true）
+          try { if (await this._clickThenChooser(win, sv.x, sv.y, filePath)) { log.info('RpaView', 'cdp-drop: dispatched (click-chooser) ' + filePath); return true } } catch (_eCC) { void 0 }
+          const _abs2 = require('path').resolve(filePath)
+          const _d = { items: [{ mimeType: 'text/plain', data: '' }], files: [_abs2], dragOperationsMask: 1 }
+          for (const _t of ['dragEnter','dragOver','drop']) {
+            await dbg.sendCommand('Input.dispatchDragEvent', { type: _t, x: sv.x, y: sv.y, data: _d })
+          }
+          log.info('RpaView', 'cdp-drop: dispatched (shadow-scan) ' + filePath)
+          try { dbg.detach() } catch (_eS) { void 0 }
+          return true
+        }
+      } catch (eS) { log.warn('RpaView', 'cdp-drop: shadow-scan failed ' + (eS && eS.message ? eS.message.slice(0,80) : '')) }
+      // frame-scan：pierce/querySelector 对 iframe 无效，改用 createIsolatedWorld + Runtime.evaluate 在每帧内定位。
+      try {
+        const ft2 = await dbg.sendCommand('Page.getFrameTree')
+        const flat2 = []
+        const walk2 = (n) => { if(!n) return; flat2.push(n.frame); if(n.childFrames) n.childFrames.forEach(walk2) }
+        walk2(ft2.frameTree)
+        // 2026-10-24 帧探针：编辑器 iframe 首扫时 text='' kids=0（尚未渲染）⇒ 轮询等待。
+        let _frameReady = false
+        for (let attempt = 0; attempt < 20 && !_frameReady; attempt++) {
+          for (const f of flat2) {
+            if (!f || !f.id) continue
+            if (!String(f.url||'').includes('/micro/content/')) continue
+            try {
+              const w0 = await dbg.sendCommand('Page.createIsolatedWorld', { frameId: f.id, worldName: 'mp-probe' })
+              const ev0 = await dbg.sendCommand('Runtime.evaluate', { contextId: w0.executionContextId, expression: '(document.body?document.body.children.length:0)', returnByValue: true })
+              const kids = (ev0 && ev0.result && ev0.result.value) || 0
+              if (kids > 0) { _frameReady = true; break }
+            } catch (_e0) { /* 该帧不可注入 */ }
+          }
+          if (!_frameReady) await new Promise((r) => setTimeout(r, 1000))
+        }
+        log.info('RpaView', 'frame-scan: ready=' + _frameReady + ' after poll')
+        log.info('RpaView', 'frame-scan: frames=' + flat2.length + ' ' + flat2.map(f=>String(f.url||'').slice(0,60)).join(' | '))
+        let _hitCount = 0
+        for (const f of flat2) {
+          if (!f || !f.id) continue
+          try {
+            const w2 = await dbg.sendCommand('Page.createIsolatedWorld', { frameId: f.id, worldName: 'mp-drop' })
+            const ev = await dbg.sendCommand('Runtime.evaluate', { contextId: w2.executionContextId, expression: "(function(){  var els=[].slice.call(document.querySelectorAll('div,section,span,button'));  var hit=null;  for(var i=0;i<els.length;i++){var e=els[i];var t=(e.innerText||'');if(t&&(t.indexOf('上传时长')>=0||t.indexOf('添加视频')>=0||t.indexOf('点击上传')>=0)){hit=e;break}}  if(!hit){var c=[].slice.call(document.querySelectorAll('[class*=upload],[class*=dragger],[class*=drop],[class*=uploader]'));if(c.length){hit=c[0]}}  if(!hit) return {found:false,probe:'frame-probe text=' + (document.body?document.body.innerText.replace(/\\s+/g,' ').slice(0,160):'<nobody>') + ' inputs=' + document.querySelectorAll('input[type=file]').length + ' kids=' + (document.body?document.body.children.length:0)};  hit.setAttribute('data-mp-drop','1');  var r=hit.getBoundingClientRect();  return {found:true,x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),w:Math.round(r.width),h:Math.round(r.height)};})()", returnByValue: true })
+            const rv = ev && ev.result && ev.result.value
+            if (rv && !rv.found && rv.probe) { log.info('RpaView', 'cdp-drop: ' + rv.probe) }
+            if (rv && rv.found && rv.w > 0 && rv.h > 0) {
+              log.info('RpaView', 'cdp-drop: frame-scan hit ' + String(f.url||'').slice(0,60) + ' ' + JSON.stringify(rv))
+              await dbg.sendCommand('Input.dispatchDragEvent', { type: 'dragEnter', x: rv.x, y: rv.y, data: { items: [{ mimeType: 'text/plain', data: '' }], files: [require('path').resolve(filePath)], dragOperationsMask: 1 } })
+              await dbg.sendCommand('Input.dispatchDragEvent', { type: 'dragOver', x: rv.x, y: rv.y, data: { items: [{ mimeType: 'text/plain', data: '' }], files: [require('path').resolve(filePath)], dragOperationsMask: 1 } })
+              await dbg.sendCommand('Input.dispatchDragEvent', { type: 'drop', x: rv.x, y: rv.y, data: { items: [{ mimeType: 'text/plain', data: '' }], files: [require('path').resolve(filePath)], dragOperationsMask: 1 } })
+              log.info('RpaView', 'cdp-drop: dispatched (frame-scan) ' + filePath)
+              try { dbg.detach() } catch (e0) { void 0 }
+              return true
+            }
+          } catch (e16) { log.warn('RpaView', 'frame-scan: inject failed ' + String(f.url||'').slice(0,50) + ' :: ' + (e16 && e16.message ? e16.message.slice(0,80) : '')) }
+        }
+      } catch (e17) { log.warn('RpaView', 'frame-scan: no frame tree :: ' + (e17 && e17.message ? e17.message.slice(0,80) : '')) }
+      await dbg.sendCommand('DOM.enable')
+      await dbg.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true })
+      const opened = new Promise((resolve) => {
+        const onMsg = (_e, method, params) => {
+          if (method === 'Page.fileChooserOpened') { dbg.removeListener('message', onMsg); resolve(params) }
+        }
+        dbg.on('message', onMsg)
+        setTimeout(() => resolve(null), 8000)
+      })
+      const sel = JSON.stringify(clickSelectors || '[class*=upload],[class*=dragger],[class*=drop],div[class*=add],div[class*=empty],span[class*=plus]')
+      await win.webContents.executeJavaScript('(function(){var c=[].slice.call(document.querySelectorAll(' + sel + ')).filter(function(e){return e.getClientRects().length>0});if(!c.length)return "NO_TARGET";c[c.length-1].click();return "CLICKED"})()', true)
+      const params = await opened
+      if (!params || !params.backendNodeId) { log.warn('RpaView', 'file-chooser: no fileChooserOpened within 8s (click did not open a native chooser)'); return false }
+      await dbg.sendCommand('DOM.setFileInputFiles', { files: [path.resolve(filePath)], backendNodeId: params.backendNodeId })
+      log.info('RpaView', 'file-chooser upload ok: ' + path.basename(filePath))
+      return true
+    } catch (e) {
+      log.warn('RpaView', 'file-chooser upload failed: ' + e.message)
+      return false
+    } finally {
+      try { await dbg.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }) } catch (_) { void 0 }
+      if (attachedHere) { try { dbg.detach() } catch (_) { void 0 } }
+    }
+  },
+
+
+
 }
+
+Object.assign(uploadWaiterMixin, require('./upload-waiter-cdp-mixin').uploadWaiterCdpMixin)
 
 module.exports = { uploadWaiterMixin, readVideoFileBytes }

@@ -25,7 +25,7 @@ try {
  * @param {object} params - { cookies, title, content, images[], video?, tags[] }
  * @returns {Promise<{success: boolean, postId?: string, message: string}>}
  */
-async function publishViaApi(platform, params) {
+async function publishViaApi(platform, params, cookies, publishOpts) {
   if (!engine) {
     return { success: false, message: "API publish engine not loaded" };
   }
@@ -41,7 +41,7 @@ async function publishViaApi(platform, params) {
       images: params.images || [],
       video: params.video || null,
     };
-    const result = await adapter.execute(taskData, params.cookies || "");
+    const result = await adapter.execute(taskData, params.cookies || cookies || "", publishOpts || {});
     if (result && result.success) {
       log.info("APIPlatformAdapter", platform + " publish success, id=" + (result.publishId || result.url || ""));
       return {

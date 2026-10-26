@@ -160,6 +160,44 @@ class RpaViewManager {
               log.info('RpaView', 'API publish cookie fallback from auth partition ' + fallback.partition + ' (' + fallback.count + ' cookies) platform=' + platform)
             }
             if (cookieFromPartition) cookie = cookieFromPartition
+            // 2026-10-23 实测：凭证库/分区里 cookieLen=284，但 channels.weixin.qq.com 页面 context 里 0 个 cookie
+            // ⇒ 页面必然显示未登录。故把 cookie 字符串注入浏览器 session（按 cookie 名逐条 set）。
+            try {
+              if (cookie) { // 2026-10-23：注入是页面登录的来源（停用后上传卡死）⇒ 必须保留；正确方向是注入到账号自己的 partition，而不是 defaultSession
+                const { session } = require('electron')
+                const _pn = (typeof fallback !== 'undefined' && fallback && fallback.partition) ? String(fallback.partition) : ''
+                const ses = _pn ? session.fromPartition(_pn) : session.defaultSession
+                const dom = platform === 'tencent_video' ? '.weixin.qq.com' : (platform === 'toutiao' ? '.toutiao.com' : null)
+                if (ses && dom) {
+                  let n = 0
+                  for (const seg of String(cookie).split(';')) {
+                    const i = seg.indexOf('=')
+                    if (i <= 0) continue
+                    const name = seg.slice(0, i).trim()
+                    const value = seg.slice(i + 1).trim()
+                    if (!name) continue
+                    try { await ses.cookies.set({ url: 'https://' + dom.replace(/^\./, ''), name, value, domain: dom, path: '/' }); n++ } catch (_e2) { void 0 }
+                  }
+                  log.info('RpaView', 'cookie inject -> browser session: ' + n + ' cookies platform=' + platform + ' domain=' + dom)
+                }
+              }
+            } catch (_e) { /* 注入失败不阻塞发布 */ }
+            // 2026-10-23：复用参考产品的做法——直接用浏览器里那份 cookie 串。
+            // 实测：视频号账号分区只有 4 条 cookie（头条 41 条）⇒ API 轨 Step1 必然 300334。
+            // 若浏览器 session 里已有更完整的同域 cookie（用户在应用窗口里登录过），就用它覆盖。
+            if (platform === 'tencent_video') {
+              try {
+                const { session } = require('electron')
+                const jar = await session.defaultSession.cookies.get({ domain: '.weixin.qq.com' })
+                if (jar && jar.length > 10) {
+                  const str = jar.map((c) => c.name + '=' + c.value).join('; ')
+                  if (str.length > String(cookie || '').length) {
+                    log.info('RpaView', 'harvest -> api cookie: ' + jar.length + ' cookies (was ' + String(cookie || '').length + ' chars)')
+                    cookie = str
+                  }
+                }
+              } catch (_e3) { /* 收割失败沿用原 cookie */ }
+            }
           } else {
             log.warn('RpaView', 'API publish cookie fallback empty: reason=' + fallback.reason + ' probed='
               + ((fallback.probed || []).length) + ' platform=' + platform + ' accountId=' + (acctId || '(none)'))
@@ -182,14 +220,47 @@ class RpaViewManager {
             log.warn('RpaView', 'signer cookie bind failed platform=' + platform + ' accountId=' + signerAccountId + ' err=' + e.message)
           }
         }
-        const apiResult = await Promise.race([
+        // 头条 CSRF 令牌（2026-10-24 抓包）：由 secsdk 运行时生成，cookie/本地存储都没有，
+        // 只能开隐藏窗口实时抓（见 services/toutiao-csrf-grab.js）。
+        log.info('RpaView', 'API-DIAG account: platform=' + platform + ' articleKeys=' + Object.keys(article || {}).join(',') + ' signerAccountId=' + String(signerAccountId) + ' authKeys=' + Object.keys(authData || {}).join(','))
+        let _csrfTok = ''
+        if (platform === 'toutiao' && signerAccountId) {
+          // grab-hard-timeout（2026-10-24）：grab 内部 await dbg.sendCommand('Network.enable') 无超时会永久挂起，
+          // 实测导致 publishViaApi 永不返回（'publish done'/'returned failure' 两条日志均为 0 命中）。
+          try {
+            log.info('RpaView', 'grabToutiaoCsrf: begin')
+            _csrfTok = await Promise.race([
+              require('./toutiao-csrf-grab').grabToutiaoCsrf(signerAccountId, { log: log, timeoutMs: 20000 }),
+              new Promise(function (res) { setTimeout(function () { res('') }, 30000) })
+            ])
+            log.info('RpaView', 'grabToutiaoCsrf: done len=' + String(_csrfTok || '').length)
+          } catch (_eC) { log.warn('RpaView', 'grabToutiaoCsrf: threw ' + String((_eC && _eC.message) || '').slice(0, 60)) }
+        }
+        // 2026-10-25 API 轨：头条 PublishVideo 需要 ?msToken&a_bogus（secsdk 在 XHR 层注入），
+// 而这两个参数只有**真实的发布页**才有 ⇒ 先开一个可见窗口打开发布页，
+// 把它的 webContents 交给 pagePost，让请求在页面上下文里发出。
+let _pageWin = null
+if (platform === 'toutiao' && signerAccountId) {
+  try {
+    const electron = require('electron')
+    const ses = electron.session.fromPartition('persist:account-' + signerAccountId)
+    _pageWin = new electron.BrowserWindow({ show: true, width: 1280, height: 900, webPreferences: { session: ses, contextIsolation: true, nodeIntegration: false } })
+    await _pageWin.loadURL('https://mp.toutiao.com/profile_v4/xigua/upload-video')
+    await new Promise(function (r) { setTimeout(r, 40000) }) // 2026-10-25：15s 时 secsdk 仍未完成签名握手（403 invalid csrf token）
+    log.info('RpaView', '[toutiao] page-context ready for API publish')
+  } catch (_ePw) { log.warn('RpaView', '[toutiao] page-context failed: ' + String((_ePw && _ePw.message) || '').slice(0, 60)); _pageWin = null }
+}
+const apiResult = await Promise.race([
           publishViaApi(platform, taskData, cookie, {
             onProgress: (pct, msg) => this._emitProgress(platform, msg, pct),
             accountId: signerAccountId || undefined,
+            csrf: _csrfTok || undefined,
+            pagePost: platform === 'toutiao' ? function (p, b) { return require('./toutiao-page-publish').publishViaPage(signerAccountId, p, b, { log: log, webContents: _pageWin && !_pageWin.isDestroyed() ? _pageWin.webContents : null }) } : undefined,
           }),
           new Promise(function(_, rj) { const _t = setTimeout(function() { rj(new Error('API timeout (' + (timeout/1000) + 's)')) }, timeout); if (_t && _t.unref) _t.unref() })
         ]);
-        // 统一结果日志：API 失败分支此前无日志（logging-coverage-audit）
+        try { if (_pageWin && !_pageWin.isDestroyed()) _pageWin.destroy() } catch (_eDw) { void 0 }
+// 统一结果日志：API 失败分支此前无日志（logging-coverage-audit）
         if (apiResult && apiResult.success) log.info('RpaView','publish done via API platform='+platform)
         else log.warn('RpaView','API publish returned failure platform='+platform+' error='+(apiResult&&apiResult.error))
         return apiResult;

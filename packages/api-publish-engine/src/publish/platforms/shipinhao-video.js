@@ -2,7 +2,7 @@
 /**
  * shipinhao-video.js — 视频号（微信 channels）视频发布链（W1 §4.1）
  *
- * 逐字对齐参考产品逆向链（证据 01-docs/rpa-api-publish/evidence/yx-slices-v2.txt）：
+ * 逐字对齐参考产品逆向链（证据 01-docs/rpa-api-publish/evidence/ref-slices-v2.txt）：
  *   1. getUploadAuthKey   POST {api}/cgi-bin/mmfinderassistant-bin/helper/helper_upload_params
  *   2. applyUpload        PUT  {cdn}/applyuploaddfs          {BlockSum, BlockPartLength} + X-Arguments(scene=2)/Authorization
  *   3. uploadPart(×N)     PUT  {cdn}/uploadpartdfs?PartNumber&UploadID  二进制分片 + Content-MD5=md5(chunk) + X-Arguments(scene=0)
@@ -31,6 +31,8 @@ const DEFAULT_API_BASE = 'https://channels.weixin.qq.com'
 // 保留旧主机作为**最后兜底**：若新主机在部分网络不可达，仍可回落读取 envInfo.cdnHostList。
 const CDN_HOST_CANDIDATES = ['https://finderassistancea.video.qq.com', 'https://finderassistanced.video.qq.com', 'https://finder.video.qq.com']
 const DEFAULT_CDN_BASE = CDN_HOST_CANDIDATES[0]
+// 2026-10-23：适配器未传 timeout 时 http 客户端无超时 ⇒ 上传挂起且无任何日志。给 60s 默认。
+const DEFAULT_TIMEOUT_MS = 60000
 const API_REFERER = 'https://channels.weixin.qq.com'
 const POST_REFERER = 'https://channels.weixin.qq.com/platform/post/create'
 const UPLOAD_REFERER = 'https://channels.weixin.qq.com/'
@@ -93,7 +95,16 @@ function buildShipinhaoPostData (taskData, upload, ids) {
   const v = td.video || {}
   const vi = (upload && upload.videoInfo) || {}
   const mediaUrl = vi.url || (vi.data && vi.data.url) || ''
+  // 2026-10-24（逆向文档 §二⑦ / §三）：发布体字段族由《视频号发布链深挖》给出
+  // —— videoCover / title / description / isOriginal / locationKeyword / topic。
+  // 形状为 INFERRED（文档明示未闭合），故一律给安全默认值，不猜测嵌套结构。
+  const cover = td.cover || {}
   return {
+    title: td.title || '',
+    isOriginal: td.isOriginal === true ? 1 : 0,
+    videoCover: (cover.path || cover.url) ? { path: cover.path || '', url: cover.url || '' } : null,
+    topic: Array.isArray(td.tags) ? td.tags.join(',') : '',
+    locationKeyword: td.location || '',
     description: composeShipinhaoDescription(td),
     media: { videoId: (upload && upload.uploadId) || '', url: mediaUrl, width: v.width, height: v.height, duration: v.duration },
     location: null,
@@ -118,10 +129,12 @@ class ShipinhaoVideoChain {
     this.finderUin = opts.finderUin != null ? opts.finderUin : (opts.finderId || '') // weixinnum
     this.logger = opts.logger || console
     const headers = { 'User-Agent': this.userAgent }
-    this.api = opts.api || createHttpClient({ baseURL: opts.apiBase || DEFAULT_API_BASE, timeout: opts.timeout, agents: opts.agents, headers })
-    this.cdn = opts.cdn || createHttpClient({ baseURL: opts.cdnBase || DEFAULT_CDN_BASE, timeout: opts.timeout, agents: opts.agents, headers })
+    this.api = opts.api || createHttpClient({ baseURL: opts.apiBase || DEFAULT_API_BASE, timeout: opts.timeout || DEFAULT_TIMEOUT_MS, agents: opts.agents, headers })
+    this.cdn = opts.cdn || createHttpClient({ baseURL: opts.cdnBase || DEFAULT_CDN_BASE, timeout: opts.timeout || DEFAULT_TIMEOUT_MS, agents: opts.agents, headers })
     // 2026-10-23：平台自身用 setHost() 动态设置上传主机 ⇒ 优先用 Step1 响应里的主机，取不到才回落到 baseURL。
     this.cdnHost = ''
+    // 测试/自定义注入 cdn 客户端时不得把 URL 变成绝对地址，否则会绕过注入、打到真实域名。
+    this._cdnInjected = !!opts.cdn
     // 注入客户端（测试/自定义）时保持相对路径；真实运行时 uploadpartdfs 用逆向实证的独立主机。
     this._partHost = opts.cdn ? '' : 'https://finderassistanced.video.qq.com'
   }
@@ -138,6 +151,29 @@ class ShipinhaoVideoChain {
 
   _apiHeaders (referer) {
     return { cookie: this.cookie, referer: referer || API_REFERER, Accept: 'application/json, text/plain, */*' }
+  }
+
+  /**
+   * Step 0（逆向文档《视频号发布链深挖》§二① + §五.1）：auth_data 前置鉴权。
+   * 文档原话：「上传前三跳不能省……直接打 applyuploaddfs 可能缺 helper_upload_params 的前置参数」。
+   * 失败不阻断（返回 null），仅记录状态码，便于判断 404 是否由此而来。
+   */
+  async authData () {
+    try {
+      const res = await requestWithRetry(this.api, {
+        method: 'post',
+        url: '/cgi-bin/mmfinderassistant-bin/auth/auth_data',
+        data: { timestamp: getTimeStamp(13), _log_finder_id: this.finderId, rawKeyBuff: null },
+        headers: this._apiHeaders(API_REFERER),
+        validateStatus: (x) => x >= 200 && x < 500,
+      })
+      const d = res && res.data
+      this.logger.log('shipinhao auth_data: status=' + (res && res.status) + ' errCode=' + (d && d.errCode) + ' errMsg=' + (d && d.errMsg))
+      return d || null
+    } catch (eA) {
+      this.logger.log('shipinhao auth_data failed: ' + String(eA && eA.message || '').slice(0, 120))
+      return null
+    }
   }
 
   /** Step 1：获取上传鉴权（返回的 authKey 作为后续 CDN 请求的 Authorization） */
@@ -166,11 +202,24 @@ class ShipinhaoVideoChain {
       this.cdnHost = withScheme.replace(/\/+$/, '')
       if (this.logger && this.logger.log) this.logger.log('[shipinhao-video] resolved cdn host: ' + this.cdnHost)
     }
+    // 2026-10-23：逆向交叉验证（参考产品-完整拆解 §5.8）确认三段式协议与主机就是 finderassistancea，
+    // Step1 响应不含 cdnHost ⇒ 必须回落到已知主机，否则 cdnHost 为空、请求落到 baseURL ⇒ 404。
+    if (!this._cdnInjected) this.cdnHost = this.cdnHost || DEFAULT_CDN_BASE // fallback to DEFAULT_CDN_BASE
+    if (this.logger && this.logger.log) this.logger.log('[shipinhao-video] cdn host = ' + this.cdnHost)
     return String(authKey)
   }
 
   /** Step 2：申请上传（applyuploaddfs），返回 UploadID */
+  /** 2026-10-23（参考产品 refShipinhaoPublishVideo）：taskid 是现场生成的 GUID，缺失时 X-Arguments 会带空值。 */
+  _ensureTaskId (meta) {
+    if (meta && !meta.taskid) {
+      try { meta.taskid = require('crypto').randomUUID() } catch (_e0) { meta.taskid = String(Date.now()) + Math.random().toString(16).slice(2) }
+    }
+    return meta && meta.taskid
+  }
+
   async applyUpload (meta) {
+    this._ensureTaskId(meta)
     const parts = chunkTotal(meta.filesize)
     const payload = {
       BlockSum: parts.length,
@@ -186,7 +235,14 @@ class ShipinhaoVideoChain {
     }
     let res
     try {
-      res = await requestWithRetry(this.cdn, { method: 'put', url: this.cdnHost + '/applyuploaddfs', data: payload, headers })
+      // 2026-10-23（参考产品 ref-slices-v2 L10-11 逐字对照）：参考产品的 URL 带
+      // ?size=&taskid=&scene=2 三个查询参数；我方此前完全没有 query ⇒ 网关按 query 路由返回 404。
+      const _taskId = (meta && (meta.taskid || meta.taskId)) || String(Date.now())
+      // no-query-per-refproduct：竞品原文是 $http.put("https://finderassistancea.video.qq.com/applyuploaddfs", K, {headers})
+      // —— **URL 上没有任何 query**，size/taskid/scene 全部只在 X-Arguments 里。
+      // 我方此前多挂 ?size=&taskid=&scene=2，改为与竞品逐字一致。
+      const _uploadUrl = this.cdnHost + '/applyuploaddfs'
+      res = await requestWithRetry(this.cdn, { method: 'put', url: _uploadUrl, data: payload, headers })
     } catch (e) {
       // 2026-10-23 诊断：应用日志只收主进程 logger 输出，console 不可见 ⇒ 把上下文塞进错误信息。
       if (e && typeof e.message === 'string') e.message += ' [host=' + (this.cdnHost || '(baseURL)') + ' step1Keys=' + (this._step1Keys || 'n/a') + ' step1Body=' + (this._step1Body || '') + ']'
@@ -228,6 +284,7 @@ class ShipinhaoVideoChain {
       'User-Agent': this.userAgent,
     }
     const url = this.cdnHost + '/completepartuploaddfs?UploadID=' + encodeURIComponent(uploadId)
+    // completepart is POST (bundle-verified)：文档 ⑤ 写 PUT 与原始代码不符，以 bundle 的 $http.post 为准。
     const res = await requestWithRetry(this.cdn, { method: 'post', url, data: { TransFlag: '0_0', PartInfo: partInfos }, headers })
     return res.data || {}
   }
@@ -252,13 +309,67 @@ class ShipinhaoVideoChain {
       fs.closeSync(fd)
     }
     const videoInfo = await this.completeUpload(applied.uploadId, partInfos, Object.assign({}, meta, { filesize }))
+    // ⑥ post_clip_video（bundle 原文顺序：complete -> clip -> publish）
+    try { await this.clipVideo(videoInfo, Object.assign({}, meta, { filesize })) } catch (eClip) { if (this.logger) this.logger.log('post_clip_video failed: ' + (eClip && eClip.message)) }
     return { uploadId: applied.uploadId, videoInfo }
+  }
+
+  /**
+   * Step 4.5：post_clip_video（2026-10-23 逆向 bundle saveTmpPostDraft 原文）。
+   * 上传完成后、发布之前的裁剪/处理登记；缺此步平台可能认为视频未完成处理。
+   * body 字段逐字对齐 bundle：url/timeStart/cropDuration/width/height/x/y/
+   * clipOriginVideoInfo/traceInfo/targetWidth/targetHeight/type/timestamp + 埋点族。
+   */
+  async clipVideo (videoInfo, meta) {
+    const info = videoInfo || {}
+    const url = info.DownloadURL || info.downloadUrl || info.url || info.videoUrl || info.VideoUrl || ''
+    if (!url) {
+      if (this.logger) this.logger.log('post_clip_video skipped: no video url in completeUpload response')
+      return { skipped: true }
+    }
+    const ts10 = String(Date.now()).slice(0, 10)
+    const width = Number(meta.width) || 1080
+    const height = Number(meta.height) || 1920
+    const duration = Number(meta.duration) || 0
+    const fileSize = Number(meta.filesize) || 0
+    const body = {
+      url,
+      timeStart: 0,
+      cropDuration: 0,
+      height,
+      width,
+      x: 0,
+      y: 0,
+      clipOriginVideoInfo: { width, height, duration, fileSize },
+      traceInfo: { traceKey: 'FPT_' + ts10 + '_1378746213', uploadCdnStart: ts10, uploadCdnEnd: ts10 },
+      targetWidth: width,
+      targetHeight: height,
+      type: 4,
+      useAstraThumbCover: 1, // 2026-10-24 抓包实证：平台真实请求带此字段
+      timestamp: String(Date.now()),
+      _log_finder_uin: '',  // 抓包实证：空字符串（非 null）
+      _log_finder_id: this.finderId || '',
+      rawKeyBuff: '',      // 抓包实证：空字符串（非 null）
+      pluginSessionId: null,
+      scene: 7,
+      reqScene: 7
+    }
+    const res = await requestWithRetry(this.api, {
+      method: 'post',
+      url: '/micro/content/cgi-bin/mmfinderassistant-bin/post/post_clip_video', // 抓包实证：/micro/content 前缀
+      data: body,
+      headers: { cookie: this.cookie, referer: POST_REFERER, 'Content-type': 'application/json', 'User-Agent': this.userAgent },
+    })
+    const d = res.data || {}
+    if (this.logger) this.logger.log('post_clip_video => ' + JSON.stringify(d).slice(0, 300))
+    return d
   }
 
   /** Step 5：发布（私密优先 → post_draft；正式 → post_create） */
   async publish (postData, opts = {}) {
     const draft = opts.draft !== false
-    const url = '/cgi-bin/mmfinderassistant-bin/post/post_' + (draft ? 'draft' : 'create')
+    // 2026-10-24 抓包实证：所有 post/* 都在 /micro/content 前缀下
+    const url = '/micro/content/cgi-bin/mmfinderassistant-bin/post/post_' + (draft ? 'draft' : 'create')
     const res = await requestWithRetry(this.api, {
       method: 'post',
       url,
@@ -289,6 +400,7 @@ class ShipinhaoVideoChain {
     }
     const taskid = opts.taskid || ('T' + getTimeStamp(10))
     const filekey = taskData.video.path.split(/[\\/]/).pop()
+    await this.authData() // Step 0（逆向文档 §二①：先 auth_data 再 helper_upload_params）
     const authKey = await this.getUploadAuthKey()
     const meta = { authKey, filetype: taskData.video.filetype || 'mp4', filekey, taskid }
     const { uploadId, videoInfo } = await this.uploadVideo(taskData.video.path, meta, opts.onProgress)

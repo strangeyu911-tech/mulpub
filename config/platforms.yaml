@@ -119,7 +119,7 @@ platforms:
     # 自相矛盾，使视频号完整链（src/publish/platforms/shipinhao-video.js，
     # 分片 + Content-MD5 + post_draft/post_create 双分支，带链级测试）从未被触发。
     has_api: true
-    publishMode: api-then-dom   # W1 §5.1 三态总闸：api-only|api-then-dom|dom-only
+    publishMode: api-then-dom   # 2026-10-24：API 链已补 auth_data 前置（逆向文档 §二①），恢复 API 优先、失败降级 DOM
     enabled: true
   kuaishou:
     name: 快手
@@ -162,7 +162,7 @@ platforms:
     # 2026-10-18（toutiao-video-api）：视频 API 轨已实现（publish/platforms/toutiao-video.js，
     # 五步链实网抓包取证），故 has_api false→true；publishMode 仍 dom-only（PublishVideo 形状待真机验证）。
     has_api: true
-    publishMode: dom-only   # W1 §5.1 三态总闸：api-only|api-then-dom|dom-only
+    publishMode: api-then-dom   # 2026-10-24：按竞品改用 v4/commit 端点验证中（DOM 轨封面仍为硬门槛）
     enabled: true
   youtube:
     has_api: true

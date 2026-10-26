@@ -18,10 +18,12 @@ const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 function fullRoutes () {
   return [
+    { method: "POST", match: /\/auth\/auth_data/, body: { errCode: 0, data: {} } },
     { method: "POST", match: /helper_upload_params/, body: { authKey: "AUTH_K" } },
     { method: "PUT", match: /\/applyuploaddfs/, body: { UploadID: "UP_1" } },
     { method: "PUT", match: /\/uploadpartdfs/, body: { ETag: "ETAG_1" } },
     { method: "POST", match: /\/completepartuploaddfs/, body: { url: "https://v.qq.com/x.mp4" } },
+    { method: "POST", match: /\/post\/post_clip_video/, body: { errCode: 0, data: {} } },
     { method: "POST", match: /\/post\/post_draft/, body: { errCode: 0, data: { postId: "POST_D1" } } },
     { method: "POST", match: /\/post\/post_create/, body: { errCode: 0, data: { postId: "POST_C1" } } },
   ];
@@ -52,11 +54,13 @@ describe("publish/platforms/shipinhao-video", function () {
       expect(result.publishId).toBe("POST_D1");
       expect(result.platform).toBe("shipinhao");
       expect(methodPathList(srv.requests)).toEqual([
+        "POST /cgi-bin/mmfinderassistant-bin/auth/auth_data",
         "POST /cgi-bin/mmfinderassistant-bin/helper/helper_upload_params",
         "PUT /applyuploaddfs",
         "PUT /uploadpartdfs",
         "POST /completepartuploaddfs",
-        "POST /cgi-bin/mmfinderassistant-bin/post/post_draft",
+        "POST /micro/content/cgi-bin/mmfinderassistant-bin/post/post_clip_video",
+        "POST /micro/content/cgi-bin/mmfinderassistant-bin/post/post_draft",
       ]);
       // applyuploaddfs：1MB < 8MiB → 单分片，BlockSum=1
       const apply = srv.requestsFor(/\/applyuploaddfs/)[0];
@@ -139,6 +143,7 @@ describe("publish/platforms/shipinhao-video", function () {
 
   test("§4.5 fail-closed：authKey 缺失 → 抛错且不触达任何 CDN 写请求", async function () {
     const srv = await startFakeServer([
+      { method: "POST", match: /auth\/auth_data/, body: { errCode: 0, data: {} } },
       { method: "POST", match: /helper_upload_params/, body: { errCode: 0 } },
       { method: "PUT", match: /\/applyuploaddfs/, body: { UploadID: "UP_1" } },
     ]);
@@ -147,7 +152,7 @@ describe("publish/platforms/shipinhao-video", function () {
       const file = writeTempVideo(100);
       try {
         await expect(chain.run({ title: "T", video: { path: file } }, { draft: true })).rejects.toThrow(/authKey/);
-        expect(methodPathList(srv.requests)).toEqual(["POST /cgi-bin/mmfinderassistant-bin/helper/helper_upload_params"]);
+        expect(methodPathList(srv.requests)).toEqual(["POST /cgi-bin/mmfinderassistant-bin/auth/auth_data", "POST /cgi-bin/mmfinderassistant-bin/helper/helper_upload_params"]);
         expect(srv.requestsFor(/\/applyuploaddfs|\/uploadpartdfs|\/post\//).length).toBe(0);
       } finally { fs.unlinkSync(file); }
     } finally { await srv.close(); }

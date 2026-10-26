@@ -63,12 +63,12 @@ async function fillTencentVideo (win, data, opts) {
 
   // 1) 填「视频描述」= textarea（真机 ta=1）；没有 textarea 时退回 contenteditable
   const descCode = '(function(){'
-    + 'var ta=document.querySelector("textarea");'
-    + 'var el=ta||document.querySelector("[contenteditable]");'
+    + 'var el=document.querySelector("div.input-editor")||document.querySelector("[contenteditable]");/*input-editor-target*/'
+    + 'var ta=null;'
     + 'if(!el)return "NO_EDITOR";'
     + 'var v=' + JSON.stringify(content) + ';'
-    + 'if(ta){el.focus();el.value=v;el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}))}'
-    + 'else{el.focus();el.textContent=v;el.dispatchEvent(new InputEvent("input",{bubbles:true}))}'
+    + 'if(ta){el.focus();var _d=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value");if(_d&&_d.set){_d.set.call(el,v)}else{el.value=v}el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}))}/*native-value-setter*/'
+    + 'else{el.focus();var _sel=window.getSelection();var _r=document.createRange();_r.selectNodeContents(el);_sel.removeAllRanges();_sel.addRange(_r);var _ok=false;try{_ok=document.execCommand("insertText",false,v)}catch (e) { void 0 }if(!_ok){el.textContent=v}el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:v}))}/*exec-insertText*/'
     + 'return String(el.value!==undefined?el.value:el.textContent).length'
     + '})()'
   let descLen
@@ -81,6 +81,22 @@ async function fillTencentVideo (win, data, opts) {
     return { ok: false, step: 'no-editor' }
   }
   if (log) log.info('RpaView', '[' + platform + '] desc filled, readback=' + descLen)
+
+  // cdp-real-typing（2026-10-24）：execCommand 合成的事件会让编辑器卡在合成态、
+  // 导致发布面板不弹出。改用 CDP Input.insertText（浏览器级真输入，等价手打字）。
+  try {
+    const focusCode = '(function(){var el=document.querySelector("div.input-editor")||document.querySelector("[contenteditable]");if(!el)return "NO_EDITOR";el.focus();var r=document.createRange();r.selectNodeContents(el);var s=window.getSelection();s.removeAllRanges();s.addRange(r);return "focused"})()'
+    const fok = await frame.executeJavaScript(focusCode)
+    if (fok === 'focused') {
+      const dbg = win && win.webContents && win.webContents.debugger
+      if (dbg) {
+        if (!dbg.isAttached()) { try { dbg.attach('1.3') } catch (_eA) { void 0 } }
+        await dbg.sendCommand('Input.insertText', { text: String(content) })
+        const n2 = await frame.executeJavaScript('(function(){var el=document.querySelector("div.input-editor")||document.querySelector("[contenteditable]");return el?String(el.textContent||"").length:-1})()')
+        if (log) log.info('RpaView', '[' + platform + '] desc real-typed len=' + n2)
+      }
+    }
+  } catch (_eT) { if (log) log.warn('RpaView', '[' + platform + '] cdp-real-typing failed: ' + String((_eT && _eT.message) || '').slice(0, 80)) }
 
   // 2) 填「短标题」= 第一个可见 input（真机 inp=22，其余是话题/位置等）
   let titleOk = true

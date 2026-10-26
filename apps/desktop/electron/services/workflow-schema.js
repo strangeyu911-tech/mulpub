@@ -177,6 +177,9 @@ function errorsForPublish (publish, content, opts, now) {
     errors.push({ field: 'publish.targets', reason: 'empty' })
   }
   publish.targets.forEach((t, i) => {
+    if (!t.accountId && !opts.allowEmptyAccounts) {
+      errors.push({ field: 'publish.targets[' + i + '].accountId', reason: 'empty' })
+    }
     if (!PLATFORMS.includes(t.platform)) {
       errors.push({ field: 'publish.targets[' + i + '].platform', reason: 'unsupported', params: { platform: t.platform } })
     }
@@ -200,7 +203,7 @@ function errorsForPublish (publish, content, opts, now) {
 /**
  * 校验并归一化工作流配置。不抛错：逐条返回 field + reason，由调用方映射文案。
  * @param {unknown} raw
- * @param {{ now?: number }} [opts]
+ * @param {{ now?: number, allowEmptyAccounts?: boolean }} [opts] allowEmptyAccounts 仅供模板校验：模板只存平台建议，不存账号 ID
  * @returns {{ ok: boolean, config: object, errors: Array<{field:string,reason:string,params?:object}> }}
  */
 function validateWorkflowConfig (raw, opts = {}) {
@@ -318,7 +321,8 @@ function describeWorkflow (config) {
     parts.push('播客 RSS 频道')
   } else if (targets.length > 0) {
     const names = targets.map((t) => PLATFORM_LABELS[t.platform] || t.platform)
-    parts.push(Array.from(new Set(names)).join('/'))
+    const summary = Array.from(new Set(names)).join('/')
+    parts.push(targets.length > 1 ? summary + ' · ' + targets.length + ' 个账号' : summary)
   }
   return parts.join(' · ')
 }

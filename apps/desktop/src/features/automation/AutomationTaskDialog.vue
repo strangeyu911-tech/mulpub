@@ -47,7 +47,8 @@
       </div>
 
       <div v-if="form.actionType === 'compositeWorkflow' && workflowConfig && workflowMeta" class="atd-field">
-        <WorkflowEditor v-model="workflowConfig" :meta="workflowMeta" :strategies="strategies" />
+        <WorkflowEditor v-model="workflowConfig" :meta="workflowMeta" :strategies="strategies" :accounts="accounts" />
+        <div v-if="accountHint" class="atd-sub atd-sub--warn" data-testid="wf-account-hint">{{ accountHint }}</div>
         <div class="atd-row atd-preview">
           <button class="cohere-btn-text" data-testid="wf-preview" @click="refreshPreview">{{ t('automation.wfPreview') }}</button>
           <span v-if="planPreview" class="atd-sub">
@@ -138,7 +139,7 @@ import {
   automationCreate, automationUpdate,
   listWorkflowTemplates, saveWorkflowTemplate, getWorkflowMeta, previewWorkflowPlan,
 } from '@/api/automation'
-import { aiListRewriteStrategies } from '@/api/publisher'
+import { aiListRewriteStrategies, listAccounts } from '@/api/publisher'
 import { useNotify } from '@/composables/useNotify'
 import WorkflowEditor from './WorkflowEditor.vue'
 
@@ -155,6 +156,9 @@ const workflowMeta = ref(null)
 const workflowConfig = ref(null)
 const templates = ref({ builtin: [], custom: [] })
 const strategies = ref([])
+const accounts = ref([])
+const accountsReady = ref(false)
+const accountHint = ref('')
 const templateId = ref('')
 const templateName = ref('')
 const planPreview = ref(null)
@@ -209,14 +213,73 @@ async function loadMeta () {
   if (strategyRes && strategyRes.code === 0 && Array.isArray(strategyRes.data)) strategies.value = strategyRes.data
 }
 
+async function loadAccounts () {
+  try {
+    const res = await listAccounts()
+    const data = Array.isArray(res) ? res : (res && res.code === 0 ? res.data : [])
+    accounts.value = (Array.isArray(data) ? data : []).filter((a) => a && a.id && a.platform)
+    accountsReady.value = true
+  } catch (_) {
+    accounts.value = []
+    accountsReady.value = false
+  }
+}
+
+function platformLabel (id) {
+  const found = ((workflowMeta.value && workflowMeta.value.platforms) || []).find((p) => p.id === id)
+  return found ? found.label : id
+}
+
+function findAccount (platform, accountId) {
+  return accounts.value.find((a) => a.platform === platform && String(a.id) === String(accountId))
+}
+
+/**
+ * 模板只存平台建议，不存账号 ID（账号属于本机/本用户）；
+ * 老任务里也可能残留空 accountId。这里统一清掉并给出可读提示。
+ */
+function sanitizePublishTargets (cfg) {
+  if (!cfg || !cfg.publish || !Array.isArray(cfg.publish.targets)) return { config: cfg, hint: '' }
+  if (!accountsReady.value) return { config: cfg, hint: t('automation.wfAccountsLoadFailed') }
+  // 纯函数：不改调用方传入的对象，避免重复调用时逐次丢目标
+  const next = clone(cfg)
+  const kept = []
+  const suggested = []
+  let missing = false
+  for (const target of next.publish.targets) {
+    if (!target || !target.platform) continue
+    if (!target.accountId) {
+      suggested.push(platformLabel(target.platform))
+      continue
+    }
+    const acc = findAccount(target.platform, target.accountId)
+    if (acc) kept.push({ platform: acc.platform, accountId: String(acc.id) })
+    else {
+      missing = true
+      suggested.push(platformLabel(target.platform))
+    }
+  }
+  next.publish.targets = kept
+  const parts = []
+  if (suggested.length) {
+    parts.push(t('automation.wfAccountsLegacy', { platforms: [...new Set(suggested)].join('、') }))
+  }
+  if (missing) parts.push(t('automation.wfAccountsUnavailable'))
+  return { config: next, hint: parts.join('；') }
+}
+
 function hydrate (task) {
   formError.value = ''
   templateId.value = ''
   templateName.value = ''
   planPreview.value = null
+  accountHint.value = ''
   if (!task) {
     form.value = emptyForm()
-    workflowConfig.value = workflowMeta.value ? clone(workflowMeta.value.defaults) : null
+    const defaults = workflowMeta.value ? clone(workflowMeta.value.defaults) : null
+    const sanitized = sanitizePublishTargets(defaults)
+    workflowConfig.value = sanitized.config
+    accountHint.value = sanitized.hint
     return
   }
   const f = emptyForm()
@@ -234,23 +297,36 @@ function hydrate (task) {
   // 旧任务的 URL/RSS 配置必须原样带回：编辑旧任务后再保存不能把采集源清空
   f.legacyConfig = f.actionType === 'fullAutoPipeline' ? clone((task.action && task.action.config) || {}) : null
   form.value = f
-  workflowConfig.value = f.actionType === 'compositeWorkflow'
-    ? clone(task.action.config)
-    : (workflowMeta.value ? clone(workflowMeta.value.defaults) : null)
+  if (f.actionType === 'compositeWorkflow') {
+    const sanitized = sanitizePublishTargets(clone(task.action.config))
+    workflowConfig.value = sanitized.config
+    accountHint.value = sanitized.hint
+  } else {
+    const defaults = workflowMeta.value ? clone(workflowMeta.value.defaults) : null
+    workflowConfig.value = defaults
+    accountHint.value = ''
+  }
 }
 
 function applyTemplate () {
   const all = [...templates.value.builtin, ...templates.value.custom]
   const tpl = all.find((x) => x.id === templateId.value)
   if (!tpl) return
-  workflowConfig.value = clone(tpl.config)
+  const sanitized = sanitizePublishTargets(clone(tpl.config))
+  workflowConfig.value = sanitized.config
+  accountHint.value = sanitized.hint
   if (!form.value.name) form.value.name = tpl.name
   templateName.value = tpl.name
 }
 
 async function saveAsTemplate () {
   if (!templateName.value.trim()) { formError.value = t('automation.wfTemplateNameRequired'); return }
-  const res = await saveWorkflowTemplate({ name: templateName.value.trim(), config: workflowConfig.value })
+  // 模板要可跨机器/跨用户分发：只保留平台建议，不写入本机账号 ID
+  const templateConfig = clone(workflowConfig.value)
+  if (templateConfig && templateConfig.publish && Array.isArray(templateConfig.publish.targets)) {
+    templateConfig.publish.targets = templateConfig.publish.targets.map((x) => ({ platform: x.platform, accountId: '' }))
+  }
+  const res = await saveWorkflowTemplate({ name: templateName.value.trim(), config: templateConfig })
   if (!res || res.code !== 0 || !res.ok) {
     formError.value = res && res.reason === 'name:duplicate'
       ? t('automation.wfTemplateDuplicate')
@@ -276,6 +352,22 @@ async function save () {
   if (form.value.name.trim().length > 40) { formError.value = t('automation.errNameTooLong'); return }
   if (formTriggers.value.length === 0) { formError.value = t('automation.errNoTrigger'); return }
   if (form.value.useWeekly && form.value.weekdays.length === 0) { formError.value = t('automation.errNoWeekday'); return }
+  if (form.value.actionType === 'compositeWorkflow') {
+    const content = workflowConfig.value && workflowConfig.value.content
+    const targets = (workflowConfig.value && workflowConfig.value.publish && workflowConfig.value.publish.targets) || []
+    if ((!content || content.type !== 'podcast') && !accountsReady.value) {
+      formError.value = t('automation.wfAccountsLoadFailed')
+      return
+    }
+    if ((!content || content.type !== 'podcast') && (!targets.length || targets.some((x) => !x.accountId))) {
+      formError.value = t('automation.wfAccountsRequired')
+      return
+    }
+    if (targets.some((x) => !findAccount(x.platform, x.accountId))) {
+      formError.value = t('automation.wfAccountsUnavailable')
+      return
+    }
+  }
 
   const payload = {
     name: form.value.name.trim(),
@@ -309,7 +401,7 @@ async function save () {
 }
 
 onMounted(async () => {
-  await Promise.all([loadMeta(), loadTemplates()])
+  await Promise.all([loadMeta(), loadTemplates(), loadAccounts()])
   hydrate(props.task)
 })
 
@@ -329,6 +421,7 @@ defineExpose({ form, formTriggers, save, hydrate })
 .atd-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .atd-preview { margin-top: 10px; }
 .atd-sub { display: block; color: #85858f; font-size: var(--font-size-xs, 12px); line-height: 1.5; }
+.atd-sub--warn { color: #b26a00; }
 .atd-weekdays { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 10px 24px; }
 .atd-weekday { display: inline-flex; align-items: center; gap: 4px; font-size: var(--font-size-xs, 12px); }
 .atd-error { padding: 8px 12px; border-radius: 6px; background: #fef0f0; color: #d9534f; font-size: var(--font-size-xs, 12px); }

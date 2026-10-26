@@ -158,6 +158,14 @@ describe('workflow-schema · 改写/内容/发布校验', () => {
     expect(unknown.errors[0]).toMatchObject({ field: 'publish.targets[0].platform', reason: 'unsupported' })
   })
 
+  it('发布目标必须指定账号 ID（不允许只选平台回落默认账号）', () => {
+    const r = validateWorkflowConfig(validConfig({
+      publish: { targets: [{ platform: 'bilibili', accountId: '' }], mode: 'immediate' },
+    }))
+    expect(r.ok).toBe(false)
+    expect(r.errors[0]).toMatchObject({ field: 'publish.targets[0].accountId', reason: 'empty' })
+  })
+
   it('定时模式必须给未来 startAt；立即模式忽略 startAt', () => {
     const now = Date.parse('2026-10-26T00:00:00.000Z')
     const past = validateWorkflowConfig(validConfig({
@@ -209,10 +217,25 @@ describe('workflow-schema · 描述与模板', () => {
     expect(text).toContain('B站')
   })
 
+  it('describeWorkflow 对同平台多账号给出账号数', () => {
+    const cfg = validateWorkflowConfig(validConfig({
+      publish: {
+        targets: [
+          { platform: 'zhihu', accountId: 'zhihu-1' },
+          { platform: 'zhihu', accountId: 'zhihu-2' },
+        ],
+        mode: 'immediate',
+      },
+    })).config
+    expect(describeWorkflow(cfg)).toContain('知乎 · 2 个账号')
+  })
+
   it('内置模板全部通过校验，且覆盖四类场景', () => {
     expect(BUILTIN_TEMPLATES.length).toBeGreaterThanOrEqual(4)
     for (const tpl of BUILTIN_TEMPLATES) {
-      const r = validateWorkflowConfig(tpl.config, { now: Date.parse('2026-10-26T00:00:00.000Z') })
+      // 内置模板只存「平台建议」，不存账号 ID（账号是每台机器/每个用户私有的）；
+      // 因此模板校验允许 target.accountId 为空，任务校验默认不允许。
+      const r = validateWorkflowConfig(tpl.config, { now: Date.parse('2026-10-26T00:00:00.000Z'), allowEmptyAccounts: true })
       expect(r.ok, tpl.id + ': ' + JSON.stringify(r.errors)).toBe(true)
     }
     const ids = BUILTIN_TEMPLATES.map((t) => t.id)

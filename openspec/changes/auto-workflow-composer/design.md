@@ -56,9 +56,9 @@
 
 账本/队列 JSON 损坏时拒绝写入并返回 `ledger-unreadable`/`queue-unreadable`，绝不覆盖原值。运行直接失败并提示，而不是带着失明的去重继续发。
 
-### D10 模板只存配置
+### D10 模板只存平台建议
 
-不存账号凭证；`accountId` 空 = 平台默认账号。导出 JSON 显式 `version:1`，导入重新校验。
+不存账号 ID/凭证；`publish.targets` 在模板里允许 `accountId` 为空（表示平台建议），应用模板后必须从账号管理里选择具体账号。导出 JSON 显式 `version:1`，导入重新校验。
 
 ## 3. 数据结构
 

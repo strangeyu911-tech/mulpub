@@ -13,7 +13,7 @@ function wfConfig () {
     source: { type: 'zhihuFavlist', folderTokens: ['t1'], limit: 5 },
     rewrite: { mode: 'default' },
     content: { type: 'video', videoPipeline: 'story2video-compose' },
-    publish: { targets: [{ platform: 'bilibili', accountId: '' }], mode: 'immediate' },
+    publish: { targets: [{ platform: 'bilibili', accountId: 'acc-1' }], mode: 'immediate' },
     cadence: { minMinutes: 35, maxMinutes: 40 },
     guardrails: { maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 1 },
     review: { requireApproval: false },

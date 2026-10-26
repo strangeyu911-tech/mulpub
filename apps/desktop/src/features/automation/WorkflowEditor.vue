@@ -102,13 +102,31 @@
     <section class="wf-section" v-if="model.content.type !== 'podcast'">
       <div class="wf-title">{{ t('automation.wfPublishTitle') }}</div>
       <div class="wf-row wf-row--block">
-        <div class="wf-chips">
-          <label v-for="p in meta.platforms" :key="p.id" class="wf-chip" :class="{ 'wf-chip--on': hasPlatform(p.id) }">
-            <input type="checkbox" :checked="hasPlatform(p.id)" @change="togglePlatform(p.id)" />
-            {{ p.label }}
-          </label>
+        <div v-if="!accounts.length" class="wf-hint wf-hint--warn" data-testid="wf-accounts-empty">
+          {{ t('automation.wfAccountsEmpty') }}
         </div>
-        <div class="wf-hint">{{ t('automation.wfPublishHint') }}</div>
+        <div v-else class="wf-account-groups">
+          <div v-for="group in accountGroups" :key="group.platform" class="wf-account-group">
+            <div class="wf-account-group__title">{{ group.label }}</div>
+            <div class="wf-chips">
+              <label
+                v-for="acc in group.accounts"
+                :key="acc.id"
+                class="wf-chip"
+                :class="{ 'wf-chip--on': hasAccount(acc) }"
+                :data-testid="'wf-account-' + acc.id"
+              >
+                <input type="checkbox" :checked="hasAccount(acc)" @change="toggleAccount(acc)" />
+                {{ accountLabel(acc) }}
+                <span v-if="accountStatus(acc)" class="wf-account-status">{{ accountStatus(acc) }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="wf-hint">{{ t('automation.wfAccountsHint') }}</div>
+        <div class="wf-hint" data-testid="wf-accounts-selected">
+          {{ t('automation.wfAccountsSelected', { count: selectedTargets.length }) }}
+        </div>
       </div>
       <div class="wf-row">
         <label class="wf-label">{{ t('automation.wfPublishMode') }}</label>
@@ -154,6 +172,7 @@ import { useI18n } from 'vue-i18n'
 const props = defineProps({
   meta: { type: Object, required: true },
   strategies: { type: Array, default: () => [] },
+  accounts: { type: Array, default: () => [] },
 })
 const model = defineModel({ type: Object, required: true })
 const { t } = useI18n()
@@ -175,15 +194,49 @@ function toggleCategory (id) {
   if (idx >= 0) list.splice(idx, 1)
   else list.push(id)
 }
-function hasPlatform (id) {
-  return model.value.publish.targets.some((x) => x.platform === id)
+function platformLabel (id) {
+  const found = (props.meta.platforms || []).find((p) => p.id === id)
+  return found ? found.label : id
 }
-function togglePlatform (id) {
+
+const accountGroups = computed(() => {
+  const groups = new Map()
+  for (const acc of props.accounts || []) {
+    if (!acc || !acc.id || !acc.platform) continue
+    if (!groups.has(acc.platform)) {
+      groups.set(acc.platform, { platform: acc.platform, label: platformLabel(acc.platform), accounts: [] })
+    }
+    groups.get(acc.platform).accounts.push(acc)
+  }
+  return Array.from(groups.values())
+})
+
+function hasAccount (acc) {
+  return model.value.publish.targets.some(
+    (t) => t.platform === acc.platform && String(t.accountId) === String(acc.id),
+  )
+}
+
+function toggleAccount (acc) {
   const list = model.value.publish.targets
-  const idx = list.findIndex((x) => x.platform === id)
+  const idx = list.findIndex((t) => t.platform === acc.platform && String(t.accountId) === String(acc.id))
   if (idx >= 0) list.splice(idx, 1)
-  else list.push({ platform: id, accountId: '' })
+  else list.push({ platform: acc.platform, accountId: String(acc.id) })
 }
+
+function accountLabel (acc) {
+  return acc.name || acc.nickname || acc.remark || String(acc.id)
+}
+
+function accountStatus (acc) {
+  const status = String(acc.status || '')
+  if (!status || status === 'active' || status === 'online') return ''
+  if (status === 'expired') return t('automation.wfAccountExpired')
+  if (status === 'inactive') return t('automation.wfAccountInactive')
+  return status
+}
+
+const selectedTargets = computed(() => model.value.publish.targets.filter((t) => t.accountId))
 
 function toLocalInput (iso) {
   if (!iso) return ''
@@ -216,6 +269,9 @@ const startAtLocal = computed({
 .wf-hint--warn { color: #b26a00; }
 .wf-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
 .wf-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid var(--color-border, #dcdfe6); border-radius: 999px; font-size: var(--font-size-xs, 12px); cursor: pointer; }
+.wf-account-groups { display: flex; flex-direction: column; gap: 10px; }
+.wf-account-group__title { margin-bottom: 6px; color: var(--color-text-secondary, #85858f); font-size: var(--font-size-xs, 12px); }
+.wf-account-status { padding: 0 4px; border-radius: 3px; background: #fdecec; color: #c0392b; font-size: var(--font-size-xs, 12px); }
 .wf-chip--on { border-color: #2f6fd0; background: #eef4ff; color: #2f6fd0; }
 .wf-chip input { display: none; }
 .wf-radio, .wf-check { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; font-size: var(--font-size-sm, 13px); cursor: pointer; }

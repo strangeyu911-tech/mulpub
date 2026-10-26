@@ -14,7 +14,11 @@
 - **WHEN** `content.type=video` 且 `videoPipeline` 为空或属于素材型流水线
 - **THEN** 校验失败，errors 含 `content.videoPipeline` 的 `empty`/`unsupported`
 
-#### Scenario: 播客不要求平台目标
+#### Scenario: 非播客发布目标必须带账号
+- **WHEN** `content.type != podcast` 且某个 `publish.targets[i].accountId` 为空
+- **THEN** 校验失败，errors 含 `publish.targets[i].accountId` 的 `empty`
+
+#### Scenario: 播客不要求账号目标
 - **WHEN** `content.type=podcast` 且 `publish.targets=[]`
 - **THEN** 校验通过；若 `publish.mode=scheduled` 则失败并给 `podcastImmediateOnly`
 

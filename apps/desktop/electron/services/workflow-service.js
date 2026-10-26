@@ -73,7 +73,7 @@ function createWorkflowService (deps = {}) {
     const name = typeof input?.name === 'string' ? input.name.trim() : ''
     if (!name) return { ok: false, reason: 'name:empty' }
     if (name.length > NAME_MAX) return { ok: false, reason: 'name:tooLong' }
-    const validated = validateWorkflowConfig(input && input.config, { now: now() })
+    const validated = validateWorkflowConfig(input && input.config, { now: now(), allowEmptyAccounts: true })
     if (!validated.ok) return { ok: false, reason: 'invalid-config', errors: validated.errors }
     const list = loadCustom()
     if (list.some((t) => t.name === name)) return { ok: false, reason: 'name:duplicate' }

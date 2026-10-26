@@ -32,7 +32,7 @@ vi.mock('@/api/automation', () => ({
         source: { type: 'hotTopics', categories: ['ai'], limit: 5, sort: 'latest', followIds: [], perCreatorLimit: 3, folderTokens: [] },
         rewrite: { mode: 'default', strategyId: '', length: 'keep' },
         content: { type: 'article', videoPipeline: '', podcastChannelId: '' },
-        publish: { targets: [{ platform: 'zhihu', accountId: '' }], mode: 'immediate', startAt: '' },
+        publish: { targets: [], mode: 'immediate', startAt: '' },
         cadence: { minMinutes: 35, maxMinutes: 40 },
         guardrails: { maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 1 },
         review: { requireApproval: false },
@@ -41,7 +41,7 @@ vi.mock('@/api/automation', () => ({
       sources: [{ id: 'hotTopics', label: '热门选题' }],
       contentTypes: [{ id: 'article', label: '图文' }],
       videoPipelines: [],
-      platforms: [{ id: 'zhihu', label: '知乎' }],
+      platforms: [{ id: 'zhihu', label: '知乎' }, { id: 'bilibili', label: 'B站' }],
       categories: ['ai'],
       limits: { maxHotTopicsLimit: 30, maxFolderLimit: 50, maxItemsPerRun: 50, maxDailyItems: 200 },
     },
@@ -56,6 +56,14 @@ vi.mock('@/api/automation', () => ({
 
 vi.mock('@/api/publisher', () => ({
   aiListRewriteStrategies: () => Promise.resolve({ code: 0, data: [] }),
+  listAccounts: () => Promise.resolve({
+    code: 0,
+    data: [
+      { id: 'zhihu-1', platform: 'zhihu', name: '知乎主号', status: 'active' },
+      { id: 'zhihu-2', platform: 'zhihu', name: '知乎小号', status: 'active' },
+      { id: 'bili-1', platform: 'bilibili', name: 'B站主号', status: 'active' },
+    ],
+  }),
 }))
 
 vi.mock('@/composables/useNotify', () => ({
@@ -73,6 +81,13 @@ const i18n = createI18n({
       automation: {
         title: '自动化', subtitle: 'sub', resourceNotice: 'notice',
         wfRunsTitle: '运行记录',
+        wfAccountsRequired: '请选择至少一个发布账号（不能只选平台）',
+        wfAccountsEmpty: '还没有已添加的自媒体账号，请先到「账号管理」添加。',
+        wfAccountsHint: '勾选要发布的账号；同一平台可多选。',
+        wfAccountsSelected: '已选 {count} 个账号',
+        wfAccountsLegacy: '模板建议平台：{platforms}；应用后请选择具体账号。',
+        wfAccountsUnavailable: '部分目标账号已不存在，请重新选择。',
+        wfAccountsLoadFailed: '账号列表读取失败，请关闭弹窗后重试。',
         wfActionType: '任务类型', wfActionComposite: '复合工作流', wfActionLegacy: '直发', wfActionHint: 'hint',
         wfTemplate: '模板', wfTemplatePlaceholder: '选择模板', wfTemplateBuiltin: '内置', wfTemplateCustom: '我的',
         wfTemplateApply: '应用', wfTemplateNamePlaceholder: '模板名称', wfTemplateSave: '保存模板', wfTemplateHint: 'hint',
@@ -252,6 +267,38 @@ describe('自动化页 · 表单校验', () => {
     dialogVm(w).form.useInterval = true
     await w.vm.$nextTick()
     expect(dialogVm(w).formTriggers.map((t) => t.type)).toEqual(['onAppStart', 'daily', 'interval'])
+    w.unmount()
+  })
+
+  it('复合工作流未选发布账号 → 保存被拦截', async () => {
+    const w = mountView()
+    await new Promise((r) => setTimeout(r, 0))
+    await openDialog(w)
+    dialogVm(w).form.name = '账号目标校验'
+    dialogVm(w).form.useAppStart = true
+    await w.vm.$nextTick()
+    await dialogVm(w).save()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(w.find('[data-testid="automation-form-error"]').text()).toContain('请选择至少一个发布账号')
+    w.unmount()
+  })
+
+  it('同平台可勾选多个账号，保存 payload 写入真实 accountId', async () => {
+    mockState.createRes = { code: 0, ok: true, task: {} }
+    const w = mountView()
+    await new Promise((r) => setTimeout(r, 0))
+    await openDialog(w)
+    dialogVm(w).form.name = '多账号发布'
+    dialogVm(w).form.useAppStart = true
+    await w.vm.$nextTick()
+    await w.find('[data-testid="wf-account-zhihu-1"] input').setValue(true)
+    await w.find('[data-testid="wf-account-zhihu-2"] input').setValue(true)
+    await dialogVm(w).save()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(mockState.lastPayload.action.config.publish.targets).toEqual([
+      { platform: 'zhihu', accountId: 'zhihu-1' },
+      { platform: 'zhihu', accountId: 'zhihu-2' },
+    ])
     w.unmount()
   })
 

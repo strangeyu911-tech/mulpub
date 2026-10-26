@@ -18,7 +18,7 @@ function validConfig () {
     source: { type: 'hotTopics', categories: ['ai'], limit: 3, sort: 'latest', followIds: [], perCreatorLimit: 3, folderTokens: [] },
     rewrite: { mode: 'default', strategyId: '', length: 'keep' },
     content: { type: 'article', videoPipeline: '', podcastChannelId: '' },
-    publish: { targets: [{ platform: 'zhihu', accountId: '' }], mode: 'immediate', startAt: '' },
+    publish: { targets: [{ platform: 'zhihu', accountId: 'acc-1' }], mode: 'immediate', startAt: '' },
     cadence: { minMinutes: 35, maxMinutes: 40 },
     guardrails: { maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 1 },
     review: { requireApproval: false },
@@ -48,6 +48,15 @@ describe('workflow-service · 模板', () => {
     expect(bad.errors[0].field).toBe('content.videoPipeline')
   })
 
+  it('模板允许平台建议：accountId 为空可保存，导出不冒充账号', () => {
+    const svc = createWorkflowService({ store: fakeStore(), runner: {}, now: () => NOW })
+    const cfg = validConfig()
+    cfg.publish.targets = [{ platform: 'zhihu', accountId: '' }]
+    const saved = svc.saveTemplate({ name: '平台建议模板', config: cfg })
+    expect(saved.ok).toBe(true)
+    expect(saved.template.config.publish.targets).toEqual([{ platform: 'zhihu', accountId: '' }])
+  })
+
   it('导出/导入往返：配置等价，导入时重新校验', () => {
     const svc = createWorkflowService({ store: fakeStore(), runner: {}, now: () => NOW })
     const saved = svc.saveTemplate({ name: '导出模板', config: validConfig() })
@@ -70,7 +79,7 @@ describe('workflow-service · 预览', () => {
     expect(r.ok).toBe(true)
     expect(r.summary).toContain('热门选题')
     expect(r.targets).toHaveLength(1)
-    expect(r.slotsByTarget['zhihu:default']).toHaveLength(3)
+    expect(r.slotsByTarget['zhihu:acc-1']).toHaveLength(3)
     expect(r.totalMinutes).toBe(70)
   })
 

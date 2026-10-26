@@ -209,6 +209,17 @@ describe('workflow-runner · 失败策略', () => {
     expect(runner.getRun(r.runId).warnings[0].message).toContain('Access Secret')
   })
 
+  it('发布目标缺账号 → invalid-config，且不排期', async () => {
+    const { runner, calls } = makeRunner({ items: [item(1)] })
+    const r = await runner.startRun(task(config({
+      publish: { targets: [{ platform: 'zhihu', accountId: '' }], mode: 'immediate', startAt: '' },
+    })))
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe('invalid-config')
+    expect(r.errors[0]).toMatchObject({ field: 'publish.targets[0].accountId', reason: 'empty' })
+    expect(calls.schedule).toHaveLength(0)
+  })
+
   it('账本写入失败 → 回滚已排期项，不留下「无账本记录却会发」的队列项', async () => {
     const cancelled = []
     const { runner, ledger } = makeRunner({

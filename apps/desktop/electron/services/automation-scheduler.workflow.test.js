@@ -18,7 +18,7 @@ function makeWorkflowConfig () {
     source: { type: 'hotTopics', categories: ['ai'], limit: 5, sort: 'latest', followIds: [], perCreatorLimit: 3, folderTokens: [] },
     rewrite: { mode: 'default', strategyId: '', length: 'keep' },
     content: { type: 'article', videoPipeline: '', podcastChannelId: '' },
-    publish: { targets: [{ platform: 'zhihu', accountId: '' }], mode: 'immediate', startAt: '' },
+    publish: { targets: [{ platform: 'zhihu', accountId: 'acc-1' }], mode: 'immediate', startAt: '' },
     cadence: { minMinutes: 35, maxMinutes: 40 },
     guardrails: { maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 1 },
     review: { requireApproval: false },

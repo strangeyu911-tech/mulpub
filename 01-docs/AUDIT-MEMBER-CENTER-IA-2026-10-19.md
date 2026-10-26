@@ -408,3 +408,14 @@ openspec 变更：`wechat-native-payment`（status: in-progress，含对上游 M
 ### 11.4 结论
 
 `§10 DoD` 的勾选状态**不再单独可信**：它记录的是「当时代码写了什么」，不保证「今天仍然生效」。凡涉及跨层字段（服务端 → 主进程 → store → 组件）的条目，验收必须落到**端到端断言**（含归一化层），否则同类缺陷会继续从 mock 缝隙里逃逸。
+
+### 11.5 2026-10-26 后续补做：订单列表分页
+
+§11 曾把「订单超过 50 条静默截断」列为后续项，本轮已落地（`member-center-orders-paging`）：
+
+- 服务端 `GET /api/v1/me/orders` 接受 `limit`/`offset`（默认 20、上限 100，越界钳制不 400），返回 `{ orders, total, hasMore }`
+- 仓储层新增 `countOrders`；**`COUNT(*)` 是 bigint**，不转 number 会让 `hasMore` 变字符串比较
+- 桌面端「共 N 笔」+「加载更多」（用户裁决 A：不做页码跳转），追加按 id 去重、失败不清空
+- 旧服务端无 `total`/`hasMore` 时主进程本地兜底
+
+**仍然未做**：单设备下线（服务端只有 `revoke-others`，缺按会话作废的单设备端点）。

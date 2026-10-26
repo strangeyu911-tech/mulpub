@@ -114,6 +114,8 @@ function apiKeyOwnerSubject(key) {
   return `api-key:${crypto.createHash("sha256").update(String(key)).digest("hex")}`;
 }
 
+const { pageParams } = require("./auth/page-params");
+
 function requestPath(req) {
   return String(req && req.url ? req.url : "/").split("?", 1)[0];
 }
@@ -956,7 +958,12 @@ class PublishApiServer {
         if (!userId) { this._json(res, 503, { error: "BUSINESS_USER_REPOSITORY_NOT_CONFIGURED" }); return; }
         try {
           if (method === "GET" && url === "/api/v1/me/orders") {
-            this._json(res, 200, { orders: await commerceRepository.listOrders(userId, { limit: 50, offset: 0 }) });
+            // 分页（2026-10-26）：total 供「共 N 笔」，hasMore 供「加载更多」。参数解析见 page-params。
+            const { limit, offset } = pageParams(req);
+            const orders = await commerceRepository.listOrders(userId, { limit, offset });
+            const counted = typeof commerceRepository.countOrders === "function" ? await commerceRepository.countOrders(userId) : null;
+            const total = Number.isInteger(counted) ? counted : offset + orders.length;
+            this._json(res, 200, { orders, total, hasMore: offset + orders.length < total });
             return;
           }
           if (method === "GET" && url === "/api/v1/me/notifications") {

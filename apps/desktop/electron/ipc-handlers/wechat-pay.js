@@ -37,7 +37,7 @@ function registerWeChatPayHandlers (ipcMain, deps = {}) {
   const authService = deps.authService
   const toQrDataUrl = deps.toQrDataUrl || require('../services/wechat-pay-qrcode').toQrDataUrl
 
-  const memberRequest = async ({ payload, path, method, body, requireSubject }) => {
+  const memberRequest = async ({ payload, path, method, body, query, requireSubject }) => {
     const memberApiService = authService && authService.memberApiService
     if (!authService || !memberApiService || typeof memberApiService.request !== 'function') {
       return { code: EC.AUTH_ERROR, message: 'IDENTITY_NOT_CONFIGURED' }
@@ -50,7 +50,7 @@ function registerWeChatPayHandlers (ipcMain, deps = {}) {
       return { code: EC.AUTH_ERROR, message: 'BUSINESS_USER_REQUIRED' }
     }
     void payload
-    return { code: 0, data: await memberApiService.request({ subject, path, method, body }) }
+    return { code: 0, data: await memberApiService.request({ subject, path, method, body, query }) }
   }
 
   ipcMain.handle('wechat-pay:create-order', withSenderCheck(async (_event, payload) => {
@@ -126,15 +126,26 @@ function registerWeChatPayHandlers (ipcMain, deps = {}) {
    * provider_sub_id / discount_cents 等内部列。把它们原样交给渲染层等于把供应商侧
    * 标识外泄给一个可能被 XSS 影响的上下文；这里只白名单八个字段。
    */
-  ipcMain.handle('wechat-pay:list-orders', withSenderCheck(async () => {
+  ipcMain.handle('wechat-pay:list-orders', withSenderCheck(async (_event, payload) => {
     try {
+      // 分页参数在**主进程再钳制一次**（不信任渲染层）：limit 1-100 默认 20、offset≥0。
+      const limitRaw = Number(payload && payload.limit)
+      const offsetRaw = Number(payload && payload.offset)
+      const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 20
+      const offset = Number.isInteger(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0
       const fetched = await memberRequest({
+        payload,
         path: '/api/v1/me/orders',
         method: 'GET',
+        query: { limit, offset },
         requireSubject: true,
       })
       if (fetched.code !== 0) return fetched
       const rows = (fetched.data && Array.isArray(fetched.data.orders)) ? fetched.data.orders : []
+      const source = fetched.data || {}
+      // 降级：旧服务端不返回 total/hasMore 时本地推导，保证「能翻页就翻」而不是整块失效。
+      const total = Number.isInteger(source.total) ? source.total : offset + rows.length
+      const hasMore = typeof source.hasMore === 'boolean' ? source.hasMore : rows.length === limit
       return {
         code: 0,
         data: {
@@ -148,6 +159,8 @@ function registerWeChatPayHandlers (ipcMain, deps = {}) {
             createdAt: row.created_at ? String(row.created_at) : null,
             paidAt: row.paid_at ? String(row.paid_at) : null,
           })),
+          total,
+          hasMore,
         },
       }
     } catch (error) {

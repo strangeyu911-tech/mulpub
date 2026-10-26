@@ -227,6 +227,19 @@ class CommerceMethods {
     return result.rows || []
   }
 
+  /**
+   * 订单总数（分页的 total 来源）。
+   * **必须转 number**：pg 的 COUNT(*) 是 bigint，Node 侧拿到的是字符串（"137"），
+   * 直接参与比较会让 hasMore 变成字符串比较（"10" < "9" 为真）⇒ 静默错页。
+   */
+  async countOrders(userId) {
+    const result = await this.pool.query(
+      `SELECT COUNT(*) AS count FROM identity_orders WHERE user_id = $1`,
+      [userId],
+    )
+    return Number(result.rows[0] && result.rows[0].count) || 0
+  }
+
   async listOrders(userId, { limit = 20, offset = 0 } = {}) {
     const result = await this.pool.query(
       `SELECT * FROM identity_orders WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,

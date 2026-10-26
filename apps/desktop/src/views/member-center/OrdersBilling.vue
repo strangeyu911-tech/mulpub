@@ -1,7 +1,12 @@
 <template>
   <div class="member-center-orders">
     <section class="member-center-card">
-      <div class="member-center-card-title">{{ t('memberCenter.ordersTitle') }}</div>
+      <div class="member-center-card-title">
+        {{ t('memberCenter.ordersTitle') }}
+        <span v-if="total > 0" class="orders-total" data-testid="orders-total">
+          {{ t('memberCenter.ordersTotal', { count: total }) }}
+        </span>
+      </div>
 
       <p v-if="loading" class="member-center-empty-hint" data-testid="orders-loading">
         {{ t('memberCenter.ordersLoading') }}
@@ -65,6 +70,31 @@
         <p v-if="hasPending" class="orders-pending-hint" data-testid="orders-pending-hint">
           {{ t('memberCenter.ordersPendingHint') }}
         </p>
+
+        <!-- 分页（2026-10-26）：加载更多而非页码跳转（用户裁决 A）。
+             失败时**不清空已有列表**——那会让用户以为订单丢了。 -->
+        <div class="orders-paging">
+          <button
+            v-if="hasMore"
+            class="orders-action"
+            data-testid="orders-load-more"
+            :disabled="loadingMore"
+            @click="loadMore"
+          >
+            {{ loadingMore ? t('memberCenter.ordersLoadingMore') : t('memberCenter.ordersLoadMore') }}
+          </button>
+          <p
+            v-if="!hasMore && pagedOnce"
+            class="orders-paging-end"
+            data-testid="orders-all-loaded"
+          >{{ t('memberCenter.ordersAllLoaded', { count: total }) }}</p>
+          <p
+            v-if="loadMoreError"
+            class="member-center-empty-hint is-error"
+            role="alert"
+            data-testid="orders-load-more-error"
+          >{{ t('memberCenter.ordersLoadMoreError') }}</p>
+        </div>
       </template>
     </section>
 
@@ -112,6 +142,17 @@ const identityStore = useIdentityStore()
 const orders = ref([])
 const loading = ref(false)
 const loadError = ref('')
+// ── 分页（2026-10-26）──────────────────────────────────────────────
+// 服务端曾有 limit:50 硬编码且不返回 total ⇒ 第 51 条起静默消失。
+// 现在显式分页：PAGE_SIZE 与「已加载条数」共同决定 offset。
+const PAGE_SIZE = 20
+const total = ref(0)
+const hasMore = ref(false)
+const loadingMore = ref(false)
+const loadMoreError = ref('')
+// 「已显示全部」只在用户**真的翻过页**时才提示：一屏就装得下的短列表
+// 再说一句「已显示全部」只是噪音。
+const pagedOnce = ref(false)
 
 const payOpen = ref(false)
 const payPlan = ref('')
@@ -147,18 +188,51 @@ function formatAmount (order) {
 async function load () {
   if (!identityStore.isAuthenticated) {
     orders.value = []
+    total.value = 0
+    hasMore.value = false
     loading.value = false
     return
   }
   loading.value = true
   loadError.value = ''
-  const response = await invoke('wechatPayListOrders')
+  loadMoreError.value = ''
+  const response = await invoke('wechatPayListOrders', { limit: PAGE_SIZE, offset: 0 })
   loading.value = false
   if (!response || response.code !== 0 || !response.data) {
     loadError.value = (response && response.message) || t('memberCenter.ordersError')
     return
   }
   orders.value = Array.isArray(response.data.orders) ? response.data.orders : []
+  total.value = Number.isInteger(response.data.total) ? response.data.total : orders.value.length
+  hasMore.value = response.data.hasMore === true
+}
+
+/**
+ * 追加下一页。
+ * offset 用「已加载条数」而不是页码：去重后条数可能少于累计值，用条数才不会跳过订单。
+ * 追加而不是替换——用户是在往下翻，不是重新查。
+ */
+async function loadMore () {
+  if (!hasMore.value || loadingMore.value) return
+  loadingMore.value = true
+  loadMoreError.value = ''
+  try {
+    const offset = orders.value.length
+    const response = await invoke('wechatPayListOrders', { limit: PAGE_SIZE, offset })
+    if (!response || response.code !== 0 || !response.data) {
+      loadMoreError.value = (response && response.message) || t('memberCenter.ordersLoadMoreError')
+      return
+    }
+    const incoming = Array.isArray(response.data.orders) ? response.data.orders : []
+    const seen = new Set(orders.value.map((order) => order.id))
+    // 按 id 去重：分页期间若有新订单插入，offset 会漂移并带回已存在的行
+    orders.value = orders.value.concat(incoming.filter((order) => order && !seen.has(order.id)))
+    if (Number.isInteger(response.data.total)) total.value = response.data.total
+    hasMore.value = response.data.hasMore === true
+    pagedOnce.value = true
+  } finally {
+    loadingMore.value = false
+  }
 }
 
 function continuePay (order) {
@@ -200,6 +274,24 @@ watch(() => identityStore.isAuthenticated, (authed) => {
 </script>
 
 <style scoped>
+.orders-total {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+}
+.orders-paging {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+.orders-paging-end {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-xs);
+}
 .orders-table {
   width: 100%;
   border-collapse: collapse;

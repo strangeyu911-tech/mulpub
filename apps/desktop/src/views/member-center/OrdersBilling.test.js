@@ -36,12 +36,22 @@ const ORDER_PENDING = {
   status: 'pending', period: 'year', createdAt: '2026-10-21T10:00:00.000Z', paidAt: null,
 }
 
-async function mountOrders (orders = [ORDER_PAID]) {
-  invokeMock.mockResolvedValue({ code: 0, data: { orders } })
+async function mountOrders (orders = [ORDER_PAID], extra = {}) {
+  invokeMock.mockResolvedValue({ code: 0, data: { orders, ...extra } })
   const OrdersBilling = (await import('./OrdersBilling.vue')).default
   const wrapper = mount(OrdersBilling)
   await flushPromises()
   return wrapper
+}
+
+/** 按 offset 返回不同页：用于「加载更多」的追加语义测试。 */
+function mockPaged (pages) {
+  invokeMock.mockImplementation(async (_channel, payload) => {
+    const offset = (payload && Number.isInteger(payload.offset)) ? payload.offset : 0
+    const page = pages[offset]
+    if (!page) return { code: 0, data: { orders: [], total: 0, hasMore: false } }
+    return { code: 0, data: page }
+  })
 }
 
 describe('OrdersBilling', () => {
@@ -134,5 +144,73 @@ describe('OrdersBilling', () => {
     await flushPromises()
     expect(invokeMock).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="member-center-orders-empty"]').exists()).toBe(true)
+  })
+})
+
+describe('member-center/OrdersBilling 分页（加载更多）', () => {
+  beforeEach(() => {
+    authed = true
+    invokeMock.mockReset()
+  })
+
+  it('首屏请求带 limit/offset，并显示总数', async () => {
+    const wrapper = await mountOrders([ORDER_PAID], { total: 3, hasMore: true })
+    expect(invokeMock).toHaveBeenCalledWith('wechatPayListOrders', { limit: 20, offset: 0 })
+    expect(wrapper.get('[data-testid="orders-total"]').text()).toBe('memberCenter.ordersTotal')
+  })
+
+  it('点「加载更多」按 offset 追加，且按 id 去重', async () => {
+    const second = { ...ORDER_PAID, id: 'wpsecond001' }
+    mockPaged({
+      0: { orders: [ORDER_PAID], total: 3, hasMore: true },
+      1: { orders: [second, ORDER_PAID], total: 3, hasMore: false },
+    })
+    const OrdersBilling = (await import('./OrdersBilling.vue')).default
+    const wrapper = mount(OrdersBilling)
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-testid^="order-row-"]')).toHaveLength(1)
+    await wrapper.get('[data-testid="orders-load-more"]').trigger('click')
+    await flushPromises()
+
+    // 第二次请求 offset = 已加载条数
+    expect(invokeMock).toHaveBeenLastCalledWith('wechatPayListOrders', { limit: 20, offset: 1 })
+    // 重复的 ORDER_PAID 被去重，只多出 second
+    expect(wrapper.findAll('[data-testid^="order-row-"]')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="order-row-wpsecond001"]').exists()).toBe(true)
+  })
+
+  it('加载完隐藏按钮并提示已显示全部', async () => {
+    mockPaged({
+      0: { orders: [ORDER_PAID], total: 2, hasMore: true },
+      1: { orders: [{ ...ORDER_PAID, id: 'wpsecond002' }], total: 2, hasMore: false },
+    })
+    const OrdersBilling = (await import('./OrdersBilling.vue')).default
+    const wrapper = mount(OrdersBilling)
+    await flushPromises()
+    await wrapper.get('[data-testid="orders-load-more"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="orders-load-more"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="orders-all-loaded"]').text()).toBe('memberCenter.ordersAllLoaded')
+  })
+
+  it('已无更多时首屏就不显示「加载更多」', async () => {
+    const wrapper = await mountOrders([ORDER_PAID], { total: 1, hasMore: false })
+    expect(wrapper.find('[data-testid="orders-load-more"]').exists()).toBe(false)
+  })
+
+  it('「加载更多」失败时保留已有列表并给出可读错误', async () => {
+    invokeMock.mockImplementationOnce(async () => ({ code: 0, data: { orders: [ORDER_PAID], total: 2, hasMore: true } }))
+    invokeMock.mockImplementationOnce(async () => ({ code: -3, message: 'MEMBER_REQUEST_FAILED' }))
+    const OrdersBilling = (await import('./OrdersBilling.vue')).default
+    const wrapper = mount(OrdersBilling)
+    await flushPromises()
+    await wrapper.get('[data-testid="orders-load-more"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="orders-load-more-error"]').exists()).toBe(true)
+    // 关键：失败不能把已加载的订单清空（那会让用户以为订单丢了）
+    expect(wrapper.findAll('[data-testid^="order-row-"]')).toHaveLength(1)
   })
 })

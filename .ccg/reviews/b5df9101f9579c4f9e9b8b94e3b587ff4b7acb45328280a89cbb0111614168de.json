@@ -1,0 +1,62 @@
+{
+  "sha": "62873db97f906b46577e91aed4d1a8803a0ed284",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 432 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 432,
+    "fileCount": 15,
+    "codeFileCount": 12,
+    "sensitivePathHits": [
+      "packages/api-publish-engine/src/auth/page-params.js",
+      "packages/api-publish-engine/src/auth/postgres-commerce-store.js"
+    ],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 1,
+    "docSensitiveContentHits": 1,
+    "docSensitiveContentSample": [
+      "  const result = await this.pool.query('SELECT COUNT(*) AS count FROM identity_orders WHERE user_id = $1', [userId])"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "b5df9101f9579c4f9e9b8b94e3b587ff4b7acb45328280a89cbb0111614168de",
+  "decidedAt": "2026-10-26T06:33:30.962Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

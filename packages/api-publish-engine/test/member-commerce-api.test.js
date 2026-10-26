@@ -29,7 +29,18 @@ function createRepositoryStub() {
     },
     async create() { throw new Error('存量测试不应创建用户') },
     async countUnreadNotifications(userId) { this.calls.push(['countUnread', userId]); return 2 },
-    async listOrders(userId, options) { this.calls.push(['listOrders', userId, options]); return [{ id: 'ord-1', plan: 'pro', amount: 0, channel: 'redeem', status: 'paid' }] },
+    async listOrders(userId, options) {
+      this.calls.push(['listOrders', userId, options])
+      const all = [
+        { id: 'ord-1', plan: 'pro', amount: 0, channel: 'redeem', status: 'paid' },
+        { id: 'ord-2', plan: 'standard', amount: 5900, channel: 'wechat', status: 'paid' },
+        { id: 'ord-3', plan: 'pro', amount: 9900, channel: 'wechat', status: 'pending' },
+      ]
+      const limit = options && Number.isInteger(options.limit) ? options.limit : 20
+      const offset = options && Number.isInteger(options.offset) ? options.offset : 0
+      return all.slice(offset, offset + limit)
+    },
+    async countOrders(userId) { this.calls.push(['countOrders', userId]); return 3 },
     async listNotifications(userId, options) { this.calls.push(['listNotifications', userId, options]); return [{ id: 'ntf-1', title: '公告', read_at: null }] },
     async markNotificationsRead(userId) { this.calls.push(['markRead', userId]); return ['ntf-1'] },
     // is_current 契约：两行。device-aaaaaaaaaaaa 长 18（命中服务端 X-Device-ID
@@ -120,6 +131,27 @@ async function main() {
     const orders = await request(port, 'GET', '/api/v1/me/orders', 'member-read')
     assert.strictEqual(orders.status, 200)
     assert.strictEqual(orders.body.orders[0].id, 'ord-1')
+    // ── 订单分页（2026-10-26）：limit/offset + total + hasMore ────────────
+    // 此前 limit 硬编码 50、不返回 total ⇒ 第 51 条起静默消失。
+    const page1 = await request(port, 'GET', '/api/v1/me/orders?limit=2&offset=0', 'member-read')
+    assert.strictEqual(page1.status, 200)
+    assert.strictEqual(page1.body.orders.length, 2, 'limit=2 只返回 2 条')
+    assert.strictEqual(page1.body.total, 3, 'total 是全部订单数，不受分页影响')
+    assert.strictEqual(page1.body.hasMore, true, '还有第 3 条')
+
+    const page2 = await request(port, 'GET', '/api/v1/me/orders?limit=2&offset=2', 'member-read')
+    assert.strictEqual(page2.body.orders.length, 1, '第二页剩 1 条')
+    assert.strictEqual(page2.body.hasMore, false, '已到末页')
+
+    // 非法值钳制而非 400：分页参数是展示细节，不该让用户看不到订单
+    const clamped = await request(port, 'GET', '/api/v1/me/orders?limit=999&offset=-5', 'member-read')
+    assert.strictEqual(clamped.status, 200, '越界参数不得 400')
+    assert.strictEqual(clamped.body.orders.length, 3, 'limit 钳制到 100（数据只有 3 条）')
+
+    const noParams = await request(port, 'GET', '/api/v1/me/orders', 'member-read')
+    assert.strictEqual(noParams.body.total, 3)
+    assert.strictEqual(noParams.body.hasMore, false)
+
     const notifications = await request(port, 'GET', '/api/v1/me/notifications', 'member-read')
     assert.strictEqual(notifications.status, 200)
     assert.strictEqual(notifications.body.unreadCount, 2)

@@ -64,6 +64,9 @@ export default {
     saveAccountTabFailed: '保存账号凭证失败，请重试',
     saveAccountTabNoCredential: '未检测到登录凭证，请先在页面中完成登录',
     addAccount: '添加账号',
+    accountLimitTitle: '账号数量已达上限',
+    accountLimitBody: '当前套餐最多绑定 {limit} 个账号（已绑定 {current} 个）。升级后可绑定更多账号。',
+    accountLimitUpgrade: '查看套餐',
     loginMethod: '登录方式',
     selectPlatformLabel: '选择平台',
     // 平台选择器（自绘浮层）：分组名与无障碍文案都必须可翻译，

@@ -406,7 +406,14 @@ class PostgresEntitlementProvider {
       throw Object.assign(new Error('ENTITLEMENT_AMOUNT_INVALID'), { code: 'ENTITLEMENT_AMOUNT_INVALID', status: 400 })
     }
     const quotaKey = `${feature}_monthly`
-    const limit = entitlement.quota && Number(entitlement.quota[quotaKey])
+    const quota = entitlement && entitlement.quota
+    const limit = quota && Number(quota[quotaKey])
+    // -1 = 不限：不写 usage 表（DB 的 quota_limit CHECK 要求 >= 0），也不做月度累加。
+    // 这是 plan-matrix 里 UNLIMITED_ALLOWED 的运行时对应语义；此前只有 matrix 允许 -1，
+    // consumeFeature 却会以 ENTITLEMENT_QUOTA_INVALID(503) 拒绝，属于契约缺口。
+    if (limit === -1) {
+      return { used: 0, limit: -1, remaining: null }
+    }
     if (!Number.isInteger(limit) || limit < 0) {
       throw Object.assign(new Error('ENTITLEMENT_QUOTA_INVALID'), { code: 'ENTITLEMENT_QUOTA_INVALID', status: 503 })
     }

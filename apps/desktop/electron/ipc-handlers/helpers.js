@@ -179,4 +179,26 @@ function resolveIpcOwnerSubject (identityService) {
   return null
 }
 
-module.exports = { wrapIpcHandler, wrapIpcHandlerRaw, withSenderCheck, resolveIpcOwnerSubject, EC }
+/**
+ * 从身份服务读取 entitlement（只读快照），供 IPC 判据使用。
+ *
+ * 为什么放在 helpers：`owner-subject-single-source.test.js` 禁止 account.js / publish.js
+ * 直接出现 `identityService.getState()`，所有身份状态读取必须收敛到本文件，避免同页
+ * 不同 IPC 的口径分叉。读取失败/服务缺席返回 null（调用方按「无信息」处理）。
+ *
+ * @param {{getState: () => any}|null|undefined} identityService
+ * @returns {object|null}
+ */
+function resolveIpcEntitlement (identityService) {
+  if (!identityService || typeof identityService.getState !== 'function') return null
+  try {
+    const state = identityService.getState()
+    return state && typeof state === 'object' && state.entitlement && typeof state.entitlement === 'object'
+      ? state.entitlement
+      : null
+  } catch (_) {
+    return null
+  }
+}
+
+module.exports = { wrapIpcHandler, wrapIpcHandlerRaw, withSenderCheck, resolveIpcOwnerSubject, resolveIpcEntitlement, EC }

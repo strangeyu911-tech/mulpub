@@ -76,7 +76,12 @@
           @click="openCloudSync"
         >{{ cloudSyncRunning ? t('accountsPage.cloudSyncBusy') : t('accountsPage.cloudSync') }}</button>
         <button class="page-button secondary" type="button" data-testid="account-batch" @click="accountBatchMode = !accountBatchMode">{{ t('accountsPage.batchAction') }}</button>
-        <button class="page-button primary" type="button" data-testid="account-add" @click="showAddDialog = true"><Plus />{{ t('accountsPage.addAccount') }}</button>
+        <AccountAddAction
+          ref="accountAddAction"
+          :entitlement="identityStore.entitlement"
+          :current="totalAccounts"
+          @open="showAddDialog = true"
+        />
       </div>
       <div class="filter-tabs" role="tablist" :aria-label="t('accountsPage.statusAria')">
         <button
@@ -360,13 +365,14 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Close, Delete, FolderOpened, Plus, Search, UserFilled, WarningFilled } from '@element-plus/icons-vue'
+import { Close, Delete, FolderOpened, Search, UserFilled, WarningFilled } from '@element-plus/icons-vue'
 import { useNotify } from '@/composables/useNotify'
 import AccountAuthorizationGuide from '@/features/accounts/components/AccountAuthorizationGuide.vue'
 import AccountCloudSyncDialog from '@/features/accounts/components/AccountCloudSyncDialog.vue'
 import AccountFavoritesPanel from '@/features/accounts/components/AccountFavoritesPanel.vue'
 import AccountGroupsPanel from '@/features/accounts/components/AccountGroupsPanel.vue'
 import AccountLoginDialog from '@/features/accounts/components/AccountLoginDialog.vue'
+import AccountAddAction from '@/features/accounts/components/AccountAddAction.vue'
 import AccountModuleTabs from '@/features/accounts/components/AccountModuleTabs.vue'
 import AccountManagementCard from '@/features/accounts/components/AccountManagementCard.vue'
 import AccountProxyDialog from '@/features/accounts/components/AccountProxyDialog.vue'
@@ -580,14 +586,13 @@ const qrImageSource = computed(() => {
   const source = typeof image === 'string' ? image : image?.src || image?.dataUrl || image?.url
   return typeof source === 'string' && /^(data:image\/(?:png|jpeg|jpg|webp);|https:\/\/|blob:)/i.test(source) ? source : ''
 })
-
 const allPlatforms = computed(() => platformStore.platforms.map(item => ({ id: item.id, label: item.label })))
 const totalAccounts = computed(() => accountStore.accounts.length)
+const accountAddAction = ref(null)
 const qrAvailable = computed(() =>
   platformStore.supportsQrCode(newPlatform.value) || newPlatform.value === 'kuaishou'
 )
 const sortOrderLabel = computed(() => accountStore.sortOrder === 'desc' ? t('accountsPage.sortDesc') : t('accountsPage.sortAsc'))
-
 function shouldShowAuthorizationGuide () {
   try { return localStorage.getItem('account-authorization-guide-seen') !== '1' } catch (_) { return true }
 }
@@ -903,9 +908,8 @@ async function addAccount () {
 // completeAuthView 已移除：登录完成后 CDP 自动检测 + NavBar「保存账号」按钮替代
 
 function addAccountForPlatform (platform) {
-  newPlatform.value = platform
-  selectedLoginMode.value = 'browser'
-  showAddDialog.value = true
+  if (!accountAddAction.value?.open()) return
+  newPlatform.value = platform; selectedLoginMode.value = 'browser'; showAddDialog.value = true
 }
 
 // closeAuthView 已移除：登录标签通过 TabBar × 关闭

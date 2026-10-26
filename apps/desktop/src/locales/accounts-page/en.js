@@ -64,6 +64,9 @@ export default {
     saveAccountTabFailed: 'Failed to save account credentials, please retry',
     saveAccountTabNoCredential: 'No login credentials detected; please finish signing in first',
     addAccount: 'Add Account',
+    accountLimitTitle: 'Account limit reached',
+    accountLimitBody: 'Your plan allows up to {limit} accounts ({current} currently bound). Upgrade to add more.',
+    accountLimitUpgrade: 'View plans',
     loginMethod: 'Login method',
     selectPlatformLabel: 'Select platform',
     // Platform picker (self-drawn popup): group names and a11y labels must be

@@ -64,11 +64,17 @@ test('plan-matrix 契约（spec §2）', async (t) => {
     }
   })
 
-  await t.test('无限值约定 -1：pro 平台数 / standard AI 写稿（自有 Key）', () => {
-    assert.strictEqual(getPlanEntitlement('pro').limits.max_platforms, -1)
-    assert.strictEqual(getPlanEntitlement('standard').quota.ai_write_monthly, -1)
-    assert.strictEqual(getPlanEntitlement('free').limits.max_platforms, 5)
-    assert.strictEqual(getPlanEntitlement('standard').limits.max_platforms, 15)
+  await t.test('v3.1 主计量轴：绑定账号数 5/20/100，平台数全档不限', () => {
+    assert.strictEqual(getPlanEntitlement('free').limits.max_accounts, 5)
+    assert.strictEqual(getPlanEntitlement('standard').limits.max_accounts, 20)
+    assert.strictEqual(getPlanEntitlement('pro').limits.max_accounts, 100)
+    for (const plan of PLAN_IDS) {
+      assert.strictEqual(getPlanEntitlement(plan).limits.max_platforms, -1, `${plan} 平台数应不再分档`)
+    }
+    // AI 写稿不再限次数：官方模型按积分，BYOK 不计
+    for (const plan of PLAN_IDS) {
+      assert.strictEqual(getPlanEntitlement(plan).quota.ai_write_monthly, -1, `${plan} AI 写稿应为不限`)
+    }
   })
 
   // ⚠️ 「-1 = 不限」的能力声明口径：判据必须是 `!== 0` 而不是 `> 0`。
@@ -106,9 +112,9 @@ test('plan-matrix 契约（spec §2）', async (t) => {
     assert.ok(standard.features.includes('video_create'))
     assert.ok(standard.features.includes('schedule_batch'))
     assert.ok(standard.features.includes('dashboard_full'))
-    // v2.0 机制 C4.3：视频配额 500 → 300（3× 于画像 p75 100 条/月）
-    assert.strictEqual(standard.quota.video_create_monthly, 300)
-    assert.strictEqual(getPlanEntitlement('pro').quota.video_create_monthly, 3000)
+    // v3.1：视频创作只做功能开关，不设条数上限（free 0 = 不提供）
+    assert.strictEqual(standard.quota.video_create_monthly, -1)
+    assert.strictEqual(getPlanEntitlement('pro').quota.video_create_monthly, -1)
     assert.strictEqual(standard.limits.concurrent_tasks, 3)
     assert.strictEqual(getPlanEntitlement('pro').limits.concurrent_tasks, 10)
     // 官方积分档位：free 体验额度 / standard 中 / pro 高（逐值断言见上方专用用例）
@@ -162,12 +168,15 @@ test('plan-matrix 契约（spec §2）', async (t) => {
     const free = getPlanEntitlement('free')
     const standard = getPlanEntitlement('standard')
     const pro = getPlanEntitlement('pro')
-    assert.strictEqual(free.limits.max_devices, 2)
+    assert.strictEqual(free.limits.max_devices, 1)
     assert.strictEqual(standard.limits.max_devices, 3)
     assert.strictEqual(pro.limits.max_devices, -1)
     assert.strictEqual(free.limits.max_cloud_accounts, 0)
     assert.strictEqual(standard.limits.max_cloud_accounts, 20)
-    assert.strictEqual(pro.limits.max_cloud_accounts, -1)
+    assert.strictEqual(pro.limits.max_cloud_accounts, 100)
+    assert.strictEqual(free.limits.max_accounts, 5)
+    assert.strictEqual(standard.limits.max_accounts, 20)
+    assert.strictEqual(pro.limits.max_accounts, 100)
     assert.strictEqual(free.limits.batch_size_per_run, 1)
     assert.strictEqual(standard.limits.batch_size_per_run, 10)
     assert.strictEqual(pro.limits.batch_size_per_run, -1)
@@ -181,7 +190,7 @@ test('plan-matrix 契约（spec §2）', async (t) => {
   await t.test('运营 overrides 注入：合法覆盖生效、未知键与非法值 fail closed', () => {
     const patched = getPlanEntitlement('standard', { standard: { videoMonthly: 600 } })
     assert.strictEqual(patched.quota.video_create_monthly, 600)
-    assert.strictEqual(getPlanEntitlement('standard').quota.video_create_monthly, 300) // 不污染基线
+    assert.strictEqual(getPlanEntitlement('standard').quota.video_create_monthly, -1) // 不污染基线
     assert.throws(() => getPlanEntitlement('standard', { standard: { noSuchKey: 1 } }), /unknown key/i)
     assert.throws(() => getPlanEntitlement('standard', { standard: { videoMonthly: 1.5 } }), /integer/i)
     assert.throws(
@@ -219,7 +228,7 @@ test('plan-matrix 契约（spec §2）', async (t) => {
     assert.doesNotThrow(() => getPlanEntitlement('standard', { standard: null }))
     const withNull = getPlanEntitlement('standard', { standard: null })
     assert.deepStrictEqual(withNull, baseline)
-    assert.strictEqual(withNull.quota.video_create_monthly, 300) // 未被覆盖，仍是基线值
+    assert.strictEqual(withNull.quota.video_create_monthly, -1) // 未被覆盖，仍是基线值
   })
 
   await t.test('getPlanCatalog(overrides)：合法覆盖在目录展示与内嵌 entitlement 均生效', () => {

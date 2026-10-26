@@ -14,7 +14,8 @@
  *    「-1 个」参与任何加法/减法。
  *
  * ⚠ 接线状态（CCG i6，别误读为已生效能力）：**已接线**的是 `maxPlatformsOf` / `canAddPlatform` /
- * `platformLimitState`（发布页平台选择）；其余导出（`canBatchSize` / `canPublishToday` /
+ * `platformLimitState`（发布页平台选择）与 `maxAccountsOf` / `canAddAccount` / `accountLimitState`
+ * （账号页添加账号入口，v3.1 P0）；其余导出（`canBatchSize` / `canPublishToday` /
  * `concurrentTasksOf` / `maxDevicesOf` / `maxCloudAccountsOf`）**尚未接线**——它们缺数据源
  * （今日已发条数、批量入口、设备/云账号管理页），按 PRD §12 N5/N1/N2 排期。在接线前，
  * 这些函数只是一份可单测的判据，不构成任何运行时限制。
@@ -70,6 +71,39 @@ export function maxDevicesOf(entitlement) {
 /** 云端同步账号数上限；0 表示本档不提供云同步，-1 表示不限。 */
 export function maxCloudAccountsOf(entitlement) {
   return readLimit(entitlement && entitlement.limits, 'max_cloud_accounts')
+}
+
+/** 绑定账号数上限；null 表示无信息（放行）。v3.1 主计量轴。 */
+export function maxAccountsOf(entitlement) {
+  return readLimit(entitlement && entitlement.limits, 'max_accounts')
+}
+
+/**
+ * 是否还能再添加一个绑定账号。
+ * @param {object|null|undefined} entitlement
+ * @param {number} currentCount 当前已绑定账号数（**不含**待新增的那个）
+ * @returns {boolean} 无限制信息或 -1 时恒 true
+ */
+export function canAddAccount(entitlement, currentCount) {
+  const limit = maxAccountsOf(entitlement)
+  if (limit === null || limit < 0) return true
+  const count = Number(currentCount)
+  if (!Number.isFinite(count)) return true
+  return count < limit
+}
+
+/**
+ * 账号上限展示态：给出「本档上限」与「当前已绑定」，供弹窗文案填空。
+ * 不生成自然语言（文案在 locales），只产出可填进 i18n 的值。
+ * @param {object|null|undefined} entitlement
+ * @param {number} currentCount
+ * @returns {{limit: number|null, current: number, atLimit: boolean}}
+ */
+export function accountLimitState(entitlement, currentCount) {
+  const limit = maxAccountsOf(entitlement)
+  const current = Number.isFinite(Number(currentCount)) ? Number(currentCount) : 0
+  const unlimited = limit === null || limit < 0
+  return { limit: unlimited ? null : limit, current, atLimit: !unlimited && current >= limit }
 }
 
 /**

@@ -411,7 +411,7 @@ test('grant / createRedeemBatch / settleExpiry / 视图', async (t) => {
     assert.strictEqual(publish.limit, 1500)
     const video = usageView.features.find((item) => item.feature === 'video_create')
     assert.strictEqual(video.used, 0)
-    assert.strictEqual(video.limit, 300)
+    assert.strictEqual(video.limit, -1)
   })
 })
 

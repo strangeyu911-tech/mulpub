@@ -30,6 +30,8 @@ const ERROR = {
   TEMPLATE_GATE_FAILED: -21,
   TEMPLATE_NOT_FOUND: -22,
   TEMPLATE_BAD_STATE: -23,
+  // 会员档位（v3.1）：绑定账号数达到上限（客户端主进程判据）
+  ACCOUNT_LIMIT_EXCEEDED: -30,
   TASK_CANCELLED: -999,
   UNKNOWN_ERROR: -99,
 };
@@ -47,6 +49,7 @@ const MESSAGES = {
   [ERROR.TEMPLATE_GATE_FAILED]: 'Template gate failed',
   [ERROR.TEMPLATE_NOT_FOUND]: 'Template not found',
   [ERROR.TEMPLATE_BAD_STATE]: 'Template bad state',
+  [ERROR.ACCOUNT_LIMIT_EXCEEDED]: 'Account limit exceeded',
   [ERROR.TASK_CANCELLED]: 'Task cancelled',
   [ERROR.UNKNOWN_ERROR]: 'Unknown error',
 };

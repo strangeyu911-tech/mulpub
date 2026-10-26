@@ -13,7 +13,7 @@
  */
 function registerHandlers(ipcMain, deps) {
   const EC = require('../core/error-codes').ERROR
-  const { withSenderCheck, resolveIpcOwnerSubject } = require('./helpers')
+  const { withSenderCheck, resolveIpcOwnerSubject, resolveIpcEntitlement } = require('./helpers')
   const { toPublicProxyConfig } = require('../services/proxy-config')
   const { PLATFORM_LOGIN_URLS } = require('@multi-publish/shared-utils/src/platform-definitions')
   const { loginStatusTransition } = require('@multi-publish/shared-utils/src/login-state')
@@ -39,6 +39,54 @@ function registerHandlers(ipcMain, deps) {
   // 归属三态唯一实现在 helpers.resolveIpcOwnerSubject，本处只转发（QM-6 后端轴 FB5）
   function getOwnerSubject () {
     return resolveIpcOwnerSubject(identityService)
+  }
+
+  // ── v3.1 主计量轴：绑定账号数上限（客户端主进程判据）────────────────────────
+  // 三条纪律：
+  // 1. 缺失即放行：entitlement/limits/max_accounts 缺失或非法 → 不拦（否则一次快照
+  //    字段漂移会把付费用户整片拦死，表现为「添加账号按钮坏了」）。
+  // 2. -1 = 不限；0 是合法上限（第 1 个就拒），但目前三档都不是 0。
+  // 3. 计数走 AccountManager.listAccounts()（后端真源），不是本地缓存。
+  function maxAccountsLimit () {
+    const entitlement = resolveIpcEntitlement(identityService)
+    const limits = entitlement && entitlement.limits
+    const raw = limits ? limits.max_accounts : null
+    if (raw === null || raw === undefined || raw === '') return null
+    const value = typeof raw === 'number' ? raw : Number(raw)
+    return Number.isFinite(value) ? value : null
+  }
+
+  async function accountLimitResponse (channel) {
+    const limit = maxAccountsLimit()
+    if (limit === null || limit < 0) return null
+    let accounts
+    try {
+      accounts = await AccountManager.listAccounts()
+    } catch (e) {
+      // 计数失败不冒充「达到上限」：新增本身也会失败，让 AccountManager 报真实错误。
+      ipcLog('warn', channel, 'limit-check-skipped', `message=${e instanceof Error ? e.message : String(e)}`)
+      return null
+    }
+    const current = Array.isArray(accounts) ? accounts.length : 0
+    if (current < limit) return null
+    return {
+      code: EC.ACCOUNT_LIMIT_EXCEEDED,
+      errorCode: 'ACCOUNT_LIMIT_EXCEEDED',
+      message: `当前套餐最多绑定 ${limit} 个账号（已绑定 ${current} 个），请升级后重试`,
+      data: { current, limit },
+    }
+  }
+
+  // 同一时刻只允许一个「计数 + 新增」走完：两个登录窗口各自数到 4/5 后不能都放行。
+  let accountLimitChain = Promise.resolve()
+  function withAccountLimitLock (fn) {
+    const run = accountLimitChain.then(fn, fn)
+    accountLimitChain = run.then(() => undefined, () => undefined)
+    return run
+  }
+
+  function isAccountLimitResponse (value) {
+    return Boolean(value && value.errorCode === 'ACCOUNT_LIMIT_EXCEEDED')
   }
 
   // 统一 IPC 日志：账号管理路径（模块 AccountIPC），含平台/账号/耗时，敏感字段经 toPublicErrorValue 脱敏
@@ -409,6 +457,15 @@ function registerHandlers(ipcMain, deps) {
         ipcLog('warn', 'auth:open-login', 'validation-failed', `accountId=${accountId}`)
         return { code: EC.VALIDATION_ERROR, message: '缺少或非法 accountId 参数' }
       }
+      // v3.1：新账号在打开登录页之前先判一次，避免用户白登录一场。
+      // 重新登录（带 accountId）不占新名额，不判。
+      if (!accountId) {
+        const limited = await accountLimitResponse('auth:open-login')
+        if (limited) {
+          ipcLog('warn', 'auth:open-login', 'account-limit', `current=${limited.data.current} limit=${limited.data.limit}`)
+          return limited
+        }
+      }
       const result = await authViewManager.openLogin(platform)
       // 用户关闭登录页签/Esc 取消：控制信号而非凭证数据，不得进入保存流程，也不得弹错误
       if (result && typeof result === 'object' && result.cancelled === true) {
@@ -426,8 +483,18 @@ function registerHandlers(ipcMain, deps) {
         savedAccount = await AccountManager.updateCapturedAccount(platform, result, accountId)
         savedAccountId = accountId
       } else {
-        // 新登录：创建新账号
-        savedAccount = await AccountManager.saveCapturedAccount(platform, result)
+        // 新登录：创建新账号。保存前在串行锁内再判一次——用户打开登录页期间，
+        // 另一个窗口可能已经加满（预检通过 ≠ 保存时仍通过）。
+        const saved = await withAccountLimitLock(async () => {
+          const limited = await accountLimitResponse('auth:open-login')
+          if (limited) return limited
+          return AccountManager.saveCapturedAccount(platform, result)
+        })
+        if (isAccountLimitResponse(saved)) {
+          ipcLog('warn', 'auth:open-login', 'account-limit', `current=${saved.data.current} limit=${saved.data.limit}`)
+          return saved
+        }
+        savedAccount = saved
         savedAccountId = savedAccount?.id || savedAccount?.accountId
       }
       const win = BrowserWindow.getAllWindows()[0]
@@ -529,7 +596,15 @@ function registerHandlers(ipcMain, deps) {
         ipcLog('warn', 'account:add', 'validation-failed', `platform=${platform}`)
         return { code: EC.VALIDATION_ERROR, message: '缺少或非法 platform 参数' }
       }
-      const account = await AccountManager.addAccount(platform)
+      const account = await withAccountLimitLock(async () => {
+        const limited = await accountLimitResponse('account:add')
+        if (limited) return limited
+        return AccountManager.addAccount(platform)
+      })
+      if (isAccountLimitResponse(account)) {
+        ipcLog('warn', 'account:add', 'account-limit', `current=${account.data.current} limit=${account.data.limit}`)
+        return account
+      }
       ipcLog('info', 'account:add', 'ok', `${safeAccountSummary(account)} 耗时=${Date.now() - startedAt}ms`)
       return { code: 0, data: toPublicAccount(account), message: '账号添加成功' }
     } catch (e) { ipcLog('error', 'account:add', 'error', `platform=${platform} message=${e instanceof Error ? e.message : String(e)}`); return { code: EC.REQUEST_ERROR, message: e instanceof Error ? e.message : String(e) } }

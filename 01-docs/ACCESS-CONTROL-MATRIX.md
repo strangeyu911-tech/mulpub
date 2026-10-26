@@ -85,6 +85,8 @@
 
 账号管理（`accounts:*` / `store:*` 账号/历史/定时/回调）、定时任务（`scheduler:*`）、内容模板（`template:*`）、数据分析（`analytics:*`）、AI 写作（`ai:*`）、代理池（`proxy:*` 写）、关键词监控（`keyword:*`）、TTS 语音（`tts-voice:*`）、上传（`upload:*`）、提示词评估（`prompt-eval:*`）等均为 authenticated。
 
+> **v3.1 绑定账号上限（客户端硬限制）**：`account:add` 与 `auth:open-login`（新账号保存路径）除登录外还受 entitlement `limits.max_accounts` 约束；达到上限返回 `ACCOUNT_LIMIT_EXCEEDED`（-30）。该限制在主进程 IPC + UI 双拦，**不是服务端门禁**，换设备/改本地库可绕过；详见 `PRD-MEMBER-TIER-ACCOUNT-LIMIT-2026-10-26.md`。
+
 ### 3.7 保持 public（基础设施/身份入口）
 
 系统信息/更新/引导/热键/日志/敏感词、身份与购买入口（`identity:*`、`auth:*`、`oauth:*`、`license:*`、`payment:*` 创建/查询）、平台目录（`platform:*`）、离线状态、webview 布局、`cloud-publisher` 之外的本机只读历史。

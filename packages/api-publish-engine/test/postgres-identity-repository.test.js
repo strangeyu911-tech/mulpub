@@ -249,6 +249,25 @@ test('PostgresIdentityRepository', async (t) => {
     })
   })
 
+  await t.test('-1 表示不限：不写 usage 表，返回 remaining=null', async () => {
+    const calls = []
+    const repository = {
+      async getEntitlement() {
+        return { plan: 'standard', features: ['ai_write'], quota: { ai_write_monthly: -1 } }
+      },
+      async consumeEntitlementUsage(input) {
+        calls.push(input)
+        return { used: 1, limit: 1, remaining: 0 }
+      },
+    }
+    const { PostgresEntitlementProvider } = require('../src/auth/postgres-identity-repository')
+    const provider = new PostgresEntitlementProvider(repository, { now: () => new Date('2026-07-20T12:00:00.000Z') })
+
+    const result = await provider.consumeFeature({ businessUser: { id: 'user-1' }, feature: 'ai_write' }, 1)
+    assert.deepStrictEqual(result, { used: 0, limit: -1, remaining: null })
+    assert.strictEqual(calls.length, 0, '不限额度不得写 usage 表（DB CHECK 要求 quota_limit >= 0）')
+  })
+
   await t.test('按 provider + sub 查找并以唯一键幂等创建业务用户', async () => {
     const pool = createPool()
     const { PostgresIdentityRepository } = require('../src/auth/postgres-identity-repository')

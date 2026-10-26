@@ -20,7 +20,7 @@
  *   依赖注入能否触达本矩阵取决于部署层——本仓无法自证。
  */
 
-const PLAN_MATRIX_VERSION = '2026-10-25'
+const PLAN_MATRIX_VERSION = '2026-10-26'
 
 const PLAN_IDS = Object.freeze(['free', 'standard', 'pro'])
 
@@ -36,9 +36,9 @@ const BASE_MATRIX = {
     label: '免费版',
     priceMonthlyCents: 0,
     priceYearlyCents: 0,
-    maxPlatforms: 5,
+    maxPlatforms: -1,
     dailyPublish: 5,
-    aiWriteMonthly: 200,
+    aiWriteMonthly: -1,
     videoMonthly: 0,
     scheduleBatch: false,
     dashboard: 'basic',
@@ -54,7 +54,9 @@ const BASE_MATRIX = {
     // planRank()（降级保护）会各读一份，改错一处即静默不一致。
     rank: PLAN_RANK.free,
     // v2.0 机制 C6.2：设备数温和上限（服务端会话表可强制；-1 表示不限）
-    maxDevices: 2,
+    maxDevices: 1,
+    // v3.1：绑定账号数是唯一主计量轴（5/20/100），客户端主进程 + UI 双拦
+    maxAccounts: 5,
     // v2.0 机制 C6.1：云凭证同步账号数（0 表示不提供云同步；-1 表示不限）
     maxCloudAccounts: 0,
     // v2.0 机制 C7 A 批：单次批量发布条数上限（1 表示单篇；-1 表示不限）
@@ -66,12 +68,12 @@ const BASE_MATRIX = {
     label: '标准版',
     priceMonthlyCents: 5900,
     priceYearlyCents: 59000,
-    maxPlatforms: 15,
+    maxPlatforms: -1,
     dailyPublish: 50,
-    // 「不限」前提是走自有 Key；官方积分受 officialCreditMonthly（中档）约束。
+    // v3.1：AI 写稿不再按次数分档；官方模型按积分，BYOK 不计
     aiWriteMonthly: -1,
-    // v2.0 机制 C4.3：500 → 300（3× 于画像 p75 100 条/月，收敛过松的承诺）
-    videoMonthly: 300,
+    // v3.1：视频创作只做功能开关（0 = 不提供，-1 = 可用且不限条数）
+    videoMonthly: -1,
     scheduleBatch: true,
     dashboard: 'full',
     // 成本占比 25.42%（¥59 × 25.42% ≈ ¥15.21）。年付按月等额发放，年付总量因此恒为 12×本值
@@ -84,6 +86,7 @@ const BASE_MATRIX = {
     concurrentTasks: 3,
     rank: PLAN_RANK.standard,
     maxDevices: 3,
+    maxAccounts: 20,
     maxCloudAccounts: 20,
     batchSizePerRun: 10,
     modelTier: 1,
@@ -98,8 +101,8 @@ const BASE_MATRIX = {
     maxPlatforms: -1,
     // spec：「不限（默认上限 1000，运营可配）」——用有限高值而非 -1，避免下游除零/无限逻辑。
     dailyPublish: 1000,
-    aiWriteMonthly: 12000,
-    videoMonthly: 3000,
+    aiWriteMonthly: -1,
+    videoMonthly: -1,
     scheduleBatch: true,
     dashboard: 'full',
     // 成本占比 25.21%（¥119 × 25.21% ≈ ¥30）。年付按月等额发放 ⇒ 年付 12×3000 = 36000 积分
@@ -115,7 +118,8 @@ const BASE_MATRIX = {
     concurrentTasks: 10,
     rank: PLAN_RANK.pro,
     maxDevices: -1,
-    maxCloudAccounts: -1,
+    maxAccounts: 100,
+    maxCloudAccounts: 100,
     batchSizePerRun: -1,
     modelTier: 2,
   },
@@ -124,7 +128,7 @@ const BASE_MATRIX = {
 const NUMERIC_KEYS = Object.freeze([
   'priceMonthlyCents', 'priceYearlyCents', 'maxPlatforms', 'dailyPublish',
   'aiWriteMonthly', 'videoMonthly', 'officialCreditMonthly', 'concurrentTasks',
-  'maxDevices', 'maxCloudAccounts', 'batchSizePerRun', 'modelTier',
+  'maxDevices', 'maxAccounts', 'maxCloudAccounts', 'batchSizePerRun', 'modelTier',
 ])
 // 不含 dailyPublish：它派生 quota.cloud_publish_monthly，该 feature 会被 consumeFeature 扣减（要求 limit >= 0），-1 会导致发布链路 503
 const UNLIMITED_ALLOWED = Object.freeze([
@@ -246,6 +250,7 @@ function getPlanEntitlement(plan, overrides) {
       // v2.0 机制：以下四项此前只存在于文档，客户端 normalizeEntitlement 会丢弃；
       // 现在随快照签名下发并被客户端透传（见 entitlement-service.normalizeEntitlement）
       max_devices: matrix.maxDevices,
+      max_accounts: matrix.maxAccounts,
       max_cloud_accounts: matrix.maxCloudAccounts,
       batch_size_per_run: matrix.batchSizePerRun,
       model_tier: matrix.modelTier,

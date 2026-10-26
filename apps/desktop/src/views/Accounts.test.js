@@ -39,7 +39,7 @@ const _accountFilters = vi.hoisted(() => ({ searchQuery: "", filterStatus: "all"
 const _accountSort = vi.hoisted(() => ({ sortBy: null, sortOrder: null }));
 const _accountError = vi.hoisted(() => ({ value: null }));
 const _accountErrorCode = vi.hoisted(() => ({ value: null }));
-const _identityState = vi.hoisted(() => ({ isAuthenticated: false }));
+const _identityState = vi.hoisted(() => ({ isAuthenticated: false, entitlement: null }));
 const _ensureLogin = vi.hoisted(() => vi.fn(async () => false));
 const _eventCallbacks = vi.hoisted(() => ({
   authOpened: null,
@@ -75,6 +75,7 @@ vi.mock('vue-router', () => ({
 vi.mock('@/stores/identity', () => ({
   useIdentityStore: () => ({
     get isAuthenticated() { return _identityState.isAuthenticated; },
+    get entitlement() { return _identityState.entitlement; },
     status: 'signed_out',
     signInOrSwitch: vi.fn(),
   }),
@@ -223,7 +224,7 @@ vi.mock("element-plus", () => ({
 }));
 
 vi.mock("@/components/UiModal.vue", () => ({
-  default: { template: "<div v-if='visible'><slot/></div>", props: ["visible", "title", "size"] }
+  default: { template: "<div v-if='visible'><slot/><slot name='footer'/></div>", props: ["visible", "title", "size"] }
 }));
 
 import AccountsView from "./Accounts.vue";
@@ -2010,3 +2011,53 @@ describe('AccountsView — 首屏启动链不得留浮空 promise，也不得静
     }
   });
 });
+
+describe('AccountsView — 绑定账号数上限（v3.1）', () => {
+  beforeEach(() => {
+    i18n.global.locale.value = 'zh'
+    setActivePinia(createPinia())
+    _testAccounts.length = 0
+    _identityState.isAuthenticated = true
+    _identityState.entitlement = null
+    _routerState.push.mockClear()
+  })
+
+  it('达到上限时点「添加账号」弹上限提示，不打开登录弹窗', async () => {
+    _identityState.entitlement = { plan: 'free', limits: { max_accounts: 2 } }
+    _testAccounts.push(
+      { id: 'a1', platform: 'zhihu', status: 'active', account_name: '账号一' },
+      { id: 'a2', platform: 'zhihu', status: 'active', account_name: '账号二' },
+    )
+    const w = await mountView()
+
+    await w.get('[data-testid="account-add"]').trigger('click')
+
+    expect(w.vm.showAddDialog).toBe(false)
+    expect(w.text()).toContain('当前套餐最多绑定 2 个账号')
+    expect(w.text()).toContain('查看套餐')
+  })
+
+  it('未达上限时正常打开登录弹窗', async () => {
+    _identityState.entitlement = { plan: 'free', limits: { max_accounts: 2 } }
+    _testAccounts.push({ id: 'a1', platform: 'zhihu', status: 'active', account_name: '账号一' })
+    const w = await mountView()
+
+    await w.get('[data-testid="account-add"]').trigger('click')
+
+    expect(w.vm.showAddDialog).toBe(true)
+    expect(w.text()).not.toContain('当前套餐最多绑定')
+  })
+
+  it('上限弹窗「查看套餐」跳会员中心订阅区', async () => {
+    _identityState.entitlement = { plan: 'free', limits: { max_accounts: 1 } }
+    _testAccounts.push({ id: 'a1', platform: 'zhihu', status: 'active', account_name: '账号一' })
+    const w = await mountView()
+
+    await w.get('[data-testid="account-add"]').trigger('click')
+    await w.get('[data-testid="account-limit-upgrade"]').trigger('click')
+
+    expect(_routerState.push).toHaveBeenCalledWith('/member-center?section=subscription')
+    expect(w.text()).not.toContain('当前套餐最多绑定')
+  })
+});
+

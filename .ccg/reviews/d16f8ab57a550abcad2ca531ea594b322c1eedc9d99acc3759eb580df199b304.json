@@ -1,0 +1,139 @@
+{
+  "sha": "834670c34a2459c0be4f8e57ed1beed971a3ac49",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 629 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 629,
+    "fileCount": 20,
+    "codeFileCount": 15,
+    "sensitivePathHits": [
+      "packages/api-publish-engine/src/auth/plan-matrix.js",
+      "packages/api-publish-engine/src/auth/postgres-identity-repository.js"
+    ],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "d16f8ab57a550abcad2ca531ea594b322c1eedc9d99acc3759eb580df199b304",
+  "decidedAt": "2026-10-26T15:26:02.834Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "domains": [
+          "auth"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "plan-matrix.js 设置 videoMonthly:-1（标准/专业）但 UNLIMITED_ALLOWED 冷冻数组未在 diff 更新；矩阵初始化将拒绝该无限值。",
+        "highRiskDomains": [],
+        "prosecution": null,
+        "defense": null,
+        "verdict": null,
+        "rationale": null
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": ".ccg/reviews/d16f... deepReview.required:true 但 status:pending、evidence:null；1744 行含敏感认证路径，未完成评审即提交。",
+        "highRiskDomains": [
+          "auth"
+        ],
+        "prosecution": null,
+        "defense": null,
+        "verdict": null,
+        "rationale": null
+      },
+      {
+        "id": "i3",
+        "severity": "Critical",
+        "finding": "方案文档明确承认 maxAccounts 是客户端判据（“不是服务端门禁，换设备/改本地库可绕过”），却标为“硬（已实现）”；非真实安全边界。",
+        "highRiskDomains": [],
+        "prosecution": null,
+        "defense": null,
+        "verdict": null,
+        "rationale": null
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "withAccountLimitLock 使用全局 Promise 链，无超时与异常恢复机制；listAccounts 卡死将永久阻塞所有 account:add。",
+        "highRiskDomains": [],
+        "prosecution": null,
+        "defense": null,
+        "verdict": null,
+        "rationale": null
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "跳过评审 JSON（ce9d...）声称“全部命中文档白名单”走文档快通道，但方案包含 plan-matrix.js、account.js 等代码变更。",
+        "highRiskDomains": [],
+        "prosecution": null,
+        "defense": null,
+        "verdict": null,
+        "rationale": null
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "dual 评审 backend 可用性完整（count:2）但 deepReview 仍为 pending；违反 §12.6 >200 行必须评审的流程。",
+        "highRiskDomains": [],
+        "prosecution": null,
+        "defense": null,
+        "verdict": null,
+        "rationale": null
+      }
+    ],
+    "template": ".adversarial\\ccg-deep-1cb30767\\adjudication.json",
+    "note": "self-play 裁决完成，PR 评论公开证据已绑定；tier 由会话手写",
+    "at": "2026-10-26T15:29:52.67Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4513#issuecomment-6420148451",
+    "tierBasis": "adjudicated-self-play",
+    "closureNote": "第 1-3 轮 deep review：i1 dismissed（UNLIMITED_ALLOWED 本就含 videoMonthly，指控为假）；i2 dismissed（评审读取自身 status:pending 快照的元发现）；i3 dismissed（文档「硬」定义为主进程+UI 拦截，非安全边界）；i4 dismissed（pythonBridge 默认 30s 超时，reject 后链继续）；i5 dismissed（ce9d 仅覆盖 .ccg 变更的 skip 记录，不代表本 PR）；i6 dismissed（同上，元发现）。代码级阻断 1 条 i3（quota -1 与 consumeFeature 冲突）已修并补 postgres-identity-repository.test.js 用例。",
+    "adjudicationDigest": "adjudicated@de6c85f441ecef480de8acf816bc8fedaf6aba733a869e011ad881bd1f4dc1f4"
+  }
+}

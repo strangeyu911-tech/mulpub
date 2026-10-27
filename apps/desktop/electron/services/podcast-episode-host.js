@@ -363,10 +363,22 @@ function removeRunDir (dir, fs, log) {
  * 由播客 IPC 在惰性创建宿主时登记；工作流侧只读。
  */
 let sharedEpisodeHost = null
+let sharedHostFactory = null
 function setSharedEpisodeHost (host) {
   sharedEpisodeHost = host && typeof host === 'object' ? host : null
 }
+function setSharedEpisodeHostFactory (factory) {
+  if (typeof factory !== 'function') return false
+  // 允许多次登记同一个工厂（热重载/重复注册），拒绝偷偷换成第二个来源。
+  if (sharedHostFactory && sharedHostFactory !== factory) return false
+  sharedHostFactory = factory
+  return true
+}
 function getSharedEpisodeHost () {
+  if (!sharedEpisodeHost && sharedHostFactory) {
+    // 不吞构造错误：ffmpeg 缺失/频道未配置等真实原因必须上抛给调用方。
+    sharedEpisodeHost = sharedHostFactory()
+  }
   return sharedEpisodeHost
 }
 
@@ -377,5 +389,6 @@ module.exports = {
   TITLE_MAX_CODEPOINTS,
   removeRunDir,
   setSharedEpisodeHost,
+  setSharedEpisodeHostFactory,
   getSharedEpisodeHost,
 }

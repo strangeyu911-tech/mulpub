@@ -23,7 +23,7 @@
 | 10 | 排期规则（静默时段/工作日/时区/每日上限） | 本 PR | scheduleRules 默认关闭；IANA 时区、工作日、跨午夜静默顺延；每日上限复用 guardrails |
 | 11 | 预算与成本护栏 | 本 PR（估算） | guardrails.budget 预检 + workflow_budget_ledger；记录 estimated 占用，不冒充供应商账单 |
 | 12 | 发布后效果回流 | 待做 | 阅读/播放/互动数据与自动暂停/复核 |
-| 13 | 播客宿主下沉 | 待做 | 不要求先打开播客页 |
+| 13 | 播客宿主下沉 | 本 PR | podcast IPC 注册惰性 host 工厂；工作流 provider 经 service 取宿主，无需先开播客页；仍复用同一宿主 |
 | 14 | 博主发现项状态回写 | 本 PR | 成功写 workflow_published、失败写 failed；不冒充 collected，不写资产/outbox；博主页显示 |
 
 ## P2 工程质量与体验

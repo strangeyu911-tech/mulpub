@@ -232,6 +232,7 @@ export default {
       PODCAST_MIGRATION_DIRECTION_INVALID: '未知的迁移处置方式，请重新选择',
       PODCAST_LOCK_WAIT_TIMEOUT: '播客数据正在被其他操作占用，请稍后重试',
       PODCAST_CHANNEL_BUSY: '该频道正在一键发布，请等本次发布结束后再修改单集',
+      PODCAST_HOST_NOT_REGISTERED: '播客出期服务尚未注册，请重启应用后重试',
       PODCAST_TTS_BILLING_UNCONFIRMED: '文本出期会逐块调用语音合成服务并产生费用，请先确认用量与费用',
       PODCAST_TTS_COPY_TOO_SHORT: '正文少于一期口播的下限 80 码点',
       PODCAST_TTS_TITLE_INVALID: '标题为空或过长，无法出期',

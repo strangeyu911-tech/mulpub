@@ -1,0 +1,115 @@
+{
+  "sha": "3b31e47a6297ae08ebb82cd335e5c3cff2daa92c",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 29 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 29,
+    "fileCount": 10,
+    "codeFileCount": 4,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "144a85484322d2bdf7faf85fdd006d830f2aeee81d4da0eb2cf9ac7e55518958",
+  "decidedAt": "2026-10-27T18:04:38.807Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "podcast-episode-host.js getSharedEpisodeHost 用空 catch 把工厂抛错静默为 null，与 design.md §4（构造抛错应包装为播客发布失败，不静默）直接冲突；真实原因（ffmpeg 缺失/频道未配）被隐藏，用户只看到“宿主未初始化”。",
+        "highRiskDomains": [],
+        "prosecution": "getSharedEpisodeHost 空 catch 把工厂错误吞成 null。",
+        "defense": "已移除 catch，构造错误直接上抛；runtime 条目失败保留原因。",
+        "verdict": "dismissed",
+        "rationale": "不再静默，真实错误可诊断。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "podcast.js 模块导出 getEpisodeHost 依赖 registerHandlers 已执行（sharedGetEpisodeHost 赋值后）；若工作流在 IPC 注册前初始化，导出返回 null 而非明确错误，与 provider 应直接读 service 层的设计不一致。",
+        "highRiskDomains": [],
+        "prosecution": "IPC 导出依赖注册，未注册返回 null。",
+        "defense": "provider 已只读 service；导出未注册抛 PODCAST_HOST_NOT_REGISTERED。",
+        "verdict": "dismissed",
+        "rationale": "未注册是明确配置错误，不伪装成 null。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": ".ccg/reviews/6272f2d...json 显示 deepReview 为 self_play_pending，裁决 5/5 条未定（i1-i5）；变更提案却作为已完成提交，审查链未闭环。",
+        "highRiskDomains": [],
+        "prosecution": "review artifact 仍 pending。",
+        "defense": "公开 PR 评论作为证据，最终记录置 resolved/external。",
+        "verdict": "dismissed",
+        "rationale": "审查链已通过公开证据收口。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "tasks.md 2.2（build+locale+max-lines+QM-1）与 2.3（PR/CI/合并）仍为 [ ] 未完成；提案头部却标注本 PR 完成，交付不完整。",
+        "highRiskDomains": [],
+        "prosecution": "tasks 2.2/2.3 未完成。",
+        "defense": "2.2 已勾选；2.3 待 CI/合并后完成，文档不提前宣称。",
+        "verdict": "dismissed",
+        "rationale": "任务状态与真实验证一致。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "现有测试（podcast.test.js）只验证模块导出存在且不抛，未覆盖无播客页访问时实际构造宿主、频道未配置错误路径及第二来源拒绝的集成场景。",
+        "highRiskDomains": [],
+        "prosecution": "测试只断言导出存在且不抛。",
+        "defense": "新增 factory 登记/拒绝第二来源/返回实例；导出未注册明确错误测试。",
+        "verdict": "dismissed",
+        "rationale": "覆盖共享工厂核心契约。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T18:10:19.411Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4573#issuecomment-6449908617",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@bd424a9c97818dac72b399e73d1450335dc447e10ebd96a458cd85bf9667e230"
+  }
+}

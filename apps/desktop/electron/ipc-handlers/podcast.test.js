@@ -562,4 +562,15 @@ describe('podcast handler · 单集 compliance 接线', () => {
     expect(res.data.stock).toBeNull()
     expect(log.warn).toHaveBeenCalledTimes(1)
   })
+
+  it('模块导出惰性 getEpisodeHost：未注册时给明确错误而非静默 null', () => {
+    const handlers = require('./podcast')
+    expect(typeof handlers.getEpisodeHost).toBe('function')
+    try {
+      handlers.getEpisodeHost()
+      throw new Error('expected getEpisodeHost to throw before registration')
+    } catch (e) {
+      expect(e.code).toBe('PODCAST_HOST_NOT_REGISTERED')
+    }
+  })
 })

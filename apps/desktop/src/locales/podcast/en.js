@@ -232,6 +232,7 @@ export default {
       PODCAST_MIGRATION_DIRECTION_INVALID: 'Unknown migration resolution. Please choose again.',
       PODCAST_LOCK_WAIT_TIMEOUT: 'Podcast data is busy with another operation. Please retry shortly.',
       PODCAST_CHANNEL_BUSY: 'This channel is publishing right now. Wait for it to finish before editing episodes.',
+      PODCAST_HOST_NOT_REGISTERED: 'Podcast publishing host is not registered yet. Restart the app and retry.',
       PODCAST_TTS_BILLING_UNCONFIRMED: 'Publishing from text calls the speech synthesis service per chunk and incurs cost. Confirm usage and fees first.',
       PODCAST_TTS_COPY_TOO_SHORT: 'Text is shorter than the 80 code point minimum for one episode',
       PODCAST_TTS_TITLE_INVALID: 'Title is empty or too long for one episode',

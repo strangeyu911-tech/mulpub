@@ -88,6 +88,8 @@ function toIpcError (err) {
   return { code: EC.REQUEST_ERROR, subCode: code || '', message: (err && err.message) || '操作失败' }
 }
 
+let sharedGetEpisodeHost = null
+
 function registerHandlers (ipcMain, deps) {
   const log = (deps && deps.log) || require('../services/logger')
   // 托管服务按频道取：hosting 是全局一份（PRD D-4），但发布动作必须有频道上下文。
@@ -345,7 +347,11 @@ function registerHandlers (ipcMain, deps) {
     } catch (_) { /* 共享登记失败不影响播客页自身 */ }
     return episodeHost
   }
-
+  sharedGetEpisodeHost = getEpisodeHost
+  try {
+    const hostModule = require('../services/podcast-episode-host')
+    if (typeof hostModule.setSharedEpisodeHostFactory === 'function') hostModule.setSharedEpisodeHostFactory(getEpisodeHost)
+  } catch (_) { /* 共享登记失败不影响播客页自身 */ }
 
   // 4.3②-a 的只读预览宿主（PRD §7.10.4.1）：计费二次确认框要显示的「切几块 / 多少码点 / 谁说话」
   // 只有这一处来源。三条不可让：
@@ -464,3 +470,11 @@ function registerHandlers (ipcMain, deps) {
 module.exports = registerHandlers
 module.exports.unwrapObject = unwrapObject
 module.exports.toIpcError = toIpcError
+module.exports.getEpisodeHost = () => {
+  if (!sharedGetEpisodeHost) {
+    const e = new Error('PODCAST_HOST_NOT_REGISTERED: podcast IPC handlers 尚未注册')
+    e.code = 'PODCAST_HOST_NOT_REGISTERED'
+    throw e
+  }
+  return sharedGetEpisodeHost()
+}

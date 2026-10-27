@@ -403,6 +403,13 @@
 - 诚实边界：**记录的是按配置预估的预算占用，不是供应商账单**；没有真实 usage 时不写成「实际花费」。不做动态定价/运行中逐条熔断（本期）。台账写失败不回滚已发内容，但写 run.warnings。
 - UI 护栏区：开关、币种、总预算、每项预估；提示「按每项预估累计占用；不是供应商账单」。
 
+### 7.18 播客宿主下沉
+
+- 工作流播客出期不再依赖用户先打开播客页：podcast IPC 注册时把惰性 `getEpisodeHost` 工厂登记到 `podcast-episode-host` service；工作流 provider 调 `getSharedEpisodeHost()`，首次调用才构造宿主并登记。
+- `workflowRuntime.podcastHostProvider` 从 service 读取宿主，不直接依赖 IPC 模块；应用启动只注册工厂，不提前解析 ffmpeg/ffprobe。
+- 手动出期与工作流出期复用同一宿主：频道忙标记、取消登记不分裂，两个入口互斥。
+- 频道/托管未配置时仍返回既有可操作错误；host 构造抛错会包装为播客发布失败，不静默。
+
 ### 7.19 博主发现状态回写
 
 - 工作流从博主监控取 pending 发现项后，条目 `meta.discoveryId` 保留。

@@ -13,7 +13,7 @@
  * 真跑 extract 的判据链（降级→编码器→抽取→实测→stat 对账）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createEpisodeHost } from './podcast-episode-host'
+import { createEpisodeHost, setSharedEpisodeHostFactory, getSharedEpisodeHost } from './podcast-episode-host'
 import { TTS_COMPOSE_ERRORS } from './podcast-tts-compose'
 import { isCancellableAt } from './podcast-episode-publish'
 import { episodeCancelRegistry, RUN_ID_RE } from './podcast-episode-cancel'
@@ -979,6 +979,14 @@ describe('§4.5b④ 出期主路径消费音色解析链（预览与出期同一
     await h2.host.publishFromScript(h2.scriptPayload)
     expect(h2.syn.calls.tts[0].voiceRef).toEqual({ providerId: 'prov_x', model: 'mod_y', voiceId: 'voice_cap' })
     expect(h2.syn.calls.tts[0].voiceRef.voiceId).toBe(pv2.voice.voiceId)
+  })
+
+  it('shared host factory 允许同源重复登记，拒绝第二个来源', () => {
+    const factory = () => ({ ok: true })
+    expect(setSharedEpisodeHostFactory(factory)).toBe(true)
+    expect(setSharedEpisodeHostFactory(factory)).toBe(true)
+    expect(setSharedEpisodeHostFactory(() => ({ ok: false }))).toBe(false)
+    expect(getSharedEpisodeHost()).toEqual({ ok: true })
   })
 })
 

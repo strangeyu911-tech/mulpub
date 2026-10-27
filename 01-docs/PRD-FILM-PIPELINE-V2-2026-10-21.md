@@ -824,7 +824,10 @@ split → scene_context（已有）
 | 审计完整性标记 | 主进程回传 `auditWritten` | `false` ⇒ 追加一条「审计不完整」告警 |
 | 导入后的分镜库 / 状态 | 服务端缓存失效后重读 | 导入成功后自动刷新 |
 
-#### 9.c.6 提示文字全量（`filmEngineering.filmKitImport.*`，zh/en 成对，**22 键**）
+#### 9.c.6 提示文字全量（`filmEngineering.filmKitImport.*`，zh/en 成对，**23 键**）
+
+> 22 → 23 的由来（change `kit-import-rollback-and-template-health`）：
+> 删 `recoverBak`（`BAK_LEFT` 档位已退役，见 §9.e.1）+ 新增 `backupKept` / `staleWarning`。
 
 | 键 | zh | en |
 |----|----|----|
@@ -840,7 +843,8 @@ split → scene_context（已有）
 | `recover` | 导入回滚失败，旧资产在 {path}，请手动恢复 | Import rollback failed; the old assets are at {path} — please restore them manually |
 | `recoverLock` | 存在未完成的导入。若确认当前没有导入在进行，请检查并手动删除锁文件：{path} | An unfinished import is present. If no import is running, check and delete the lock file manually: {path} |
 | `recoverMissing` | 上次导入未完成（当前资产缺失）。请把备份目录 {path} 手动改回 film-kit 后再试 | The last import did not finish (current assets are missing). Rename the backup directory {path} back to film-kit, then retry |
-| `recoverBak` | 上次导入留下了备份目录 {path}，可安全删除 | The last import left a backup directory {path} — it is safe to delete |
+| `backupKept` | 上一版资产已保留在 {path}。若想回退，把它手动改名回 film-kit（下一次导入成功后会替换这份备份） | The previous version of your assets is kept at {path}. To roll back, rename it back to film-kit manually (the next successful import replaces this backup) |
+| `staleWarning` | 导入已生效，但有更早的备份没能清理：{detail} | The import took effect, but an older backup could not be cleaned up: {detail} |
 | `residue` | 导入已生效，但有残留需要你手动清理 | The import took effect, but there is leftover residue for you to clean up manually |
 | `auditLost` | 导入已生效，但审计结果行未能写入（审计不完整）。请检查磁盘空间与目录权限 | The import took effect, but the audit result row could not be written (audit is incomplete). Please check disk space and directory permissions |
 | `auditFull` | 审计日志已满，请手动轮转：把 film-kit-import.log 改名为带时间戳的备份，再新建同名空文件 | The audit log is full; please rotate it manually: rename film-kit-import.log to a timestamped backup and create a new empty file with the same name |
@@ -867,7 +871,9 @@ split → scene_context（已有）
 ① **写路径不得登记为 public**：`filmEngineering.importKit` 不在 `PUBLIC_METHODS` 内（未登录不可用），主进程侧 `film-engineering:import-kit` 同样非 public —— claude i1 / codex i1（**两家独立命中**）；
 ② **禁止递归删除原语**：导入链路源文件里不得出现 `rm`/`rmSync`/`rmdir` + `recursive`（R0 **机械结构锁**）—— codex i2 命中初版 `.bak` 的 `rm(recursive:true)`；
 ③ 审计**写失败**时行数**不**递增（`lineCount` 与已落盘行一一对应）—— claude i2 / codex i7；
-④ 删 `.bak` 失败 ⇒ 导入**仍生效**，但成功信封必须带 `recoveryState=BAK_LEFT` + 恢复路径 —— claude i3 / codex i6；
+④ ~~删 `.bak` 失败 ⇒ 导入**仍生效**，但成功信封必须带 `recoveryState=BAK_LEFT` + 恢复路径~~ ⇒ **已被 §9.e.1 取代**：
+成功路径不再删除本次 `.bak`（它保留为「上一版」）⇒ 该分支不可能出现，档位 `BAK_LEFT` 退役；
+「上一版」改用独立字段 `previousBackup`，「清理更早备份失败」改用 `staleWarning`（不阻断、不升级成残留）；
 ⑤ 删锁失败 ⇒ 成功信封必须带 `recoveryState=LOCK_LEFT` + 锁路径；
 ⑥ **回滚失败 ⇒ 档位是 `MISSING_KIT`（不是 `BAK_LEFT`）** —— 两者互换会让用户**删掉旧资产仅存的一份**（数据丢失级误导）；
 ⑦ 审计**结果行**写失败 ⇒ 成功信封带 `auditWritten=false`，渲染端给出「审计不完整」告警（**不得静默**）—— codex i3；
@@ -961,9 +967,19 @@ split → scene_context（已有）
 | 不可导入说明 | `data.blockingMessage` | 人话（不本地化，供诊断） |
 | 将被忽略 | `data.ignoredTopLevel` | 顿号连接 |
 | 告警列表 | `data.warnings` | code → 本地化文案 + `count` 插值 |
+| 版本不符 | `data.versionMismatch` | `你的包是 vN / 本版本要 vM`；仅不符时出现 |
+| 模板结构 | `data.templateStructure` | 总数 / 场景头 / 角色行 / 可识别块；`null` ⇒ 整块不渲染 |
+| 与当前资产对比 | `data.compare` | 当前值 + 带符号 delta（`+3` / `-2`）；`null` ⇒ 整块不渲染 |
+| 上一版备份 | `data.previousBackup.path` | `type=info`（正常态，不是告警）；文案 `filmKitImport.backupKept` |
+| 更早备份未清 | `data.staleWarning` | `type=warning`（本次已生效，但不得静默） |
 | 替换提示 | 静态 | 复用 `filmKitImport.confirm`（整体替换、不可自动找回） |
 
-#### 9.d.6 提示文字全量（`filmEngineering.assetManager.*`，zh/en 成对，**22 键**（15 条文案 + 5 条告警 + 2 条失败原因））
+#### 9.d.6 提示文字全量（`filmEngineering.assetManager.*`，zh/en 成对，**31 键**（22 条文案 + 7 条告警 + 2 条失败原因））
+
+> 22 → 31 的由来（change `kit-import-rollback-and-template-health`）：
+> 文案 +7（`versionTitle` / `versionMismatch` / `templateTitle` / `templateDetail` /
+> `compareTitle` / `compareCurrent` / `compareDelta`）+ 告警 +2
+> （`warn.TEMPLATE_NO_CHARACTER_LINE` / `warn.TEMPLATE_NO_BLOCKS`）。
 
 | 键 | zh | en |
 |----|----|----|
@@ -987,6 +1003,15 @@ split → scene_context（已有）
 | `warn.UNRESOLVED_REFERENCE` | 有 {count} 条参考素材没有可解析的图片地址 | {count} reference item(s) have no resolvable image URL |
 | `warn.IGNORED_TOP_LEVEL` | 有 {count} 项内容不在导入范围内 | {count} item(s) are outside the import scope |
 | `warn.SHOTS_WITH_RESULT` | 有 {count} 个分镜已带成片链接，导入后仍视为已生成 | {count} shot(s) already carry a result link and will still count as generated after import |
+| `versionTitle` | 资产包版本 | Asset package version |
+| `versionMismatch` | 你的包是 v{pkg}，本版本要求 v{expected}（导入会被严格校验拒绝） | Your package is v{pkg}, this build requires v{expected} (the import will be rejected by strict validation) |
+| `templateTitle` | 模板结构（「自动」规划复用它） | Template structure (reused by Auto planning) |
+| `templateDetail` | {total} 个模板分镜：场景头 {heading} 个 / 角色行 {character} 个 / 可识别块 {blocks} 个 | {total} template shots: scene heading {heading} / character line {character} / recognized blocks {blocks} |
+| `compareTitle` | 与当前资产对比 | Compared with current assets |
+| `compareCurrent` | 当前 场景 {scenes} / 分镜 {shots} / 任务模板 {templates} | Current: scenes {scenes} / shots {shots} / task templates {templates} |
+| `compareDelta` | 导入后变化 场景 {scenes} / 分镜 {shots} / 任务模板 {templates} | After import: scenes {scenes} / shots {shots} / task templates {templates} |
+| `warn.TEMPLATE_NO_CHARACTER_LINE` | 有 {count} 个模板分镜缺角色行（[CHARACTER]），「自动」规划时角色锚点会丢 | {count} template shot(s) have no character line ([CHARACTER]); Auto planning will lose the character anchor |
+| `warn.TEMPLATE_NO_BLOCKS` | 有 {count} 个模板分镜没有可识别的块（空间布局/动作时序等），规划出的提示词会缺运动与空间约束 | {count} template shot(s) have no recognized blocks (spatial layout / action timing, etc.); planned prompts will lack motion and spatial constraints |
 | `reason.NOT_A_DIRECTORY` / `reason.VALIDATION` | 所选路径不是可读目录 / 资产内容不符合契约 | the selected path is not a readable directory / the asset content does not meet the contract |
 
 （导入侧的 22 键见 §9.c.6，两者不合并：体检与替换是两件事，混在一张表里会让「哪句话属于哪一步」失去边界。）
@@ -1003,6 +1028,104 @@ split → scene_context（已有）
 
 ❌ 内容级判据（模板占位符契约 / 枚举落闭集 / 空壳检测）· ❌ 标准资产骨架导出 ·
 ❌ 本地自检命令 · ❌ 改造 `importKit` 的任何安全语义 · ❌ 标签改名。
+
+### 9.e 导入可回滚 + 模板结构体检 + 视图拆分（change: kit-import-rollback-and-template-health）
+
+#### 9.e.1 P0 · 旧资产保留为「上一版」（导入不再不可逆）
+
+**问题**：上一版在 ⑥ 立刻删掉 `.bak` ⇒ 用户选错包后**没有任何退路**，而「整体替换」的确认文案
+自己写着「旧资产不可自动找回」。写了这句话不等于尽了告知义务 —— **能留就留**。
+
+**改法**：⑥ 从「删本次 `.bak`」改为「**保留**本次 `.bak` 作为上一版 + 清理**更早**的备份」：
+
+| 项 | 语义 |
+|----|------|
+| `previousBackup.path` / `.stamp` | 上一次资产的目录（`<userData>/.bak-<ISO 时间戳>-<4 位随机>`） |
+| `staleWarning` | 清理**更早**备份失败的原文（`null` = 清干净了）；**不阻断**本次生效 |
+| 备份份数 | 任何时刻**最多 1 份**：本次成功 ⇒ 先把旧 kit 搬成新 `.bak` ⇒ 再清更早的那些 |
+
+**为什么清理时机不在 ⓪a 而在这里**：若在 ⓪a 就删旧备份，本次导入**随后失败**时，
+用户唯一的退路已被抹掉 ——「可回滚」恰好在最需要它的时刻被取消。
+
+**为什么 `previousBackup` 不复用 `BAK_LEFT`**：`BAK_LEFT` 是**异常残留**（要用户动手），
+`previousBackup` 是**正常态**（什么都不用做）。混用会让「残留」从异常变常态 ⇒ 恢复指引常驻 ⇒
+真出事时用户已习惯性忽略。渲染端因此用 `type=info` 展示上一版、`type=warning` 展示残留/失败。
+
+**代价与边界**：多占一份磁盘（用户可手动删）；**不做一键回滚**（那是另一条写路径，需独立安全评审），
+只给「路径 + 手动 rename」指引。
+
+#### 9.e.2 P1 · 模板结构体检（能不能规划出带约束的提示词）
+
+**问题**：「我们能导入」≠「规划出来有约束」。「自动」规划把 `shot.prompt` 当**结构化模板**复用：
+首行场景头做 head、`[CHARACTER: …]` 行做角色锚点、被识别的块（GEO SPATIAL LAYOUT / ACTION TIMING …）
+做空间与运动约束。三者全缺的包**能导入、能规划、能出片**，只是提示词里这些约束是空的。
+
+**改法**：`inspector` 新增 `templateStructure`（`total` / `withSceneHeading` / `withCharacterLine` /
+`withBlocks`）+ 两条**不阻断**的告警 `TEMPLATE_NO_CHARACTER_LINE` / `TEMPLATE_NO_BLOCKS`。
+
+- 判据用**被识别的块**（`analyzeTemplatePrompt` 的 `recognizedBlockCount`）而不是块数：
+  纯散文按空行 split 也是 1 块，只有「块标题被识别」才决定约束是否真的进产物；
+- 分析器与规划侧**同源**：`analyzeTemplatePrompt` 由 `script-adapt.js` 导出并被
+  `buildTemplatePromptParts` 复用 ⇒ 体检口径不可能与规划口径漂移（同源锁在测试里）；
+- **不阻断**：极简模板可能是刻意的 ⇒ 体检只给代价，不替用户决定。
+
+#### 9.e.3 P2/P3 · 差异对比与版本读数
+
+| 字段 | 语义 |
+|------|------|
+| `compare.current` / `.delta` | 与**当前资产**的场景/分镜/模板数对比（导入后是增还是减，必须先看见） |
+| `assetVersion` | `film-manifest.json` 的 `schemaVersion`；**直读 manifest**，不依赖整包可加载 |
+| `expectedAssetVersion` / `versionMismatch` | 本版本接受的版本 / 是否不符（版本读不出时 `false`，不猜） |
+
+- `currentCounts` **只能由主进程取**（`currentCountsOf`）：让 renderer 传「当前有多少分镜」等于让它自证差异；
+- `listTemplateShots` 命中 500 上限 ⇒ 该维度**降级 `null`**：编造的差异比没有差异更坏；
+- 形状不齐一律 `null`，界面渲染成 `—`：**不印 0 差异**（构造性零禁令）。
+
+#### 9.e.4 P0' · 硬链判据的实证修正（Windows `ino` 不是唯一文件号）
+
+本机实测（NTFS，300 轮 × 每轮 7 个不同文件）：出现 **480 次**「同目录两个不同文件
+`(dev, ino)` 完全相同、`nlink` 皆为 1」；而**真硬链**实测 `(dev, ino)` 相同、`nlink = 2`。
+⇒ 只凭 `(dev, ino)` 判 ⇒ **合法包被整包误拒**（`HARDLINK_REJECTED` 假阳性，
+`kit-import.test.js` 的锁接管用例曾因此偶发红）。
+
+改法：判据加上 `nlink > 1` 前置门 —— 能报 `nlink` 的文件系统上判据不变（真硬链仍拒），
+报不出的（FAT/exFAT/网络盘恒为 1）降级为**漏判**，即 `SCHEMA.md` §11.2 早已声明的
+`hardlink_check=best-effort` 边界（**不新增承诺**）。
+
+#### 9.e.5 拆分 · 「方法论」标签页移出 `FilmEngineeringView.vue`
+
+`FilmEngineeringView.vue` 从 **802 行 → 750 行**（`check-max-lines` 上限 805、基线 605 + 容差 200）：
+方法论分区（纯只读渲染）整块移到 `views/film-engineering/FilmDoctrinePanel.vue`，
+父视图只保留 `<FilmDoctrinePanel :doctrine="doctrine" />`。
+⚠ 拆了必须挂上：`film-engineering-methodology.test.js` 增加一条断言锁「父视图真的挂载并传参、
+且旧分区标记已从父视图消失」（拆了没挂 = 方法论页空白，而这种回归在源码级契约里**不会自己暴露**）。
+
+#### 9.e.6 验收判据（14 条）
+
+**P0（5 条）**：① 导入成功 ⇒ 旧资产作为上一版**仍在**，且信封带 `previousBackup.path`；
+② 连续两次导入 ⇒ 备份**最多 1 份**（更早的被清掉）且 `staleRemoved >= 1`；
+③ 清理更早备份失败 ⇒ `staleWarning` 非空、**不静默**、导入仍成功；
+④ 成功信封**不得**再出现 `recoveryState=BAK_LEFT`（档位退役）；
+⑤ `film-kit` 缺失 + `.bak` 存在 ⇒ 仍拒（`MISSING_KIT`）—— 保留备份不得削弱「禁止把 limbo 当正常态」。
+
+**P1（4 条）**：⑥ `analyzeTemplatePrompt` 对「有/无场景头、有/无角色行、有/无可识别块」四种形态
+逐项判对；⑦ 体检 `templateStructure` 的四个计数与逐镜分析一致；
+⑧ 缺角色行 ⇒ `TEMPLATE_NO_CHARACTER_LINE` 且 `count` = 缺的镜数；无被识别块 ⇒ `TEMPLATE_NO_BLOCKS`；
+⑨ 两条告警**不阻断**（`importable` 仍为 true）且 `analyzeTemplatePrompt` 与 `buildTemplatePromptParts` **同源**。
+
+**P2/P3（3 条）**：⑩ 形状齐全 ⇒ `compare` 的 `delta` 逐字段正确；形状不全 ⇒ `compare: null`（**不是 0**）；
+⑪ `currentCounts` 由主进程取、命中 500 上限 ⇒ 降级 `null`；⑫ `schemaVersion=2` ⇒ `assetVersion=2` +
+`versionMismatch=true`，且该读数在整包**加载失败**时仍可读。
+
+**P0'/拆分（2 条）**：⑬ 同 `(dev,ino)` + `nlink=1` ⇒ **不拒**；同 `(dev,ino)` + `nlink=2` ⇒ 仍拒；
+⑭ 拆分后父视图行数下降且 `<FilmDoctrinePanel :doctrine="doctrine" />` 在位、旧分区标记不在父视图。
+
+#### 9.e.7 明确不做（本轮）
+
+❌ 一键回滚（只给路径 + 手动 rename 指引）· ❌ 资产**导出**（另一条写路径 + 独立安全评审）·
+❌ 备份数量可配置 · ❌ 占位符/枚举级内容判据 · ❌ 体检两遍读的性能优化
+（40 KB 量级，收益不抵风险）· ❌ 导入前检查「有没有自动任务在跑」
+（`auto-start` 已自互斥，`auto-runner` 不重读 kit）。
 
 ## 十、明确不做
 

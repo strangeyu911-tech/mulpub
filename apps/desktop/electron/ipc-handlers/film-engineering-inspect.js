@@ -33,6 +33,34 @@ const CODE_BY_REASON = Object.freeze({
 })
 
 /**
+ * 取「当前资产」的计数，供体检报告算 delta（P2）。
+ *
+ * ⚠ **拿不准就返回 null**，绝不猜：
+ *   - `ShotLibrary.listAllShots` 有 `MAX_PAGE_LIMIT(200)` 兜底与 `FULL_LOAD_LIMIT(500)` 硬上限；
+ *   - 命中 500 ⇒ 可能被截断 ⇒ 若拿它当"当前分镜数"，delta 会凭空变成负数（假差异比没有更坏）。
+ * 只要任一维拿不到**准确**值，整格降级为 null ⇒ 报告 `compare: null`。
+ * @param {object|null} service
+ * @returns {{scenes:number, shots:number, templates:number}|null}
+ */
+function currentCountsOf (service) {
+  if (!service || typeof service.listTemplateShots !== 'function') return null
+  try {
+    const scenes = typeof service.listScenes === 'function' ? service.listScenes() : null
+    const shots = service.listTemplateShots(500)
+    const ctx = typeof service.getKitContext === 'function' ? service.getKitContext() : null
+    if (!Array.isArray(scenes) || !Array.isArray(shots)) return null
+    if (shots.length >= 500) return null
+    const tasks = ctx && ctx.promptLibrary && ctx.promptLibrary.tasks
+      ? Object.keys(ctx.promptLibrary.tasks).length
+      : null
+    if (!Number.isInteger(tasks)) return null
+    return { scenes: scenes.length, shots: shots.length, templates: tasks }
+  } catch (_e) {
+    return null
+  }
+}
+
+/**
  * 注册体检通道。
  * @param {import('electron').IpcMain} ipcMain
  * @param {object} deps
@@ -42,6 +70,7 @@ function registerInspectHandlers (ipcMain, deps) {
   const log = o.log || { info () {}, warn () {}, error () {} }
   const dialog = o.dialog
   const inspectFn = o._testInspectKit || inspectKit
+  const service = o.filmEngineeringService || null
 
   ipcMain.handle('film-engineering:inspect-kit', withSenderCheck(async (event) => {
     // ── ① sender 授权断言（硬；与写路径同一实现，不复制判据）──────────
@@ -85,7 +114,9 @@ function registerInspectHandlers (ipcMain, deps) {
     }
 
     // ── ④ 只读体检 ────────────────────────────────────────────────
-    const res = await inspectFn({ kitDir })
+    // ⚠ currentCounts 由**主进程**取（渲染端不得传）：它决定"换上去会少什么"这段的读数，
+    //   让 renderer 提供等于让它伪造对比结果。
+    const res = await inspectFn({ kitDir, currentCounts: currentCountsOf(service) })
     if (!res || !res.ok) {
       const reason = (res && res.reason) || INSPECT_REASON.VALIDATION_ERROR
       return {
@@ -107,3 +138,4 @@ function registerInspectHandlers (ipcMain, deps) {
 module.exports = registerInspectHandlers
 module.exports.registerInspectHandlers = registerInspectHandlers
 module.exports.CODE_BY_REASON = CODE_BY_REASON
+module.exports.currentCountsOf = currentCountsOf

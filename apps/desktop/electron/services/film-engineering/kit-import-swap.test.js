@@ -18,6 +18,7 @@ const {
   copyToStaging,
   cleanupStaging,
   swapIn,
+  BAK_PREFIX,
   makeStamp,
   stagingName,
   bakName,
@@ -89,7 +90,10 @@ describe('kit-import-swap: 第二遍拷贝的两条对账', () => {
 })
 
 describe('kit-import-swap: 目录级换入与回滚', () => {
-  it('换入成功：旧 kit → .bak → staging → film-kit，.bak 随后删除', async () => {
+  // ⚠ change: kit-import-rollback-and-template-health —— 设计变更：成功路径**不再删** .bak，
+  //   它保留为「上一版」（可回滚）。本条锁的**原意**不变（成功后不得留下**未被记账**的残留）
+  //   ⇒ 改为「恰好 1 份，且路径被显式回传」。
+  it('换入成功：旧 kit → .bak → staging → film-kit，旧备份保留为「上一版」并回传', async () => {
     const ud = tmpDir('ud')
     const oldKit = path.join(ud, KIT_DIR_NAME)
     fs.mkdirSync(oldKit, { recursive: true })
@@ -102,7 +106,15 @@ describe('kit-import-swap: 目录级换入与回滚', () => {
     expect(res.ok).toBe(true)
     expect(fs.existsSync(path.join(oldKit, 'old.txt'))).toBe(false)
     expect(fs.readFileSync(path.join(oldKit, 'new.txt'), 'utf8')).toBe('new')
-    expect(fs.existsSync(path.join(ud, bakName('s1')))).toBe(false)
+    // 旧资产仍在备份里 ⇒ 可回滚；路径被显式回传 ⇒ 用户找得到
+    const bak = path.join(ud, bakName('s1'))
+    expect(fs.existsSync(bak)).toBe(true)
+    expect(fs.readFileSync(path.join(bak, 'old.txt'), 'utf8')).toBe('old')
+    expect(res.previousBackup).toBeTruthy()
+    expect(res.previousBackup.path).toBe(bak)
+    expect(res.previousBackup.stamp).toBe('s1')
+    // 两个概念不许混：这是**正常态**的历史备份，不是 BAK_LEFT 残留
+    expect(res.recoveryState).toBeUndefined()
   })
 
   it('旧 kit 不存在时直接换入', async () => {
@@ -131,19 +143,23 @@ describe('kit-import-swap: 目录级换入与回滚', () => {
     expect(fs.existsSync(path.join(ud, bakName('s3')))).toBe(false)
   })
 
-  // ⚠ 2026-10-23 验证层外部评审（claude i3 / codex i6）命中：初版把
-  //   `swap.bakPath` 丢掉 ⇒ 「.bak 没删掉」这件事**永远到不了用户眼前**。
-  it('删 `.bak` 失败 ⇒ 仍算生效，但必须回传 BAK_LEFT 残留档位与恢复路径', async () => {
+  // ⚠ 2026-10-23 验证层外部评审（claude i3 / codex i6）：初版把 `swap.bakPath` 丢掉 ⇒
+  //   「备份状态」永远到不了用户眼前。**原意保留**（不得静默），但落点变了：
+  //   change kit-import-rollback-and-template-health 之后成功路径不再删 .bak，
+  //   于是「删不掉」只可能发生在**清理更早备份**时 ⇒ 由 staleWarning 表达。
+  it('清理更早备份失败 ⇒ 本次仍生效，且 staleWarning 如实回传（不静默）', async () => {
     const ud = tmpDir('ud')
     const oldKit = path.join(ud, KIT_DIR_NAME)
     fs.mkdirSync(oldKit, { recursive: true })
     fs.writeFileSync(path.join(oldKit, 'old.txt'), 'old', 'utf8')
+    // 造一个「更早」的备份：本次成功后应被清理，这里让 unlink 失败
+    const staleDir = path.join(ud, BAK_PREFIX + '2020-01-01T00-00-00-000Z-stale')
+    fs.mkdirSync(staleDir, { recursive: true })
+    fs.writeFileSync(path.join(staleDir, 'old.txt'), 'stale', 'utf8')
     const staging = path.join(ud, stagingName('s4'))
     fs.mkdirSync(staging, { recursive: true })
     fs.writeFileSync(path.join(staging, 'new.txt'), 'new', 'utf8')
 
-    // 让 unlink 失败（模拟被占用 / 权限不足）
-    // ⚠ 不能用 `Object.create(fs)` 后赋值 `promises`：`fs.promises` 是只读 getter。
     const brokenFs = Object.assign({}, fs, {
       promises: Object.assign({}, fs.promises, {
         unlink: async () => {
@@ -156,13 +172,12 @@ describe('kit-import-swap: 目录级换入与回滚', () => {
 
     const res = await swapIn({ userDataDir: ud, stagingDir: staging, stamp: 's4', fs: brokenFs })
     expect(res.ok).toBe(true)
-    expect(res.recoveryState).toBe('BAK_LEFT')
-    expect(res.bakPath).toContain(bakName('s4'))
-    // 新资产确实已生效
-    expect(fs.existsSync(path.join(oldKit, 'new.txt'))).toBe(true)
+    expect(fs.existsSync(path.join(oldKit, 'new.txt'))).toBe(true) // 新资产已生效
+    expect(String(res.staleWarning)).toContain('更早备份') // 不静默
+    expect(res.staleRemoved).toBe(0)
   })
 
-  it('删 `.bak` 成功 ⇒ 不留 BAK_LEFT 档位（旧资产目录整体消失）', async () => {
+  it('成功 ⇒ 恰好 1 份 previousBackup，且**不**记为 BAK_LEFT 残留', async () => {
     const ud = tmpDir('ud')
     const oldKit = path.join(ud, KIT_DIR_NAME)
     fs.mkdirSync(path.join(oldKit, 'sub'), { recursive: true })
@@ -173,7 +188,34 @@ describe('kit-import-swap: 目录级换入与回滚', () => {
     const res = await swapIn({ userDataDir: ud, stagingDir: staging, stamp: 's5' })
     expect(res.ok).toBe(true)
     expect(res.recoveryState).toBeUndefined()
-    expect(fs.existsSync(path.join(ud, bakName('s5')))).toBe(false)
+    const baks = fs.readdirSync(ud).filter((n) => n.startsWith(BAK_PREFIX))
+    expect(baks.length).toBe(1)
+    expect(baks[0]).toBe(bakName('s5'))
+    // 旧资产（含子目录）逐字保留在备份里 —— 「可回滚」的判据是内容真的在
+    expect(fs.readFileSync(path.join(ud, bakName('s5'), 'sub', 'old.txt'), 'utf8')).toBe('old')
+  })
+
+  it('连续两次换入 ⇒ 任何时刻最多 1 份历史备份（更早的在第二次成功后被清）', async () => {
+    const ud = tmpDir('ud')
+    fs.mkdirSync(path.join(ud, KIT_DIR_NAME), { recursive: true })
+    fs.writeFileSync(path.join(ud, KIT_DIR_NAME, 'v1.txt'), 'v1', 'utf8')
+    const st1 = path.join(ud, stagingName('a1'))
+    fs.mkdirSync(st1, { recursive: true })
+    fs.writeFileSync(path.join(st1, 'v2.txt'), 'v2', 'utf8')
+    const r1 = await swapIn({ userDataDir: ud, stagingDir: st1, stamp: 'a1' })
+    expect(r1.ok).toBe(true)
+    expect(fs.readdirSync(ud).filter((n) => n.startsWith(BAK_PREFIX)).length).toBe(1)
+
+    const st2 = path.join(ud, stagingName('a2'))
+    fs.mkdirSync(st2, { recursive: true })
+    fs.writeFileSync(path.join(st2, 'v3.txt'), 'v3', 'utf8')
+    const r2 = await swapIn({ userDataDir: ud, stagingDir: st2, stamp: 'a2' })
+    expect(r2.ok).toBe(true)
+    const baks = fs.readdirSync(ud).filter((n) => n.startsWith(BAK_PREFIX))
+    expect(baks.length).toBe(1)
+    expect(baks[0]).toBe(bakName('a2'))
+    // 上一版 = 第一次换入后的资产（v2），不是最初那份 v1
+    expect(fs.readFileSync(path.join(ud, bakName('a2'), 'v2.txt'), 'utf8')).toBe('v2')
   })
 })
 

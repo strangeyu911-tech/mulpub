@@ -42,11 +42,17 @@ const IMPORT_REASON_BUCKETS = Object.freeze({
   UNAUTHORIZED_SENDER: 'UNAUTHORIZED',
 })
 
-/** 残留档位 → 恢复指引 i18n 键 */
+/**
+ * 残留档位 → 恢复指引 i18n 键。
+ *
+ * ⚠ `BAK_LEFT` 已随 change `kit-import-rollback-and-template-health` 退役：
+ * 成功路径**不再删除**本次 `.bak`（它保留为「上一版」），所以「删 `.bak` 失败」这一档不可能产生。
+ * 保留一条永不命中的映射 = 装饰性判据 ⇒ 删掉，而不是「以防万一」。
+ * 「上一版备份」是**正常态**，用 `kitImportBackupHint` 表达（不是恢复指引）。
+ */
 const RECOVERY_KEYS = Object.freeze({
   PRE_SWAP: 'recoverLock',
   MISSING_KIT: 'recoverMissing',
-  BAK_LEFT: 'recoverBak',
   LOCK_LEFT: 'recoverLock',
 })
 
@@ -68,8 +74,26 @@ export function useFilmKitImport (options) {
   const kitImportReason = ref('')
   /** 最近一次失败的恢复路径（主进程回传，可能为空） */
   const kitImportRecoveryPath = ref('')
-  /** 最近一次失败的残留档位（PRE_SWAP / MISSING_KIT / BAK_LEFT / LOCK_LEFT） */
+  /** 最近一次失败的残留档位（PRE_SWAP / MISSING_KIT / LOCK_LEFT） */
   const kitImportRecoveryState = ref('')
+  /**
+   * 上一版备份目录（change `kit-import-rollback-and-template-health`）。
+   * ⚠ 这是**正常态**（导入成功的产物），不是残留：不弹告警、不要求任何动作，
+   *   只在界面上告诉用户「旧资产还在，想回退可以手动改名」。
+   */
+  const kitImportBackupPath = ref('')
+  /** 清理**更早**备份失败时的原文（`''` = 清干净了）；不阻断 */
+  const kitImportStaleWarning = ref('')
+
+  /**
+   * 上一版备份提示文案（正常态，不是恢复指引）。
+   * 路径来自主进程回传的 `previousBackup.path`；空 ⇒ 空串（没备份可说不说）。
+   */
+  const kitImportBackupHint = computed(() => {
+    const p = kitImportBackupPath.value
+    if (!p) return ''
+    return t('filmEngineering.filmKitImport.backupKept', { path: p })
+  })
 
   /** 失败原因 → 本地化桶文案 */
   function importReasonText (reason) {
@@ -153,6 +177,8 @@ export function useFilmKitImport (options) {
     kitImportReason.value = ''
     kitImportRecoveryPath.value = ''
     kitImportRecoveryState.value = ''
+    kitImportBackupPath.value = ''
+    kitImportStaleWarning.value = ''
     try {
       const res = await api.importKit()
       if (res && res.code === 0) {
@@ -164,7 +190,7 @@ export function useFilmKitImport (options) {
         notifySuccess('filmEngineering.filmKitImport.success', {
           message: t('filmEngineering.filmKitImport.success', { count: data.fileCount || 0 }),
         })
-        // ⚠ **成功也可能带残留**（`.bak` 未删 / 锁未删）⇒ 导入已生效，但现场要用户手动清
+        // ⚠ **成功也可能带残留**（锁未删）⇒ 导入已生效，但现场要用户手动清
         //   （2026-10-23 验证层外部评审 claude i3 / codex i6 修：初版成功路径完全无视残留）
         if (data.recoveryState) {
           kitImportRecoveryPath.value = data.recoveryPath || ''
@@ -174,6 +200,14 @@ export function useFilmKitImport (options) {
               path: data.recoveryPath || '',
             }),
           })
+        }
+        // 上一版备份：**正常态**，只记下来给界面显示（不弹告警 —— 弹了就是「成功还报错」）
+        if (data.previousBackup && data.previousBackup.path) {
+          kitImportBackupPath.value = data.previousBackup.path
+        }
+        // 清理更早备份失败：本次已生效，但这件事不能静默（否则备份会无声堆积）
+        if (data.staleWarning) {
+          kitImportStaleWarning.value = String(data.staleWarning)
         }
         // ⚠ 审计结果行没落盘 ⇒ 导入已生效但审计不完整 ⇒ **显式告知**（不静默）
         if (data.auditWritten === false) {
@@ -222,6 +256,9 @@ export function useFilmKitImport (options) {
     kitImportRecoveryPath,
     kitImportRecoveryState,
     kitImportRecoveryHint,
+    kitImportBackupPath,
+    kitImportBackupHint,
+    kitImportStaleWarning,
     importKitAssets,
     importReasonText,
   }

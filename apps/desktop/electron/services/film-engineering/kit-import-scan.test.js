@@ -27,6 +27,32 @@ const {
   isHiddenComponent,
 } = require('./kit-import-scan')
 
+/**
+ * fs 替身：把**所有** `lstat` 结果的 `(dev,ino)` 强制成同一个值、`nlink` 强制成指定值。
+ * 其余方法全部透传真 fs ⇒ 扫描的其它判据（白名单/魔数/越界）行为不变。
+ *
+ * ⚠ 不能用 `Object.create(fs)` + 赋值 `promises`：`fs.promises` 是**只读 getter**。
+ */
+function forgeInoFs (o) {
+  const opts = o || {}
+  const lstat = async (p) => {
+    const st = await fs.promises.lstat(p)
+    return {
+      dev: 1,
+      ino: opts.ino,
+      nlink: opts.nlink,
+      size: st.size,
+      mtimeMs: st.mtimeMs,
+      isFile: () => st.isFile(),
+      isDirectory: () => st.isDirectory(),
+      isSymbolicLink: () => st.isSymbolicLink(),
+    }
+  }
+  const out = Object.assign({}, fs)
+  out.promises = Object.assign({}, fs.promises, { lstat })
+  return out
+}
+
 function tmpDir (tag) {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'kit-scan-' + tag + '-'))
 }
@@ -161,13 +187,37 @@ describe('kit-import-scan: 链与越界', () => {
     expect(res.reason).toBe(REASON.SYMLINK_REJECTED)
   })
 
-  it('同目录硬链 ⇒ HARDLINK_REJECTED（与 nlink 无关）', async () => {
+  it('同目录硬链（(dev,ino) 相同且 nlink=2）⇒ HARDLINK_REJECTED', async () => {
     const dir = makeKit({})
     const target = path.join(dir, 'palette.json')
     const link = path.join(dir, 'compliance-checklist.json')
     fs.rmSync(link)
     fs.linkSync(target, link)
     const res = await scanKit({ kitDir: dir })
+    expect(res.ok).toBe(false)
+    expect(res.reason).toBe(REASON.HARDLINK_REJECTED)
+  })
+
+  /**
+   * ⚠ 回归锁（change: kit-import-rollback-and-template-health 实证修正）
+   *   Windows 上 `lstat().ino` **不是唯一文件号**：本机实测 300 轮 × 7 文件里出现
+   *   **480 次**「同目录两个不同文件 `(dev,ino)` 完全相同、`nlink` 皆为 1」。
+   *   初版只凭 `(dev,ino)` 判硬链 ⇒ **合法包被整包误拒**（`HARDLINK_REJECTED` 假阳性）。
+   *   本用例把「同 ino + nlink=1」直接注入 fs 替身 ⇒ 与宿主文件系统的 ino 语义**无关**，
+   *   在任何平台/CI runner 上都可复现；`nlink=2` 的反向用例钉住判据没被一起废掉。
+   */
+  it('同目录两个不同文件撞同一个 (dev,ino) 但 nlink=1 ⇒ 不拒（Windows ino 非唯一）', async () => {
+    const dir = makeKit({})
+    const fakeFs = forgeInoFs({ ino: 424242, nlink: 1 })
+    const res = await scanKit({ kitDir: dir, fs: fakeFs })
+    expect(res.ok).toBe(true)
+    expect(res.files.length >= 7).toBe(true)
+  })
+
+  it('同 (dev,ino) 且 nlink=2 ⇒ 仍拒（前置门没把真硬链一起放过）', async () => {
+    const dir = makeKit({})
+    const fakeFs = forgeInoFs({ ino: 424242, nlink: 2 })
+    const res = await scanKit({ kitDir: dir, fs: fakeFs })
     expect(res.ok).toBe(false)
     expect(res.reason).toBe(REASON.HARDLINK_REJECTED)
   })

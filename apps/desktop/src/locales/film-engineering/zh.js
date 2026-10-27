@@ -237,7 +237,8 @@ export default {
       "recover": "导入回滚失败，旧资产在 {path}，请手动恢复",
       "recoverLock": "存在未完成的导入。若确认当前没有导入在进行，请检查并手动删除锁文件：{path}",
       "recoverMissing": "上次导入未完成（当前资产缺失）。请把备份目录 {path} 手动改回 film-kit 后再试",
-      "recoverBak": "上次导入留下了备份目录 {path}，可安全删除",
+      "backupKept": "上一版资产已保留在 {path}。若想回退，把它手动改名回 film-kit（下一次导入成功后会替换这份备份）",
+      "staleWarning": "导入已生效，但有更早的备份没能清理：{detail}",
       "residue": "导入已生效，但有残留需要你手动清理",
       "auditLost": "导入已生效，但审计结果行未能写入（审计不完整）。请检查磁盘空间与目录权限",
       "auditFull": "审计日志已满，请手动轮转：把 film-kit-import.log 改名为带时间戳的备份，再新建同名空文件",
@@ -264,6 +265,13 @@ export default {
       "langs": "语种 {langs}",
       "blockingTitle": "缺少必填项",
       "ignoredTitle": "以下内容不会被导入",
+      "versionTitle": "资产包版本",
+      "versionMismatch": "你的包是 v{pkg}，本版本要求 v{expected}（导入会被严格校验拒绝）",
+      "templateTitle": "模板结构（「自动」规划复用它）",
+      "templateDetail": "{total} 个模板分镜：场景头 {heading} 个 / 角色行 {character} 个 / 可识别块 {blocks} 个",
+      "compareTitle": "与当前资产对比",
+      "compareCurrent": "当前 场景 {scenes} / 分镜 {shots} / 任务模板 {templates}",
+      "compareDelta": "导入后变化 场景 {scenes} / 分镜 {shots} / 任务模板 {templates}",
       "confirmImport": "确认导入",
       "inspectFailed": "体检失败：{reason}",
       "warn": {
@@ -271,7 +279,9 @@ export default {
         "EMPTY_TASK_LIBRARY": "任务模板库存在但没有任务目录",
         "UNRESOLVED_REFERENCE": "有 {count} 条参考素材没有可解析的图片地址",
         "IGNORED_TOP_LEVEL": "有 {count} 项内容不在导入范围内",
-        "SHOTS_WITH_RESULT": "有 {count} 个分镜已带成片链接，导入后仍视为已生成"
+        "SHOTS_WITH_RESULT": "有 {count} 个分镜已带成片链接，导入后仍视为已生成",
+        "TEMPLATE_NO_CHARACTER_LINE": "有 {count} 个模板分镜缺角色行（[CHARACTER]），「自动」规划时角色锚点会丢",
+        "TEMPLATE_NO_BLOCKS": "有 {count} 个模板分镜没有可识别的块（空间布局/动作时序等），规划出的提示词会缺运动与空间约束"
       },
       "reason": {
         "NOT_A_DIRECTORY": "所选路径不是可读目录",

@@ -300,8 +300,96 @@ describe('kit-inspect: 闭集导出（契约测试要逐值比对 SCHEMA.md）',
     for (const v of Object.values(INSPECT_REASON)) expect(typeof v).toBe('string')
     expect(Object.values(WARN_CODE).sort()).toEqual([
       'EMPTY_TASK_LIBRARY', 'IGNORED_TOP_LEVEL', 'MISSING_V7_ASSET',
-      'SHOTS_WITH_RESULT', 'UNRESOLVED_REFERENCE',
+      'SHOTS_WITH_RESULT', 'TEMPLATE_NO_BLOCKS', 'TEMPLATE_NO_CHARACTER_LINE', 'UNRESOLVED_REFERENCE',
     ])
     expect(Object.values(INSPECT_REASON).sort()).toEqual(['NOT_A_DIRECTORY', 'VALIDATION_ERROR'])
+  })
+})
+
+// ── change: kit-import-rollback-and-template-health（P1 模板结构 / P2 对比 / P3 版本）──
+function kitWith (opts) {
+  const o = opts || {}
+  const kit = makeKit()
+  if (o.manifest) kit.manifest = Object.assign({}, kit.manifest, o.manifest)
+  if (o.shots) kit.shots = o.shots
+  return kit
+}
+
+describe('kit-inspect: 模板结构判据（P1）', () => {
+  const NL = String.fromCharCode(10)
+  const RICH = [
+    'EXT. STREET - NIGHT',
+    '[CHARACTER: ROKO] runs.',
+    '',
+    'GEO SPATIAL LAYOUT: center frame.',
+  ].join(NL)
+  const PLAIN = '一个男人在雨中奔跑。'
+
+  it('结构完整的模板 ⇒ withCharacterLine / withBlocks 计数正确', async () => {
+    const kit = kitWith({ shots: [Object.assign({}, makeKit().shots[0], { prompt: RICH })] })
+    const dir = writeKit(tmpDir(), kit)
+    const res = await inspectKit({ kitDir: dir })
+    expect(res.data.templateStructure.total).toBe(1)
+    expect(res.data.templateStructure.withCharacterLine).toBe(1)
+    expect(res.data.templateStructure.withBlocks).toBe(1)
+    expect(res.data.templateStructure.withSceneHeading).toBe(1)
+    expect(res.data.warnings.map((w) => w.code)).not.toContain(WARN_CODE.TEMPLATE_NO_CHARACTER_LINE)
+    expect(res.data.warnings.map((w) => w.code)).not.toContain(WARN_CODE.TEMPLATE_NO_BLOCKS)
+  })
+
+  it('纯散文模板 ⇒ 两个告警都在（不阻断，但必须让用户看见代价）', async () => {
+    const kit = kitWith({ shots: [Object.assign({}, makeKit().shots[0], { prompt: PLAIN })] })
+    const dir = writeKit(tmpDir(), kit)
+    const res = await inspectKit({ kitDir: dir })
+    expect(res.data.importable).toBe(true) // 不阻断
+    expect(res.data.templateStructure.withCharacterLine).toBe(0)
+    expect(res.data.templateStructure.withBlocks).toBe(0)
+    const w1 = res.data.warnings.find((w) => w.code === WARN_CODE.TEMPLATE_NO_CHARACTER_LINE)
+    const w2 = res.data.warnings.find((w) => w.code === WARN_CODE.TEMPLATE_NO_BLOCKS)
+    expect(w1 && w1.count).toBe(1)
+    expect(w2 && w2.count).toBe(1)
+  })
+})
+
+describe('kit-inspect: 资产版本（P3）', () => {
+  it('合法包 ⇒ assetVersion === 1、expectedAssetVersion === 1、versionMismatch false', async () => {
+    const dir = writeKit(tmpDir(), makeKit())
+    const res = await inspectKit({ kitDir: dir })
+    expect(res.data.assetVersion).toBe(1)
+    expect(res.data.expectedAssetVersion).toBe(1)
+    expect(res.data.versionMismatch).toBe(false)
+  })
+
+  it('版本不符 ⇒ versionMismatch true 且不可导入（严格校验仍拒，但失败可读）', async () => {
+    const kit = kitWith({ manifest: { schemaVersion: 2 } })
+    const dir = writeKit(tmpDir(), kit)
+    const res = await inspectKit({ kitDir: dir })
+    expect(res.data.assetVersion).toBe(2)
+    expect(res.data.versionMismatch).toBe(true)
+    expect(res.data.importable).toBe(false)
+  })
+})
+
+describe('kit-inspect: 与当前资产对比（P2）', () => {
+  it('注入 currentCounts ⇒ 给出 delta（正负都算对）', async () => {
+    const dir = writeKit(tmpDir(), makeKit()) // 场景 2 / 分镜 1 / 模板 1
+    const res = await inspectKit({
+      kitDir: dir,
+      currentCounts: { scenes: 5, shots: 3, templates: 1 },
+    })
+    expect(res.data.compare.current).toEqual({ scenes: 5, shots: 3, templates: 1 })
+    expect(res.data.compare.delta).toEqual({ scenes: -3, shots: -2, templates: 0 })
+  })
+
+  it('不注入（service 不可用）⇒ compare 为 null，**不印 0**', async () => {
+    const dir = writeKit(tmpDir(), makeKit())
+    const res = await inspectKit({ kitDir: dir })
+    expect(res.data.compare).toBe(null)
+  })
+
+  it('注入形状不全 ⇒ 降级为 null（不拿半个对象算 delta）', async () => {
+    const dir = writeKit(tmpDir(), makeKit())
+    const res = await inspectKit({ kitDir: dir, currentCounts: { scenes: 5 } })
+    expect(res.data.compare).toBe(null)
   })
 })

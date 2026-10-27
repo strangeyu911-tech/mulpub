@@ -9,7 +9,7 @@ const os = require('os')
 const path = require('path')
 
 const { loadFilmKit } = require('./kit-loader')
-const { ScriptAdapter, splitScript, buildTemplatePrompt, MAX_SCRIPT_LENGTH } = require('./script-adapt')
+const { ScriptAdapter, splitScript, buildTemplatePrompt, analyzeTemplatePrompt, MAX_SCRIPT_LENGTH } = require('./script-adapt')
 
 const UUID_B = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
 
@@ -231,4 +231,67 @@ it('script-adapt: buildTemplatePrompt 复用模板结构', () => {
   expect(prompt).toMatch(/GEO SPATIAL LAYOUT/)
   expect(prompt).toMatch(/Roko center frame/)
   expect(prompt).toMatch(/\[CHARACTER: ROKO\]/)
+})
+
+// ── change: kit-import-rollback-and-template-health（P1 模板结构判据）────────
+// 体检要回答「这份模板能不能真的用于规划」，就必看向导函数**真正依赖**的三处结构：
+// 场景头首行 / [CHARACTER: …] 行 / 被识别的块（GEO SPATIAL LAYOUT 等）。
+// ⚠ 判据必须与 buildTemplatePromptParts **同源**：两处各写一份正则时，体检会说「有角色行」
+//   而规划抽不到，且没有任何门禁能发现这种漂移。
+describe('analyzeTemplatePrompt（体检与规划共用同一份解析）', () => {
+  const NL = String.fromCharCode(10)
+  const RICH = [
+    'EXT. CITY STREET - NIGHT',
+    '[CHARACTER: ROKO] runs toward camera.',
+    '',
+    'GEO SPATIAL LAYOUT: ROKO center frame, rain sheet behind.',
+    '',
+    'ACTION TIMING: 0-2s sprint, 2-4s skid turn.',
+  ].join(NL)
+
+  it('结构完整的模板 ⇒ 三项都为真', () => {
+    const a = analyzeTemplatePrompt(RICH)
+    expect(a.hasSceneHeading).toBe(true)
+    expect(a.hasCharacterLine).toBe(true)
+    expect(a.characterLineCount).toBe(1)
+    expect(a.recognizedBlockCount).toBe(2) // GEO SPATIAL LAYOUT + ACTION TIMING
+  })
+
+  it('纯散文 ⇒ 场景头/角色行/被识别块 全无（但 blockCount 仍为 1，不能拿它当判据）', () => {
+    const a = analyzeTemplatePrompt('一个男人在雨中奔跑，表情坚毅。')
+    expect(a.hasSceneHeading).toBe(false)
+    expect(a.hasCharacterLine).toBe(false)
+    expect(a.characterLineCount).toBe(0)
+    expect(a.blockCount).toBe(1)
+    expect(a.recognizedBlockCount).toBe(0)
+  })
+
+  it('块标题不被识别 ⇒ recognizedBlockCount 仍为 0（体检据此告警，而不是看有没有空行）', () => {
+    const a = analyzeTemplatePrompt(['镜头说明：广角', '', '备注：无'].join(NL))
+    expect(a.blockCount).toBe(2)
+    expect(a.recognizedBlockCount).toBe(0)
+  })
+
+  it('空值/非字符串输入不炸', () => {
+    for (const v of [null, undefined, 0, {}]) {
+      const a = analyzeTemplatePrompt(v)
+      expect(a.hasSceneHeading).toBe(false)
+      expect(a.recognizedBlockCount).toBe(0)
+    }
+  })
+
+  it('⛔ 同源锁：analyze 抽出的角色行/块 与 buildTemplatePrompt 的产物一致', () => {
+    const a = analyzeTemplatePrompt(RICH)
+    const out = buildTemplatePrompt({
+      template: { prompt: RICH, model: 'm' },
+      beatText: '剧本一句',
+      characterMap: {},
+    })
+    // 角色行数量一致（若两处正则漂移，这里立刻红）
+    expect(out.split(NL).filter((l) => l.indexOf('[CHARACTER:') >= 0).length).toBe(a.characterLineCount)
+    // 被识别的块都进了产物
+    expect(out).toContain('GEO SPATIAL LAYOUT')
+    expect(out).toContain('ACTION TIMING')
+    expect(a.recognizedBlockCount).toBe(2)
+  })
 })

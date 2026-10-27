@@ -15,6 +15,14 @@
  *      → ④ 报告里直接确认替换（`importable=false` 时确认按钮**禁用**并列出缺项）
  *      → ⑤ 导入中**不可中断**模态 → ⑥ 成功/失败/残留/审计不完整 的提示与恢复指引。
  *
+ * 报告的三段补充信息（change `kit-import-rollback-and-template-health`）：
+ *   - **模板结构**（P1）：auto 规划把模板 `prompt` 当结构化模板复用，缺场景头/角色行/可识别块
+ *     ⇒ 能导能跑但提示词里约束是空的（告警，不阻断）；
+ *   - **与当前资产对比**（P2）：导入后场景/分镜/模板是多还是少，必须在确认前看见；
+ *   - **版本不符**（P3）：`你的包是 vN / 本版本要 v1`，比「内容不符合契约」可读。
+ * ⚠ `null` 一律渲染成占位（`—`），**不印 0**：把「没量到」印成 0 会让用户以为资产是空的。
+ * ⚠ 「上一版备份」用 `type=info`（正常态），与 warning 型的「残留/失败」在视觉上分开。
+ *
  * 只读与写路径的边界（本组件的硬约束）：
  *   - 体检（②③）**不**产生锁、审计、任何落盘；`importing` 与恢复档位等写路径状态在体检期间**不动**；
  *   - 路径只能来自主进程原生对话框（`inspectKit()` / `importKit()` 都是**空参**调用）。
@@ -37,6 +45,8 @@ const {
   resetInspection,
   kitImportReason,
   kitImportRecoveryHint,
+  kitImportBackupHint,
+  kitImportStaleWarning,
   importKitAssets,
   importReasonText,
 } = useFilmKitImport({ onImported: props.onImported })
@@ -54,6 +64,18 @@ const warnings = computed(() => (inspection.value && inspection.value.warnings) 
 const requiredMissing = computed(() => (inspection.value && inspection.value.requiredMissing) || [])
 const ignoredTopLevel = computed(() => (inspection.value && inspection.value.ignoredTopLevel) || [])
 const importable = computed(() => !!(inspection.value && inspection.value.importable))
+/** 模板结构（P1）：`null` = kit 加载不出来（**不是** 0 个模板） */
+const templateStructure = computed(() => (inspection.value && inspection.value.templateStructure) || null)
+/** 与当前资产对比（P2）：`null` = 任一侧形状不齐（**不印 0 差异**） */
+const compare = computed(() => (inspection.value && inspection.value.compare) || null)
+/** 版本不符（P3）：只让失败可读，严格校验仍会自行拒绝 */
+const versionMismatch = computed(() => !!(inspection.value && inspection.value.versionMismatch))
+
+/** delta 渲染：带符号，让「增/减」一眼可见（0 也照印 —— 这里是真的量到了 0） */
+function signed (value) {
+  if (value === null || value === undefined) return '—'
+  return value > 0 ? '+' + value : String(value)
+}
 
 /** 统计值渲染：`null` = **没量到**（绝不印 0 —— 把"没测"印成 0 会让用户以为资产是空的） */
 function num (value) {
@@ -115,6 +137,29 @@ async function onConfirmImport () {
     <span v-if="kitImportRecoveryHint">{{ kitImportRecoveryHint }}</span>
   </el-alert>
 
+  <!-- 上一版备份：**正常态**提示（type=info，不是 warning）——
+       图标与颜色都在告诉用户「这不是问题」，否则「成功还报错」会让真告警失去分量 -->
+  <el-alert
+    v-if="kitImportBackupHint"
+    class="fa-alert"
+    type="info"
+    show-icon
+    :closable="false"
+    data-testid="fe-asset-manager-backup"
+    :title="kitImportBackupHint"
+  />
+
+  <!-- 清理更早备份失败：本次已生效，但备份会无声堆积 ⇒ 必须可见 -->
+  <el-alert
+    v-if="kitImportStaleWarning"
+    class="fa-alert"
+    type="warning"
+    show-icon
+    :closable="false"
+    data-testid="fe-asset-manager-stale"
+    :title="t('filmEngineering.filmKitImport.staleWarning', { detail: kitImportStaleWarning })"
+  />
+
   <!-- 资产体检报告 + 确认替换（同一屏） -->
   <el-dialog
     v-model="reportVisible"
@@ -140,6 +185,41 @@ async function onConfirmImport () {
       <p v-else class="fa-report-hint" data-testid="fe-asset-report-nocounts">
         {{ t('filmEngineering.assetManager.countsUnavailable') }}
       </p>
+
+      <!-- 版本不符：先说「包是 vN / 本版本要 v1」，而不是让用户对着「内容不符合契约」猜 -->
+      <div v-if="versionMismatch" class="fa-report-block" data-testid="fe-asset-report-version">
+        <p class="fa-report-block-title">{{ t('filmEngineering.assetManager.versionTitle') }}</p>
+        <p class="fa-report-detail">{{ t('filmEngineering.assetManager.versionMismatch', {
+          pkg: num(inspection.assetVersion),
+          expected: num(inspection.expectedAssetVersion),
+        }) }}</p>
+      </div>
+
+      <!-- 模板结构（P1）：auto 规划真正复用的三处结构，缺了能导能跑但约束是空的 -->
+      <div v-if="templateStructure" class="fa-report-block fa-report-block-info" data-testid="fe-asset-report-template">
+        <p class="fa-report-block-title">{{ t('filmEngineering.assetManager.templateTitle') }}</p>
+        <p class="fa-report-detail">{{ t('filmEngineering.assetManager.templateDetail', {
+          total: num(templateStructure.total),
+          heading: num(templateStructure.withSceneHeading),
+          character: num(templateStructure.withCharacterLine),
+          blocks: num(templateStructure.withBlocks),
+        }) }}</p>
+      </div>
+
+      <!-- 与当前资产对比（P2）：导入后是多还是少，必须先看见 -->
+      <div v-if="compare" class="fa-report-block fa-report-block-info" data-testid="fe-asset-report-compare">
+        <p class="fa-report-block-title">{{ t('filmEngineering.assetManager.compareTitle') }}</p>
+        <p class="fa-report-detail">{{ t('filmEngineering.assetManager.compareCurrent', {
+          scenes: num(compare.current.scenes),
+          shots: num(compare.current.shots),
+          templates: num(compare.current.templates),
+        }) }}</p>
+        <p class="fa-report-detail">{{ t('filmEngineering.assetManager.compareDelta', {
+          scenes: signed(compare.delta.scenes),
+          shots: signed(compare.delta.shots),
+          templates: signed(compare.delta.templates),
+        }) }}</p>
+      </div>
 
       <!-- 不可导入：先说缺什么，再说原因 -->
       <div v-if="!importable" class="fa-report-block" data-testid="fe-asset-report-blocking">
@@ -200,6 +280,7 @@ async function onConfirmImport () {
 .fa-report-counts { margin: 0; padding-left: 20px; line-height: 1.9; }
 .fa-report-hint { margin: 0; color: #909399; }
 .fa-report-block { padding: 8px 10px; border-radius: 6px; background: rgba(245, 108, 108, 0.08); }
+.fa-report-block-info { background: rgba(64, 158, 255, 0.08); }
 .fa-report-block-title { margin: 0 0 4px; font-weight: 600; font-size: var(--font-size-sm); }
 .fa-report-detail { margin: 4px 0 0; color: #606266; font-size: var(--font-size-sm); word-break: break-all; }
 .fa-missing-item { font-family: var(--font-family-mono, monospace); font-size: var(--font-size-sm); }

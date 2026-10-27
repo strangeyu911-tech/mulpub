@@ -187,32 +187,27 @@ describe('kit-import: 失败即不落盘', () => {
 describe('kit-import: 残留档位与恢复指引（2026-10-23 验证层外部评审修）', () => {
   // ⚠ claude i3 / codex i6：初版 `swapIn` 回传了 `bakPath`，编排层**丢掉**它
   //   ⇒ 「旧备份没删掉」这件事永远到不了渲染端 ⇒ 恢复指引是空的。
-  it('删 `.bak` 失败 ⇒ 导入仍生效，但必须回传 BAK_LEFT + 恢复路径', async () => {
+  // change: kit-import-rollback-and-template-health —— 导入不再不可逆。
+  // 原锁「删 .bak 失败要回传 BAK_LEFT」随设计变更失效（成功路径已不删 .bak），
+  // 但它守的**原意**保留下来：备份的状态必须到得了用户眼前。
+  it('导入成功 ⇒ 回传上一版备份路径，且该目录里**真的**是上一次的旧资产（可回滚）', async () => {
     const src = makeSource(tmpDir('src'))
     const ud = tmpDir('ud')
     fs.mkdirSync(path.join(ud, 'film-kit'), { recursive: true })
-    fs.writeFileSync(path.join(ud, 'film-kit', 'old.txt'), 'old', 'utf8')
-    const brokenFs = stubFs({
-      promises: {
-        unlink: async () => {
-          const e = new Error('EPERM')
-          e.code = 'EPERM'
-          throw e
-        },
-      },
-    })
+    fs.writeFileSync(path.join(ud, 'film-kit', 'old-marker.txt'), 'old', 'utf8')
     const res = await importKit({
       kitDir: src,
       userDataDir: ud,
       service: makeService(),
       loadFilmKit: fakeStrict,
-      fs: brokenFs,
     })
     expect(res.ok).toBe(true)
-    expect(res.recoveryState).toBe('BAK_LEFT')
-    expect(String(res.recoveryPath)).toContain('film-kit.bak-')
-    // 新资产已生效
-    expect(fs.existsSync(path.join(ud, 'film-kit', 'film-manifest.json'))).toBe(true)
+    expect(res.previousBackup).toBeTruthy()
+    expect(fs.existsSync(res.previousBackup.path)).toBe(true)
+    // 判据落在**内容**上：只有一个空目录不算「可回滚」
+    expect(fs.readFileSync(path.join(res.previousBackup.path, 'old-marker.txt'), 'utf8')).toBe('old')
+    // 正常态的历史备份，不是异常残留
+    expect(res.recoveryState).toBeUndefined()
   })
 
   // ⚠ **档位张冠李戴 = 数据丢失级误导**（自查交叉核对发现，两家模型都没抓到）：
@@ -373,6 +368,30 @@ describe('kit-import: 锁与残留', () => {
     fs.utimesSync(lockPathOf(ud), old, old)
     const res = await importKit({ kitDir: src, userDataDir: ud, service: makeService(), loadFilmKit: fakeStrict })
     expect(res.ok).toBe(true)
+  })
+
+  /**
+   * change: kit-import-rollback-and-template-health —— **本次导入失败时，更早的备份必须还在**。
+   *
+   * 这条锁的是「清理时机」这个决定本身：若把清理放到 ⓪a（开工前先删旧备份），
+   * 本次导入随后失败时用户唯一能回退的那份就已经被抹掉了 ——「可回滚」恰好在最需要它时失效。
+   * 因此清理**只能**发生在「本次已经成功换入」之后。
+   */
+  it('导入失败（⓪b 严格校验不过）⇒ 更早的备份与旧 kit 都逐字未动', async () => {
+    const badSrc = tmpDir('src') // 缺必填 ⇒ ⓪b 就失败
+    const ud = tmpDir('ud')
+    fs.mkdirSync(path.join(ud, 'film-kit'), { recursive: true })
+    fs.writeFileSync(path.join(ud, 'film-kit', 'current.txt'), 'current', 'utf8')
+    const older = path.join(ud, 'film-kit.bak-older')
+    fs.mkdirSync(older, { recursive: true })
+    fs.writeFileSync(path.join(older, 'sentinel.txt'), 'older-assets', 'utf8')
+
+    const res = await importKit({ kitDir: badSrc, userDataDir: ud, service: makeService(), loadFilmKit: fakeStrict })
+    expect(res.ok).toBe(false)
+    // 旧备份仍在，且内容逐字未变
+    expect(fs.readFileSync(path.join(older, 'sentinel.txt'), 'utf8')).toBe('older-assets')
+    // 当前资产也未被碰
+    expect(fs.readFileSync(path.join(ud, 'film-kit', 'current.txt'), 'utf8')).toBe('current')
   })
 })
 

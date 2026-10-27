@@ -236,7 +236,8 @@ export default {
       "recover": "Import rollback failed; the old assets are at {path} — please restore them manually",
       "recoverLock": "An unfinished import is present. If no import is running, check and delete the lock file manually: {path}",
       "recoverMissing": "The last import did not finish (current assets are missing). Rename the backup directory {path} back to film-kit, then retry",
-      "recoverBak": "The last import left a backup directory {path} — it is safe to delete",
+      "backupKept": "The previous version of your assets is kept at {path}. To roll back, rename it back to film-kit manually (the next successful import replaces this backup)",
+      "staleWarning": "The import took effect, but an older backup could not be cleaned up: {detail}",
       "residue": "The import took effect, but there is leftover residue for you to clean up manually",
       "auditLost": "The import took effect, but the audit result row could not be written (audit is incomplete). Please check disk space and directory permissions",
       "auditFull": "The audit log is full; please rotate it manually: rename film-kit-import.log to a timestamped backup and create a new empty file with the same name",
@@ -263,6 +264,13 @@ export default {
       "langs": "Languages: {langs}",
       "blockingTitle": "Missing required items",
       "ignoredTitle": "The following will not be imported",
+      "versionTitle": "Asset package version",
+      "versionMismatch": "Your package is v{pkg}, this build requires v{expected} (the import will be rejected by strict validation)",
+      "templateTitle": "Template structure (reused by Auto planning)",
+      "templateDetail": "{total} template shots: scene heading {heading} / character line {character} / recognized blocks {blocks}",
+      "compareTitle": "Compared with current assets",
+      "compareCurrent": "Current: scenes {scenes} / shots {shots} / task templates {templates}",
+      "compareDelta": "After import: scenes {scenes} / shots {shots} / task templates {templates}",
       "confirmImport": "Import now",
       "inspectFailed": "Health check failed: {reason}",
       "warn": {
@@ -270,7 +278,9 @@ export default {
         "EMPTY_TASK_LIBRARY": "The task template library exists but has no task directories",
         "UNRESOLVED_REFERENCE": "{count} reference item(s) have no resolvable image URL",
         "IGNORED_TOP_LEVEL": "{count} item(s) are outside the import scope",
-        "SHOTS_WITH_RESULT": "{count} shot(s) already carry a result link and will still count as generated after import"
+        "SHOTS_WITH_RESULT": "{count} shot(s) already carry a result link and will still count as generated after import",
+        "TEMPLATE_NO_CHARACTER_LINE": "{count} template shot(s) have no character line ([CHARACTER]); Auto planning will lose the character anchor",
+        "TEMPLATE_NO_BLOCKS": "{count} template shot(s) have no recognized blocks (spatial layout / action timing, etc.); planned prompts will lack motion and spatial constraints"
       },
       "reason": {
         "NOT_A_DIRECTORY": "the selected path is not a readable directory",

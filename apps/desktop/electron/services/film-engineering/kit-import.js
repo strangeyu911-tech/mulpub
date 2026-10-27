@@ -353,11 +353,10 @@ async function importKit (opts) {
       residue.recoveryState = 'LOCK_LEFT'
       residue.recoveryPath = nodePath.join(userDataDir, LOCK_FILE)
     }
-    // 删 `.bak` 失败 ⇒ 留 `BAK_LEFT` 残留档位（film-kit = 新的、.bak = 旧 kit）
-    if (swap.recoveryState === 'BAK_LEFT' && swap.bakPath) {
-      if (!residue.recoveryState) residue.recoveryState = 'BAK_LEFT'
-      residue.recoveryPath = swap.bakPath
-    }
+    // ⚠ 「删除 .bak 失败」这一格已随 change kit-import-rollback-and-template-health 删除：
+    //   成功路径**不再删除** .bak（它保留为「上一版」），所以这里不可能出现「删 .bak 失败」。
+    //   保留一个永不成立的分支 = 装饰性判据，删掉它而不是留着「以防万一」。
+    //   清理**更早**备份失败的情况由 swap.staleWarning 表达（不阻断，见下）。
 
     // 审计成功行（**结果行写失败必须显式上报**，不能静默丢）
     const okRow = audit.append({
@@ -376,6 +375,10 @@ async function importKit (opts) {
       ok: true,
       stats: { fileCount: firstPassFiles.length, totalBytes: scan.totalBytes },
     }
+    // 上一版备份（正常态，可回滚）：路径与时间戳原样回传，供界面显示「可手动改回」
+    if (swap.previousBackup) res.previousBackup = swap.previousBackup
+    // 清理**更早**备份失败：不阻断（本次已生效），但要如实告知
+    if (swap.staleWarning) res.staleWarning = swap.staleWarning
     if (residue.recoveryState) {
       res.recoveryState = residue.recoveryState
       res.recoveryPath = residue.recoveryPath || null

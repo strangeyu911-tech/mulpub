@@ -162,7 +162,10 @@ describe('film-engineering:inspect-kit · 成功与入参为空', () => {
     expect(r.code).toBe(0)
     const arg = deps._testInspectKit.mock.calls[0][0]
     expect(arg.kitDir).not.toBe('D:/evil/kit')
-    expect(Object.keys(arg)).toEqual(['kitDir'])
+    // 入参面 = 路径（来自原生对话框）+ 当前资产计数（来自主进程 service），**没有一项**来自 renderer
+    expect(Object.keys(arg).sort()).toEqual(['currentCounts', 'kitDir'])
+    // 该用例没注入 service ⇒ currentCounts 降级为 null（拿不准就不猜，报告里 compare 也会是 null）
+    expect(arg.currentCounts).toBe(null)
   })
 
   it('体检失败（ok:false）⇒ 失败信封带 reason 闭集值 + 人话', async () => {

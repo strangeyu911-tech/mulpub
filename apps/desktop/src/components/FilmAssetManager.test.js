@@ -206,6 +206,95 @@ describe('FilmAssetManager：不可导入时不许「点了再报错」', () => 
   })
 })
 
+// change: kit-import-rollback-and-template-health —— 报告三段（P1 模板结构 / P2 对比 / P3 版本）
+describe('FilmAssetManager：报告三段补充信息', () => {
+  it('模板结构逐项渲染（总数 / 场景头 / 角色行 / 可识别块）', async () => {
+    bridge.inspect = {
+      code: 0,
+      data: Object.assign({}, GOOD_REPORT, {
+        templateStructure: { total: 153, withSceneHeading: 150, withCharacterLine: 120, withBlocks: 90 },
+      }),
+    }
+    const wrapper = mountManager()
+    await openReport(wrapper)
+    const text = wrapper.find('[data-testid="fe-asset-report-template"]').text()
+    expect(text).toContain('153')
+    expect(text).toContain('150')
+    expect(text).toContain('120')
+    expect(text).toContain('90')
+  })
+
+  it('模板结构为 null ⇒ 该段整块不渲染（不印 0 个模板）', async () => {
+    bridge.inspect = {
+      code: 0,
+      data: Object.assign({}, GOOD_REPORT, { templateStructure: null }),
+    }
+    const wrapper = mountManager()
+    await openReport(wrapper)
+    expect(wrapper.find('[data-testid="fe-asset-report-template"]').exists()).toBe(false)
+  })
+
+  it('对比段：当前值与带符号 delta 都要出现', async () => {
+    bridge.inspect = {
+      code: 0,
+      data: Object.assign({}, GOOD_REPORT, {
+        compare: {
+          current: { scenes: 100, shots: 80, templates: 3 },
+          delta: { scenes: 62, shots: 73, templates: 1 },
+        },
+      }),
+    }
+    const wrapper = mountManager()
+    await openReport(wrapper)
+    const text = wrapper.find('[data-testid="fe-asset-report-compare"]').text()
+    expect(text).toContain('100')
+    expect(text).toContain('80')
+    expect(text).toContain('+62')
+    expect(text).toContain('+73')
+  })
+
+  it('对比为 null ⇒ 该段整块不渲染（拿不准就不编差异）', async () => {
+    bridge.inspect = {
+      code: 0,
+      data: Object.assign({}, GOOD_REPORT, { compare: null }),
+    }
+    const wrapper = mountManager()
+    await openReport(wrapper)
+    expect(wrapper.find('[data-testid="fe-asset-report-compare"]').exists()).toBe(false)
+  })
+
+  it('版本不符 ⇒ 明确写出「你的包是 vN / 本版本要 vM」', async () => {
+    bridge.inspect = {
+      code: 0,
+      data: Object.assign({}, GOOD_REPORT, {
+        importable: false,
+        assetVersion: 2,
+        expectedAssetVersion: 1,
+        versionMismatch: true,
+      }),
+    }
+    const wrapper = mountManager()
+    await openReport(wrapper)
+    const text = wrapper.find('[data-testid="fe-asset-report-version"]').text()
+    expect(text).toContain('2')
+    expect(text).toContain('1')
+  })
+
+  it('版本一致 ⇒ 版本段不渲染（不制造无关信息）', async () => {
+    bridge.inspect = {
+      code: 0,
+      data: Object.assign({}, GOOD_REPORT, {
+        assetVersion: 1,
+        expectedAssetVersion: 1,
+        versionMismatch: false,
+      }),
+    }
+    const wrapper = mountManager()
+    await openReport(wrapper)
+    expect(wrapper.find('[data-testid="fe-asset-report-version"]').exists()).toBe(false)
+  })
+})
+
 describe('FilmAssetManager：导入中与导入后', () => {
   it('导入中 ⇒ 入口禁用 + 不可中断模态出现', async () => {
     let release = null
@@ -221,10 +310,10 @@ describe('FilmAssetManager：导入中与导入后', () => {
     expect(wrapper.find('[data-testid="fe-asset-manager-btn"]').attributes('disabled')).toBeUndefined()
   })
 
-  it('成功但有残留（.bak 未删）⇒ 弹残留告警 + 恢复指引', async () => {
+  it('成功但有残留（锁未删）⇒ 弹残留告警 + 恢复指引', async () => {
     bridge.import = {
       code: 0,
-      data: { ok: true, fileCount: 9, recoveryState: 'BAK_LEFT', recoveryPath: 'D:/x/film-kit.bak-1' },
+      data: { ok: true, fileCount: 9, recoveryState: 'LOCK_LEFT', recoveryPath: 'D:/x/.import-lock' },
     }
     const wrapper = mountManager()
     await openReport(wrapper)
@@ -233,6 +322,39 @@ describe('FilmAssetManager：导入中与导入后', () => {
     expect(notifyMock.success).toHaveBeenCalled()
     expect(notifyMock.warn).toHaveBeenCalled()
     expect(wrapper.find('[data-testid="fe-asset-manager-recovery"]').exists()).toBe(true)
+  })
+
+  // change: kit-import-rollback-and-template-health —— 上一版备份是**正常态**
+  it('成功带上一版备份 ⇒ 用 info 提示路径，且**不**当成残留告警', async () => {
+    bridge.import = {
+      code: 0,
+      data: { ok: true, fileCount: 9, previousBackup: { path: 'D:/x/.bak-2026-10-23T00-00-00-000Z-abcd', stamp: 's1' } },
+    }
+    const wrapper = mountManager()
+    await openReport(wrapper)
+    await wrapper.find('[data-testid="fe-asset-report-confirm"]').trigger('click')
+    await flushPromises()
+    const backup = wrapper.find('[data-testid="fe-asset-manager-backup"]')
+    expect(backup.exists()).toBe(true)
+    // ⚠ el-alert 在测试环境按自定义元素渲染：文案在 title **属性**上，不在 textContent 里
+    expect(backup.attributes('title')).toContain('.bak-2026-10-23T00-00-00-000Z-abcd')
+    // 正常态不许升级成残留：恢复指引与残留告警都不出现
+    expect(wrapper.find('[data-testid="fe-asset-manager-recovery"]').exists()).toBe(false)
+    expect(notifyMock.warn).not.toHaveBeenCalled()
+  })
+
+  it('清理更早备份失败（staleWarning）⇒ 必须可见，不得静默', async () => {
+    bridge.import = {
+      code: 0,
+      data: { ok: true, fileCount: 9, staleWarning: '未能清理更早备份: .bak-old' },
+    }
+    const wrapper = mountManager()
+    await openReport(wrapper)
+    await wrapper.find('[data-testid="fe-asset-report-confirm"]').trigger('click')
+    await flushPromises()
+    const stale = wrapper.find('[data-testid="fe-asset-manager-stale"]')
+    expect(stale.exists()).toBe(true)
+    expect(stale.attributes('title')).toContain('.bak-old')
   })
 
   it('成功但审计结果行没落盘 ⇒ 弹审计告警（不得静默）', async () => {

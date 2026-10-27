@@ -275,6 +275,10 @@ function registerImportHandlers (ipcMain, deps) {
         // 审计结果行写失败 ⇒ 导入已生效但审计不完整 ⇒ 显式告知，不静默
         auditWritten: res.auditWritten !== false,
         auditMessage: res.auditMessage || null,
+        // 上一版备份（change: kit-import-rollback-and-template-health）——
+        // 导入不再不可逆：旧资产作为「上一版」保留到下一次导入成功之后，路径回传供界面显示
+        previousBackup: res.previousBackup || null,
+        staleWarning: res.staleWarning || null,
       },
     }
   }, {

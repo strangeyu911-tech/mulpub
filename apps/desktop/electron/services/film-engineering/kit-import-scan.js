@@ -314,7 +314,7 @@ async function scanKit (opts) {
       return { ok: false, reason: REASON.PATH_ESCAPE, message: 'realpath 越出源目录: ' + norm }
     }
 
-    // 硬链（**同目录**）：(dev, ino) 相同 ⇒ 拒 —— 与 nlink 无关，任何文件系统都成立
+    // 硬链（**同目录**）：(dev, ino) 相同 **且 nlink > 1** ⇒ 拒（见下：单看 (dev,ino) 会误拒）
     // ⚠ 键**必须带父目录**（2026-10-23 验证层外部评审 claude i5 修）：
     //   初版只用 `dev:ino` 做全局键 ⇒ 把**跨目录**硬链也一起拒了，
     //   而契约明写「跨目录硬链 = 非防篡改边界」⇒ 那是**超出声明的误拒**
@@ -325,7 +325,16 @@ async function scanKit (opts) {
     // ⚠ `ino === 0` 时**不可信**（部分网络盘 / FUSE 恒返回 0）⇒ 此时**跳过**该判据，
     //   否则同目录下所有文件会撞到同一个键 ⇒ 合法包被整包误拒
     //   （2026-10-23 验证层外部评审 codex i4 修）。
-    if (st.ino) {
+    // ⚠ **`nlink < 2` 时必须跳过**（change: kit-import-rollback-and-template-health 实证修正）：
+    //   Windows 上 `lstat().ino` **不是唯一文件号**——本机实测（NTFS，300 轮 × 7 文件）
+    //   出现 **480 次**「同目录两个不同文件 `(dev,ino)` 完全相同、但 `nlink` 皆为 1」；
+    //   而**真硬链**实测 `(dev,ino)` 相同且 `nlink = 2`。
+    //   ⇒ 只凭 `(dev,ino)` 判 ⇒ 合法包被整包误拒（`HARDLINK_REJECTED` 假阳性，
+    //     `kit-import.test.js` 的锁接管用例曾因此偶发红）；带上 `nlink >= 2` 前置门后，
+    //     能报 `nlink` 的文件系统上判据不变（真硬链仍拒），
+    //     报不出的（FAT/exFAT/网络盘恒为 1）降级为**漏判**——
+    //     这正是 §11.2 已声明的 `hardlink_check=best-effort` 边界，不新增承诺。
+    if (st.ino && st.nlink > 1) {
       const inodeKey = JSON.stringify([nodePath.posix.dirname(norm), st.dev, st.ino])
       if (seenInodes.has(inodeKey)) {
         return {

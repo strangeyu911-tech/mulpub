@@ -177,54 +177,7 @@
 
       <!-- ============ 方法论 ============ -->
       <el-tab-pane :label="t('filmEngineering.tabs.doctrine')">
-        <div v-if="doctrine" class="fe-doctrine">
-          <el-card shadow="never" class="fe-card">
-            <template #header>{{ t('filmEngineering.doctrine.blocks') }}</template>
-            <div v-for="b in doctrine.blocks" :key="b.key" class="fe-doctrine-block">
-              <div class="fe-doctrine-label">{{ b.label }}</div>
-              <div class="fe-doctrine-zh">{{ b.zh }}</div>
-              <div class="fe-doctrine-en">{{ t('filmEngineering.doctrine.en') }}：{{ b.en }}</div>
-            </div>
-          </el-card>
-          <el-card shadow="never" class="fe-card">
-            <template #header>{{ t('filmEngineering.doctrine.rules') }}</template>
-            <div v-for="(r, i) in doctrine.rules" :key="r.key" class="fe-doctrine-rule">
-              <b>{{ i + 1 }}. {{ r.title }}</b>
-              <div class="fe-doctrine-zh">{{ r.zh }}</div>
-            </div>
-          </el-card>
-          <!-- 影视工程 v2 · F-H：配方与失败台账（数据早已在 kit 里，此前未渲染；只读，无写操作） -->
-          <el-card shadow="never" class="fe-card" data-testid="fe-doctrine-recipes">
-            <template #header>{{ t('filmEngineering.doctrine.recipes') }}</template>
-            <div v-for="r in (doctrine.recipes || [])" :key="r.key" class="fe-doctrine-rule">
-              <b>{{ r.label }}</b>
-              <div class="fe-doctrine-zh">{{ r.zh }}</div>
-              <div class="fe-doctrine-blockkeys">
-                {{ t('filmEngineering.doctrine.recipeBlocks') }}：{{ (r.blockKeys || []).join(' / ') }}
-              </div>
-            </div>
-          </el-card>
-          <el-card shadow="never" class="fe-card" data-testid="fe-doctrine-failure-ledger">
-            <template #header>{{ t('filmEngineering.doctrine.failureLedger') }}</template>
-            <div v-for="f in (doctrine.failureLedger || [])" :key="f.id" class="fe-doctrine-rule">
-              <b>{{ f.id }} · {{ t('filmEngineering.doctrine.failureSymptom') }}：{{ f.symptom }}</b>
-              <div class="fe-doctrine-zh">{{ t('filmEngineering.doctrine.failureCause') }}：{{ f.cause }}</div>
-              <div class="fe-doctrine-zh">{{ t('filmEngineering.doctrine.failureFix') }}：{{ f.fix }}</div>
-              <div class="fe-doctrine-blockkeys">
-                {{ t('filmEngineering.doctrine.failureTags') }}：
-                <el-tag v-for="tg in (f.tags || [])" :key="tg" size="small" type="info">{{ tg }}</el-tag>
-              </div>
-            </div>
-          </el-card>
-          <el-card shadow="never" class="fe-card">
-            <template #header>{{ t('filmEngineering.doctrine.glossary') }}</template>
-            <div v-for="g in doctrine.glossary" :key="g.term" class="fe-doctrine-glossary">
-              <el-tag size="small" type="info">{{ g.term }}</el-tag>
-              <span class="fe-doctrine-glossary-zh">{{ g.zh }}</span>
-            </div>
-            <div class="fe-hint fe-doctrine-note">{{ t('filmEngineering.doctrine.linkNote') }}</div>
-          </el-card>
-        </div>
+        <FilmDoctrinePanel :doctrine="doctrine" />
       </el-tab-pane>
     </el-tabs>
 
@@ -477,6 +430,9 @@ import { useFilmVideoGen, FILM_MAX_VIDEO_BATCH } from '@/composables/useFilmVide
 import { story2videoShowInFolder, story2videoSaveAs } from '@/api/publisher'
 import { useFilmProduction } from '@/composables/useFilmProduction'
 import { buildSceneTree } from './film-scene-tree'
+// 「方法论」标签页整块拆出（change `kit-import-rollback-and-template-health`）：
+// 本视图已贴着 `check-max-lines` 上限，只读分区没有理由占用它的行数。
+import FilmDoctrinePanel from './film-engineering/FilmDoctrinePanel.vue'
 
 // embedded=true 时作为 Hub 第 3 标签「工程案例」内嵌（隐藏页面级 h1/subtitle）；
 // 默认 false 时渲染与本次变更前逐字一致（既有测试与 /film-engineering/classic 直达页以此为准）。
@@ -758,14 +714,6 @@ onMounted(() => {
 .fe-adapted-no { font-weight: 600; }
 .fe-adapted-copy { margin-left: auto; }
 .fe-adapted-prompt { color: #606266; font-size: var(--font-size-sm); line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
-.fe-doctrine-block, .fe-doctrine-rule { margin-bottom: 14px; }
-.fe-doctrine-label { font-weight: 600; color: var(--el-color-primary); font-size: var(--font-size-sm); }
-.fe-doctrine-zh { color: #303133; font-size: var(--font-size-sm); margin-top: 4px; line-height: 1.6; }
-.fe-doctrine-en { color: #909399; font-size: var(--font-size-xs); margin-top: 2px; }
-.fe-doctrine-glossary { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.fe-doctrine-blockkeys { color: #909399; font-size: var(--font-size-xs); margin-top: 2px; line-height: 1.6; }
-.fe-doctrine-glossary-zh { font-size: var(--font-size-sm); color: #303133; }
-.fe-doctrine-note { margin-top: 12px; }
 .fe-detail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .fe-detail-copies { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .fe-detail-section { margin-bottom: 18px; }

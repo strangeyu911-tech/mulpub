@@ -79,17 +79,36 @@ describe('kit-schema-contract: SCHEMA.md 导入契约小节', () => {
     expect(sec).toContain('示例行')
   })
 
-  it('恢复路径小节存在且三档齐全', () => {
+  // change: kit-import-rollback-and-template-health —— `BAK_LEFT` 已从闭集移除
+  // （⑥ 不再删本次 `.bak` ⇒ 该档位不再可能产生）；文档必须**同时**写清它已移除，
+  // 否则读文档的人仍会等一个永不出现的档位。
+  it('恢复路径小节存在且档位齐全（三档，BAK_LEFT 已退役）', () => {
     const sec = contractSection()
-    for (const state of ['PRE_SWAP', 'MISSING_KIT', 'BAK_LEFT', 'LOCK_LEFT']) {
+    for (const state of ['PRE_SWAP', 'MISSING_KIT', 'LOCK_LEFT']) {
       expect(sec, '恢复档位缺失: ' + state).toContain(state)
     }
+    expect(sec).toContain('BAK_LEFT')
+    expect(sec).toContain('已从本闭集移除')
+  })
+
+  it('上一版备份与残留是两回事（previousBackup 独立于 recovery_state）', () => {
+    const sec = contractSection()
+    expect(sec).toContain('previousBackup')
+    expect(sec).toContain('staleWarning')
   })
 
   it('取舍小节写明 R0 禁递归删目录与跨目录硬链边界', () => {
     const sec = contractSection()
     expect(sec).toContain('禁止递归删除目录')
     expect(sec).toContain('非防篡改边界')
+  })
+
+  // change: kit-import-rollback-and-template-health —— Windows `ino` 非唯一，
+  // 判据带上了 `nlink > 1` 前置门；文档必须写明「为什么不是可选优化」。
+  it('硬链判据写明 nlink 前置门及其动因', () => {
+    const sec = contractSection()
+    expect(sec).toContain('nlink > 1')
+    expect(sec).toContain('唯一文件号')
   })
 
   it('白名单 9 项 + 排除项 images/ 都在文档里', () => {
@@ -140,10 +159,24 @@ describe('kit-schema-contract: SCHEMA.md 十三、资产体检契约', () => {
     const sec = inspectSection()
     for (const field of [
       'importable', 'blockingReason', 'blockingMessage', 'counts', 'langs',
+      // change: kit-import-rollback-and-template-health（P1/P2/P3 新增字段）
+      'templateStructure', 'withCharacterLine', 'withBlocks',
+      'assetVersion', 'expectedAssetVersion', 'versionMismatch', 'compare',
       'requiredMissing', 'ignoredTopLevel', 'warnings', 'assetWarningTexts',
     ]) {
       expect(sec, '报告字段未声明: ' + field).toContain(field)
     }
+  })
+
+  it('P1/P2/P3 的三条判断口径写在文档里（不靠读者猜）', () => {
+    const sec = inspectSection()
+    // P1：判据是「被识别的块」而非块数
+    expect(sec).toContain('recognizedBlockCount')
+    // P2：currentCounts 只能由主进程取 + 命中上限即降级
+    expect(sec).toContain('currentCounts')
+    expect(sec).toContain('500')
+    // P3：版本读数不依赖整包可加载
+    expect(sec).toContain('schemaVersion')
   })
 
   it('只读承诺与「null≠0」两条硬口径都写在文档里', () => {

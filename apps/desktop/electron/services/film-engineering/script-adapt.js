@@ -62,6 +62,50 @@ function splitScript (script) {
  * @param {object} opts.characterMap - 角色映射
  * @returns {{head: string[], characterLines: string[], motionParts: string[], staticParts: string[], allParts: string[]}}
  */
+// ── 模板结构解析（change: kit-import-rollback-and-template-health）────────
+// 体检（kit-inspect 的 templateStructure）与规划（buildTemplatePromptParts）**共用这一份**：
+// 两处各写一份正则时，体检会说「有角色行」而规划抽不到，且没有任何门禁能发现这种漂移。
+const SCENE_HEADING_RE = /^(INT|EXT|INT\.\/EXT|INT\.|EXT\.)/i
+const CHARACTER_LINE_RE = /\[CHARACTER:/
+/** 被 buildTemplatePromptParts **采纳**的块标题；认不出来 = 该块被丢弃 */
+const RECOGNIZED_BLOCK_RES = Object.freeze([
+  /^ACTION TIMING/i,
+  /^CHARACTER ACTING/i,
+  /^GEO SPATIAL LAYOUT/i,
+  /^AUDIO/i,
+  /^POSITIVE CONSTRAINTS/i,
+])
+
+/**
+ * 分析一份模板提示词的结构（只读、纯函数）。
+ *
+ * 为什么需要（体检的判据）：auto 规划把 `template.prompt` 当**结构化模板**复用 ——
+ * 场景头做 head、`[CHARACTER: …]` 行做角色锚点、被识别的块做运动/空间约束。
+ * 用户资产若只是一段散文，上述三类内容**全部为空**，但规划与出片都会「成功」⇒ 必须提前可见。
+ *
+ * ⚠ `blockCount` 不能当判据：纯散文 split 之后也是 1 块。真正决定「约束有没有进产物」的是
+ * `recognizedBlockCount`（块标题能否被识别）。
+ * @param {unknown} prompt
+ */
+function analyzeTemplatePrompt (prompt) {
+  const tpl = String(prompt == null ? '' : prompt)
+  const sceneHeadingLine = tpl.split('\n')[0]
+  const hasSceneHeading = SCENE_HEADING_RE.test(String(sceneHeadingLine || '').trim())
+  const characterLines = tpl.split('\n').filter((l) => CHARACTER_LINE_RE.test(l))
+  const blocks = tpl.split(/\n{2,}/)
+  const contentBlocks = blocks.map((b) => b.trim()).filter((b) => b && !CHARACTER_LINE_RE.test(b))
+  return {
+    sceneHeadingLine,
+    hasSceneHeading,
+    characterLines,
+    hasCharacterLine: characterLines.length > 0,
+    characterLineCount: characterLines.length,
+    blocks,
+    blockCount: blocks.map((b) => b.trim()).filter(Boolean).length,
+    recognizedBlockCount: contentBlocks.filter((b) => RECOGNIZED_BLOCK_RES.some((re) => re.test(b))).length,
+  }
+}
+
 function buildTemplatePromptParts ({ template, beatText, characterMap }) {
   const tpl = String(template.prompt || '')
   const storyLines = String(beatText || '').split('\n').map((l) => l.trim()).filter(Boolean)
@@ -73,12 +117,11 @@ function buildTemplatePromptParts ({ template, beatText, characterMap }) {
   const motionParts = []
   /** @type {string[]} */
   const staticParts = []
-  const firstLine = tpl.split('\n')[0]
-  const isSceneHeading = /^(INT|EXT|INT\.\/EXT|INT\.|EXT\.)/i.test(String(firstLine || '').trim())
-  head.push(isSceneHeading ? firstLine.trim() : (storyLines[0] || 'SCENE'))
+  // ⚠ 结构判断一律走 analyzeTemplatePrompt（单一真源），这里不再自带正则
+  const a = analyzeTemplatePrompt(tpl)
+  head.push(a.hasSceneHeading ? String(a.sceneHeadingLine || '').trim() : (storyLines[0] || 'SCENE'))
   if (storyLines.length > 0) head.push(storyLines.join(' '))
-  const rawCharacterLines = tpl.split('\n').filter((l) => /\[CHARACTER:/.test(l))
-  for (const cl of rawCharacterLines) {
+  for (const cl of a.characterLines) {
     const m = cl.match(/\[CHARACTER:\s*([A-Z0-9_]+)\]/i)
     if (m) {
       const hgName = m[1].toUpperCase()
@@ -88,11 +131,11 @@ function buildTemplatePromptParts ({ template, beatText, characterMap }) {
       characterLines.push(cl.trim())
     }
   }
-  const blocks = tpl.split(/\n{2,}/)
+  const blocks = a.blocks
   for (const block of blocks) {
     const trimmed = block.trim()
     if (!trimmed) continue
-    if (/\[CHARACTER:/.test(trimmed)) continue
+    if (CHARACTER_LINE_RE.test(trimmed)) continue
     if (/^ACTION TIMING/i.test(trimmed) || /^CHARACTER ACTING/i.test(trimmed)) {
       motionParts.push(trimmed)
       continue
@@ -108,7 +151,7 @@ function buildTemplatePromptParts ({ template, beatText, characterMap }) {
   for (const block of blocks) {
     const trimmed = block.trim()
     if (!trimmed) continue
-    if (/\[CHARACTER:/.test(trimmed)) continue
+    if (CHARACTER_LINE_RE.test(trimmed)) continue
     if (/^GEO SPATIAL LAYOUT/i.test(trimmed) ||
         /^ACTION TIMING/i.test(trimmed) ||
         /^AUDIO/i.test(trimmed) ||
@@ -117,7 +160,7 @@ function buildTemplatePromptParts ({ template, beatText, characterMap }) {
       allParts.push(trimmed)
     }
   }
-  return { head, characterLines, motionParts, staticParts, allParts }
+return { head, characterLines, motionParts, staticParts, allParts }
 }
 
 /**
@@ -284,4 +327,5 @@ module.exports = {
   buildMotionPrompt,
   buildRoleBindings,
   normalizeSceneId,
+  analyzeTemplatePrompt,
 }

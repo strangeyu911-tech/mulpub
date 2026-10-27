@@ -246,32 +246,61 @@ async function swapIn (opts) {
     return { ok: false, reason: REASON.SWAP_FAILED, message: '换入失败: ' + String(e && e.message) }
   }
 
-  // ⑥ 删 .bak（成功路径：立即删；失败不阻塞生效 ⇒ 留 `BAK_LEFT` 残留档位）
-  // ⚠ **不递归删目录**（本仓 R0 铁律）：初版这里写的是
-  //   `fs.promises.rm(bakDir, {recursive:true, force:true})` ⇒ 一行就违反铁律
-  //   （2026-10-23 验证层外部评审 codex i2 命中）⇒ 改为「自己走一遍树拿精确清单
-  //   → 逐个 unlink → 自底向上 rmdir」。
+  // ⑥ 保留旧备份作为「上一版」（change: kit-import-rollback-and-template-health）
+  //
+  // ⚠ 这里**不再删** `.bak`：导入是整体替换，删掉备份就等于「选错包也没救了」。
+  //   旧备份保留到**下一次导入成功之后**才清理 ⇒ 任何时刻最多 1 份历史备份，
+  //   而本次失败时旧备份仍在（清理发生在成功路径，不在 ⓪a）。
+  //
+  // ⚠ 语义分层，**不复用 `BAK_LEFT`**：`BAK_LEFT` 是「本次换入/清理出错的异常残留」，
+  //   而本字段是「正常态的历史备份」。混用会让「残留」从异常变成常态 ⇒ 恢复指引常驻、
+  //   噪音化，真出事时用户已经习惯性忽略它。
   if (bakCreated) {
-    const manifest = await collectTreeManifest(bakDir, fsImpl)
-    if (!manifest.ok) {
-      return {
-        ok: true,
-        bakPath: bakDir,
-        recoveryState: 'BAK_LEFT',
-        message: '旧备份未清（' + manifest.message + '），不影响生效',
-      }
-    }
-    const rm = await removeTreeByManifest({ rootDir: bakDir, manifest, fs: fsImpl })
-    if (!rm.ok) {
-      return {
-        ok: true,
-        bakPath: bakDir,
-        recoveryState: 'BAK_LEFT',
-        message: '旧备份未删（' + rm.message + '），不影响生效',
-      }
+    // 清理**更早**的备份（精确清单 + 自底向上 rmdir：⛔ 不递归删目录，R0）
+    const stale = await removeOlderBaks({ fs: fsImpl, userDataDir, keep: bakDir })
+    return {
+      ok: true,
+      previousBackup: { path: bakDir, stamp: o.stamp },
+      staleRemoved: stale.removed,
+      staleWarning: stale.warning,
     }
   }
   return { ok: true }
+}
+
+/**
+ * 清理**更早**的 `.bak-*`，只保留本次那份（`keep`）。
+ *
+ * 为什么在成功之后才清：若在 ⓪a 就删旧备份，本次导入随后失败时用户的唯一退路已被抹掉
+ * ——「可回滚」会在最需要它的时刻被取消。
+ * ⛔ 每一份都走「精确清单 + 自底向上 rmdir」（R0：不递归删目录）。
+ * @returns {Promise<{removed:number, warning:string|null}>}
+ */
+async function removeOlderBaks (opts) {
+  const o = opts || {}
+  const fsImpl = o.fs || nodeFs
+  const userDataDir = o.userDataDir
+  const keep = o.keep
+  let ents
+  try {
+    ents = await fsImpl.promises.readdir(userDataDir, { withFileTypes: true })
+  } catch (_e) {
+    return { removed: 0, warning: '列目录失败，未清理更早备份' }
+  }
+  const stale = ents
+    .filter((e) => e && typeof e.isDirectory === 'function' && e.isDirectory() && typeof e.name === 'string' && e.name.startsWith(BAK_PREFIX))
+    .map((e) => nodePath.join(userDataDir, e.name))
+    .filter((p) => p !== keep)
+  let removed = 0
+  const failed = []
+  for (const dir of stale) {
+    const manifest = await collectTreeManifest(dir, fsImpl)
+    if (!manifest.ok) { failed.push(nodePath.basename(dir)); continue }
+    const r = await removeTreeByManifest({ rootDir: dir, manifest, fs: fsImpl })
+    if (!r.ok) failed.push(nodePath.basename(dir))
+    else removed += 1
+  }
+  return { removed, warning: failed.length ? '未能清理更早备份: ' + failed.join(', ') : null }
 }
 
 /**
@@ -308,4 +337,5 @@ module.exports = {
   cleanupStaging,
   swapIn,
   rollbackToBak,
+  removeOlderBaks,
 }

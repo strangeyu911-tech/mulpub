@@ -27,6 +27,7 @@ const nodePath = require('path')
 
 const { scanKit, ROOT_REQUIRED, ROOT_OPTIONAL, BASE_PROMPT_PATH } = require('./kit-import-scan')
 const { loadFilmKit } = require('./kit-loader')
+const { analyzeTemplatePrompt } = require('./script-adapt')
 
 /** 体检本身失败的原因（**不是**「资产不合格」） */
 const INSPECT_REASON = Object.freeze({
@@ -44,7 +45,17 @@ const WARN_CODE = Object.freeze({
   UNRESOLVED_REFERENCE: 'UNRESOLVED_REFERENCE',
   IGNORED_TOP_LEVEL: 'IGNORED_TOP_LEVEL',
   SHOTS_WITH_RESULT: 'SHOTS_WITH_RESULT',
+  /** 有 N 个模板分镜缺 `[CHARACTER: …]` 行 ⇒ 规划时角色锚点会丢 */
+  TEMPLATE_NO_CHARACTER_LINE: 'TEMPLATE_NO_CHARACTER_LINE',
+  /** 有 N 个模板分镜没有任何**被识别**的块（GEO SPATIAL LAYOUT / ACTION TIMING …）⇒ 运动与空间约束会丢 */
+  TEMPLATE_NO_BLOCKS: 'TEMPLATE_NO_BLOCKS',
 })
+
+/**
+ * 本版本接受的资产 schemaVersion。
+ * ⚠ 只用于**让失败可读**（报告里显示「你的包是 vN，本版本要求 v1」）；严格校验行为不变（仍拒）。
+ */
+const EXPECTED_ASSET_VERSION = 1
 
 /** 白名单里允许出现在**顶层**的条目名（用于算「白名单外条目」） */
 function allowedTopLevelNames () {
@@ -107,6 +118,15 @@ async function inspectKit (opts) {
   const kit = loose && loose.ok && loose.kit ? loose.kit : null
   const counts = kit ? buildCounts(kit, scan) : null
   const langs = kit ? collectLangs(kit) : []
+  /** 模板分镜的结构可用性（P1）：规划真正依赖的三处结构 */
+  const templateStructure = kit ? buildTemplateStructure(kit) : null
+  /** 资产版本（P3）：只让失败可读，不改变严格校验 */
+  const assetVersion = kit && kit.manifest && Number.isInteger(kit.manifest.schemaVersion)
+    ? kit.manifest.schemaVersion
+    : await readManifestVersion(fsImpl, kitDir)
+  const versionMismatch = assetVersion !== null && assetVersion !== EXPECTED_ASSET_VERSION
+  /** 与当前资产对比（P2）：调用方没给齐 currentCounts ⇒ null（**不印 0**） */
+  const compare = buildCompare(counts, o.currentCounts)
 
   // ── ④ 必填齐备（自己 stat 一遍：结构化点名，不解析错误文本）──────────
   const requiredMissing = await collectRequiredMissing(fsImpl, kitDir)
@@ -131,6 +151,16 @@ async function inspectKit (opts) {
   }
   if (counts && counts.shotsWithResult > 0) {
     warnings.push({ code: WARN_CODE.SHOTS_WITH_RESULT, count: counts.shotsWithResult })
+  }
+  if (templateStructure && templateStructure.total > 0) {
+    const noCharacterLine = templateStructure.total - templateStructure.withCharacterLine
+    if (noCharacterLine > 0) {
+      warnings.push({ code: WARN_CODE.TEMPLATE_NO_CHARACTER_LINE, count: noCharacterLine })
+    }
+    const noBlocks = templateStructure.total - templateStructure.withBlocks
+    if (noBlocks > 0) {
+      warnings.push({ code: WARN_CODE.TEMPLATE_NO_BLOCKS, count: noBlocks })
+    }
   }
 
   // ── ⑦ 能否导入 ─────────────────────────────────────────────────
@@ -159,10 +189,78 @@ async function inspectKit (opts) {
       blockingMessage,
       counts,
       langs,
+      templateStructure,
+      assetVersion,
+      expectedAssetVersion: EXPECTED_ASSET_VERSION,
+      versionMismatch,
+      compare,
       requiredMissing,
       ignoredTopLevel,
       warnings,
       assetWarningTexts,
+    },
+  }
+}
+
+/**
+ * 读 `film-manifest.json` 的 schemaVersion（**只读一个小文件**）。
+ *
+ * 为什么不复用已加载的 kit：schemaVersion 不符时**整包加载就会失败**（`kit === null`），
+ * 而「版本可读」恰恰在这种时候最需要 —— 用户必须看到「你的包是 v2、本版本要求 v1」，
+ * 而不是一句「资产不符合契约」。版本读数**不得依赖整包能否加载**。
+ * @returns {Promise<number|null>}
+ */
+async function readManifestVersion (fsImpl, kitDir) {
+  try {
+    const raw = await fsImpl.promises.readFile(nodePath.join(kitDir, 'film-manifest.json'), 'utf8')
+    const o = JSON.parse(raw)
+    return o && Number.isInteger(o.schemaVersion) ? o.schemaVersion : null
+  } catch (_e) {
+    return null
+  }
+}
+
+/**
+ * 模板分镜的**结构可用性**（P1）。
+ *
+ * auto 规划把 `shot.prompt` 当结构化模板复用：场景头做 head、`[CHARACTER: …]` 行做角色锚点、
+ * 被识别的块做运动/空间约束。三者全缺的包**能导入、能规划、能出片**，但提示词里约束是空的
+ * ⇒ 必须让用户在导入前看见代价（**告警，不阻断**：极简模板可能是刻意的）。
+ * @param {object} kit
+ */
+function buildTemplateStructure (kit) {
+  const shots = Array.isArray(kit.shots) ? kit.shots : []
+  let withSceneHeading = 0
+  let withCharacterLine = 0
+  let withBlocks = 0
+  for (const s of shots) {
+    const a = analyzeTemplatePrompt(s && s.prompt)
+    if (a.hasSceneHeading) withSceneHeading += 1
+    if (a.hasCharacterLine) withCharacterLine += 1
+    if (a.recognizedBlockCount > 0) withBlocks += 1
+  }
+  return { total: shots.length, withSceneHeading, withCharacterLine, withBlocks }
+}
+
+/**
+ * 与「当前资产」对比（P2）。
+ *
+ * ⚠ 形状不全就地降级为 `null`：**拿半个对象算 delta 会凭空造出 0 与负数**，
+ *   而界面会把它们当成真实差异显示给用户（构造性零的又一个入口）。
+ * @param {object|null} counts 本次体检的统计
+ * @param {{scenes:number, shots:number, templates:number}|null} current 当前资产计数
+ */
+function buildCompare (counts, current) {
+  if (!counts) return null
+  if (!current || typeof current !== 'object') return null
+  const int = (v) => Number.isInteger(v) && v >= 0
+  if (!int(current.scenes) || !int(current.shots) || !int(current.templates)) return null
+  return {
+    current: { scenes: current.scenes, shots: current.shots, templates: current.templates },
+    delta: {
+      scenes: (counts.scenes == null ? 0 : counts.scenes) - current.scenes,
+      shots: (counts.shots == null ? 0 : counts.shots) - current.shots,
+      templates: (counts.templateTasks == null ? 0 : counts.templateTasks) - current.templates,
     },
   }
 }
@@ -245,7 +343,11 @@ async function collectIgnoredTopLevel (fsImpl, kitDir) {
 module.exports = {
   INSPECT_REASON,
   WARN_CODE,
+  EXPECTED_ASSET_VERSION,
   inspectKit,
+  readManifestVersion,
+  buildTemplateStructure,
+  buildCompare,
   // 导出给测试与契约断言用（不改变运行语义）
   allowedTopLevelNames,
   hasResolvableUrl,

@@ -23,12 +23,17 @@ const PANEL = path.join(SRC, 'views/film-auto/FilmAutoPanel.vue')
 // 方法论接入状态的**标记与文案**在子组件里（2026-10-22 拆分：FilmAutoPanel.vue 超 500 行门禁）
 // ⇒ 扫「标记」的断言改扫它；扫「数据源」的断言仍扫 FilmAutoPanel.vue（methodology 计算属性留在父组件）。
 const METHOD_PANEL = path.join(SRC, 'views/film-auto/MethodologyStatusPanel.vue')
+// 「方法论」标签页整块拆出（2026-10-23，change kit-import-rollback-and-template-health：
+// FilmEngineeringView.vue 贴着 check-max-lines 上限）⇒ 扫**该分区**的断言改扫子组件，
+// 而「父视图真的挂了这个子组件」由 DOCTRINE 段的最后一条断言钉住（拆了却没挂 = 页面空白）。
+const DOCTRINE_PANEL = path.join(SRC, 'views/film-engineering/FilmDoctrinePanel.vue')
 const ZH = path.join(SRC, 'locales/film-engineering/zh.js')
 const EN = path.join(SRC, 'locales/film-engineering/en.js')
 
 const viewSrc = fs.readFileSync(VIEW, 'utf8')
 const panelSrc = fs.readFileSync(PANEL, 'utf8')
 const methodPanelSrc = fs.readFileSync(METHOD_PANEL, 'utf8')
+const doctrineSrc = fs.readFileSync(DOCTRINE_PANEL, 'utf8')
 const zhSrc = fs.readFileSync(ZH, 'utf8')
 const enSrc = fs.readFileSync(EN, 'utf8')
 
@@ -82,26 +87,26 @@ const readValue = (src, leaf) => {
 
 describe('F-H · 方法论分区补全（只读）', () => {
   it('方法论标签页渲染 recipes 与 failureLedger 两个分区', () => {
-    expect(viewSrc).toContain('data-testid="fe-doctrine-recipes"')
-    expect(viewSrc).toContain('data-testid="fe-doctrine-failure-ledger"')
-    expect(viewSrc).toContain('doctrine.recipes || []')
-    expect(viewSrc).toContain('doctrine.failureLedger || []')
+    expect(doctrineSrc).toContain('data-testid="fe-doctrine-recipes"')
+    expect(doctrineSrc).toContain('data-testid="fe-doctrine-failure-ledger"')
+    expect(doctrineSrc).toContain('doctrine.recipes || []')
+    expect(doctrineSrc).toContain('doctrine.failureLedger || []')
   })
 
   it('配方区渲染 blockKeys（配方含哪些块）', () => {
-    expect(viewSrc).toContain('r.blockKeys || []')
-    expect(viewSrc).toContain('filmEngineering.doctrine.recipeBlocks')
+    expect(doctrineSrc).toContain('r.blockKeys || []')
+    expect(doctrineSrc).toContain('filmEngineering.doctrine.recipeBlocks')
   })
 
   it('失败台账渲染 symptom / cause / fix / tags', () => {
-    expect(viewSrc).toContain('f.symptom')
-    expect(viewSrc).toContain('f.cause')
-    expect(viewSrc).toContain('f.fix')
-    expect(viewSrc).toContain('f.tags || []')
+    expect(doctrineSrc).toContain('f.symptom')
+    expect(doctrineSrc).toContain('f.cause')
+    expect(doctrineSrc).toContain('f.fix')
+    expect(doctrineSrc).toContain('f.tags || []')
   })
 
   it('两个分区**只读**：不得含写操作（@click / v-model / el-input / el-button）', () => {
-    const slice = (from, to) => viewSrc.slice(viewSrc.indexOf(from), viewSrc.indexOf(to))
+    const slice = (from, to) => doctrineSrc.slice(doctrineSrc.indexOf(from), doctrineSrc.indexOf(to))
     const recipes = slice('data-testid="fe-doctrine-recipes"', 'data-testid="fe-doctrine-failure-ledger"')
     const ledger = slice('data-testid="fe-doctrine-failure-ledger"', 'filmEngineering.doctrine.glossary')
     for (const block of [recipes, ledger]) {
@@ -110,6 +115,14 @@ describe('F-H · 方法论分区补全（只读）', () => {
       expect(block).not.toContain('<el-input')
       expect(block).not.toContain('<el-button')
     }
+  })
+
+  /** 拆分不得把页面拆空：父视图必须真的挂上子组件，并把 `doctrine` 传下去 */
+  it('父视图挂载了 FilmDoctrinePanel 并传入 doctrine（拆了没挂 = 方法论页空白）', () => {
+    expect(viewSrc).toContain('<FilmDoctrinePanel')
+    expect(viewSrc).toContain(':doctrine="doctrine"')
+    // 整块已迁出 ⇒ 父视图不该再有旧分区标记（留半份 = 两份真源）
+    expect(viewSrc).not.toContain('data-testid="fe-doctrine-recipes"')
   })
 })
 

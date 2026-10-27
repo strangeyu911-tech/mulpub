@@ -380,9 +380,17 @@ prompts/tasks/<task>/en/user.md
 ### 11.2 链、越界与魔数
 
 - **软链/断链** ⇒ 拒（`SYMLINK_REJECTED`）；**`realpath` 越出源目录** ⇒ 拒（`PATH_ESCAPE`）。
-- **同目录硬链**：`(dev, ino)` 相同 ⇒ 拒（`HARDLINK_REJECTED`）—— **与 `nlink` 无关**，任何文件系统都成立。
+- **同目录硬链**：`(dev, ino)` 相同 **且 `nlink > 1`** ⇒ 拒（`HARDLINK_REJECTED`）。
   ⚠ 去重键**必须带父目录**（`<父目录>\0<dev>:<ino>`）⇒ 判据只覆盖**同一目录内**的重复条目；
   跨目录的同 inode **不拒**（那超出本契约声明的边界，见下一条）。
+- ⚠ **`nlink > 1` 是前置门，不是可选优化**（change: kit-import-rollback-and-template-health 实证修正）：
+  Windows 上 `lstat().ino` **不是唯一文件号** —— 本机实测（NTFS，300 轮 × 每轮 7 个不同文件）
+  出现 **480 次**「同目录两个不同文件 `(dev, ino)` 完全相同、`nlink` 皆为 1」；
+  而**真硬链**实测 `(dev, ino)` 相同、`nlink = 2`。
+  ⇒ 只凭 `(dev, ino)` 判 ⇒ **合法包被整包误拒**（假阳性，产品上等于「导入自己刚导出的包被拒」）。
+  加前置门后：能报 `nlink` 的文件系统上判据不变（真硬链仍拒）；
+  报不出的（FAT/exFAT/网络盘恒为 1）降级为**漏判**——即下一条已声明的 best-effort 边界，**不新增承诺**。
+  该假阳性由 `kit-import-scan.test.js` 的两条注入用例钉住（同 ino + `nlink=1` 不拒 / 同 ino + `nlink=2` 拒）。
 - ⚠ **跨目录硬链 = 非防篡改边界**：`nlink` 在 FAT/exFAT/网络盘恒为 1 ⇒ 跨目录硬链**永远漏判**
   ⇒ 审计行固定记 `hardlink_check=best-effort`（**不虚报已防护**）；本机主人对目标文件本就有读权限
   ⇒ 该维度是**防误含**措施，不是安全边界。
@@ -439,26 +447,51 @@ prompts/tasks/<task>/en/user.md
 
 > ⚠ 换入顺序（**崩溃点编号以此为准**）：⓪a 残留/重叠 → ⓪b 严格校验 → ⓪c 审计可写 →
 > ⓪d 落开始行 → ⓪e 建锁 → ① 置标记 → ② 两遍扫描+拷贝+staging 复验 → ③ 清缓存 →
-> **④ 旧 kit → `.bak`** → **⑤ staging → `film-kit`** → **⑥ 删 `.bak`** → **⑦ 删锁**。
+> **④ 旧 kit → `.bak`** → **⑤ staging → `film-kit`** → **⑥ 旧备份保留为「上一版」+ 清更早备份** → **⑦ 删锁**。
+> ⚠ ⑥ 在 change `kit-import-rollback-and-template-health` 之后**不再删除本次的 `.bak`**
+> （原口径「⑥ 删 `.bak`」已废弃）：导入是整体替换，删掉备份等于「选错包也没救」。
+> 清理时机**只能**在成功之后 —— 若在 ⓪a 删旧备份，本次导入随后失败时用户的唯一退路已被抹掉。
 
 | recovery_state | 含义 | 恢复动作 |
 |-----------------|------|----------|
 | `PRE_SWAP` | 失败发生在 **⓪–③**（kit **仍是旧的**、`.bak` 未动；锁**可能已被自动清理**） | 确认没有导入在进行后，**检查并**手动删除锁文件 |
 | `MISSING_KIT` | 崩在 **④ 后 ⑤ 前**（`film-kit` **缺失**、`.bak` = 旧 kit） | 手动把 `.bak` 改名回 `film-kit` |
-| `BAK_LEFT` | 崩在 **⑤ 后 ⑥ 前**，或 **⑥ 删 `.bak` 自身失败**（`film-kit` = 新的、`.bak` = 旧 kit） | 可安全删除 `.bak` |
-| `LOCK_LEFT` | 崩在 **⑥ 后 ⑦ 前**，或 **⑦ 删锁自身失败**（只剩锁） | 手动删除锁文件 |
+| `LOCK_LEFT` | 崩在 **⑥ 后 ⑦ 前**，或 **⑦ 删锁自身失败**（只剩锁；`.bak` 是刻意保留的上一版） | 手动删除锁文件 |
+
+⚠ `BAK_LEFT` **已从本闭集移除**（change `kit-import-rollback-and-template-health`）：
+它原本表示「⑥ 删 `.bak` 失败」，而 ⑥ 现在**本来就不删** ⇒ 该档位不再可能产生，留着就是**永不成立的分支**。
+历史备份（正常的「上一版」）改用独立字段 `previousBackup` 表达，见 §11.7。
+⚠ **不要**把 `previousBackup` 渲染成「残留」：残留是异常、需要用户动手；上一版是正常态、什么都不用做。
+两者混用 ⇒ 恢复指引常驻 ⇒ 真出事时用户已习惯性忽略。
 
 ⇒ 契约测试**按同一规则生成期望值**再逐行断言（**不手写第二份** ⇒ 不会漂移）。
 ⚠ **档位不得张冠李戴**：`MISSING_KIT` 的恢复动作是「**改名回来**」，
-`BAK_LEFT` 的恢复动作是「**可以删掉**」—— 两者互换会让用户**删掉旧资产仅存的一份**。
+`LOCK_LEFT` 的恢复动作是「**只删锁文件、别动资产**」—— 互换会让用户**删掉旧资产仅存的一份**。
 
-### 11.7 崩溃残留的三档恢复（全部**显式手动恢复**，无自动清理）
+### 11.7 崩溃残留的三档恢复 + 「上一版备份」（正常态，**不是**残留）
 
-① `film-kit` 缺失 + `.bak` = 旧 kit ⇒ **必须手动 rename 恢复**（导入器会拒绝并给恢复路径，
+**A. 崩溃残留（三档，全部显式手动恢复，无自动清理）**
+
+① `film-kit` 缺失 + `.bak` 存在 ⇒ **必须手动 rename 恢复**（导入器会**拒绝**继续并给恢复路径，
    档位 `MISSING_KIT`）；
-② `film-kit` = 新的 + `.bak` = 旧 kit ⇒ 锁可自动清（租约过期）⇒ **提示可安全删 `.bak`**（档位 `BAK_LEFT`）；
-③ `film-kit` = 新的 + 无 `.bak` + 只剩锁 ⇒ 锁可自动清 ⇒ 资产已就位（档位 `LOCK_LEFT`）。
+② `film-kit` 存在 + `.bak` 存在 ⇒ **正常态**（本次/上次导入留下的上一版）⇒ 导入照常进行，
+   无需任何动作；⑥ 会把它替换成新的上一版；
+③ 只剩锁 ⇒ 锁可自动清 ⇒ 资产已就位（档位 `LOCK_LEFT`）。
+
 **清锁条件 = 租约过期 ∧ `film-kit` 存在**（owner 已被判定死亡 ⇒ 不会永久卡在 `LOCK_HELD`）。
+
+**B. `previousBackup`（导入成功的返回字段，正常态）**
+
+| 字段 | 含义 |
+|------|------|
+| `previousBackup.path` | 上一版资产的目录（`<userData>/.bak-<ISO 时间戳>-<4 位随机>`） |
+| `previousBackup.stamp` | 同一次导入的时间戳（与 staging 名同源，便于对账） |
+| `staleWarning` | 清理**更早**备份失败时的原文（`null` = 清干净了）；**不阻断**本次生效 |
+
+- **任何时刻最多 1 份历史备份**：本次成功 ⇒ 先把旧 kit 搬成新的 `.bak` ⇒ 再清掉更早的那些
+  ⇒「保留可回滚」与「不无限堆积」同时成立；
+- **回滚是手动 rename**（本版不做一键回滚：那需要另一条写路径 + 独立安全评审）；
+- 清理**逐份**走「精确清单 + 自底向上 `rmdir`」，⛔ 不递归（见 §11.8 ①）。
 
 ### 11.8 取舍（写明以免被误读为遗漏）
 
@@ -531,10 +564,28 @@ python scripts/film-engineering/<上一步得到的脚本名> \
 | `counts.templateTasks` / `.templateFiles` | number\|null | 任务模板库的任务数 / 模板文件数（每任务×语种×{system,user}） |
 | `counts.fileCount` / `.totalBytes` | number\|null | 白名单内文件数与总字节 |
 | `langs` | string[] | 任务库语种并集（字典序） |
+| `templateStructure` | object\|**null** | 模板分镜的**结构可用性**（P1）；`null` = kit 加载不出来（**不是** 0 个） |
+| `templateStructure.total` / `.withSceneHeading` | number | 模板分镜数 / 首行有 `INT`/`EXT` 场景头的镜数 |
+| `templateStructure.withCharacterLine` / `.withBlocks` | number | 有 `[CHARACTER: …]` 行的镜数 / **有被识别块**的镜数 |
+| `assetVersion` | number\|**null** | `film-manifest.json` 的 `schemaVersion`；**直读 manifest，不依赖整包可加载** |
+| `expectedAssetVersion` | number | 本版本接受的版本（代码常量 `EXPECTED_ASSET_VERSION`） |
+| `versionMismatch` | boolean | `assetVersion !== expectedAssetVersion`（版本读不出时 **false**，不猜） |
+| `compare` | object\|**null** | 与**当前资产**的对比（P2）；任一侧形状不齐 ⇒ `null`（**不印 0 差异**） |
+| `compare.current` / `.delta` | `{scenes,shots,templates}` | 当前值 / 本包 − 当前（导入后的增减） |
 | `requiredMissing` | string[] | 缺失的必填项（文件名；`prompts/tasks` 以 `prompts/tasks/` 形式点名） |
 | `ignoredTopLevel` | string[] | 顶层**白名单外**条目名（不会被拷入；`images` 属此列） |
 | `warnings` | `{code,count}`[] | 信息性告警（**不阻断**），见 13.4 |
 | `assetWarningTexts` | string[] | 平台侧告警原文（诊断用，**不本地化**） |
+
+⚠ **`templateStructure` 为什么值得单列**（P1）：auto 规划把模板分镜的 `prompt` **当结构化模板复用**
+（场景头做 head、`[CHARACTER: …]` 行做角色锚点、被识别的块做运动/空间约束，见 `script-adapt.js`
+的 `analyzeTemplatePrompt`）。这三处全缺的包**能导入、能规划、能出片**——只是提示词里约束是空的。
+⇒ 代价必须在**导入前**看见（告警，不阻断：极简模板可能正是用户想要的）。
+⚠ 判据用 `recognizedBlockCount` 而**不是**块数：纯散文按空行 split 也是 1 块，
+只有「块标题被识别」才决定约束是否真的进了产物。
+⚠ **`currentCounts` 只能由主进程取**（`film-engineering-inspect.js` 的 `currentCountsOf`）：
+renderer 传「当前有多少分镜」等于让它自证差异。`listTemplateShots(500)` 命中上限 ⇒ 计数不可信
+⇒ 该维度降级 `null`，**编造的差异比没有差异更坏**。
 
 ⚠ **`null` 与 `0` 不是一回事**：`counts` 里的 `null` 表示「没有量到」（目录不合格/读不到），
 界面必须渲染成占位（如 `—`）而不是 `0`。把「没测」印成 `0` 会让用户以为资产是空的——
@@ -557,7 +608,7 @@ python scripts/film-engineering/<上一步得到的脚本名> \
 `SIZE_EXCEEDED` / `HIDDEN_NAME_REJECTED`，全部来自 §11.4 的 18 值闭集）；扫描通过但严格校验失败时
 取 `VALIDATION_ERROR`，字段级原文只进 `blockingMessage`。
 
-### 13.4 告警 `code` 闭集（5 值，**均不阻断**）
+### 13.4 告警 `code` 闭集（7 值，**均不阻断**）
 
 | code | 含义 | `count` | 来源 |
 |------|------|---------|------|
@@ -566,8 +617,11 @@ python scripts/film-engineering/<上一步得到的脚本名> \
 | `UNRESOLVED_REFERENCE` | 参考素材无可解析 `http(s)` 图片地址 | 条数 | 体检统计 |
 | `IGNORED_TOP_LEVEL` | 顶层有白名单外条目（如 `images/`） | 条目数 | 体检统计 |
 | `SHOTS_WITH_RESULT` | 分镜已带成片链接（导入后仍视为「已生成」） | 镜数 | 体检统计 |
+| `TEMPLATE_NO_CHARACTER_LINE` | 模板分镜缺 `[CHARACTER: …]` 行 ⇒ 规划时**角色锚点丢** | 镜数 | `templateStructure` |
+| `TEMPLATE_NO_BLOCKS` | 模板分镜无**被识别**的块 ⇒ 运动/空间约束丢 | 镜数 | `templateStructure` |
 
-⚠ 本轮**只聚合既有来源**，不新增内容级判据（占位符契约 / 枚举闭集 / 空壳检测属另一批，见 §十三.7）。
+⚠ 只聚合既有来源 + **模板结构**（P1，change `kit-import-rollback-and-template-health`）；
+占位符契约 / 枚举闭集 / 空壳检测仍属另一批（见 §十三.7）。
 
 ### 13.5 与 §十一 导入契约的关系
 
@@ -594,8 +648,14 @@ python scripts/film-engineering/<上一步得到的脚本名> \
 
 ### 13.7 本轮不做（写明以免被误读为遗漏）
 
-① **内容级判据**：提示词模板占位符契约、枚举值落闭集、空壳/残留（`TODO`/`lorem`）检测；
-② **标准骨架导出**：给用户一份可导入的标准资产包骨架；
-③ **本地自检命令**：导入前脱离 UI 自检。
+① **内容级判据**：提示词模板**占位符契约**、枚举值落闭集、空壳/残留（`TODO`/`lorem`）检测
+   —— ⚠ 模板的**结构性**可用性已在 P1 纳入（`templateStructure` + 两条告警），
+   但「占位符是否被替换」「枚举是否越界」仍**未**检查：前者要新增语法契约、后者要新增枚举真源，
+   都会改变「什么叫合格」⇒ 各自独立论证；
+② **标准骨架导出**：给用户一份可导入的标准资产包骨架（P0 只做**备份保留**，不做**导出**；
+   导出是另一条写路径 + 另一套安全评审）；
+③ **本地自检命令**：导入前脱离 UI 自检；
+④ **一键回滚**：`previousBackup` 只提供路径与手动 rename 指引（见 §11.7 B）。
 
-三者都改变「什么叫合格」或新增用户交付物，各自需要独立的兼容论证，不与本次「挪入口 + 只读报告」混批。
+①③④ 都改变「什么叫合格」或新增用户交付物/写路径，各自需要独立的兼容与安全论证，
+不与本次「备份分层 + 体检增强 + 视图拆分」混批。

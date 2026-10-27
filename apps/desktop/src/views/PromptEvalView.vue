@@ -21,7 +21,7 @@
           <label>生成图片（支持多选，同文案连续图放同一批）</label>
           <input ref="fileInput" type="file" multiple accept="image/*" @change="onPickImages" />
           <div v-if="selectedImages.length" class="thumb-list">
-            <div v-for="(img, i) in selectedImages" :key="i" class="thumb-item">
+            <div v-for="(img, i) in selectedImages" :key="img.url" class="thumb-item">
               <img :src="img.url" :alt="img.name" />
               <span class="thumb-name">{{ img.name }}</span>
               <button class="btn-remove" @click="removeImage(i)">✕</button>

@@ -44,7 +44,7 @@
           <button class="cohere-btn-secondary ap-btn-sm" @click="addUrl">{{ $t('autoPipeline.addUrl') }}</button>
           <div v-if="config.urls.length > 0" class="ap-url-count">
             {{ $t('autoPipeline.urlCount', { count: config.urls.length }) }}：
-            <span v-for="(u, i) in config.urls" :key="i" class="ap-url-chip">
+            <span v-for="(u, i) in config.urls" :key="u" class="ap-url-chip">
               {{ u.slice(0, 50) }}{{ u.length > 50 ? '...' : '' }}
               <span role="button" tabindex="0" @keydown.enter.prevent="removeUrl(i)" @keydown.space.prevent="removeUrl(i)" @click="removeUrl(i)" class="ap-url-remove">×</span>
             </span>
@@ -128,7 +128,7 @@
 
         <!-- 各阶段卡片 -->
         <div class="ap-stage-grid">
-          <div v-for="(stage, i) in currentRun.stages" :key="i" class="ap-stage-card" :class="'ap-stage--' + stage.status">
+          <div v-for="(stage, i) in currentRun.stages" :key="stage.id" class="ap-stage-card" :class="'ap-stage--' + stage.status">
             <div class="ap-stage-head">
               <span>{{ stageStatusIcon(stage.status) }}</span>
               <span>{{ $t(STAGE_LABEL_KEYS[i]) }}：{{ stage.label }}</span>

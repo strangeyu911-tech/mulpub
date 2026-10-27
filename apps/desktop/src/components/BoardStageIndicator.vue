@@ -1,6 +1,6 @@
 <template>
   <div class="stage-indicator">
-    <template v-for="(stage, i) in stages" :key="i">
+    <template v-for="(stage, i) in stages" :key="stage.name || stage">
       <div role="button" tabindex="0" @keydown.enter.prevent="$emit('select', i)" @keydown.space.prevent="$emit('select', i)"
         class="stage-node"
         :class="stageClass(stage, i)"

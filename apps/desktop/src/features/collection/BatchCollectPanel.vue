@@ -149,7 +149,7 @@
             </button>
             <button v-if="zhihuFavBatching" class="col-btn col-btn--secondary" @click="cancelZhihuFavBatch">{{ $t('collection.cancelBatch') }}</button>
           </div>
-          <div v-for="(it, idx) in zhihuFavItems" :key="it.url + idx" class="zb-list-row">
+          <div v-for="it in zhihuFavItems" :key="it.url" class="zb-list-row">
             <input
               type="checkbox"
               :checked="zhihuFavChecked.has(it.url)"

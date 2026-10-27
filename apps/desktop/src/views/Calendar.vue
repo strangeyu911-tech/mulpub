@@ -21,8 +21,8 @@
         <div class="calendar-grid">
           <div class="cal-header" v-for="d in dayNames" :key="d">{{ d }}</div>
           <div role="button" tabindex="0" @keydown.enter.prevent="selectDay(day)" @keydown.space.prevent="selectDay(day)"
-            v-for="(day, i) in calendarDays"
-            :key="i"
+            v-for="day in calendarDays"
+            :key="day.dateStr"
             class="cal-day"
             :class="{
               'other-month': !day.isCurrentMonth,

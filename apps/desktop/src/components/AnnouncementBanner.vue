@@ -1,8 +1,8 @@
 <template>
   <div v-if="visibleAnnouncements.length > 0" class="announcement-banners" role="region" aria-label="运营公告">
     <div
-      v-for="(a, i) in visibleAnnouncements"
-      :key="'ann-' + i"
+      v-for="a in visibleAnnouncements"
+      :key="dismissKey(a)"
       class="announcement-banner"
       :class="'severity-' + (a.severity || 'info')"
       role="alert"

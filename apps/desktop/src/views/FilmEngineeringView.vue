@@ -414,7 +414,7 @@
             <el-button v-if="b.status === 'pending' || b.status === 'failed'" size="small" type="primary" :loading="pdBusy" :data-testid="'fe-production-confirm-' + b.batchIndex" @click="onProductionConfirmBatch(b.batchIndex)">{{ t("filmEngineering.production.confirmBatch") }}</el-button>
             <el-button size="small" @click="toggleBatch(b.batchIndex)">{{ t("filmEngineering.production.batchDetail") }}</el-button>
             <div v-if="pdExpandedBatches.has(b.batchIndex) && b.shots" style="width:100%;padding-left:24px">
-              <div v-for="(sh, si) in b.shots" :key="si" style="display:flex;align-items:center;gap:6px;font-size:12px;margin:2px 0">
+              <div v-for="(sh, si) in b.shots" :key="sh.shotId || si" style="display:flex;align-items:center;gap:6px;font-size:12px;margin:2px 0">
                 <span>{{ (sh.shotId || "").slice(0, 8) }}</span>
                 <el-tag size="small" :type="sh.status === 'done' ? 'success' : sh.status === 'failed' ? 'danger' : 'info'">{{ sh.status }}</el-tag>
                 <el-button v-if="sh.status === 'failed'" size="small" :data-testid="'fe-production-retry-' + b.batchIndex + '-' + si" @click="onProductionRetryShot(b.batchIndex, si)">{{ t("filmEngineering.production.retryShot") }}</el-button>

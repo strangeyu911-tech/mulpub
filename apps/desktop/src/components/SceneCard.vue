@@ -10,7 +10,7 @@
       <div v-if="takes.length > 0" class="scene-takes">
         <img
           v-for="(take, i) in displayedTakes"
-          :key="i"
+          :key="take.id || take.thumbnail || take.url || take"
           :src="take.thumbnail || take.url || take"
           class="take-thumb"
           :alt="'Take ' + (i + 1)"

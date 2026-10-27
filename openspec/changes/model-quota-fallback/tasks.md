@@ -73,7 +73,7 @@
 - [x] `apps/desktop/src/views/model-quota-labels.js`（新增）
 - [x] `apps/desktop/src/views/ModelProviders.vue`：挂载 `ModelQuotaPolicyCard`（仅当 `officialStatus.available` 或政策已设置时显示）
 - [x] `apps/desktop/src/locales/model-quota/zh.js` / `en.js`（新增，成对）
-- [ ] Story2Video / 图片轮播 / 数字人 / Film Engineering：统一弹窗 + 检查点写 `modelSourceOverrides`（P1b-2c2）
+- [x] `apps/desktop/electron/services/model-quota-call-boundary.js`（新增）：统一 `callAdapter` 包装 + 额度失败→decide + `MODEL_QUOTA_PAUSED`（P1b-2c2a）`n- [x] `apps/desktop/electron/services/model-quota-pipeline-hooks.js`：`pauseModelQuotaRun` + PipelineEngine paused（P1b-2c2a）`n- [ ] Story2Video / 图片轮播 / 数字人 / Film Engineering：任务详情官方横幅/切回按钮（P1b-2c2b）
 - [ ] 改写 / 热榜 / 快速采集 / 提示词引擎：只接错误码与「去更新设置」（LLM 官方供给未定）
 - [ ] 模型设置「测试连接」：展示分类结果，不触发官方兜底
 

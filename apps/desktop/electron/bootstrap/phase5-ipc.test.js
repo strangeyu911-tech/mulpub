@@ -99,6 +99,16 @@ describe('usageTracker context 注入', () => {
     expect(typeof deps.modelQuotaSwitchBack).toBe('function')
   })
 
+  it('生产注册把额度边界装到 modelProviderManager', () => {
+    const manager = { callAdapter: vi.fn(async () => ({ code: 0 })) }
+    registerAllIpcHandlers({
+      app,
+      BrowserWindow,
+      context: { modelQuotaRuntime: { switchBack: vi.fn(), userDecision: vi.fn() }, modelProviderManager: manager },
+    })
+    expect(manager.__modelQuotaBoundaryInstalled).toBe(true)
+  })
+
   it('context 未提供 usageTracker 时保持默认返回值', async () => {
     registerAllIpcHandlers({ app, BrowserWindow, context: {} })
     await expect(ipcMain._handlers['usage:stats'](makeTrustedEvent())).resolves.toEqual({

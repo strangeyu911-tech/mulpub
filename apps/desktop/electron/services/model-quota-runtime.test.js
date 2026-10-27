@@ -35,6 +35,13 @@ describe('ModelQuotaRuntime', () => {
     expect(ctx.getModelSourceOverride('image')).toEqual({ source: 'official', officialAttempts: 2 })
   })
 
+  it('metaForContext 反查 runId，供调用边界使用', () => {
+    const runtime = new ModelQuotaRuntime({ coordinator: makeCoordinator() })
+    const ctx = runtime.beginRun('run-1')
+    expect(runtime.metaForContext(ctx)).toEqual({ runId: 'run-1' })
+    expect(runtime.metaForContext({})).toBeNull()
+  })
+
   it('decide 委托 Coordinator 并带上 runContext', async () => {
     const coordinator = makeCoordinator()
     const runtime = new ModelQuotaRuntime({ coordinator })

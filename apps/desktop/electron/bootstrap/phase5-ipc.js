@@ -229,6 +229,8 @@ function registerAllIpcHandlers({ app, BrowserWindow, context }) {
     },
   })
   if (pipelineEngine && typeof pipelineEngine === 'object') pipelineEngine.modelQuotaRuntime = modelQuotaRuntime
+  const { installModelQuotaCallBoundary } = require('../services/model-quota-call-boundary')
+  installModelQuotaCallBoundary(modelProviderManager, modelQuotaRuntime)
 
   // publish-frequency-policy-v2：发布频率守卫单例（容器注册项）。优先取 context 上的引用，
   // 其次经容器现取；整体 try 包裹并在失败时降级为 null —— IPC 侧据此如实回报「服务未初始化」，

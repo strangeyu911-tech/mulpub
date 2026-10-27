@@ -26,6 +26,7 @@ class ModelQuotaRuntime {
   } = {}) {
     this._checkpoint = checkpointPort || { save: async () => false }
     this._contexts = new Map()
+    this._metaByContext = new WeakMap()
     this._coordinator = coordinator || new ModelQuotaCoordinator({
       store,
       emitToRenderer,
@@ -50,6 +51,7 @@ class ModelQuotaRuntime {
     const existing = this._contexts.get(id)
     if (existing) {
       this._hydrateOverrides(existing, overrides)
+      this._metaByContext.set(existing, { runId: id })
       return existing
     }
 
@@ -57,8 +59,15 @@ class ModelQuotaRuntime {
       ? runContext
       : (runContext && typeof runContext.getModelSourceOverride === 'function' ? runContext : new ProviderRunContext())
     this._contexts.set(id, ctx)
+    this._metaByContext.set(ctx, { runId: id })
     this._hydrateOverrides(ctx, overrides)
     return ctx
+  }
+
+  /** 反查 ProviderRunContext 所属 run；供模型调用边界使用。 */
+  metaForContext (runContext) {
+    if (!runContext || typeof runContext !== 'object') return null
+    return this._metaByContext.get(runContext) || null
   }
 
   getContext (runId) {

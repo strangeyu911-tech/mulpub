@@ -1,0 +1,59 @@
+{
+  "sha": "e39e0d5f4cb7213f5393ad4c3799ddb8dd471716",
+  "layer": "diff",
+  "mode": "skip",
+  "reason": "改动全部命中文档白名单 → 走 §11.2b docs-only 快通道",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 2,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 2,
+    "ccgSensitiveContentSample": [
+      "      \"| QM-2 代码必检项 | ✅ | `eslint` 变更文件 exit 0；无硬编码密钥、无 `eval`、无生产 `console.log`。 |\",",
+      "      \"在 `ModelProviderManager.callAdapter` 外幂等包装 `model-quota-call-boundary`：额度/凭据失败且有 run context 时调用 `ModelQuotaRuntime.decide`，用户取消/去设置返回 `MODEL_QUOTA_PAUSED`，用户选官方但 P2 未落地返回 `MODEL_OFFICIAL_UNAVAILABLE`；PipelineEngine 把 `MODEL_QUOTA_PAUSED` 转为 run/stage paused 并保存 `model_quota` 检查点。覆盖 Story2Video/图片轮播/数字人/Film 等所有经统一 manager 的调用。\""
+    ],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-27T12:52:36.308Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": false,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

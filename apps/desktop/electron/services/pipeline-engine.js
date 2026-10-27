@@ -27,7 +27,7 @@ const {
 } = require('./story2video-text-config');
 const { checkPipelineModelRequirements } = require('./pipeline-model-preflight');
 const { buildRunDiagnostics, captureEnvSnapshot } = require('./diagnostics/run-diagnostics');
-const { beginModelQuotaRun, endModelQuotaRun } = require('./model-quota-pipeline-hooks');
+const { beginModelQuotaRun, endModelQuotaRun, pauseModelQuotaRun } = require('./model-quota-pipeline-hooks');
 
 /**
  * 依据机器资源计算默认后台并发上限（低配保守、高配放宽）：
@@ -1683,6 +1683,7 @@ class PipelineEngine {
     const run = this._runs.get(runId);
     if (!result.success) {
       if (run && !run.cancelled) {
+        if (result.errorCode === 'MODEL_QUOTA_PAUSED') return pauseModelQuotaRun(this, run, result);
         const stageError = buildStageFailureError(result);
         this._emit('stage:fail', { runId, stageName: run.stages[run.currentStage]?.name, error: stageError.message });
         this._emit('pipeline:fail', { runId, pipelineType: run.pipeline, error: stageError.message });
@@ -2510,6 +2511,7 @@ class PipelineEngine {
       results.push({ stage: stage.name, ...execResult });
 
       if (!execResult.success) {
+        if (execResult.errorCode === 'MODEL_QUOTA_PAUSED') return pauseModelQuotaRun(this, run, execResult);
         // Backlot 事件：阶段失败 + 流水线失败
         const stageError = buildStageFailureError(execResult);
         this._emit('stage:fail', { runId, stageName: stage.name, error: stageError.message });

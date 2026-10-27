@@ -33,6 +33,42 @@ function beginModelQuotaRun (engine, run) {
   }
 }
 
+function pauseModelQuotaRun (engine, run, result) {
+  if (!engine || !run) return result
+  const stage = Array.isArray(run.stages) ? run.stages[run.currentStage] : null
+  let checkpoint = { type: 'model_quota', required: true }
+  try {
+    if (typeof engine._buildCheckpoint === 'function') {
+      checkpoint = engine._buildCheckpoint(run, {
+        stageName: stage && stage.name,
+        stageIndex: run.currentStage,
+        required: true,
+        type: 'model_quota',
+      })
+    }
+  } catch (_) { /* checkpoint 构建失败仍暂停，保留基础信息 */ }
+  run.checkpoint = checkpoint
+  run.status = 'paused'
+  if (stage && typeof stage === 'object') stage.status = 'paused'
+  try {
+    if (engine.runStateStore && typeof engine.runStateStore.savePaused === 'function') engine.runStateStore.savePaused(run)
+  } catch (_) { /* 快照失败不阻断暂停 */ }
+  try {
+    if (typeof engine._emit === 'function') {
+      engine._emit('checkpoint:pause', { runId: run.id, stageName: stage && stage.name, checkpointType: 'model_quota' })
+    }
+  } catch (_) { /* 事件失败不阻断暂停 */ }
+  return {
+    ...result,
+    success: false,
+    runId: run.id,
+    paused: true,
+    checkpointData: checkpoint,
+    errorCode: 'MODEL_QUOTA_PAUSED',
+    context: run.context,
+  }
+}
+
 function endModelQuotaRun (engine, run) {
   if (!engine || !run || !engine.modelQuotaRuntime) return
   if (typeof engine.modelQuotaRuntime.endRun !== 'function') return
@@ -46,4 +82,4 @@ function endModelQuotaRun (engine, run) {
   }
 }
 
-module.exports = { beginModelQuotaRun, endModelQuotaRun }
+module.exports = { beginModelQuotaRun, endModelQuotaRun, pauseModelQuotaRun }

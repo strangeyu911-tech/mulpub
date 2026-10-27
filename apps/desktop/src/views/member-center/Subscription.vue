@@ -280,6 +280,9 @@ const REDEEM_ERROR_KEYS = {
   REDEEM_CODE_USED: 'redeemErrUsed',
   REDEEM_CODE_DISABLED: 'redeemErrDisabled',
   REDEEM_CODE_EXPIRED: 'redeemErrExpired',
+  // 1095 天会员期限上限：兑换码不经过 checkout，服务端在 applySubscription 兜底拦下；
+  // 必须给出「为什么不能兑」而不是笼统的网络错误。
+  SUBSCRIPTION_HORIZON_EXCEEDED: 'redeemErrHorizon',
   BUSINESS_USER_REQUIRED: 'redeemErrSignedOut',
   ENTITLEMENT_SESSION_MISMATCH: 'redeemErrSignedOut',
   MEMBER_PERMISSION_REQUIRED: 'redeemErrSignedOut',

@@ -38,7 +38,9 @@ test('plan catalog：无促销配置时保持既有契约', async (t) => {
   })
 
   await t.test('年付价不受促销影响', () => {
-    assert.strictEqual(byId(getPlanCatalog(), 'standard').priceYearlyCents, 59000)
+    const standard = byId(getPlanCatalog(), 'standard')
+    assert.strictEqual(standard.priceYearlyCents, 59000)
+    assert.strictEqual(standard.listPriceYearlyCents, 59000)
   })
 })
 
@@ -50,7 +52,16 @@ test('plan catalog：促销生效期的价格与 promotion 字段', async (t) =>
     assert.strictEqual(standard.promotion.id, PROMO_ID)
     assert.strictEqual(standard.promotion.remainingDays, 62)
     assert.strictEqual(standard.promotion.exhausted, false)
-    assert.strictEqual(standard.priceYearlyCents, 59000, '年付不动')
+    assert.strictEqual(standard.priceYearlyCents, 59000, '年付不参与促销')
+    assert.strictEqual(standard.listPriceYearlyCents, 59000, '年付标价恒为 59000')
+  })
+
+  await t.test('count=1 / 2 → 第 2 / 3 单仍是 2900（限购 3 单）', () => {
+    for (const count of [1, 2]) {
+      const standard = byId(catalogOf(count), 'standard')
+      assert.strictEqual(standard.priceMonthlyCents, 2900, `count=${count} 仍可享受促销价`)
+      assert.strictEqual(standard.promotion.exhausted, false)
+    }
   })
 
   await t.test('count=3 → 实收回到 5900，但 promotion.exhausted=true（UI 要出「已用完」）', () => {
@@ -58,6 +69,16 @@ test('plan catalog：促销生效期的价格与 promotion 字段', async (t) =>
     assert.strictEqual(standard.priceMonthlyCents, 5900)
     assert.strictEqual(standard.listPriceMonthlyCents, 5900)
     assert.strictEqual(standard.promotion.exhausted, true)
+    assert.strictEqual(standard.priceYearlyCents, 59000)
+  })
+
+  await t.test('年付在窗口内/外都恒为 59000（目录层不得被促销污染）', () => {
+    const promoConfig = buildStandardMonthlyPromoConfig({ PROMO_STANDARD_MONTHLY_ENABLED: '1' }, null)
+    for (const now of [IN_WINDOW, new Date('2026-10-01T00:00:00+08:00'), new Date('2027-03-01T00:00:00+08:00')]) {
+      const standard = byId(getPlanCatalog(null, { now, promoConfig, promoPurchaseCount: 0 }), 'standard')
+      assert.strictEqual(standard.priceYearlyCents, 59000, `${now.toISOString()} 年付必须是原价`)
+      assert.strictEqual(standard.listPriceYearlyCents, 59000)
+    }
   })
 
   await t.test('专业版 / 免费版不出现 promotion', () => {

@@ -19,6 +19,7 @@
 const crypto = require('crypto')
 const { PLAN_IDS, getPlanCatalog } = require('./plan-matrix')
 const { resolvePrice } = require('./promo-resolver')
+const { assertWithinSubscriptionHorizon } = require('./subscription-horizon')
 const { OUT_TRADE_NO_PATTERN } = require('./payment-providers/index')
 const { claimPaymentEvent, completePaymentEvent } = require('./payment-event-outbox')
 
@@ -64,23 +65,50 @@ class SubscriptionPaymentOps {
     if (orderId !== undefined && orderId !== null && orderId !== '') {
       return this._reusePendingOrder({ userId, plan, period, orderId })
     }
-    // 促销定价：**唯一**判定点在 promo-resolver（纯函数），本方法只负责取计数与落库。
-    const pricing = this._checkoutPricing(plan, period, await this._promoPurchaseCount(userId))
-    const newOrderId = this._newPaymentOrderId()
-    const order = await this.repository.createPendingOrder({
-      id: newOrderId,
-      userId,
-      plan,
-      // amount 恒为**标价**：退款口径、合同价、对账都按它；实收另存 payable_cents。
-      amount: pricing.listPriceCents,
-      currency: 'CNY',
-      period,
-      payableCents: pricing.payableCents,
-      discountCents: pricing.discountCents,
-      // ⚠️ exhausted 的订单 promotion 非空（UI 要提示「已用完」）但**不得落 promotion_id**：
-      // 计数只数真正享促销价的单，落进去会让「第 4 单」也占额度，用户在 3 单后永远原价。
-      promotionId: pricing.promotion && !pricing.promotion.exhausted ? pricing.promotion.id : null,
+    // 1095 天护栏（A）：在**付款前**拦截，不生成二维码、不落订单。
+    // 「继续支付」已在上面早退：复用旧单不新增时长，不能因为用户当前接近上限
+    // 就让他连已经创建的订单都无法完成支付；真正的时长校验在结算事务里还会再跑一次。
+    if (typeof this.repository.getActiveSubscription !== 'function') {
+      throw commerceError('会员期限校验不可用', 'SUBSCRIPTION_HORIZON_UNAVAILABLE', 503)
+    }
+    const existing = await this.repository.getActiveSubscription(userId)
+    assertWithinSubscriptionHorizon({
+      currentPeriodEnd: existing ? existing.current_period_end : null,
+      now: this.now(),
+      durationDays: DURATION_DAYS[period],
     })
+    // 促销定价：**唯一**判定点在 promo-resolver（纯函数），本方法只负责取计数与落库。
+    // 只有 standard + month 才需要预占锁；其它档位/周期不参与促销，走普通落单。
+    const promoEligible = Boolean(this.promoConfig)
+      && plan === this.promoConfig.plan
+      && period === this.promoConfig.period
+    const newOrderId = this._newPaymentOrderId()
+    let pricing
+    let order
+    if (promoEligible) {
+      if (typeof this.repository.createPendingOrderWithPromoQuota !== 'function') {
+        // 促销开着却没有预占能力 ⇒ 多开窗口仍可绕过限购。fail-closed，不静默降级。
+        throw commerceError('促销额度预占不可用', 'PROMO_QUOTA_UNAVAILABLE', 500)
+      }
+      const guarded = await this.repository.createPendingOrderWithPromoQuota({
+        userId,
+        now: this.now(),
+        resolvePendingOrder: (promoPurchaseCount) => {
+          const computed = this._checkoutPricing(plan, period, promoPurchaseCount)
+          return {
+            order: this._pendingOrderRow({ id: newOrderId, userId, plan, period, pricing: computed }),
+            pricing: computed,
+          }
+        },
+      })
+      order = guarded.order
+      pricing = guarded.pricing
+    } else {
+      pricing = this._checkoutPricing(plan, period, 0)
+      order = await this.repository.createPendingOrder(
+        this._pendingOrderRow({ id: newOrderId, userId, plan, period, pricing }),
+      )
+    }
     if (!order) throw commerceError('订单创建失败', 'PAYMENT_ORDER_CREATE_FAILED', 503)
     // 用户 ↔ 供应商客户映射：webhook 回传 openid 时反查用。本期只用 user_id 键，best-effort。
     if (typeof this.repository.upsertPaymentCustomer === 'function') {
@@ -106,24 +134,36 @@ class SubscriptionPaymentOps {
     return { orderId: newOrderId, codeUrl: checkout.codeUrl, expiresAt: checkout.expiresAt || null }
   }
 
-  /** 从 plan-matrix 公开目录取价（唯一真源，已含运营 overrides）。 */
-  _paymentPriceCents(plan, period) {
+  /** 从 plan-matrix 公开目录取**标价**（唯一真源，已含运营 overrides）。 */
+  _paymentListPrices(plan) {
     const entry = getPlanCatalog(this.planOverrides).find((item) => item.id === plan)
-    const value = period === 'month' ? entry && entry.priceMonthlyCents : entry && entry.priceYearlyCents
-    if (!Number.isInteger(value) || value <= 0) {
+    const monthly = entry && entry.listPriceMonthlyCents
+    const yearly = entry && entry.listPriceYearlyCents
+    // 年付标价是「年付恒为原价」的返回源，两个周期都必须有值（缺失即配置缺陷）。
+    if (!Number.isInteger(monthly) || monthly <= 0 || !Number.isInteger(yearly) || yearly <= 0) {
       throw commerceError('该档位未配置价格', 'CHECKOUT_PRICE_MISSING', 500)
     }
-    return value
+    return { monthly, yearly }
   }
 
-  /** 该用户已支付的促销单数；未配置促销时不查库（也避免为无关档位多打一次 SQL）。 */
-  async _promoPurchaseCount(userId) {
-    if (!this.promoConfig) return 0
-    if (typeof this.repository.countPromoPurchases !== 'function') {
-      // 促销开着却没有计数能力 ⇒ 限购形同虚设。fail-closed，不静默按 0 处理。
-      throw commerceError('促销计数不可用', 'PROMO_COUNT_UNAVAILABLE', 500)
+  /**
+   * 订单落库白名单：金额一律来自 `_checkoutPricing` 的纯函数结果。
+   * `exhausted` 的订单 `promotion` 非空（UI 要提示「已用完」）但**不得落 promotion_id**：
+   * 计数只数真正享促销价的单，落进去会让「第 4 单」也占额度，用户在 3 单后永远原价。
+   */
+  _pendingOrderRow({ id, userId, plan, period, pricing }) {
+    return {
+      id,
+      userId,
+      plan,
+      // amount 恒为**标价**：退款口径、合同价、对账都按它；实收另存 payable_cents。
+      amount: pricing.listPriceCents,
+      currency: 'CNY',
+      period,
+      payableCents: pricing.payableCents,
+      discountCents: pricing.discountCents,
+      promotionId: pricing.promotion && !pricing.promotion.exhausted ? pricing.promotion.id : null,
     }
-    return this.repository.countPromoPurchases(userId)
   }
 
   /**
@@ -131,7 +171,8 @@ class SubscriptionPaymentOps {
    * 配置非法（endsAt ≤ startsAt、price ≥ listPrice）在这里映射成 500，**不回退原价**。
    */
   _checkoutPricing(plan, period, promoPurchaseCount) {
-    const listPriceCents = this._paymentPriceCents(plan, period)
+    const listPrices = this._paymentListPrices(plan)
+    const listPriceCents = period === 'year' ? listPrices.yearly : listPrices.monthly
     if (!this.promoConfig) {
       return { listPriceCents, payableCents: listPriceCents, discountCents: 0, promotion: null }
     }
@@ -140,8 +181,13 @@ class SubscriptionPaymentOps {
         plan,
         period,
         now: this.now(),
-        // 标价由 plan-matrix 注入：promo-resolver 不反向依赖价格表。
-        config: { ...this.promoConfig, listPriceCents },
+        // 两个周期的标价都由 plan-matrix 注入：promo-resolver 不反向依赖价格表。
+        // 年付分支会用 listPriceYearlyCents 返回原价（年付永不促销）。
+        config: {
+          ...this.promoConfig,
+          listPriceCents: listPrices.monthly,
+          listPriceYearlyCents: listPrices.yearly,
+        },
         promoPurchaseCount,
       })
     } catch (error) {
@@ -262,6 +308,21 @@ class SubscriptionPaymentOps {
           eventRecorded = false
         }
       }
+      // 促销额度结算兜底（B）：钱已经收了，**不得拒付**。若因竞态导致这笔促销单
+      // 是第 max+1 单，仍然走完整结算，但把超卖事实写进事件 result（可对账字段）
+      // 并由路由层记 `PROMO_QUOTA_OVERSOLD` 异常日志，供 payment-reconcile 检出。
+      // ⚠ 计数必须在 markOrderPaid **之前**做：本笔尚未变成 paid，数出来的就是「此前已支付」。
+      const maxPromoPurchases = this.promoConfig && Number.isInteger(this.promoConfig.maxPurchasesPerUser)
+        ? this.promoConfig.maxPurchasesPerUser
+        : 3
+      let paidPromoCount = 0
+      if (order.promotion_id) {
+        if (typeof tx.countPromoPurchases !== 'function') {
+          throw commerceError('促销额度对账不可用', 'PROMO_QUOTA_RECONCILE_UNAVAILABLE', 500)
+        }
+        paidPromoCount = await tx.countPromoPurchases(order.user_id, { includePending: false })
+      }
+      const promoQuotaOversold = Boolean(order.promotion_id) && paidPromoCount >= maxPromoPurchases
       // 条件更新 pending → paid：重复回调在这里拿到 null；随后的 applySubscription 会撞
       // provider_reference UNIQUE 收敛成 409（既有语义），因此不会重复授权。
       if (typeof this.repository.markOrderPaid === 'function') {
@@ -303,6 +364,10 @@ class SubscriptionPaymentOps {
             plan: appliedPlan,
             requestedPlan: order.plan,
             downgradeSuppressed: applied.downgradeSuppressed === true,
+            // 可对账字段：payment-reconcile 可直接按 result->>'promoQuotaOversold' 检出。
+            promoQuotaOversold,
+            paidPromoCount,
+            maxPromoPurchases,
           })
         } catch (error) {
           eventRecorded = false
@@ -319,6 +384,10 @@ class SubscriptionPaymentOps {
         //   false = 写失败（调用方已落 PAYMENT_EVENT_NOT_RECORDED）
         //   null  = 不适用（事务里没有 DB client，只出现在测试替身）
         eventRecorded,
+        // 促销超卖兜底的可对账读数（即使 false 也返回，避免"缺键=没超卖"的误读）。
+        promoQuotaOversold,
+        paidPromoCount,
+        maxPromoPurchases,
       }
     })
   }

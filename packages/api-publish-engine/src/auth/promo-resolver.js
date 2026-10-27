@@ -1,15 +1,23 @@
 'use strict'
 /**
- * promo-resolver.js — 标准版月付「上市期半价」定价解析（**纯函数、零依赖**）。
+ * promo-resolver.js — 标准版**月付**「上市期半价」定价解析（**纯函数、零依赖**）。
  *
  * 为什么单独成文件：这是全站**唯一**决定「向微信实收多少钱」的定价判定点。
  * 把它写成纯函数（不读 env、不读时钟、不碰数据库）才能让每一条窗口/计数分支
  * 都被单测穷举 —— 定价逻辑一旦混进 I/O，边界（活动前 1 秒、第 4 单）就只能靠线上试。
  *
- * 契约（见 openspec/changes/standard-plan-promo/proposal.md §4）：
+ * 契约（见 openspec/changes/standard-plan-promo/proposal.md §4 与 §12 二次修订）：
  *   resolvePrice({ plan, period, now, config, promoPurchaseCount })
  *     → { listPriceCents, payableCents, discountCents, promotion }
  *   promotion 无促销时为 null；否则 { id, endsAt, remainingDays, exhausted }。
+ *
+ * ⛔ **年付永不参与促销**（v1.2 恢复的语义）：
+ *   · 年付一次覆盖 12 个月，而限购的计量单位是「次」——两者量纲不匹配，
+ *     3 次 × 1 年 = 3 年，让利从 90 元放大到 900 元（见 PRD §12）；
+ *   · 因此年付在任何窗口下都返回静态标价 `listPriceYearlyCents`（59000），
+ *     `promotion` 恒为 null、`discountCents` 恒为 0。
+ *   · 月付促销 + 限购 3 次已经把单客让利封顶在 3 × 30 = 90 元，
+ *     3 × 29 = 87 元 / 3 个月买不到 12 个月 × 29 = 348 元的年付 —— 套利不存在。
  *
  * 判定顺序**不可换**：开关 → 时间窗 [startsAt, endsAt) → plan/period → 计数。
  * 顺序决定语义：
@@ -63,6 +71,13 @@ function validateConfig(config) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) {
     throw invalid('config must be a plain object')
   }
+  if (typeof config.plan !== 'string' || !config.plan) {
+    throw invalid('plan must be a non-empty string')
+  }
+  // 促销只作用于一个月计费周期；配成 'year' 的部署是**语义错误**，必须在启动期炸掉。
+  if (config.period !== 'month') {
+    throw invalid("period must be 'month' (yearly plans never participate in the promo)")
+  }
   const startsAt = toDate(config.startsAt, 'startsAt')
   const endsAt = toDate(config.endsAt, 'endsAt')
   if (endsAt.getTime() <= startsAt.getTime()) {
@@ -83,6 +98,12 @@ function validateConfig(config) {
       throw invalid('priceCents must be lower than listPriceCents')
     }
   }
+  // 年付标价只用于「年付恒为原价」的返回；不参与任何促销比较（年付永不促销）。
+  if (config.listPriceYearlyCents !== undefined) {
+    if (!Number.isInteger(config.listPriceYearlyCents) || config.listPriceYearlyCents < 0) {
+      throw invalid('listPriceYearlyCents must be a non-negative integer')
+    }
+  }
   return { startsAt, endsAt }
 }
 
@@ -99,13 +120,15 @@ function validateConfig(config) {
  */
 function resolvePrice({ plan, period, now = new Date(), config, promoPurchaseCount = 0 } = {}) {
   if (typeof plan !== 'string' || !plan) throw invalid('plan is required')
+  if (period !== 'month' && period !== 'year') throw invalid("period must be 'month' or 'year'")
   if (!Number.isInteger(promoPurchaseCount) || promoPurchaseCount < 0) {
     throw invalid('promoPurchaseCount must be a non-negative integer')
   }
   const window = validateConfig(config)
-  const listPriceCents = config.listPriceCents
+  // 两个周期各取自己的标价：年付标价缺失就是配置缺陷，不拿月付标价顶替（差 10 倍量级）。
+  const listPriceCents = period === 'year' ? config.listPriceYearlyCents : config.listPriceCents
   if (!Number.isInteger(listPriceCents)) {
-    throw invalid('listPriceCents is required to resolve a price')
+    throw invalid(`listPriceCents for period '${period}' is required to resolve a price`)
   }
   const base = { listPriceCents, payableCents: listPriceCents, discountCents: 0, promotion: null }
 
@@ -114,7 +137,7 @@ function resolvePrice({ plan, period, now = new Date(), config, promoPurchaseCou
   // ② 时间窗 [startsAt, endsAt)
   const at = toDate(now, 'now')
   if (at.getTime() < window.startsAt.getTime() || at.getTime() >= window.endsAt.getTime()) return base
-  // ③ 档位 / 周期
+  // ③ 档位 / 周期：**只有 standard + month 参与**；年付在任何窗口下都是原价
   if (plan !== config.plan || period !== config.period) return base
   // ④ 计数（促销期内每人最多 N 单促销价；超限仍返回 promotion，供 UI 展示「已用完」）
   const exhausted = promoPurchaseCount >= config.maxPurchasesPerUser
@@ -147,8 +170,9 @@ function positiveIntFromEnv(raw, fallback, field) {
 }
 
 /**
- * 从环境变量装配促销配置（启动期一次）。**`listPriceCents` 由调用方从 plan-matrix 注入**，
- * 避免本文件反向依赖价格矩阵（两处各写一份 5900 就是下一次「改价只改一处」的事故）。
+ * 从环境变量装配促销配置（启动期一次）。**`listPriceCents` / `listPriceYearlyCents`
+ * 由调用方从 plan-matrix 注入**，避免本文件反向依赖价格矩阵
+ * （两处各写一份 5900 就是下一次「改价只改一处」的事故）。
  *
  * 开关语义是 fail-closed：只有字符串 "1" 才算开启，其它任何值（含 'true'）都按关闭。
  */
@@ -161,6 +185,7 @@ function loadStandardMonthlyPromoConfig(env = {}, options = {}) {
     plan: 'standard',
     period: 'month',
     listPriceCents: options.listPriceCents,
+    listPriceYearlyCents: options.listPriceYearlyCents,
     priceCents: positiveIntFromEnv(
       source.PROMO_STANDARD_MONTHLY_PRICE_CENTS,
       PROMO_STANDARD_MONTHLY_DEFAULTS.priceCents,

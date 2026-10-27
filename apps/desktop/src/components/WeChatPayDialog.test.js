@@ -105,6 +105,15 @@ describe('WeChatPayDialog', () => {
     expect(failed.text()).toContain('memberCenter.payChannelUnavailable')
   })
 
+  it('服务端 SUBSCRIPTION_HORIZON_EXCEEDED → 展示会员期限上限的具体原因', async () => {
+    invokeMock.mockResolvedValue({ code: -1, message: 'SUBSCRIPTION_HORIZON_EXCEEDED' })
+    const wrapper = await mountDialog()
+    await flushPromises()
+    const failed = wrapper.get('[data-testid="wechat-pay-failed"]')
+    expect(failed.text()).toContain('memberCenter.payHorizonExceeded')
+    expect(wrapper.find('[data-testid="wechat-pay-qr"]').exists()).toBe(false, '被拒时不得显示二维码')
+  })
+
   it('订单被关单（failed）→ 显示二维码已过期', async () => {
     invokeMock
       .mockResolvedValueOnce({ code: 0, data: { orderId: 'wpabc12345', qrDataUrl: QR } })

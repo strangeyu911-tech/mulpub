@@ -36,6 +36,37 @@ function normalizeError(value) {
   }
 }
 
+/**
+ * 价目条目的渲染侧归一化。
+ *
+ * 促销字段（`promotion` / 两个 `listPrice*Cents`）是 2026-10-27 起服务端下发的可选字段：
+ * 主进程已校验过形状，这里再做一次**保守透传**（缺字段就不带键），
+ * 因为会员中心的角标与续费预告只能由服务端字段驱动 —— 丢一个字段就等于丢一块 UI。
+ * ⛔ 不在这里补任何金额默认值：金额只能来自服务端（`priceMonthlyCents` 缺失即 null）。
+ */
+function normalizePlan(p) {
+  const promotion = p.promotion && typeof p.promotion === 'object' && typeof p.promotion.id === 'string' &&
+    Number.isInteger(p.promotion.remainingDays)
+    ? {
+        id: p.promotion.id,
+        endsAt: typeof p.promotion.endsAt === 'string' ? p.promotion.endsAt : '',
+        remainingDays: p.promotion.remainingDays,
+        // 售罄状态必须穿过渲染层：按钮文案靠它，缺键会让第 4 单仍显示「购买」。
+        exhausted: p.promotion.exhausted === true,
+      }
+    : null
+  return {
+    id: p.id,
+    label: typeof p.label === 'string' && p.label ? p.label : p.id,
+    currency: typeof p.currency === 'string' && p.currency ? p.currency : 'CNY',
+    priceMonthlyCents: Number.isInteger(p.priceMonthlyCents) ? p.priceMonthlyCents : null,
+    priceYearlyCents: Number.isInteger(p.priceYearlyCents) ? p.priceYearlyCents : null,
+    ...(Number.isInteger(p.listPriceMonthlyCents) ? { listPriceMonthlyCents: p.listPriceMonthlyCents } : {}),
+    ...(Number.isInteger(p.listPriceYearlyCents) ? { listPriceYearlyCents: p.listPriceYearlyCents } : {}),
+    ...(promotion ? { promotion } : {}),
+  }
+}
+
 function normalizeState(value) {
   const state = value && typeof value === 'object' ? value : {}
   const user = state.user && typeof state.user === 'object'
@@ -76,13 +107,7 @@ function normalizeState(value) {
   const plans = Array.isArray(state.plans)
     ? state.plans
         .filter((p) => p && typeof p.id === 'string' && p.id)
-        .map((p) => ({
-          id: p.id,
-          label: typeof p.label === 'string' && p.label ? p.label : p.id,
-          currency: typeof p.currency === 'string' && p.currency ? p.currency : 'CNY',
-          priceMonthlyCents: Number.isInteger(p.priceMonthlyCents) ? p.priceMonthlyCents : null,
-          priceYearlyCents: Number.isInteger(p.priceYearlyCents) ? p.priceYearlyCents : null,
-        }))
+        .map((p) => normalizePlan(p))
     : null
   return {
     status: allowed.has(state.status) ? state.status : 'signed_out',

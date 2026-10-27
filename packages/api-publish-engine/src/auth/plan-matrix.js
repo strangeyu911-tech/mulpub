@@ -304,8 +304,11 @@ function catalogMonthlyPricing(plan, matrix, now, promoConfig, promoPurchaseCoun
  * 并在「促销价 ≥ 标价」时于装配期抛错（见 promo-resolver.validateConfig）。
  */
 function buildStandardMonthlyPromoConfig(env, overrides) {
+  const standard = mergePlanSection('standard', overrides)
   return loadStandardMonthlyPromoConfig(env, {
-    listPriceCents: mergePlanSection('standard', overrides).priceMonthlyCents,
+    listPriceCents: standard.priceMonthlyCents,
+    // 年付标价只用于「年付恒为原价」的返回；年付不参与促销。
+    listPriceYearlyCents: standard.priceYearlyCents,
   })
 }
 
@@ -326,7 +329,12 @@ function getPlanCatalog(overrides, options = {}) {
       priceMonthlyCents: pricing.payableCents,
       // 标价：仅供「活动价已用完」文案与服务端自检读取；前端**不得划线展示**（PRD §6.3）。
       listPriceMonthlyCents: pricing.listPriceCents,
+      // 年付**任何窗口下都是静态标价**：年付不参与促销（限购按「次」计量，
+      // 与「年」量纲不匹配，见 PRD §12）。矩阵是唯一来源，促销配置改不动它。
       priceYearlyCents: matrix.priceYearlyCents,
+      listPriceYearlyCents: matrix.priceYearlyCents,
+      // 角标只由**月付**促销驱动：年付永远没有 promotion，不能用 `&&` 把两者绑在一起
+      // （那会让「年付不促销」把月付角标也一并熄掉）。
       promotion: pricing.promotion,
       rank: matrix.rank,
       entitlement: getPlanEntitlement(plan, overrides),

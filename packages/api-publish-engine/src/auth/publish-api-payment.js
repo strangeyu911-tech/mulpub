@@ -82,6 +82,20 @@ class PublishApiPaymentHelpers {
           this._ctx(req, { hook: 'payment-webhook', orderId: event.orderId }),
         )
       }
+      // 促销超卖：钱已收、权益已发（不得拒付），但必须异常级出声并带可对账读数。
+      // 与事件 result 里的 promoQuotaOversold / paidPromoCount / maxPromoPurchases 同源。
+      if (result && result.promoQuotaOversold === true) {
+        this._logError(
+          'PROMO_QUOTA_OVERSOLD',
+          new Error('促销额度超卖：已结算的促销单超过每人上限，本单仍已结算'),
+          this._ctx(req, {
+            hook: 'payment-webhook',
+            orderId: event.orderId,
+            paidPromoCount: result.paidPromoCount,
+            maxPromoPurchases: result.maxPromoPurchases,
+          }),
+        )
+      }
       this._json(res, 200, { success: true, ...result })
     } catch (error) {
       // 内部错误仍 2xx（纪律③）：错误落日志，微信不重投；对账靠订单表 + 事件表。

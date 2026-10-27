@@ -100,6 +100,8 @@ test('payment-reconcile：只读硬锁', async (t) => {
       check.params.forEach((name, index) => {
         if (name === 'since') {
           assert.ok(call.params[index] instanceof Date, 'since 必须是 Date（不会把字符串拼进 SQL）');
+        } else if (name === 'maxPromo') {
+          assert.equal(call.params[index], 3, 'maxPromo 默认取 promo-resolver 的 3');
         } else {
           assert.equal(call.params[index], 7, 'limit 必须原样传 --limit');
         }
@@ -134,6 +136,14 @@ test('判据的 SQL 形状锁（锁住两条评审修复，防止重构时悄悄
   await t.test('反向孤儿判据必须有长度守卫：`wechat:` 只有 7 字符时 substring 会得到空串', () => {
     const check = R.CHECKS.find((c) => c.id === 'entitlement-without-paid-order');
     assert.match(check.sql, /length\(s\.provider_reference\)\s*>\s*7/);
+  });
+
+  await t.test('促销超卖判据：按用户聚合已支付促销单，HAVING 严格大于上限', () => {
+    const check = R.CHECKS.find((c) => c.id === 'promo-quota-oversold');
+    assert.ok(check, '缺少 promo-quota-oversold 判据');
+    assert.match(check.sql, /o\.promotion_id IS NOT NULL AND o\.status = 'paid'/);
+    assert.match(check.sql, /GROUP BY o\.user_id/);
+    assert.match(check.sql, /HAVING count\(\*\) > \$3/);
   });
 });
 test('payment-reconcile：schema 预检（防"连错库也报一致"）', async (t) => {

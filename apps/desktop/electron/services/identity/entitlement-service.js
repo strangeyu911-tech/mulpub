@@ -77,22 +77,45 @@ function applyGraceWindow(entitlement, nowSeconds) {
   return entitlement
 }
 
+// 促销字段（2026-10-27）：服务端 `/api/v1/plans` 会下发 `promotion` 与两个 list 标价。
+// ⚠️ 这里曾经只解构 4 个字段 ⇒ 促销角标/续费预告在真实链路上**永远拿不到数据**
+//    （前端测试直接往 store 塞 plans，绕过了本函数，于是测试绿而功能死）。
+// `exhausted` 也是必须透传的字段：它驱动「活动价已用完，¥59/月」的**下单前**提示，
+// 丢了这个布尔值，用户要到支付弹窗才知道已经恢复原价。
+// 形状非法时整组丢弃：宁可不显示角标，也不显示错价/错天数。
+function normalizePromotion(promotion) {
+  if (!promotion || typeof promotion !== 'object' || Array.isArray(promotion)) return null
+  const { id, endsAt, remainingDays } = promotion
+  if (typeof id !== 'string' || !id) return null
+  if (typeof endsAt !== 'string' || !endsAt) return null
+  if (Number.isNaN(Date.parse(endsAt))) return null
+  if (!Number.isInteger(remainingDays) || remainingDays <= 0) return null
+  // 只认真正的 true（缺省/非布尔一律按未用尽），避免前端拿到字符串 'true' 之类脏值。
+  return { id, endsAt, remainingDays, exhausted: promotion.exhausted === true }
+}
+
 // 单条套餐的规范化：id 必填字符串，价格必须是**非负整数（单位：分）**。
 // 价格用整数分而非元，避免浮点误差；非整数（如字符串 '2900'）一律判非法，
 // 宁可丢弃该条也不要显示错价。
 function normalizePlanEntry(entry) {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
-  const { id, label, currency, priceMonthlyCents, priceYearlyCents } = entry
+  const { id, label, currency, priceMonthlyCents, priceYearlyCents, listPriceMonthlyCents, listPriceYearlyCents } = entry
   if (typeof id !== 'string' || !id) return null
   if (!Number.isInteger(priceMonthlyCents) || priceMonthlyCents < 0) return null
   if (!Number.isInteger(priceYearlyCents) || priceYearlyCents < 0) return null
-  return {
+  const promotion = normalizePromotion(entry.promotion)
+  const plan = {
     id,
     label: typeof label === 'string' && label ? label : id,
     currency: typeof currency === 'string' && currency ? currency : 'CNY',
     priceMonthlyCents,
     priceYearlyCents,
+    // 标价与促销都是**可选**字段（服务端未开促销时整组缺席）。
+    ...(Number.isInteger(listPriceMonthlyCents) && listPriceMonthlyCents >= 0 ? { listPriceMonthlyCents } : {}),
+    ...(Number.isInteger(listPriceYearlyCents) && listPriceYearlyCents >= 0 ? { listPriceYearlyCents } : {}),
+    ...(promotion ? { promotion } : {}),
   }
+  return plan
 }
 
 class EntitlementService {

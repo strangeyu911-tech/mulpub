@@ -74,6 +74,29 @@ test('POST /api/v1/webhooks/payment', async (t) => {
     assert.strictEqual(s.settleCalls[0].providerReference, 'wechat:wpabc12345')
   })
 
+  await t.test('促销超卖 → 仍 200 结算，但记 PROMO_QUOTA_OVERSOLD 异常日志', async () => {
+    const s = createStub({
+      subscriptionService: {
+        async settlePaymentWebhook (args) {
+          return {
+            plan: 'standard',
+            orderId: args.orderId,
+            promoQuotaOversold: true,
+            paidPromoCount: 3,
+            maxPromoPurchases: 3,
+          }
+        },
+      },
+    })
+    await s._handlePaymentWebhook(req, res, 'POST', '/api/v1/webhooks/payment')
+    assert.strictEqual(s.emitted[0].status, 200, '钱已收：超卖不得改成拒付')
+    assert.strictEqual(s.emitted[0].body.success, true)
+    assert.ok(
+      s.errors.some((entry) => entry.code === 'PROMO_QUOTA_OVERSOLD'),
+      '超卖必须记 PROMO_QUOTA_OVERSOLD 异常日志',
+    )
+  })
+
   await t.test('验签失败 → 401，且**不入库不落账**（settle 一次都没调）', async () => {
     const s = createStub({
       provider: {

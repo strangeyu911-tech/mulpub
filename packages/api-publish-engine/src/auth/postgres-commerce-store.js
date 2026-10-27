@@ -5,6 +5,8 @@ const { planRank } = require('./plan-matrix')
 const { SubscriptionSegmentMethods } = require('./subscription-segments')
 // 011 促销：订单三列账务口径 + 限购计数（createPendingOrder / countPromoPurchases）
 const { applyPaymentOrderOps } = require('./payment-order-store')
+// 1095 天会员期限上限：checkout 预检与 applySubscription 兜底共用同一份判定。
+const { assertWithinSubscriptionHorizon } = require('./subscription-horizon')
 
 /**
  * postgres-commerce-store.js — 会员中心 P1 商务数据访问层。
@@ -85,6 +87,15 @@ class PostgresCommerceTransaction {
     return result.rows[0]
   }
 
+  /**
+   * 促销额度预占锁：同一用户的「计数 + 落 pending 单」必须串行。
+   * 键与 applySubscription 的 `sub:` 分开：两件事互不阻塞，且都只在事务内有效
+   * （pg_advisory_xact_lock 随 COMMIT/ROLLBACK 自动释放）。
+   */
+  async lockPromoQuota(userId) {
+    await this.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`promo:${userId}`])
+  }
+
   /** 到期置过期：与 free 快照回写同属一个事务（见 SubscriptionService.settleExpiry）。 */
   async expireSubscription(userId) {
     const result = await this.client.query(EXPIRE_SUBSCRIPTION, [userId])
@@ -134,16 +145,14 @@ class PostgresCommerceTransaction {
     const payload = typeof entitlementPayloadFor === 'function'
       ? entitlementPayloadFor(effectivePlan)
       : entitlementPayload
-    const base = existing && new Date(existing.current_period_end) > nowDate
-      ? new Date(existing.current_period_end)
-      : nowDate
-    const periodEnd = new Date(base.getTime() + durationDays * 24 * 60 * 60 * 1000)
-    // 上界守卫：durationDays 虽为整数，但大到让 periodEnd 溢出为 Invalid Date（1e21/MAX_SAFE_INTEGER）时，
-    // 后续 .toISOString() 会抛裸 RangeError → 500。redeem 路径的 duration_days 来自 DB（004 只有 >0 无上限），
-    // 两条路径同经此处，故在仓储层拦下，复用既有 DURATION_INVALID/400 语义。
-    if (Number.isNaN(periodEnd.getTime())) {
-      throw Object.assign(new Error('DURATION_INVALID'), { code: 'DURATION_INVALID', status: 400 })
-    }
+    // 1095 天护栏：与 checkout 预检共用 subscription-horizon（唯一真源）。
+    // 这里同时覆盖兑换码 / 后台授予 / 支付回调三条不经过（或可能绕过）checkout 的写入。
+    // 溢出成 Invalid Date 的场景也在同一处收敛为 DURATION_INVALID/400。
+    const { base, periodEnd } = assertWithinSubscriptionHorizon({
+      currentPeriodEnd: existing ? existing.current_period_end : null,
+      now: nowDate,
+      durationDays,
+    })
     let subscriptionResult
     try {
       subscriptionResult = await this.client.query(UPSERT_SUBSCRIPTION, [
@@ -478,6 +487,9 @@ class CommerceMethods {
   }
 }
 
+// 订单原语同时挂事务类与池级：预占路径必须在**同一个事务**里完成
+// 「advisory lock → 计数 → INSERT pending」，否则并发第 4 单仍会读到旧计数。
+applyPaymentOrderOps(PostgresCommerceTransaction)
 applyPaymentOrderOps(CommerceMethods)
 
 module.exports = {

@@ -1,0 +1,133 @@
+{
+  "sha": "16f03e9f8dfd88980a6414a9d04f94a03fc4f150",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 999 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 999,
+    "fileCount": 23,
+    "codeFileCount": 19,
+    "sensitivePathHits": [
+      "packages/api-publish-engine/src/auth/payment-order-store.js",
+      "packages/api-publish-engine/src/auth/plan-matrix.js",
+      "packages/api-publish-engine/src/auth/postgres-commerce-store.js",
+      "packages/api-publish-engine/src/auth/promo-resolver.js",
+      "packages/api-publish-engine/src/auth/publish-api-commerce.js",
+      "packages/api-publish-engine/src/auth/subscription-payment.js",
+      "packages/api-publish-engine/src/auth/subscription-service.js"
+    ],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 1,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "c237a471292a59b37124c224474b320326d2a93e9693994be0b2ca16ce092d08",
+  "decidedAt": "2026-10-27T13:47:17.890Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "Multiple .ccg/reviews/*.json have deepReview.required=true with status=pending/performedBy=null/evidence=null — mandatory reviews submitted incomplete. The 67540346 record shows self_play_resolved (confidenceWeight=0.6) with 4 dismissed findings but no actual completed external review evidence.",
+        "highRiskDomains": [],
+        "prosecution": "如果只看提交时的 JSON，确实能看到 deepReview.required=true 且 status=pending / performedBy=null 的记录；任何只读该文件的人都会得出「QM-6 没完成就提交」的结论。67540346 又是 self-play 置信权重 0.6，低于真跨家族评审，存在「用自扮演冒充外部评审」的风险。",
+        "defense": "这些 JSON 是判据自己的状态载体，不是产品代码：2f703 是**本轮**深度审查的中间态（critique 已产出 6 条 finding，裁决文件已落盘，正在等待逐条裁决）；c237 是上一轮 v1.2 的同一形态中间态，本轮已把同一 deepReview 结论回填闭合；67540346 的 `tier=external` / `evidence=https://github.com/Colinchiu007/mulpub/pull/4560#issuecomment-6442730940` 与 `tierBasis=adjudicated-self-play` 都在，且有公开评论可核。b98af47 是 mode=single，不在 QM-6 双模型强制面内。可核对：`node scripts/check-pr-exec-record.js --base=origin/main --mode=enforce` 只点 dual 的 c237/2f703，且本轮结束后应为 0 条。",
+        "verdict": "dismissed",
+        "rationale": "指控把「评审状态文件」当成「未完成评审的产品提交」。逐条可核：①2f703 已有 critique（6 条 finding）与 adjudication.json；②c237 在本轮被同一 deepReview 结论回填（其变更集是本 PR diff 的子集）；③67540346 的 tier/evidence/tierBasis 齐全，公开评论 URL 可点开；④b98af47 是 mode=single，不属于 dual 强制审查。真正要看的 `check-pr-exec-record --mode=enforce` 在本轮收口后应无 dual 欠账。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "Document version chaos: PRD claims v1.3 active, but embedded change notes say v1.1 was wrong (yearly=monthly×10 + delete limit), v1.2 restored limits, v1.3 added horizon/quota. Code diff shows both deletion and restoration of maxPurchasesPerUser/promoPurchaseCount in same change — unclear which version is delivered.",
+        "highRiskDomains": [],
+        "prosecution": "同一 PR 里同时出现「删除限购」「恢复限购」「新增期限/预占」三版叙述，读者无法从 diff 判断最终交付的是哪一版；如果代码也同时残留删除与恢复，就会产生「文档说 A、代码跑 B」的运行期风险。",
+        "defense": "PRD 顶部明确写「版本沿革 v1.0 → v1.1（错误）→ v1.2 → v1.3（现行）」，§11 保留 v1.1 是为了留下「为什么改错」的可追溯证据；交付语义在 §2 决策表 D1–D15、§12.4 与 §13/§14 逐条锁定。代码侧 `promo-resolver.js` 的现行实现是 v1.2 恢复后的 `promoPurchaseCount` + `maxPurchasesPerUser`，`plan-matrix.buildStandardMonthlyPromoConfig` 也恢复同名配置；v1.1 的「年付 = 月付 × 10」只在历史注释里，不在执行分支。可核对：`node --test test/promo-resolver.test.js test/plan-catalog-promo.test.js` 全绿，且年付恒为 59000 的用例在窗口内/外/多计数下都成立。",
+        "verdict": "dismissed",
+        "rationale": "这是**有意的版本考古**，不是未收敛的交付：顶部声明与 §11/§12/§13 明确区分「历史错误」与「现行契约」，执行分支只保留 v1.2 的限购 + v1.3 的护栏/预占。若读者只看 diff 中删除与恢复的并置，应读 PRD 顶部版本沿革与 §12.4 的现行语义；`promo-resolver` 的年付五时点测试是行为判据，证明交付的是 v1.3 而非 v1.1。"
+      },
+      {
+        "id": "i3",
+        "severity": "Critical",
+        "finding": "Subscription horizon (1095 days) uses DURATION_INVALID (400) for horizon exceeded instead of SUBSCRIPTION_HORIZON_EXCEEDED (409); the 409 code only appears in error message strings but the thrown error assigns status=400 in subscription-horizon.js line 67.",
+        "highRiskDomains": [],
+        "prosecution": "如果超限真的走 DURATION_INVALID/400，前端就拿不到 409，`SUBSCRIPTION_HORIZON_EXCEEDED` 的映射与「付款前明确原因」的验收标准都会失效；这是用户可见的错误码契约错误。",
+        "defense": "指控读错了行号与分支。`subscription-horizon.js` 第 67 行是 `durationDays` 溢出 Date 范围的守卫（`DURATION_INVALID`/400，合法但极端的输入错误），**不是期限超限分支**；期限超限在第 70–75 行：`if (endMs > limitMs)` → `Object.assign(new Error(HORIZON_EXCEEDED_MESSAGE), { code: HORIZON_EXCEEDED_CODE, status: 409 })`。行为判据 `test/subscription-horizon.test.js` 的「正好 1095 通过 / 1096 拒绝」与「错误消息是可读中文」用例断言 `error.code === 'SUBSCRIPTION_HORIZON_EXCEEDED' && error.status === 409`，实测 15/15 通过；checkout 预检用例还断言 409 时零 pending、零 provider 调用。",
+        "verdict": "dismissed",
+        "rationale": "事实性误读：line 67 是 Duration 溢出保护（DURATION_INVALID/400），期限超限是 line 71–75 的独立分支并显式赋 `code=SUBSCRIPTION_HORIZON_EXCEEDED`、`status=409`。行为测试直接断言该 code/status，且 checkout 预检的「不落单、不生成二维码」用例通过，因此指控不成立。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "promo-resolver.js deletes promoPurchaseCount parameter then restores count logic; plan-catalog-promo adds yearly=59000 but promo-resolver validates period==='month' (line 105) — yearly orders will fail config validation if they pass through resolvePrice.",
+        "highRiskDomains": [],
+        "prosecution": "如果 `resolvePrice({ period: 'year' })` 走进 `validateConfig` 时被 `config.period !== 'month'` 拒绝，年付下单会 500；而年付是合法购买路径，这会是阻断级回归。",
+        "defense": "指控把两个不同的 `period` 混为一谈：`validateConfig(config)` 检查的是**促销配置对象**的 `config.period`（装配期固定为 `'month'`，表示促销只作用于月付），不是调用入参的 `period`。入参 `period` 在 `resolvePrice` 里先被校验为 `'month' | 'year'`，年付走 `listPriceCents = config.listPriceYearlyCents` 后直接返回原价；`config.period` 始终是 `'month'`，不会因用户买年付而变化。`test/promo-resolver.test.js` 的「年付五时点 × 计数 0/1/2/3/9 恒为 59000」与 `test/plan-catalog-promo.test.js` 的年付窗口内/外用例全部通过，实测 47 个引擎测试文件全绿。",
+        "verdict": "dismissed",
+        "rationale": "变量同名但语义不同：`config.period==='month'` 是促销配置的适用范围，不是购买周期。年付入参在 `resolvePrice` 里走独立分支返回 `listPriceYearlyCents`，已有五时点 + 多计数测试锁住 59000；若把 `config.period` 误改成入参，测试会立即红。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "Three versions (v1.1 error, v1.2 restore, v1.3 new) compressed into one PR with 3659 lines; .ccg review JSON embedded in diff; review records reference PR #4560 comment URL as evidence.",
+        "highRiskDomains": [],
+        "prosecution": "一个 PR 里叠了三版语义、3659 行基线、还夹带 .ccg 审查 JSON，评审者很难判断哪些是真正要上线的改动；如果 .ccg 记录被当成产品代码合并，还会污染主干审计面。",
+        "defense": "PR 的**产品改动**只有 v1.3 所需的 16 个源文件/测试文件；v1.1 的代码已在 `bbaa0914b` 回滚，v1.2 的语义是当前基线，v1.3 是本次新增的护栏与预占。`.ccg/reviews/*.json` 是仓库既有强制审计产物（pre-commit 自动纳入），不是业务代码；`check-pr-exec-record` 明确把它们当审计产物，`classify-docs-only` 也按代码/文档混合处理。3659 行是评审的**基线上下文**（origin/main...HEAD 触及文件的总行数），不是 diff 变更行（907 行）。",
+        "verdict": "dismissed",
+        "rationale": "「三版压缩」是把提交历史当成同一版交付：v1.1 已回滚、v1.2 是基线、v1.3 是本次增量，PRD 顶部与 §11 已逐版说明；907 行 diff 与 3659 行基线是两个口径。`.ccg` 是强制审计产物且由门禁识别，不是产品代码；如果删掉反而违反 QM-6 留痕要求。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "Deep review status self_play_resolved (tier=external, basis=adjudicated-self-play) claims dismissal based on 'machine lock' and mutation tests, but mutation evidence references openspec/records/standard-plan-promo.md §5 — no concrete mutation results shown in proposal.",
+        "highRiskDomains": [],
+        "prosecution": "如果裁决只引用「机器锁 / 变异测试」却不给具体读数，读者无法复核这些防护是否真的存在；把证据指向另一份记录的 §5 而本提案没有摘要，等于把可核性外包给一个可能已过期的章节。",
+        "defense": "本轮的具体变异反证已写入 `openspec/records/promo-yearly-rule.md` §11.3（A1–A4、B1–B4 逐条「改坏后红 / 还原后绿」的通过-失败数），不是指向 §5；§5 是 `standard-plan-promo` 的早期记录，不是本轮的引用。可核对：§11.3 的每一行都有可复跑的命令形态与具体数字（如 A1 红 9/6、绿 15/0；B2 红 34/2、绿 36/0），且本轮测试文件 `test/subscription-horizon.test.js` / `test/subscription-payment-promo.test.js` 的用例名与变异项一一对应。",
+        "verdict": "dismissed",
+        "rationale": "引用错位：本轮证据在 `openspec/records/promo-yearly-rule.md` §11.3，不在 `standard-plan-promo.md` §5。§11.3 已列出 8 刀变异的逐条红/绿读数与可复跑命令，且对应测试文件在本次变更集内；不是「没有具体结果」。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T14:28:15.158Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4560#issuecomment-6444626390",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@8b0b77bf94c17a2053caef9d8098e41c3d69fb0eb639e793fadc1b7cbfe54719"
+  }
+}

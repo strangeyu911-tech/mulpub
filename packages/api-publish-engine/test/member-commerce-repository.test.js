@@ -551,3 +551,61 @@ test('PostgresCommerceTransaction 单事务编排', async (t) => {
     }
   })
 })
+
+test('促销额度预占（B）仓储原语', async (t) => {
+  await t.test('countPromoPurchases 默认含 30 分钟内 pending；paid-only 模式只数 paid', async () => {
+    const pool = fakePool()
+    pool.rows = [{ count: '2' }]
+    const repository = new PostgresIdentityRepository({ pool })
+    const count = await repository.countPromoPurchases('u-1', { now: new Date('2026-12-01T00:00:00Z') })
+    assert.strictEqual(count, 2)
+    const sql = pool.calls[0].text
+    assert.match(sql, /status = 'pending'/)
+    assert.match(sql, /created_at >=/)
+    assert.match(sql, /INTERVAL '1 minute'/)
+    assert.deepStrictEqual(pool.calls[0].values.slice(0, 1), ['u-1'])
+
+    await repository.countPromoPurchases('u-1', { includePending: false })
+    assert.equal(pool.calls[1].text.includes("status = 'pending'"), false, '结算兜底只数已支付')
+  })
+
+  await t.test('createPendingOrderWithPromoQuota：同一事务内 advisory lock → 计数 → INSERT', async () => {
+    const calls = []
+    const client = {
+      queue: [
+        { rows: [] }, // BEGIN
+        { rows: [{ pg_advisory_xact_lock: null }] },
+        { rows: [{ count: '1' }] },
+        { rows: [{ id: 'wp-test-1', user_id: 'u-1' }] },
+        { rows: [] }, // COMMIT
+      ],
+      async query(text, values) {
+        calls.push({ text, values })
+        return this.queue.shift() || { rows: [] }
+      },
+      release() {},
+    }
+    const pool = { async connect() { return client } }
+    const repository = new PostgresIdentityRepository({ pool })
+    const result = await repository.createPendingOrderWithPromoQuota({
+      userId: 'u-1',
+      now: new Date('2026-12-01T00:00:00Z'),
+      resolvePendingOrder: (count) => ({
+        order: {
+          id: 'wp-test-1', userId: 'u-1', plan: 'standard', amount: 5900,
+          period: 'month', payableCents: 2900, discountCents: 3000,
+          promotionId: 'standard-monthly-half',
+        },
+        pricing: { seenCount: count },
+      }),
+    })
+    assert.strictEqual(result.promoPurchaseCount, 1)
+    assert.deepStrictEqual(result.pricing, { seenCount: 1 })
+    assert.strictEqual(result.order.id, 'wp-test-1')
+    assert.match(calls[1].text, /pg_advisory_xact_lock/)
+    assert.deepStrictEqual(calls[1].values, ['promo:u-1'])
+    assert.match(calls[2].text, /status = 'pending'/)
+    assert.match(calls[3].text, /INSERT INTO identity_orders/)
+    assert.strictEqual(calls[3].values[8], 'standard-monthly-half')
+  })
+})

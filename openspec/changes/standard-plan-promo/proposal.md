@@ -7,6 +7,13 @@ branch: standard-plan-promo
 
 # standard-plan-promo — 标准版月付「上市期半价」促销
 
+> ⚠️ **本文件经历两次修订，现行版本是 §12（v1.2）**：
+> §11 的「年付随月付浮动 + 删除限购」已被**推翻**；§4 决策表中的 D2 / D4 / D6 / D8 与
+> §6.1 的 `promoPurchaseCount` / `exhausted`、§6.2 的 `promotion` 形状、§7 的「第 4 次购买」
+> 均**恢复**到 v1.0 语义。现行契约以 §12 与
+> `01-docs/PRD-STANDARD-PLAN-PROMO-2026-10-27.md`（v1.2）为准。
+> 保留 §4 / §11 是为了留下「初版为什么这么做」「v1.1 为什么改错」的可追溯记录。
+
 ## 1. 背景
 
 标准版月付当前标价 ¥59（59 元/月，`plan-matrix.js` 的 `standard.priceMonthlyCents = 5900`），
@@ -205,3 +212,145 @@ resolvePrice({ plan, period, now, config, promoPurchaseCount })
 | 运维 | `scripts/payment-preflight.js`、`scripts/payment-reconcile.js` |
 | 前端 | `apps/desktop/src/views/member-center/{Subscription.vue,PlanPriceTag.vue,labels.js}`、`locales/member-center/{zh,en}.js` |
 | 文档 | `01-docs/PRD-STANDARD-PLAN-PROMO-2026-10-27.md`、本文件、`openspec/records/standard-plan-promo.md` |
+
+---
+
+## 11. 修订记录 2026-10-27（promo-yearly-rule）
+
+**触发**：初版上线后暴露套利 —— 促销期月付 29×12=348 < 年付 590，理性用户会囤月付。
+根因不是「限购不够严」，而是**定价不变量（年付 = 月付 × 10）被破坏**：只降月付、年付锁死，
+两者从 10 倍关系变成 20 倍关系，套利空间由定价规则自己制造。
+
+| # | 初版（已推翻） | 修订版（现行） |
+|---|---|---|
+| D2 | 仅 `standard` + `month` | `standard` 的 **month 与 year**（年付跟随月付，不是独立活动） |
+| D3 | 标价 5900 → 实收 2900 | 不变（月付实收 2900） |
+| D4 | 年付不动，维持 59000 | **年付实收 = 月付实收 × 10 = 29000**；标价仍 59000 |
+| D6 | 每人最多 3 单促销价 | **删除**：无 per-user 计数、无 `maxPurchasesPerUser`、无计数 SQL |
+| D8 | 第 4 次起按钮显示「活动价已用完，¥59/月」 | **删除**：按钮恒为「购买」；`promotion` 不再含 `exhausted` |
+| §6.1 | `resolvePrice({ plan, period, now, config, promoPurchaseCount })` | `resolvePrice({ plan, period, now, config })` —— **纯函数，无 per-user 入参** |
+| §6.2 | `promotion: { id, endsAt, remainingDays, exhausted }` | `promotion: { id, endsAt, remainingDays }`；目录新增 `listPriceYearlyCents`，`priceYearlyCents` 改为**实收**语义 |
+| §7 | 「第 4 次购买 → 原价」 | 「年付在促销期购买 → 29000」「同一用户连续下单全按促销价」 |
+
+**为什么取消限购而不是把上限调大**：
+
+- 限购是**症状补丁**：它把「年付定价错」的后果（囤月付）转成「每人最多囤 3 个月」，
+  套利窗口仍在（3 单仍赚 3×242 元的等效价值差），却引入一整套 per-user 状态。
+- 修不变量后套利算术直接归零（348 > 290），限购失去存在理由。
+- 单客让利上限并未放大：年付一单让利 300 元 < 12 次月付的 360 元；换到的是 12 个月留存。
+
+**删除 per-user 状态带来的简化**（逐项，均已落地）：
+
+1. `promo-resolver.js`：删 `promoPurchaseCount` 入参、计数分支、`maxPurchasesPerUser` 校验与装配。
+2. `plan-matrix.js`：`getPlanCatalog` 删 `promoPurchaseCount` 选项；`catalogMonthlyPricing` → `catalogPricing(period)`。
+3. `subscription-payment.js`：删 `_promoPurchaseCount` 与 `countPromoPurchases` 调用；`promotionId` 不再按 `exhausted` 过滤。
+4. `payment-order-store.js`：删 `countPromoPurchases`（`SELECT count(*) ...`）。
+5. `publish-api-commerce.js`：`/api/v1/plans` 不再按用户查计数（同一份目录给所有人）。
+6. 前端：删 `exhausted` 分支、「活动价已用完，¥59/月」文案与 `promoBuyCtaOf`；保留角标。
+7. locales：`memberCenter.planPromoExhausted` **保留不删**（i18n 成对与门禁只关注孤儿新增），只是不再渲染。
+
+**契约不变量（现行）**：
+
+```js
+resolvePrice({ plan, period, now, config })
+  → { listPriceCents, payableCents, discountCents, promotion }
+// period==='year' ⇒ payableCents === (period==='month' 的 payableCents) × 10
+// promotion === null || { id, endsAt, remainingDays }
+```
+
+**测试与取证**：`openspec/records/promo-yearly-rule.md`（含变异反证逐条结果）。
+**PRD 同步**：`01-docs/PRD-STANDARD-PLAN-PROMO-2026-10-27.md` v1.1 §11「定价不变量与为什么取消限购」。
+
+---
+
+## 12. 二次修订记录 2026-10-27（v1.2：恢复限购 3 次，年付回到原价）
+
+**触发**：v1.1 的推理被用户否决。v1.1 认为「年付 = 月付 × 10」是必须无条件成立的定价不变量，
+因此把年付跟着月付降到 29000 并删掉限购。**这个推理错在把限购从等式里删掉了**：
+
+- 限购 3 次本身就把月付促销的单客让利封顶在 **3 × 29 = 87 元 / 3 个月**，
+  而 12 个月 × 29 = 348 元的年付**根本买不到** —— 套利路径不存在，不需要靠年付降价去堵；
+- 反过来，年付一旦参与促销，「最多 3 次」的限购会变成 **3 次 × 1 年 = 3 年 870 元**
+  （原价 3 年 1770 元），让利从 **90 元放大到 900 元**（10 倍）。
+  计数式限购的计量单位是「次」，年付一次是 12 个月，**两者量纲不匹配，数学上不能共存**。
+
+**修订历史（三阶段）**：
+
+| 阶段 | 语义 | 结论 |
+|---|---|---|
+| v1.0（初版） | 月付 2900 + 限购 3 单；年付 59000 | 正确 |
+| v1.1（本文件 §11） | 年付 = 月付实收 × 10（29000）+ 删除限购 | **错误**：把「限购已封顶」漏出等式 |
+| v1.2（本节） | 恢复 v1.0 语义，保留归一化缺陷修复 | 现行 |
+
+**逐项回滚（与 §11 的七条一一对应）**：
+
+| # | §11 的删除动作 | v1.2 恢复 |
+|---|---|---|
+| 1 | 删 `promoPurchaseCount` 入参、计数分支、`maxPurchasesPerUser` | 全部恢复；`resolvePrice({ plan, period, now, config, promoPurchaseCount })`，`promotion` 带回 `exhausted` |
+| 2 | `getPlanCatalog` 删 `promoPurchaseCount`；`catalogPricing(period)` | 恢复 per-user 计数（目录要能**下单前**显示「已用完」）；`priceYearlyCents` 回到静态 59000 |
+| 3 | 删 `_promoPurchaseCount` 调用；`promotionId` 不再按 `exhausted` 过滤 | 恢复计数查询与 `exhausted` 过滤（原价单不得占额度） |
+| 4 | 删 `countPromoPurchases`（`SELECT count(*) ...`） | 恢复 `count(*) from identity_orders where user_id=$1 and promotion_id is not null and status='paid'` |
+| 5 | `/api/v1/plans` 不再按用户查计数 | 恢复按登录用户查计数（未登录按 0 单） |
+| 6 | 删 `exhausted` 分支与「活动价已用完，¥59/月」 | 恢复 `promoBuyCtaOf` 与 `PlanPriceTag` 的 `exhausted === false` 角标条件 |
+| 7 | locales 的 `planPromoExhausted` 保留不渲染 | 重新渲染（文案本身没有变过） |
+
+**保留项（不回滚）**：`apps/desktop/electron/services/identity/entitlement-service.js` 与
+`apps/desktop/src/stores/identity.js` 的归一化修复 —— `promotion` / `listPrice*Cents` 原先在两次归一化里
+被丢弃，导致促销角标与续费预告在真实链路永不出现（单测因为直接塞 store 而全绿）。这是**真实缺陷修复**，
+与限购语义无关，必须保留；对应测试也保留。
+
+**契约（v1.2 现行）**：
+
+```js
+resolvePrice({ plan, period, now, config, promoPurchaseCount })
+  → { listPriceCents, payableCents, discountCents, promotion }
+// period==='year' ⇒ payableCents === listPriceCents === priceYearlyCents（恒 59000，promotion === null）
+// period==='month' ∧ plan==='standard' ∧ 窗口内 ∧ count < maxPurchasesPerUser
+//   ⇒ payableCents === priceCents（2900）、promotion.exhausted === false
+// count >= maxPurchasesPerUser ⇒ payableCents === listPriceCents（5900）、promotion.exhausted === true
+```
+
+**测试与取证**：`openspec/records/promo-yearly-rule.md` §10（含三组必须红的变异反证）。
+**PRD 同步**：`01-docs/PRD-STANDARD-PLAN-PROMO-2026-10-27.md` v1.2 §12。
+
+---
+
+## 13. 三次修订记录 2026-10-27（v1.3：会员期限护栏 + 促销额度预占）
+
+**触发**：v1.2 的限购只在「已支付」口径下成立，仍有两个结构性缺口：
+
+1. **多开窗口**：定价在下单时固化，计数只数 `status='paid'` ⇒ 5 个窗口各下一个 pending，
+   5 单都按 2900 定价，逐一支付后拿到 5 个月促销价。
+2. **期限无上限**：`applySubscription` 只校验 `durationDays > 0`，兑换码/后台授予可把
+   `current_period_end` 叠到任意远；支付路径也可被反复续费叠出超长有效期。
+
+**修订内容**：
+
+| # | 项 | v1.2 | v1.3（现行） |
+|---|---|---|---|
+| 1 | 会员期限 | 无上限 | 新增 `MAX_SUBSCRIPTION_HORIZON_DAYS = 1095`（= 3 × 365，按天计、跨闰年差 1 天）；`prospectiveEnd = max(现有 current_period_end, now) + durationDays > now + 1095 天` ⇒ 409 `SUBSCRIPTION_HORIZON_EXCEEDED` |
+| 2 | 护栏层级 | 仅 checkout 定价 | **两层都拦**：`createCheckout` 预检（付款前、不生成二维码）+ `PostgresCommerceTransaction.applySubscription` 兜底（兑换码/后台授予/支付回调） |
+| 3 | 促销额度 | 只数 `status='paid'` | 额度 = paid **+** `pending` 且 `created_at` 在 30 分钟内；pending 过期自动释放 |
+| 4 | 并发控制 | 无（已知残留风险） | 下单路径同一事务内 `pg_advisory_xact_lock('promo:<userId>')` → 计数 → 定价 → INSERT pending；第 4 个并发请求必然看到前 3 个 |
+| 5 | 结算兜底 | 不适用 | 竞态导致已支付促销单超限时**仍然结算**（钱已收），记 `PROMO_QUOTA_OVERSOLD` 异常日志 + 事件 result 可对账字段；`payment-reconcile` 新增 `promo-quota-oversold` |
+| 6 | 前端 | 仅售罄文案 | 新增 `memberCenter.payHorizonExceeded`（购买被 409 拒绝时展示具体原因）与 `memberCenter.redeemErrHorizon`（兑换被同一护栏拒绝） |
+
+**为什么 30 分钟**：现有代码里唯一成文的 pending 超时是支付弹窗的 30 分钟硬上限
+（`WeChatPayDialog.vue:87-89`，与 PRD-WECHAT-PAY §7.3 / §6.1 同源）；服务端没有 pending
+置 failed 的定时任务。本修订**不新增支付状态机**，只把同一口径用于额度滑窗。
+
+**已知残留风险**：30 分钟释放后微信二维码通常 2 小时内仍可支付 ⇒ 旧 pending 晚到支付可能造成
+「已支付 > 3」。本期由结算兜底与对账暴露，不拒付（详见 PRD §9.3 / §14）。
+
+**契约（v1.3 新增）**：
+
+```js
+// 共享模块 packages/api-publish-engine/src/auth/subscription-horizon.js
+assertWithinSubscriptionHorizon({ currentPeriodEnd, now, durationDays })
+  → { base, periodEnd, limit }                    // 超限抛 409 SUBSCRIPTION_HORIZON_EXCEEDED
+// 仓储：countPromoPurchases(userId, { now, includePending=true })
+//       createPendingOrderWithPromoQuota({ userId, now, resolvePendingOrder })
+```
+
+**测试与取证**：`openspec/records/promo-yearly-rule.md` §11（含 A/B 两类变异反证）。
+**PRD 同步**：`01-docs/PRD-STANDARD-PLAN-PROMO-2026-10-27.md` v1.3 §13 / §14。

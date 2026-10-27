@@ -316,5 +316,77 @@ describe('identity store', () => {
     await store.load()
     expect(store.entitlement.limits).toBeUndefined()
   })
+
+  // 2026-10-27（promo-yearly-rule）：促销角标/续费预告只能由服务端字段驱动。
+  // 这里锁渲染侧的透传 —— 主进程已归一，但 store 再做一次白名单映射时漏字段，
+  // 会员中心就会「有促销但没角标」，而组件测试（直接塞 plans）看不出来。
+  it('透传价目目录的促销字段（promotion / listPrice*Cents）', async () => {
+    window.electronAPI.identityGetState.mockResolvedValue({
+      code: 0,
+      data: {
+        status: 'authenticated',
+        user: { sub: 'sub-1' },
+        plans: [{
+          id: 'standard',
+          label: '标准版',
+          currency: 'CNY',
+          priceMonthlyCents: 2900,
+          listPriceMonthlyCents: 5900,
+          priceYearlyCents: 59000,
+          listPriceYearlyCents: 59000,
+          promotion: { id: 'standard-monthly-half', endsAt: '2027-01-31T16:00:00.000Z', remainingDays: 42, exhausted: false },
+        }],
+      },
+    })
+    const { useIdentityStore } = await import('./identity')
+    const store = useIdentityStore()
+    await store.load()
+    expect(store.plans).toHaveLength(1)
+    expect(store.plans[0]).toMatchObject({
+      priceMonthlyCents: 2900,
+      listPriceMonthlyCents: 5900,
+      priceYearlyCents: 59000,
+      listPriceYearlyCents: 59000,
+      promotion: { id: 'standard-monthly-half', remainingDays: 42, exhausted: false },
+    })
+  })
+
+  it('透传 promotion.exhausted=true（售罄文案依赖这个布尔值，丢了就等于没有提示）', async () => {
+    window.electronAPI.identityGetState.mockResolvedValue({
+      code: 0,
+      data: {
+        status: 'authenticated',
+        user: { sub: 'sub-1' },
+        plans: [{
+          id: 'standard',
+          priceMonthlyCents: 5900,
+          listPriceMonthlyCents: 5900,
+          priceYearlyCents: 59000,
+          listPriceYearlyCents: 59000,
+          promotion: { id: 'standard-monthly-half', endsAt: '2027-01-31T16:00:00.000Z', remainingDays: 42, exhausted: true },
+        }],
+      },
+    })
+    const { useIdentityStore } = await import('./identity')
+    const store = useIdentityStore()
+    await store.load()
+    expect(store.plans[0].promotion.exhausted).toBe(true)
+  })
+
+  it('促销字段形状非法 ⇒ 不带该键（不显示错天数），价格照常透传', async () => {
+    window.electronAPI.identityGetState.mockResolvedValue({
+      code: 0,
+      data: {
+        status: 'authenticated',
+        user: { sub: 'sub-1' },
+        plans: [{ id: 'standard', priceMonthlyCents: 2900, priceYearlyCents: 59000, promotion: { id: 'x' } }],
+      },
+    })
+    const { useIdentityStore } = await import('./identity')
+    const store = useIdentityStore()
+    await store.load()
+    expect(store.plans[0].promotion).toBeUndefined()
+    expect(store.plans[0].priceMonthlyCents).toBe(2900)
+  })
 })
 

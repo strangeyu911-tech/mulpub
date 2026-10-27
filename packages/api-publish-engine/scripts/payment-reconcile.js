@@ -142,6 +142,30 @@ const CHECKS = [
              AND o.payable_cents <> o.amount - COALESCE(o.discount_cents, 0)
            LIMIT $2`,
   },
+  {
+    // 促销超卖：结算兜底**不拒付**（钱已收），但必须可被对账发现。
+    // 判据按「同一用户已支付的促销单数 > 上限」聚合，不依赖事件表是否写入成功：
+    // 即使 PAYMENT_EVENT_NOT_RECORDED，订单表的 promotion_id/status/paid_at 仍能算出超卖。
+    // 事件 result 里的 promoQuotaOversold / paidPromoCount / maxPromoPurchases 是同一事实的
+    // 第二份可核读数（见 subscription-payment.js 的 completePaymentEvent）。
+    id: 'promo-quota-oversold',
+    params: ['since', 'limit', 'maxPromo'],
+    severity: INFO,
+    title: '促销额度超卖（结算兜底已放行）',
+    hint: '同一用户已支付的促销单数超过每人上限。钱已收、权益已发，**不得拒付或回滚**；' +
+      '核对 identity_webhook_events.result 里的 promoQuotaOversold/paidPromoCount 定位具体订单，' +
+      '并按 PRD §14 复盘并发窗口。',
+    sql: `SELECT o.user_id,
+                 count(*)::int AS paid_promo_count,
+                 min(o.paid_at) AS first_paid_at,
+                 max(o.paid_at) AS last_paid_at
+            FROM identity_orders o
+           WHERE o.promotion_id IS NOT NULL AND o.status = 'paid' AND o.paid_at >= $1
+           GROUP BY o.user_id
+          HAVING count(*) > $3
+           ORDER BY paid_promo_count DESC
+           LIMIT $2`,
+  },
 ];
 // 装配期自检：占位符必须从 $1 开始连续编号，且个数与 params 声明一致。
 // 这类错误漏到线上会让整条 SQL 直接失败、拿不到任何部分结果，所以放在模块加载时。
@@ -183,7 +207,7 @@ function parseArgs (argv = process.argv.slice(2)) {
 }
 
 /**
- * 跑完五项判据。**纯逻辑**：只吃一个 `query` 能力，不自己建连接。
+ * 跑完六项判据。**纯逻辑**：只吃一个 `query` 能力，不自己建连接。
  *
  * @returns {Promise<{ok:boolean, blocking:number, results:Array}>} `ok` 只由 blocking 项决定
  */
@@ -193,6 +217,11 @@ async function runReconcile (options = {}) {
   const now = options.now || (() => new Date());
   const sinceDays = options.sinceDays || 30;
   const limit = options.limit || 200;
+  // 与 promo-resolver 的默认上限同值；运营可通过选项覆盖（不在对账脚本里读 env，
+  // 避免「对账读到的 env 与支付进程不是同一份」时给出错误结论）。
+  const maxPromo = Number.isInteger(options.maxPromoPurchases) && options.maxPromoPurchases > 0
+    ? options.maxPromoPurchases
+    : 3;
   const since = new Date(now().getTime() - sinceDays * 24 * 3600 * 1000);
 
   // schema 预检：连到空库/错库时所有 SELECT 都会返回 0 行 —— 那会被读成「三方一致」。
@@ -216,7 +245,11 @@ async function runReconcile (options = {}) {
   for (const check of CHECKS) {
     // 只绑定该判据真正用到的参数。多绑一个未出现的占位符会让 PG 报
     // "could not determine data type of parameter $N"（实测 2026-10-23）。
-    const values = check.params.map((name) => (name === 'since' ? since : limit));
+    const values = check.params.map((name) => {
+      if (name === 'since') return since;
+      if (name === 'maxPromo') return maxPromo;
+      return limit;
+    });
     const { rows } = await client.query(check.sql, values);
     results.push({
       id: check.id,

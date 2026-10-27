@@ -85,6 +85,13 @@ describe('member-center/Subscription：标准版月付促销展示', () => {
     expect(priceNode.find('s').exists()).toBe(false)
   })
 
+  it('年付价恒为 ¥590 / 年（年付不参与促销，不随月付打折）', async () => {
+    const wrapper = await mountSubscription([STANDARD_PROMO])
+    const text = wrapper.get('[data-testid="plan-standard-price"]').text()
+    expect(text).toContain('¥590')
+    expect(text).not.toContain('¥290')
+  })
+
   it('额度用尽 → 按钮**下单前**显示「活动价已用完，¥59/月」', async () => {
     const exhausted = {
       ...STANDARD_PROMO,
@@ -95,6 +102,17 @@ describe('member-center/Subscription：标准版月付促销展示', () => {
     expect(wrapper.get('[data-testid="plan-standard-buy"]').text()).toBe('memberCenter.planPromoExhausted')
     const call = i18nCalls.find((item) => item.key === 'memberCenter.planPromoExhausted')
     expect(call.params).toEqual({ price: '¥59' })
+  })
+
+  it('额度用尽 → 角标消失（价格已回到 ¥59，不再宣称 ¥29）', async () => {
+    const exhausted = {
+      ...STANDARD_PROMO,
+      priceMonthlyCents: 5900,
+      promotion: { ...STANDARD_PROMO.promotion, exhausted: true },
+    }
+    const wrapper = await mountSubscription([exhausted])
+    expect(wrapper.find('[data-testid="plan-standard-price-promo"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="plan-standard-price"]').text()).toContain('¥59')
   })
 
   it('结束前 7 天 → 会员中心显示续费预告（日期与价格均来自服务端）', async () => {

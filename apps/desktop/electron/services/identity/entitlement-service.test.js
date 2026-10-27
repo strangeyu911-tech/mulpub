@@ -302,4 +302,72 @@ describe('价目目录 /api/v1/plans（2026-10-07）', () => {
     const service = makeService(async () => { throw new Error('network down') })
     await expect(service.fetchPlans({ accessToken: 't' })).rejects.toThrow()
   })
+
+  // 2026-10-27（promo-yearly-rule）：促销字段必须**穿过**归一化。
+  // 逃逸分析：本函数原先只解构 4 个字段，promotion/listPrice* 被静默丢弃 ⇒
+  // 会员中心的促销角标与续费预告在真实链路里永远没有数据，而单元测试全绿
+  // （前端用例直接往 store 塞 plans，绕过了这条边界）。
+  it('透传促销字段：promotion 与两个 list 标价必须到达渲染层', async () => {
+    const service = makeService(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        plans: [{
+          id: 'standard',
+          label: '标准版',
+          currency: 'CNY',
+          priceMonthlyCents: 2900,
+          listPriceMonthlyCents: 5900,
+          priceYearlyCents: 59000,
+          listPriceYearlyCents: 59000,
+          promotion: { id: 'standard-monthly-half', endsAt: '2027-01-31T16:00:00.000Z', remainingDays: 42, exhausted: false },
+        }],
+      }),
+    }))
+    const [standard] = await service.fetchPlans({ accessToken: 't' })
+    expect(standard).toMatchObject({
+      priceMonthlyCents: 2900,
+      listPriceMonthlyCents: 5900,
+      priceYearlyCents: 59000,
+      listPriceYearlyCents: 59000,
+      promotion: { id: 'standard-monthly-half', remainingDays: 42, exhausted: false },
+    })
+  })
+
+  it('透传 promotion.exhausted=true：售罄状态必须到达渲染层（否则第 4 单仍显示「购买」）', async () => {
+    const service = makeService(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        plans: [{
+          id: 'standard',
+          priceMonthlyCents: 5900,
+          listPriceMonthlyCents: 5900,
+          priceYearlyCents: 59000,
+          listPriceYearlyCents: 59000,
+          promotion: { id: 'standard-monthly-half', endsAt: '2027-01-31T16:00:00.000Z', remainingDays: 42, exhausted: true },
+        }],
+      }),
+    }))
+    const [standard] = await service.fetchPlans({ accessToken: 't' })
+    expect(standard.promotion.exhausted).toBe(true)
+    expect(standard.priceMonthlyCents).toBe(5900)
+  })
+
+  it('促销字段形状非法 ⇒ 整组丢弃，但套餐本身保留（不显示错价/错天数）', async () => {
+    const service = makeService(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        plans: [
+          { id: 'a', priceMonthlyCents: 2900, priceYearlyCents: 59000, promotion: { id: 'x', endsAt: 'not-a-date', remainingDays: 3 } },
+          { id: 'b', priceMonthlyCents: 2900, priceYearlyCents: 59000, promotion: { id: 'x', endsAt: '2027-01-31T16:00:00.000Z', remainingDays: 0 } },
+          { id: 'c', priceMonthlyCents: 2900, priceYearlyCents: 59000, promotion: null },
+        ],
+      }),
+    }))
+    const plans = await service.fetchPlans({ accessToken: 't' })
+    expect(plans.map((p) => p.id)).toEqual(['a', 'b', 'c'])
+    for (const plan of plans) expect(plan.promotion).toBeUndefined()
+  })
 })

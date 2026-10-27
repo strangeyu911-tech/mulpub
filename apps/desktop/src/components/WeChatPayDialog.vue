@@ -158,10 +158,13 @@ async function start () {
   if (props.reuseOrderId) orderPayload.orderId = props.reuseOrderId
   const response = await invoke('wechatPayCreateOrder', orderPayload)
   if (!response || response.code !== 0 || !response.data) {
-    // 服务端未开放支付通道时返回 503 PAYMENT_PROVIDER_UNAVAILABLE，走这里
-    fail(response && response.message === 'PAYMENT_PROVIDER_UNAVAILABLE'
-      ? t('memberCenter.payChannelUnavailable')
-      : t('memberCenter.payFailed'))
+    // 服务端错误码在 IPC 层被投影成 response.message（见 ipc-handlers/wechat-pay.js 的 safeError）。
+    // 会员期限上限必须展示**具体原因**，不能退化成泛化的「支付未完成」。
+    const code = response && response.message
+    let text = t('memberCenter.payFailed')
+    if (code === 'PAYMENT_PROVIDER_UNAVAILABLE') text = t('memberCenter.payChannelUnavailable')
+    else if (code === 'SUBSCRIPTION_HORIZON_EXCEEDED') text = t('memberCenter.payHorizonExceeded')
+    fail(text)
     return
   }
   if (!response.data.qrDataUrl) {

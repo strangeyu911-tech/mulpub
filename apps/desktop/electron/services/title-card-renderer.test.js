@@ -23,6 +23,9 @@ const {
   SAFE_MARGIN_RATIO,
 } = require('./title-card-renderer')
 
+// 当场实测（插入本块之后）：本文件裸 it( 共 26 处，全部属非渲染组；棘轮只能缩小
+const BARE_IT_MSG = '裸 it( 计数从 26 涨到 '
+const BARE_IT_CAP = 26
 const { findFfmpeg } = require('./media-tool-paths')
 
 /** zoom-in 1.25 居中裁切吃掉的单侧比例 —— 安全区必须大于它 */
@@ -294,5 +297,67 @@ describe('title-card-renderer 实际渲染', () => {
     for (const key of ['cinematic', 'realistic', 'cartoon', 'anime', 'cyberpunk', 'watercolor', 'minimalist']) {
       expect(THEMES[key]).toBeTruthy()
     }
+  })
+})
+describe('describeRenderFailure：挂起与滤镜报错必须分档（2026-10-27 从 CI 回读定位）', () => {
+  // vitest 以 ESM 跑，模块里没有 require ⇒ 必须 await import
+  const load = async () => (await import('./title-card-renderer.js')).describeRenderFailure ?? (await import('./title-card-renderer.js')).default?.describeRenderFailure
+  const src = async () => (await import('node:fs')).readFileSync(new URL('./title-card-renderer.js', import.meta.url ?? 'file:///' + process.cwd()), 'utf8')
+
+  it('挂起档：killed=true 时明写「挂起」并带 signal；stderr 缺席要显式打 <空>', async () => {
+    const d = await load()
+    expect(typeof d, 'describeRenderFailure 未导出（锁测不到东西）').toBe('function')
+    const msg = d({ message: 'Command failed: ffmpeg', killed: true, signal: 'SIGKILL', stderr: '' }, ['-nostdin', '-y', 'card.png'])
+    expect(msg).toContain('挂起')
+    expect(msg).toContain('SIGKILL')
+    expect(msg).toContain('stderr: <空>')
+    expect(msg).toContain('argv: -nostdin -y card.png')
+    expect(msg.includes('ffmpeg 渲染失败:')).toBe(false)
+  })
+
+  it('滤镜档：killed 不为真时不得出现「挂起」（把两档合写一句等于没分档）', async () => {
+    const d = await load()
+    const msg = d({ message: 'Command failed: ffmpeg', killed: false, stderr: '[AVFilterGraph] Invalid argument' }, ['-y'])
+    expect(msg).toContain('renderTitleCard: ffmpeg 渲染失败:')
+    expect(msg.includes('挂起')).toBe(false)
+    expect(msg).toContain('stderr: [AVFilterGraph] Invalid argument')
+  })
+
+  it('反失明档：stderr 缺席一律打 <空>，不得整段省略（省略等于把「没话说」读成「没问题」）', async () => {
+    const d = await load()
+    for (const err of [{ message: 'x' }, { message: 'x', stderr: '   ' }, { message: 'x', stderr: undefined }]) {
+      expect(d(err, [])).toContain('stderr: <空>')
+    }
+  })
+
+  it('接线：抛出必须走该分档函数；内联拼接的老写法回来就红', async () => {
+    const text = await src()
+    expect(text.includes('throw new Error(describeRenderFailure(lastError, lastArgv, fontconfigFailureProbe()))')).toBe(true)
+    expect(text.includes("throw new Error('renderTitleCard: ffmpeg 渲染失败")).toBe(false)
+  })
+})
+
+// 2026-10-27：预算类判据必须比"这一组用例**实际生效**的时限"，不是比 vitest 全局默认值。
+// 上一轮我拿全局 testTimeout=10s 去比 attempts × 8s = 16s，量出一条根本不存在的"倒挂"
+// （本组走 itWithFfmpeg，显式带 60s）。尺子错了，读数再准也是错结论 ⇒ 生效时限改为**读本文件源码里那行声明**。
+describe('渲染用例的生效时限与总预算（判据比较对象已修正）', () => {
+  it('总预算 attempts × RENDER_TIMEOUT_MS 必须小于本组用例的生效时限', async () => {
+    const src = require('node:fs').readFileSync(__filename, 'utf8').replace(/\r\n/g, '\n')
+    const decl = /const FFMPEG_RENDER_TIMEOUT_MS = (\d+)/.exec(src)
+    expect(decl, '找不到本组渲染用例的生效时限声明 ⇒ 判据失去比较对象；不得回退到 vitest 全局 testTimeout（那正是上一次的错）').not.toBeNull()
+    const caseTimeout = Number(decl[1])
+    const m = await import('./title-card-renderer.js')
+    expect(typeof m.RENDER_TIMEOUT_MS, 'RENDER_TIMEOUT_MS 未导出 ⇒ 这条锁没有读者').toBe('number')
+    expect(typeof m.RENDER_ATTEMPTS, 'RENDER_ATTEMPTS 未导出 ⇒ 这条锁没有读者').toBe('number')
+    const total = m.RENDER_ATTEMPTS * m.RENDER_TIMEOUT_MS
+    expect(total, '内部总预算 ' + total + 'ms 不小于生效时限 ' + caseTimeout + 'ms ⇒ ffmpeg 还没被杀、vitest 先判超时，argv/killed/FONTCONFIG 现场会被吃掉').toBeLessThan(caseTimeout)
+  })
+
+  it('渲染类用例不得走裸 it()（裸 it 落回全局 10s，把刚分档好的现场吃掉）', () => {
+    const src = require('node:fs').readFileSync(__filename, 'utf8').replace(/\r\n/g, '\n')
+    const bareNow = (src.match(/^ {2}it\(/gm) || []).length
+    const wrappedNow = (src.match(/itWithFfmpeg\(/g) || []).length
+    expect(wrappedNow, 'itWithFfmpeg 计数为 0 ⇒ 本条判据无从成立（不得把「没扫到」读成「没违规」）').toBeGreaterThan(0)
+    expect(bareNow, BARE_IT_MSG + bareNow).toBeLessThanOrEqual(BARE_IT_CAP)
   })
 })

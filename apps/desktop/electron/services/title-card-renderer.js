@@ -41,6 +41,13 @@ const { promisify } = require('util')
 
 const execFileAsync = promisify(execFile)
 
+// 内部 ffmpeg 硬超时与**重试轮数**必须由模块单点持有并导出：
+// 一轮 timeout 不是预算，总预算是 attempts × timeout（本轮实测 2 × 8000 = 16s，
+// 已逼近 shard 的用例超时；一旦用例超时更紧，失败形态会退化成 "Test timed out"，
+// ffmpeg 现场被整个吃掉 —— 那正是这条红被记成「归属待定」数日的第二个原因）。
+const RENDER_TIMEOUT_MS = Number(process.env.MP_TITLE_CARD_RENDER_TIMEOUT_MS || 8000)
+const RENDER_ATTEMPTS = 2
+
 const { findFfmpeg } = require('./media-tool-paths')
 const { buildDrawtextFontOption, buildFontconfigEnv, resolveContentCjkFont } = require('./font-resolver')
 
@@ -376,7 +383,7 @@ async function renderTitleCard (options) {
   let degraded = false
   let lastError = null
   let lastArgv = null
-  for (const source of [gradientSource, solidSource]) {
+  for (const source of [gradientSource, solidSource].slice(0, RENDER_ATTEMPTS)) {
     try {
       // -nostdin：ffmpeg 官方开关「禁用 stdin 交互」。不给它时，ffmpeg 一旦因任何原因
       // 去读 stdin 就会**永久等待**（父进程的 pipe 写端一直开着）⇒ 调用方只能看到
@@ -393,7 +400,7 @@ async function renderTitleCard (options) {
         '-f', 'image2', opts.outputPath,
       ]
       await execFileAsync(ffmpeg, lastArgv, {
-        timeout: 8000,
+        timeout: RENDER_TIMEOUT_MS,
         maxBuffer: 4 * 1024 * 1024,
         // stdin 显式关闭：不给它，ffmpeg 若去读 stdin 就会一直等（见上）。
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -422,16 +429,58 @@ async function renderTitleCard (options) {
   // 缺了它，ffmpeg 挂住或报错时只得到一句「渲染失败」——CI 上只能看到超时，
   // 拿不到 ffmpeg 自己说了什么（2026-10-24 主干红实测：Windows runner 上两个含
   // 特殊字符的用例各卡满 vitest 的 10s，日志里没有任何 ffmpeg 现场）。
-  const argvText = Array.isArray(lastArgv) ? lastArgv.join(' ') : ''
-  const stderrText = String((lastError && lastError.stderr) || '').trim().slice(-400)
-  throw new Error('renderTitleCard: ffmpeg 渲染失败: ' +
-    (lastError && lastError.message ? lastError.message : String(lastError)) +
+  // 分档判据见 describeRenderFailure：2026-10-27 从 CI 回读确认那两条红其实是
+  // **挂起被 SIGKILL**（各 16.2s ≈ 2 × 内部 8s timeout），而旧文案把挂起写成「渲染失败」，
+  // 于是这条红挂了几天都被记成「归属待定」。
+  throw new Error(describeRenderFailure(lastError, lastArgv, fontconfigFailureProbe()))
+}
+
+/**
+ * 读 fontconfig 注入现场：路径 + 是否存在 + 长度。
+ * 只在失败路径调用（不进热路径），且**不打印文件内容**——fonts.conf 里是绝对路径，
+ * 打全文等于往日志里塞本机路径。
+ */
+function fontconfigFailureProbe () {
+  try {
+    const file = process.env.FONTCONFIG_FILE || ''
+    if (!file) return 'FONTCONFIG_FILE=<未设置>'
+    return 'FONTCONFIG_FILE=' + file + ' exists=' + (fs.existsSync(file) ? 'yes' : 'no')
+  } catch (_) {
+    return 'FONTCONFIG_FILE=<读取失败>'
+  }
+}
+
+/**
+ * 把 ffmpeg 的失败**如实分档**：挂起被杀 ≠ 滤镜报错。
+ *
+ * 两条硬约束：
+ * 1. 判据取 `error.killed` / `error.signal`（Node 在 timeout 杀进程时置位），
+ *    不按耗时猜——耗时只能提示"像是超时"，不能证明。
+ * 2. stderr 缺席时**显式打 `<空>`**。被 SIGKILL 的进程 stderr 天然来不及写出，
+ *    "缺席"本身就是这一档的证据；省略掉它，挂起与语法错在日志里就完全同形。
+ */
+function describeRenderFailure (error, argv, fontconfig) {
+  const message = error && error.message ? error.message : String(error)
+  const argvText = Array.isArray(argv) ? argv.join(' ') : ''
+  const stderrText = String((error && error.stderr) || '').trim().slice(-400)
+  const killed = !!(error && error.killed)
+  const signal = killed ? String(error.signal || 'SIGKILL') : ''
+  const head = killed
+    ? 'renderTitleCard: ffmpeg 未在预算内返回，已被 ' + signal + ' 杀掉（这是**挂起**，不是滤镜报错；stderr 缺席是这一档的预期形态）: '
+    : 'renderTitleCard: ffmpeg 渲染失败: '
+  return head + message +
     (argvText ? ' | argv: ' + argvText : '') +
-    (stderrText ? ' | stderr: ' + stderrText : ''))
+    ' | stderr: ' + (stderrText || '<空>') +
+    (killed ? ' | killed=true signal=' + signal : '') +
+    (fontconfig ? ' | ' + fontconfig : '')
 }
 
 module.exports = {
   renderTitleCard,
+  describeRenderFailure,
+  RENDER_TIMEOUT_MS,
+  RENDER_ATTEMPTS,
+  fontconfigFailureProbe,
   escapeDrawtextText,
   computeCardLayout,
   resolveFfmpegBinary,

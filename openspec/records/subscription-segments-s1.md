@@ -92,8 +92,18 @@ delivered_by_pr: 4464
 - 全量回归：`packages/api-publish-engine` 的 `node scripts/run-tests.js` ⇒ **160 绿 / 2 红**；
   那 2 个（`cloud-accounts-keyring-hardening` / `plugin-loader-runtime-path`）**在干净
   `origin/main` 检出上复跑同样红** ⇒ **主干级存量 / 环境差异，与本片零关系**（零回归）
-- ⚠ **本片未经真 PostgreSQL**：沙箱无 postgres 二进制 ⇒ 段表的 DDL 行为（部分唯一索引、
-  DEFERRABLE 的推迟检查、CHECK 违例的 23514）**均未被真库执行过** ⇒ 归入 §7 诚实边界。
+- ⭐ **真库验证（2026-10-27 补做，15/15 全过）**：本轮在沙箱装了 **PostgreSQL 15**，用**仓里真实的
+  `pg` 驱动 + 本仓真实的仓储原语**（不是复制品）跑了一遍 ⇒ 三条曾「只靠推理」的 DDL 行为断言全部变成实测读数：
+
+  | 断言 | 实测读数 | 结论 |
+  |---|---|---|
+  | 部分唯一索引在**语句末尾**当场拦截、驱动给的 `constraint` = **索引名** | `SEGMENT_MULTIPLE_ACTIVE` / `constraint=idx_identity_subscription_segments_one_active` | ✅ 成立（**分类器的匹配键成立**） |
+  | `(user_id, seq)` 的 DEFERRABLE 把冲突**推迟到 COMMIT**，且事务包装层接得住 | 语句不报错；COMMIT 抛 → 包装层归一成 **409 `COMMERCE_UNIQUE_CONFLICT`**（`pgCode=23505` 保留）→ 二次分类得 `SEGMENT_SEQ_CONFLICT` | ✅ 成立（**D-11 的修法端到端被证**） |
+  | demote 的「剩余自算」与时刻 CHECK 相容、毫秒级精度 | `remaining_ms=25919999998`（与 `period_end` 真实差值差 **1ms**）；半截段 / queued 带时刻 / `seq=0` 三条 CHECK 全按预期拒（**23514**） | ✅ 成立 |
+
+  ⇒ 脚本落仓：`packages/api-publish-engine/scripts/verify-segment-ddl.js`（`BUSINESS_DATABASE_URL` 约定；
+  **可选手动工具、不进 CI** —— CI runner 没有 PG，把它塞进测试发现路径就是「一个从不跑的测试」的假绿形态）。
+  ⚠ 顺带量到一个**可改进项**：`activateSegment` **分不清「id 不存在」与「id 不是 queued」**（同报 `SEGMENT_NOT_QUEUED`）⇒ 记为 §7 B15。
 
 ## 6. 独立复核的处置（**独立 Verifier 结论：FAIL —— 抓出 13 条，其中 3 条是本片自己造成的**）
 
@@ -154,7 +164,7 @@ FK 引用方排在后面｜**列级 UNIQUE 不支持 DEFERRABLE（本片用的�
 
 | # | 边界 |
 |---|---|
-| B1 | **未经真 PostgreSQL 验证**：DDL 行为（部分唯一索引即时冲突、DEFERRABLE 推迟到 COMMIT、CHECK 违例 23514）全部是**语义推理**，未在真库执行过 ⇒ 必须在 S2/S3 的真库用例里兑现 |
+| **B1** | ~~未经真 PostgreSQL 验证~~ **已兑现（2026-10-27）**：三条 DDL 行为断言已在 **PostgreSQL 15 + 仓里真实 `pg` 驱动 + 本仓真实仓储原语** 上实测通过（15/15，脚本落仓 `packages/api-publish-engine/scripts/verify-segment-ddl.js`）。⚠ **仍未验的两处**：① **并发**（两笔兑换同时插段 / 同时结算推进）—— 沙箱无法稳定制造并发窗口；② **真库上的迁移执行链**（`runMigrations` + 台账 checksum + `allowPending:false` 的启动期行为）⇒ 这两条仍须由 S2/S3 的真库用例兑现 |
 | B2 | **本片不接任何生产路径**：段链原语已挂上事务类，但**没有任何调用方**（排位规则与结算推进在 S2/S3）⇒ 上线后段链表为空，不产生任何用户可见变化 |
 | B3 | **规格与实现的差异已回写规格**（§3 的 L1/L2 + 显式命名）⇒ 规格不再是「初稿原文」，读者以最新为准 |
 | B4 | 约束名分类用的是**模式匹配**（`/source_reference/`、`/user/`+`/seq/`）⇒ 若将来重命名约束，需同步 `classifyUniqueViolation`（有独立锁盯着「未识别 ⇒ 不当幂等命中」） |
@@ -162,6 +172,7 @@ FK 引用方排在后面｜**列级 UNIQUE 不支持 DEFERRABLE（本片用的�
 | **B12** | **A13 的 DB 层欠账（已改措辞，未兑现）**：规格 A13 原写「应用层与 DB 层**都要挡**」，但 DDL 里**没有 trigger** 拒改 `plan`/`duration_days` ⇒ 本片只兑现了**应用层**（不提供改写语句 + 源码级锁 + 变异验证）⇒ A13 措辞已改为「应用层不提供」，**DB 层 trigger 留在 S6**（已登记，不是遗漏） |
 | **B14** | **`requireUserId` 接受纯空白**（与 `requireSourceReference` 的口径不一致，复核 D-9 的小尾巴）⇒ 本片未改：userId 来自鉴权层、不是用户输入 ⇒ 影响为零；已在 §4 的变异里覆盖不到这一格（它不是缺陷，是口径不齐） |
 | **B13** | **COMMIT 阶段的违例分类是「两段式」**：包装层把 23505 归一成 `COMMERCE_UNIQUE_CONFLICT`（带 `pgCode`/`constraint`）⇒ **段链专属语义码**（`SEGMENT_SEQ_CONFLICT`）要由**调用方**再分类一次才拿得到 ⇒ S2/S3 写结算推进时**必须**走 `classifyUniqueViolation` 二次分类，否则拿到的是通用码（仍 409、仍 fail closed，只是诊断粗） |
+| **B15** | **`activateSegment` 分不清「id 不存在」与「id 不是 queued」**（两者同报 `SEGMENT_NOT_QUEUED`）⇒ 真库实测发现的（见 §5 的 ①d）⇒ 排查「段没激活」有两种成因却只有一个错误码 ⇒ 可改进项（不阻塞；S2/S3 接上前可拆成两个码） |
 
 ## CHANGELOG 条目
 

@@ -12,7 +12,9 @@ export default {
     cancelScheduleSuccess: '已取消定时任务',
     cancelScheduleFailed: '取消定时任务失败，请重试',
     // 定时任务到点但未能进入发布队列（2026-10-06）——此前零可见性，用户无从得知没发出去
-    scheduleDispatchFailed: '定时发布未能发出：{platform} {reason}。该任务已标记失败，请重新排期。',
+    // 措辞判归见 01-docs/i18n-glossary.md §一：该事件的消费者是调度器的逐任务失败事件，
+    // 对象是"单条内容的发送时刻"⇒ 首尾都走「定时」侧（2026-10-26 收口，此前句尾写「排期」）。
+    scheduleDispatchFailed: '定时发布未能发出：{platform} {reason}。该任务已标记失败，请重新定时。',
     scheduleCancelledUncancellable: '该定时任务无法取消（可能已发布或已取消）',
     // 批量排期批次在日历上的展示与取消（2026-10-06）
     scheduledBatchTitle: '批量排期（{count} 篇）',

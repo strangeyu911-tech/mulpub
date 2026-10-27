@@ -12,7 +12,8 @@ export default {
     cancelScheduleSuccess: 'Scheduled task cancelled',
     cancelScheduleFailed: 'Failed to cancel the scheduled task, please retry',
     // Scheduled task reached its time but could not enter the publish queue (2026-10-06)
-    scheduleDispatchFailed: 'Scheduled publish did not go out: {platform} {reason}. The task is marked failed; please schedule it again.',
+    // 与 zh 同口径：对象是单条任务的发送时刻，措辞不再在同句里从 scheduled 跳到 schedule it again。
+    scheduleDispatchFailed: 'Scheduled publish did not go out: {platform} {reason}. The task is marked failed; please set its time again.',
     scheduleCancelledUncancellable: 'This scheduled task cannot be cancelled (it may have been published or already cancelled)',
     // Scheduled batch display and cancellation on the calendar (2026-10-06)
     scheduledBatchTitle: 'Scheduled batch ({count} articles)',

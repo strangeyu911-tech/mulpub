@@ -12,7 +12,7 @@
  * 依赖经 ctx 注入（feApi/t/props + 面板持有的 phase/project/plan/… 状态），保证与面板是同一份状态。
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { resolveProgressCounters } from './auto-progress-counters'
+import { resolveProgressCounters, resolveProgressMessageKeys } from './auto-progress-counters'
 import { ElMessage } from 'element-plus'
 import {
   pipelineStartOrchestrated, pipelineGetRunContext, onPipelineUpdate,
@@ -23,6 +23,25 @@ import { toFileUrl } from './file-url'
 export function useFilmAutoRun (ctx) {
   const { feApi, t, props, phase, project, plan, busy, errorText, errorCode, form, editingShotIndex, fail, unwrap } = ctx || {}
 const progress = ref({ doneCount: 0, totalCount: 0, batchIndex: null, lastType: '' })
+// ⚠ **批次是否还在跑**（唯一权威来源 = 后端 `auto-status` 的 `running`）
+//   · 为什么不用 `phase`：任务中断（失败/停止）时 `running=false` 但 `phase` 停在 'running'
+//     ⇒ 用 phase 会把「已经停了」说成「还在落盘」⇒ 骗用户。
+//   · 为什么不用事件：`production:*` 事件负载**不带 running** ⇒ 只有轮询能给权威值。
+//   · 为什么不用 `progress.doneCount` 的两个口径比较：那只能区分「磁盘领先台账」，
+//     分不出「第一镜还没落盘」与「已经停了」两种都等于 0 的情形。
+const batchRunning = ref(false)
+
+/**
+ * 「批次是否还在跑」的**唯一写点**。
+ * ⚠ 为什么要收成一处：`running` 有**两个**消费者（`refreshStatus` 轮询 / `restoreLastTask` 重开续跑），
+ *   两处都读后端 `data.running` ⇒ 若各自写 `batchRunning`，漏一处就会出现
+ *   「**同一时刻两套文案口径**」（启动路径说「正在落盘」、重开路径说「已完成 N/M」）。
+ * ⇒ 收成一处 ⇒ 口径天然一致。
+ * @param {unknown} running 后端 `auto-status` 的 `running` 字段（严判 `=== true`）
+ */
+function applyBatchRunning (running) {
+  batchRunning.value = running === true
+}
 const composeRunId = ref('')
 const composePercent = ref(0)
 const composePhase = ref('')       // '' | 'running' | 'done' | 'failed'
@@ -56,6 +75,13 @@ const percent = computed(() => {
 })
 const stepIndex = computed(() => ({ input: 0, preview: 1, running: 2, done: 3 }[phase.value] || 0))
 
+/** 进度提示语义（执行中「正在落盘」/ 已收口「已完成 N/M」）——派生自 batchRunning，单一真源 */
+const progressMessageKeys = computed(() => resolveProgressMessageKeys({
+  running: batchRunning.value,
+  done: Number(progress.value.doneCount) || 0,
+  total: Number(progress.value.totalCount) || 0,
+}))
+
 /** StageProgress 阶段清单：把 auto 的批次进度映射成阶段列表（复用既有渲染与状态语义） */
 const stageList = computed(() => {
   const total = Number(progress.value.totalCount) || Number(plan.value?.shotCount) || 0
@@ -67,7 +93,9 @@ const stageList = computed(() => {
   const genStage = {
     name: 'film_auto_generate',
     status: finished ? 'completed' : (running ? 'running' : 'pending'),
-    progress: total > 0 ? { percent: Math.round(done / total * 100), messageKey: 'filmEngineering.auto.stageShotProgress', messageParams: { done, total } } : null,
+    progress: total > 0
+      ? { percent: Math.round(done / total * 100), messageKey: progressMessageKeys.value.stageKey, messageParams: progressMessageKeys.value.params }
+      : null,
   }
   const composeStage = {
     name: 'film_auto_render',
@@ -121,6 +149,8 @@ async function refreshStatus () {
       batchIndex: progress.value.batchIndex,
       lastType: progress.value.lastType,
     }
+    // ⚠ 执行中 vs 已收口：判据只认后端报的 running（**单一真源**，见 auto-progress-counters.js）
+    applyBatchRunning(data.running)
     // provider 运行态（轮询兜底：重开项目时也能看到「服务商繁忙」）
     if (data.providerStatus) applyProviderStatus(data.providerStatus)
     const total = Number(data.totalCount) || 0
@@ -267,6 +297,10 @@ async function restoreLastTask (taskId) {
     }
     restored.value = true
     errorText.value = ''
+    // ⚠ **复核 B1（真实缺陷）**：`restoreLastTask` 是 `data.running` 的**第二个消费者**
+    //   （「关页面 → 重开续跑」这条产品明文承诺的路径）⇒ 此前**只设 phase、没写 batchRunning**
+    //   ⇒ 面板在该路径上仍说「已完成 N / M」（执行期那句话仍在说谎）⇒ 现在接上**唯一写点**。
+    applyBatchRunning(data.running)
     if (data.running) {
       phase.value = 'running'
       startPolling()
@@ -435,7 +469,7 @@ onBeforeUnmount(() => {
   return {
     progress, composeRunId, composePercent, composePhase, composeError, finalPath, finalUnavailable,
     stopping, restored, providerStatus, providerNotice,
-    percent, stepIndex, stageList, shots, missingShots, canCompose, finalFileUrl, diskEstimateText, wallclockText,
+    percent, stepIndex, stageList, progressMessageKeys, shots, missingShots, canCompose, finalFileUrl, diskEstimateText, wallclockText,
     refreshStatus, applyAutoEvent, applyProviderStatus, startPolling, stopPolling, persistLastTask, readLastTask,
     stopRun, restoreLastTask, applyComposeSnapshot, compose, pollComposeRun, startComposePolling, stopComposePolling,
     openFinalFolder, saveFinalAs, openEditor, saveShotEdit, regenerateShot, resetAll,

@@ -231,6 +231,88 @@ describe('FilmAutoPanel · 进度与收口', () => {
     w.unmount()
   })
 
+  /**
+   * A33（PRD §六）：进度提示必须区分「执行中」与「已收口」。
+   *
+   * ⭐ 核心语义（这条是本用例的**主要**断言）：
+   *   **执行中不得声称「已完成 N / M」** ——
+   *   执行期的 N 只能来自**磁盘口径**（已落盘的片数），
+   *   而「磁盘有片 ≠ 该镜成功」（可能是残留，也可能该镜最终判失败）
+   *   ⇒ 说「已完成」是在骗用户 ⇒ 改说「产物正在落盘，进度以磁盘为准」。
+   *   收口后才可以说「已完成 N / M」（那时 N 来自台账，每镜都有结论）。
+   *
+   * ⚠ 判据的来源只有一处：后端 `auto-status` 的 `running`（= runningAutoTasks.has(taskId)）
+   *   ⇒ 用例**必须走真实链路**（autoStatus → refreshStatus → 面板渲染），
+   *   **不许**在下游手工塞字段（那会绕开真正的判据）。
+   */
+  it('A33：执行中显示「产物正在落盘」而非「已完成 N/M」；收口后回到「已完成 N/M」', async () => {
+    // ① 执行中：后端报 running=true
+    const runningApi = makeApi({
+      autoStart: vi.fn(async () => ({ code: 0, data: { started: true, doneCount: 0, totalCount: 12, renderManifest: null } })),
+      autoStatus: vi.fn(async () => ({ code: 0, data: { exists: true, taskId: 'auto-1', running: true, doneCount: 0, totalCount: 12, shots: [], manifestError: null } })),
+    })
+    const w = mountPanel(runningApi)
+    w.vm.form.script = '第1场\n剧情'
+    await w.vm.runPlan()
+    w.vm.confirmed = true
+    await w.vm.startRun()
+    await flushPromises()
+    const sp = w.findComponent({ name: 'StageProgress' })
+    expect(sp.exists()).toBe(true)
+    // ⭐ 执行中 ⇒ 提示落在「正在落盘」，且**不含**「已完成」口径
+    expect(sp.props('summary')).toContain('filmEngineering.auto.landingProgress')
+    expect(sp.props('summary')).not.toContain('filmEngineering.auto.runSummary')
+    // 阶段清单里的 messageKey 同样走 landing（两处必须同一口径，否则面板自相矛盾）
+    const genStage = sp.props('stages')[1]
+    expect(genStage.progress.messageKey).toContain('filmEngineering.auto.landingProgress')
+    expect(genStage.progress.messageKey).not.toContain('filmEngineering.auto.stageShotProgress')
+    w.unmount()
+
+    // ② 已收口：后端报 running=false（默认 makeApi 夹具即是）
+    const doneApi = makeApi()
+    const w2 = mountPanel(doneApi)
+    w2.vm.form.script = '第1场\n剧情'
+    await w2.vm.runPlan()
+    w2.vm.confirmed = true
+    await w2.vm.startRun()
+    await flushPromises()
+    const sp2 = w2.findComponent({ name: 'StageProgress' })
+    expect(sp2.exists()).toBe(true)
+    expect(sp2.props('summary')).toContain('filmEngineering.auto.runSummary')
+    expect(sp2.props('summary')).not.toContain('filmEngineering.auto.landingProgress')
+    expect(sp2.props('stages')[1].progress.messageKey).toContain('filmEngineering.auto.stageShotProgress')
+    w2.unmount()
+  })
+
+  /**
+   * ⭐ 复核 B1 的回归保护：「关页面 → 重开续跑」这条产品明文承诺的路径。
+   *
+   * ⚠ 此前只测了**启动路径**（`startRun` → `await refreshStatus()`），
+   *   而 `restoreLastTask`（重开路径）是 `data.running` 的**第二个消费者**，
+   *   此前**只设 phase、没写 batchRunning** ⇒ 面板在该路径上仍说「已完成 N / M」
+   *   ⇒ A33 要消灭的那句谎在**产品明文承诺的路径**上原样复现。
+   * ⇒ 本条走**重开路径**（`onMounted` → `restoreLastTask`）⇒ 必须真链路，不许手工塞字段。
+   */
+  it('A33 补强：重开续跑路径（restoreLastTask）也必须说「产物正在落盘」', async () => {
+    const api = makeApi({
+      // 重开时后端报 running=true、台账 0、磁盘已落盘 3（磁盘口径在涨 ⇒ 「已完成 3/12」会是在说谎）
+      autoStatus: vi.fn(async () => ({ code: 0, data: { exists: true, taskId: 'auto-1', running: true, doneCount: 0, doneCountOnDisk: 3, totalCount: 12, shots: [], manifestError: null } })),
+    })
+    // 让 restoreLastTask 拿到 taskId（它优先用传入值，否则读上次任务）
+    const w = mountPanel(api)
+    await flushPromises()
+    // 直接触发重开路径（面板暴露了 restoreLastTask）
+    const ok = await w.vm.restoreLastTask('auto-1')
+    await flushPromises()
+    expect(ok).toBe(true)
+    expect(w.vm.phase).toBe('running')
+    const sp = w.findComponent({ name: 'StageProgress' })
+    expect(sp.exists()).toBe(true)
+    expect(sp.props('summary')).toContain('filmEngineering.auto.landingProgress')
+    expect(sp.props('summary')).not.toContain('filmEngineering.auto.runSummary')
+    w.unmount()
+  })
+
   it('收口合成复用既有 pipeline 通道并透传 manifest', async () => {
     const api = makeApi()
     const w = mountPanel(api)

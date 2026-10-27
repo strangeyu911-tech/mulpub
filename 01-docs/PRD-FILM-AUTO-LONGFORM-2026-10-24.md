@@ -1,7 +1,7 @@
 # 影视工程「自动」模式长篇化改造 · 实施落地方案
 
 > **文档类型**：PRD + 实施落地方案（先文档后代码的输入件）
-> **版本**：v1.9
+> **版本**：v1.11
 > **日期**：2026-10-24
 > **代码基线**：`Colinchiu007/mulpub` @ `ceef6e74e`（2026-10-24 拉取，已 `--unshallow` 补全 5626 提交历史）
 > **上游文档**：`01-docs/PRD-FILM-AUTO-MODE-2026-10-09.md`（自动模式 v3 定稿）、`01-docs/PRD-FILM-FULL-CORPUS-PRODUCTION-2026-09-23.md`（全量出片）
@@ -655,7 +655,12 @@ Duration: 8.000000 s
 **显示项**：面板 `runSummary`「已完成 {done} / {total} 镜」⇒ `done` 改用 `displayDone`。
 
 **提示文字**：本版**未新增**文案（`runSummary` 在执行期读作「已落盘 N / M」已通顺）；
-「产物正在落盘，进度以磁盘为准」这句**待做**（见 §六 A33），因为它需要区分「执行中」与「已收口」两种语义。
+「产物正在落盘，进度以磁盘为准」这句**已落地**（见 §3.2.5.5）—— 它需要区分「执行中」与「已收口」两种语义。
+
+⚠ **补记（2026-10-26，§3.2.5.5 落地后回看本节）**：「已落盘 N / M」这句在**执行期**其实是**不准确**的
+—— N 只能来自磁盘口径（已落盘的片数），而「磁盘有片 ≠ 该镜成功」（可能是上一轮残留，也可能该镜最终被判失败）
+⇒ ⇒ 执行期说「已完成」是在说谎 ⇒ §3.2.5.5 把执行期文案换成「产物正在落盘，进度以磁盘为准」
+（**只承诺落盘，不承诺成功**），收口后才说「已完成 N / M」（那时 N 来自台账，每镜都有结论）。
 
 #### 3.2.5.2　缺陷 ① + ②（并发 2 × 串行 provider ⇒ 幽灵请求雪崩）——✅ 已落地（实现见 §3.2.5.3）
 
@@ -1008,6 +1013,142 @@ Duration: 8.000000 s
   出片用的是吸附后的 `effectiveSeconds` ⇒ 二者口径本来就不同）
   ⇒ 已登记为 §五遗留项（M1 的时长预估口径要统一）。
 - ⚠ **12 秒档仍未放开**（`AUTO_SHOT_SECONDS = [5, 8, 10]`）⇒ M0′.3.1 遗留项，本片不动。
+
+#### 3.2.5.5　A33　进度提示区分「执行中 / 已收口」（2026-10-26，✅ 本版已落地）
+
+##### 现状（实测，不是读文档推的）
+
+| 环节 | 现状 | 问题 |
+|---|---|---|
+| 后端 `auto-status` | `running: runningAutoTasks.has(project.taskId)` | ⭐ 这就是「批次还在跑」的**权威信号**（`runningAutoTasks` 在 `auto-start` 派发时同步加入，driver 结束时删除） |
+| 渲染端 `useFilmAutoRun.js` | `progress.doneCount` = `displayDone`（磁盘口径 max 台账）⇒ `stageList` 用 `stageShotProgress` 文案 | ⚠ 文案恒为「已完成 {done} / {total} 镜」⇒ **执行期也在说「已完成」** |
+| 面板 `FilmAutoPanel.vue` | `:summary` 硬编码 `runSummary` | 同上 |
+
+⚠ **为什么「执行中说『已完成』」是在说谎**：逐镜状态**只在批次收口时**才回写台账
+⇒ 执行期台账里每镜仍是 `pending` ⇒ 那个 N **只能来自磁盘口径**（已落盘的片数）
+⇒ 而「**磁盘有片 ≠ 该镜成功**」（可能是上一轮残留，也可能该镜最终被判失败）
+⇒ ⇒ 说「已完成」会让用户以为这 N 镜**已经成了** ⇒ 收口后若其中有镜失败，用户被误导过。
+
+##### ⭐ 判据：只用 `running`（**单一真源**），且**不能用 `phase` 代替**
+
+| 候选判据 | 为什么不采信 |
+|---|---|
+| `phase === 'running'` | ❌ `phase` 是**渲染端**的阶段值：任务中断（失败/停止）时后端 `running=false`，但 `phase` 会**停在 `'running'`** ⇒ 会把「**已经停了**」说成「还在落盘」⇒ **那是在骗用户** |
+| 事件负载（`production:*`） | ❌ 事件**不带 `running`** ⇒ 只有轮询能给出权威值 ⇒ 事件参与判定 ⇒ **两处口径打架** |
+| `displayDone > closeDone`（双口径比较） | ❌ 只能区分「磁盘领先台账」⇒ 分不出「**第一镜还没落盘**」与「**已经停了**」两种都等于 0 的情形 |
+| ⭐ **`data.running === true`（后端 `auto-status`）** | ✅ 精确等于「这个任务当前在主进程里跑着」⇒ **批次还在跑**；且**只有轮询能给权威值** ⇒ **单点** |
+
+⇒ 落点：`useFilmAutoRun.js` 的 `refreshStatus` 里 `batchRunning.value = data.running === true`
+（**事件不改它** ⇒ 避免两处口径打架；`production:complete` 事件会触发 `refreshStatus()` ⇒ 收口瞬间即拿到 `false`）。
+
+##### 数据校验
+
+| 字段 | 取值域 | 校验与回落 |
+|---|---|---|
+| `running` | 布尔 | ⚠ **严判 `=== true`**：字段缺失 / `undefined` / `null` / 字符串 `'true'` / 数字 `1` ⇒ 一律按「**不在跑**」处理（**保守侧**：不谎称正在落盘） |
+| `done` | 整数 ≥ 0 | 非法值（`'x'` / `null` / `NaN`）⇒ 归 **0**（不许把 `NaN` 传进 UI） |
+| `total` | 整数 ≥ 0 | 同上 ⇒ 归 **0** |
+
+##### 功能逻辑
+
+```
+// 单一真源：apps/desktop/src/views/film-auto/auto-progress-counters.js
+resolveProgressMessageKeys({ running, done, total }) ⇒ {
+  landing:    running === true,
+  summaryKey: landing ? 'filmEngineering.auto.landingProgress' : 'filmEngineering.auto.runSummary',
+  stageKey:   landing ? 'filmEngineering.auto.landingProgress' : 'filmEngineering.auto.stageShotProgress',
+  params:     { done, total },
+}
+```
+
+- **两个口径同源**：`resolveProgressCounters` 答「**数字是多少**」，`resolveProgressMessageKeys` 答「**这句话能不能说**」
+  ⇒ 两者住在**同一个模块**（`auto-progress-counters.js`）⇒ 不会出现「数字用磁盘、文案说完成」的口径分裂。
+- **两处 settled 文案沿用既有 key**（`runSummary` / `stageShotProgress`）⇒ **文案形状不变**，只是执行期换 key。
+- **执行期两处共用同一个 `landingProgress`**（文案不含占位符 ⇒ `params` 多传无害）。
+- **纯函数、零副作用** ⇒ 可单测；**不新增 IPC、不新增后端字段**（`running` 本来就在 `auto-status` 的返回里）。
+
+##### 显示项
+
+| 位置 | 执行中 | 已收口 |
+|---|---|---|
+| 面板顶部 summary（`StageProgress` 的 `summary`） | 「产物正在落盘，进度以磁盘为准」 | 「已完成 {done} / {total} 镜」 |
+| 阶段清单里「生成」阶段的 `messageKey` | 同上 | 「已完成 {done} / {total} 镜」 |
+| 进度条百分比 | **不变**（`displayDone / total`） | 不变 |
+| 逐镜状态列（`shotStatus`） | **不变**（待生成 / 生成中 / 已完成 / 失败） | 不变 |
+
+⚠ **失败镜不在 summary 里重复计数**：收口后若部分镜失败，`done`（台账口径）会小于 `total`
+⇒ summary 读作「已完成 N / M」⇒ 差额由**逐镜状态列**（`shotStatus.failed` + 失败原因列）呈现
+⇒ **不新增「失败 K」文案**（避免两处口径 + 面板余量被吃光）。
+
+##### 交互逻辑
+
+- **不新增任何交互**（无新按钮 / 无新开关 / 无新状态）⇒ 纯显示项变更。
+- ⚠ **进度条不得回退**：沿用 #4443 的口径（事件口径只带台账 `doneCount` ⇒ 与当前显示值取 max）
+  ⇒ 本片**不动**该逻辑。
+- ⚠ **停止按钮语义不变**（停止是批间生效；已完成的镜不重做）。
+- ⚠ **重开项目**（「关页面 → 重开续跑」这条产品明文承诺的路径）：
+  `restoreLastTask` **自己**调 `auto-status` 并**直接读 `data.running`**
+  （⚠ **不经过** `refreshStatus`）⇒ ⇒ 两个消费者（`refreshStatus` 轮询 / `restoreLastTask` 重开）
+  ⇒ **都经同一个唯一写点** `applyBatchRunning(running)` ⇒ 口径天然一致
+  ⇒ ⇒ **正在跑的任务重开后立即显示「正在落盘」**（不是退回「已完成 N/M」）。
+  ⚠ **这条是独立复核抓出来的真缺陷**（见 §3.2.5.5 的诚实边界与执行记录）：此前 `restoreLastTask`
+  **只设 `phase`、没写 `batchRunning`** ⇒ 该路径上那句谎原样复现 ⇒ 现在有**回归锁**锁住它。
+
+##### 提示文字（zh / en 成对，CI Gate 7 校验对称）
+
+| key | 中文 | English |
+|---|---|---|
+| `filmEngineering.auto.landingProgress` | 产物正在落盘，进度以磁盘为准 | Artifacts are landing; progress is disk-based |
+| `filmEngineering.auto.runSummary`（既有） | 已完成 {done} / {total} 镜 | {done} / {total} shots done |
+| `filmEngineering.auto.stageShotProgress`（既有） | 已完成 {done} / {total} 镜 | {done} / {total} shots done |
+
+⚠ 文案**不含 `{done}` / `{total}` 占位符** ⇒ 执行期**不承诺具体数字**（数字还在涨，写死反而是第二处口径）
+⇒ 只承诺「正在落盘」这件事本身。
+
+##### 验收
+
+| 编号 | 判据 | 落点 |
+|---|---|---|
+| **A48** | `running=true` ⇒ 两处文案 key 都是 `landingProgress`，且**不含**「已完成」口径的 key | `auto-frontend-utils.test.js` |
+| **A49** | `running=false` ⇒ 沿用 `runSummary` / `stageShotProgress`（文案形状不变） | `auto-frontend-utils.test.js` |
+| **A50** | `running` 缺失 / 非布尔（`'true'` / `1` / `null`）⇒ 保守判「不在跑」；`done`/`total` 非法值 ⇒ 归 0 | `auto-frontend-utils.test.js` |
+| **A51** | ⭐ **端到端**：后端报 `running=true` ⇒ 面板渲染的 summary **含** `landingProgress` 且**不含** `runSummary`；阶段 `messageKey` 同样；`running=false` ⇒ 反之（**走真链路**：`autoStatus` → `refreshStatus` → 面板渲染，**不许**在下游手工塞字段） | `FilmAutoPanel.test.js` |
+| **A52** | ⭐ **重开路径端到端**：走「关页面 → 重开可续跑」入口（`restoreLastTask`）⇒ 后端 `running=true`、台账 0、磁盘 3 ⇒ 面板 summary **必须含** `landingProgress` 且**不含** `runSummary`（该入口**不经过** `refreshStatus`，必须自己读到权威值） | `FilmAutoPanel.test.js` |
+| **A53** | ⭐ **locale 文案本体锁**：**直接读** `film-engineering/zh.js` / `en.js` 本体 ⇒ 断言中英文**句子逐字在位**且**不含** `{done}` 占位（删任一边、同时删两边、或把值改写一个字 ⇒ 都要红）。⚠ 该 key 是**裸字符串**（写在 `auto-progress-counters.js` 的常量表里）⇒ 仓内 locale 键扫描（只扫 `t('...')` 调用点）**看不见它** ⇒ 这把锁**不可省** | `auto-frontend-utils.test.js` |
+
+⇒ **变异验证**（证明锁有牙齿，**8 组全被抓住**）：
+M-1 忽略 `running`（永远 settled）⇒ **3 红**｜M-2 永远 landing ⇒ **3 红**｜
+M-3 `useFilmAutoRun` 写死 `batchRunning=false` ⇒ **2 红**｜M-4 面板忽略 `progressMessageKeys` ⇒ **2 红**｜
+M-5 `landing` 判定改宽松真值（`'true'` 也算在跑）⇒ **1 红**｜
+M-6 `restoreLastTask` 不写 `applyBatchRunning`（＝独立复核 B1 那个洞）⇒ **1 红**｜
+M-7 删 locale 的 `landingProgress`（zh / en / 两边同时 / 只改一个字）⇒ **各 1 红**｜
+M-8 唯一写点写死 `false` ⇒ **2 红**。
+⇒ ⚠ **红数以「独立复核方独立复现」的读数为准**（初稿写的 2/1/1 是窄口径下的数，已订正为 3/2/2）。
+
+##### 诚实边界
+
+- ⚠ **本片只改「这句话怎么说」**，**不改任何数字口径**（`displayDone` / `closeDone` / 进度条百分比全部不变）。
+- ⚠ **失败镜的差额仍在逐镜状态列**，本片**不**在 summary 里加「失败 K」
+  ⇒ 用户看到「已完成 8 / 12」时，**差额含义要看逐镜列表**（既有形态）。
+- ⚠ **判据的权威来源是轮询**（`auto-status`，间隔 `pollIntervalMs`）⇒ 但**两条入口都不是等轮询**：
+  · **启动路径**（`startRun`）⇒ 末尾 `await refreshStatus()` ⇒ **立即**拿到 `running` ⇒ **立即**切「正在落盘」；
+  · **重开路径**（`restoreLastTask`）⇒ **自己**调 `auto-status` ⇒ **立即**拿到 `running` ⇒ **立即**切「正在落盘」。
+  ⇒ **「点开始后最多 3 秒才切」是错的**（那是旧稿把两条路径的叙述**正好互换**了）。
+  ⇒ ⚠ **真正的 3 秒空窗**只有一处：**首次轮询就失败**（`auto-status` 报错/未返回 `running`，且此前**还没拿到过** `running=true`）⇒
+  ⇒ 此时按**保守侧**判「不在跑」⇒ 显示「已完成 N / M」⇒ 与本片之前一致（不是回归）。
+  ⇒ ⚠ **但「已经拿到 `running=true` 之后」轮询失败 ⇒ 并不是「已完成 N/M」**：`refreshStatus` 的 catch **不重置**状态
+  ⇒ ⇒ 面板**继续显示「正在落盘」**（与 `useFilmAutoRun.js` 里 catch 分支的行内注释「轮询失败不改状态」同义）⇒
+  ⇒ ⇒ 「轮询失败 ⇒ 保守判不在跑」这句**只对首次失败成立**，不可笼统表述。
+- ⚠ **事件不参与判定**（事件负载不带 `running`）⇒ 收口瞬间（`production:complete` → `refreshStatus` 往返）
+  有**亚秒级**空窗仍显示「正在落盘」⇒ 随后即切回「已完成 N/M」⇒ 可接受。
+- ⚠ **「正在落盘」不承诺成功**：若某镜最终失败，收口后会变成「已完成 N / M」（N < M）⇒ 差额看逐镜列表。
+- ⚠ **本片不解决「进度百分比的口径」**（`displayDone` 仍可能被残留片抬高）⇒ 属 #4443 的既有边界。
+- ⚠ **范围提示（独立复核提出）**：经典版 `FilmEngineeringView.vue` 的执行期仍显示裸 `N/M`
+  ⇒ 那是**另一个功能**（全量出片面板，非「自动」模式）⇒ A33 规格未覆盖它 ⇒ **本片不动**（登记为遗留）。
+- ⚠ **文案本体需要单独一把锁**：提示 key 在 `auto-progress-counters.js` 里是**裸字符串**
+  ⇒ 仓内的 locale 键扫描（只扫 `t('...')` 调用点）**看不见它**
+  ⇒ ⇒ **同时删掉 zh.js + en.js 的 `landingProgress`，vitest 仍全绿、locale 三道门禁仍绿**
+  ⇒ ⇒ 本片补了一条**读 locale 文件本体**的机械锁（断言那条**中文句子**逐字在位）⇒ 删任一条即红。
 - ⚠ **规划期档位表默认含 12，用户可选档位只有 [5,8,10]** ⇒ `effectiveSeconds` **可能算出 12**
   （用户选不了的档位）⇒ 出片端 `pickFilmFrameCount(12)` = 289 帧（存在 ⇒ 链路自洽），
   但「用户能不能选 12」与「规划期该不该算到 12」是**两个问题** ⇒ 本片只如实记录，不统一。
@@ -1020,7 +1161,7 @@ Duration: 8.000000 s
 | **M0.5** 冻结 R3 档位 | 依赖 F-2 | ✅ **冻结为「档 1」** |
 | **M1** 放开规模 + 护栏 | 依赖 M0 全过 | 🔓 **可启动**（§3.2.4 的 ①②③ 已于 2026-10-25 落地，见 §3.2.5.1 / §3.2.5.3）；⚠️ 仍需在 M1 内补：额度治理、`model_provider_logs` 侧复算工具、单镜重生成路径的熔断 |
 | **M0′.3** 出片消费逐镜镜长 | 依赖 F-2（镜长可控） | ✅ **已落地**（§3.2.5.4；新增 `effectiveSeconds` 字段，从 `rawSec` 吸附） |
-| **A33** 进度提示区分「执行中 / 已收口」 | 随 §3.2.5.1 | ⏳ **下一片**：执行中显示「产物正在落盘，进度以磁盘为准」；收口后显示「已完成 N / M 镜」 |
+| **A33** 进度提示区分「执行中 / 已收口」 | 随 §3.2.5.1 | ✅ **已落地**（§3.2.5.5；新增 `landingProgress` 文案 + `resolveProgressMessageKeys` 单一真源） |
 | **M0.4** 音轨能力表 | 依赖 F-1 | ⏳ **下一片**：新增 `VIDEO_AUDIO_PARAM_BY_PROVIDER`，首行 `agnes-multimodal`（音轨开关 = 「不需要（隐式）」） |
 | **M0′.3.1** 12 秒档三处入口 | 新增 | ⏳ **遗留**：三处常量同时放开才有 12 秒档 |
 
@@ -1627,10 +1768,10 @@ templateShots: <随包 kit 153 镜>
 | M0.3 | F-3a：应用侧出片链路跑通（**已完成** 2026-10-24） | 12 镜 + `final.mp4`（真 ffmpeg 合成） | 真 ffprobe 断言（视频流/分辨率/时长 = 12 × 档位 ± 容差）+ 缺镜 fail-closed |
 | M0.3b | F-3b：真 provider 出片跑通（**✅ 已完成 2026-10-25**） | 真 provider 的 12 镜 + `final.mp4`（`62.240s` / 1488 帧 / 有音轨） | ✅ ffprobe 断言通过（时长偏差 0.032s）+ 留证（§3.2.3） |
 | M0.4 | 产出 `VIDEO_AUDIO_PARAM_BY_PROVIDER` 能力表（**🔓 可落地**） | 新文件 + 规划期接入 | 规划期能对不支持的 provider 告警；**首行** = `agnes-multimodal`（音轨开关 = 「不需要（隐式）」） |
-| M0.5 | 依据 M0.1/M0.2 的结论，**冻结 R3 的档位形态**（**✅ 已完成 2026-10-25**） | 本文档 **v1.6**（补 R3 档 1/档 2/档 3 的最终选择；当前为 v1.5） | ✅ 冻结为**档 1**（档 2/档 3 保留不启用） |
+| M0.5 | 依据 M0.1/M0.2 的结论，**冻结 R3 的档位形态**（**✅ 已完成 2026-10-25**） | 本文档 **v1.6**（补 R3 档 1/档 2/档 3 的最终选择；**本里程碑记录时**为 v1.5，**当前版本见文首**） | ✅ 冻结为**档 1**（档 2/档 3 保留不启用） |
 | M0.6 | **落盘体积实测**（A24 的上游依赖）：`prompt.length` 的 P50/P95 × 镜数 × 3 份副本 | 《落盘规模实测表》 | 给出 P50/P95 两个数与对应体积 |
 
-**产出物**：`01-docs/PRD-FILM-AUTO-LONGFORM-2026-10-24.md` v1.5（含实测表；当前为 v1.4）。
+**产出物**：`01-docs/PRD-FILM-AUTO-LONGFORM-2026-10-24.md` v1.5（含实测表；**本里程碑记录时**为 v1.4，**当前版本见文首**）。
 
 ---
 
@@ -2004,7 +2145,7 @@ templateShots: <随包 kit 153 镜>
 | A30 | **provider 饱和熔断** | 注入「连续 N 次客户端超时」⇒ 断言**停止向该 provider 派发**并暴露「预计恢复时间」；**禁止**用固定常数退避 | ✅ **已实现**（M1 随 §3.2.5.3） |
 | A31 | **单次调用请求数上限** | 断言「适配器内部尝试 × 上层重试」的**端到端尝试数 ≤ 单一上限**（**不得是相乘**）；且超时后**不立即**重投 | ✅ **客户端超时侧已闭合**（§3.2.5.3 ⑫：**适配器内部 1 次** —— 真正闭合雪崩的是这一层；governor 在 film 路径上看不到该错误，`client_wait` 分类是防御性的）；⏸ 其余错误类别的相乘部分随 M1 |
 | A32 | **进度以磁盘为真** | 批次执行中（台账尚未收口）⇒ 面板显示的完成数**不等于 0**（按磁盘产物计）。✅ **已落地**：`doneCountOnDisk` + `displayDone` | M1（随 R11）**已实现** |
-| A33 | **进度提示区分「执行中 / 已收口」** | 执行中显示「产物正在落盘，进度以磁盘为准」；收口后显示「已完成 N / M 镜」⇒ 两种语义**必须可区分** | ⏸ 待做（随 §3.2.5.1；**本次未做**，见 §3.2.5.3 ⑫） |
+| A33 | **进度提示区分「执行中 / 已收口」** | 执行中显示「产物正在落盘，进度以磁盘为准」；收口后显示「已完成 N / M 镜」⇒ 两种语义**必须可区分** | ✅ **已实现**（§3.2.5.5；`landingProgress` + `resolveProgressMessageKeys`） |
 | A34 | **收口口径不被磁盘污染** | 断言：磁盘已有 3 个片、**台账 0 镜有结论** ⇒ **不得**判定为「已收口」（`closeDone` 恒等于台账 done） | M1（随 §3.2.5.2）**已实现**（#4443） |
 | A35 | **客户端超时不被当作「可立即重投」** | 注入「客户端等待超时（AbortError）」⇒ 断言**不发起第二次提交**；注入「连接层超时（`cause.code=ETIMEDOUT`）」⇒ 断言**会重投**（两者必须可区分） | ✅ **已实现**（§3.2.5.3；`agnes-multimodal.test.js`） |
 | A36 | **饱和熔断 + 退避按队列长度算** | 注入「连续 3 次客户端超时」⇒ 断言**停止派发新镜**且暴露「预计恢复时间」；断言退避时长**由队列长度推导**（不是固定常数） | ✅ **已实现**（§3.2.5.3；`provider-saturation.test.js` + `auto-runner.test.js`） |

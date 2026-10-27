@@ -85,6 +85,11 @@ export default {
       "confirmHint": "After confirmation the app plans shots, binds references, generates in batches and composes the final cut. You can stop midway; finished shots are never regenerated.",
       "startBtn": "Start generating",
       "runSummary": "{done} / {total} shots done",
+      // ★ A33: while running, do NOT claim "completed" — the running N comes from the disk
+      //   count (files landed), and "a file on disk ≠ that shot succeeded" ⇒ saying
+      //   "completed" would be a lie. Say "landing" instead (promises landing, not success);
+      //   "completed N / M" is shown only after the ledger settles.
+      "landingProgress": "Artifacts are landing; progress is disk-based",
       "runHint": "You can keep using the app while it runs; closing the page does not interrupt the task, and reopening resumes it.",
       "stageShotProgress": "{done} / {total} shots done",
       "colIndex": "Shot",

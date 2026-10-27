@@ -200,7 +200,7 @@ const {
 const {
   progress, composeRunId, composePercent, composePhase, composeError, finalPath, finalUnavailable,
   stopping, restored, providerStatus, providerNotice,
-  percent, stepIndex, stageList, shots, missingShots, canCompose, finalFileUrl, diskEstimateText, wallclockText,
+  percent, stepIndex, stageList, progressMessageKeys, shots, missingShots, canCompose, finalFileUrl, diskEstimateText, wallclockText,
   refreshStatus, applyAutoEvent, startPolling, stopPolling, persistLastTask, readLastTask,
   stopRun, restoreLastTask, applyComposeSnapshot, compose, pollComposeRun, startComposePolling, stopComposePolling,
   openFinalFolder, saveFinalAs, openEditor, saveShotEdit, regenerateShot, resetAll,
@@ -228,7 +228,7 @@ defineExpose({
   runPlan, startRun, fail, unwrap,
   characterRefs, sceneRefs, uploadingKind, pickRefFile, uploadRefFile, readAsDataUrl, removeCharRef, removeSceneRef,
   progress, composeRunId, composePercent, composePhase, composeError, finalPath, finalUnavailable,
-  stopping, restored, providerStatus, providerNotice, percent, stepIndex, stageList, shots, missingShots, canCompose, finalFileUrl,
+  stopping, restored, providerStatus, providerNotice, percent, stepIndex, stageList, progressMessageKeys, shots, missingShots, canCompose, finalFileUrl,
   diskEstimateText, wallclockText, refreshStatus, applyAutoEvent, startPolling, stopPolling,
   persistLastTask, readLastTask, stopRun, restoreLastTask, applyComposeSnapshot, compose,
   openFinalFolder, saveFinalAs, openEditor, saveShotEdit, regenerateShot, resetAll,
@@ -407,7 +407,7 @@ defineExpose({
       <StageProgress
         :stages="stageList"
         :progress-percent="percent"
-        :summary="t('filmEngineering.auto.runSummary', { done: progress.doneCount, total: progress.totalCount })"
+        :summary="t(progressMessageKeys.summaryKey, progressMessageKeys.params)"
         testid-prefix="film-auto"
       />
       <div v-if="phase === 'running'" class="fa-actions">

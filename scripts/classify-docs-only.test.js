@@ -178,6 +178,14 @@ const EXEC_RECORD_CMDS = [
 // openspec/specs/openspec-integration/spec.md 的行级镜像，2026-10-08 那次漂移把
 // QG Static（必需上下文）在 main 上拖红、阻塞当时全部 13 个开放 PR。
 const MIRROR_CMDS = ['node --test scripts/quality-rhythm-spec-mirror.test.js']
+// 设计稿导航契约锁：01-docs/ui-reference/design-2026-10/index.html 命中 '01-docs/**'，
+// 而它的导航契约（规格书 §12：文字两两不同 / 文字=屏 caption / 无死链 / 一一覆盖）由
+// scripts/check-design-nav.js 判定。该判据的输入命中 docs-only 白名单 ⇒ 它必须住在
+// 不被短路的 changes job（同 #3114 形态：PR 侧 Changes 绿、Static skipping，main push 才红）。
+const DESIGN_NAV_CMDS = [
+  'node --test scripts/check-design-nav.test.js',
+  'node scripts/check-design-nav.js',
+]
 
 const GATE_COVERAGE_FOR_WHITELIST = [
   { pattern: 'openspec/**', commands: EXEC_RECORD_CMDS,
@@ -186,7 +194,10 @@ const GATE_COVERAGE_FOR_WHITELIST = [
     why: '账本 JSON 是 check-gate-record-debt 的数据源（#2718 先例）' },
   { pattern: '*.md', commands: BRAND_CMDS,
     why: 'AGENTS.md 把品牌残留列为文档 PR 的保留门禁，而 *.md 全在白名单 ⇒ 门禁必须住在不被短路的 job' },
-  { pattern: '01-docs/**', commands: BRAND_CMDS, why: '同上：PRD / learnings 这些散文文档正是品牌词的风险面' },
+  { pattern: '01-docs/**', commands: [...BRAND_CMDS, ...DESIGN_NAV_CMDS],
+    why: '同上：PRD / learnings 这些散文文档正是品牌词的风险面；另含设计稿产物 01-docs/ui-reference/design-2026-10/index.html，' +
+      '它的导航契约（§12：47 个链接文字两两不同 / 文字=屏 caption / 无死链 / 屏与导航一一对应）由 scripts/check-design-nav.js 判定，' +
+      '该判据的输入命中本白名单 ⇒ 必须住在不被 docs-only 短路的 changes job（AGENTS.md 进白名单前提锁）' },
   { pattern: 'docs/**', commands: BRAND_CMDS, why: '同上：本仓新增机制说明落在这里' },
   { pattern: 'LICENSE', noGate: '许可证全文由发版流程与 GPL 媒体约束条目人工核对，无脚本门禁消费其内容' },
   { pattern: '.gitignore', noGate: '忽略规则由 check-unwired-tests 与 git check-ignore 现场判据兜底，没有读这份文件的门禁' },

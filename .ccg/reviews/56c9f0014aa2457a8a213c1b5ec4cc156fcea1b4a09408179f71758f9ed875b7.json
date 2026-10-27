@@ -1,0 +1,61 @@
+{
+  "sha": "c75e23f3d3bc5045dca42720fa7c4d9f071b6611",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 0 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 2,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 3,
+    "ccgSensitiveContentSample": [
+      "        \"defense\": \"根因判断正确，但修法与授权范围都不在本 PR。① 改匹配域（如 `scripts/*.js` → `scripts/tmp-*.js`）会让 `scripts/` 下**所有**未被跟踪的本机临时脚本同时出现在每个人的 `git status` 里 —— `.gitignore` 是全仓共享的，影响当前所有并发会话的工作区视图，属于\\\"改仓库全局约定\\\"，与\\\"改 CI 白名单 / 改判据本体\\\"同级，按 AGENTS.md 必须人工过目、不得由 agent 夹带；② 用户批准的范围是\\\"给设计稿导航加机检闸门\\\"，不是\\\"重构 .gitignore\\\"；③ 本 PR 已把这条作为「未闭合」如实写进执行记录 §八，不假装闭环。\",",
+      "        \"defense\": \"部分成立，但后三处**不是无保护的手工登记**——它们有机械锁：`classify-docs-only.test.js` 用 `deepEqual` 钉死对账表键集合与白名单双向相等，`check-unwired-tests.test.js` 用 `deepEqual` 钉死登记表清单，任一方向不同步当场红（本 PR 实测 27/27、39/39）。所以真正\\\"无声\\\"的只有第一处（.gitignore 反选），而它已经单独记为 i2 的根因。要求\\\"新增即自动登记\\\"等于新增第三条门禁 —— 又是改守门规则，同样需要授权。\",",
+      "        \"rationale\": \"成立，但**与 i2 同根、同处置**：唯一无保护的是 `.gitignore` 反选（并入 i2 的独立提案）；其余三处已有 `deepEqual` 钉死，属\\\"登记由人做、正确性由判据锁\\\"的既有口径（`check-unwired-tests.js` 文件头第 75–81 行明确记录了这个取舍：不做正则启发式，因为实测会引入 5 个假阳）。⇒ 不在本 PR 新增\\\"自动登记门禁\\\"（那是改守门规则，须授权），在执行记录「未闭合」留档。\","
+    ],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "56c9f0014aa2457a8a213c1b5ec4cc156fcea1b4a09408179f71758f9ed875b7",
+  "decidedAt": "2026-10-27T05:30:56.982Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

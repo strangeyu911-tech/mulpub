@@ -126,6 +126,16 @@ const MUST_LIVE_IN_UNGATED_JOB = {
     resolveWhen:
       "它被点名进 changes job（本次已接 Gate 2b9，advisory 档），或两个热写面不再命中白名单，或本锁被删",
   },
+
+  "scripts/check-design-nav.test.js": {
+    reason:
+      "它守的输入是 01-docs/ui-reference/design-2026-10/index.html，命中 CI_IGNORED_PATHS 的 '01-docs/**' " +
+      "⇒ 只改设计稿产物的 PR 会被判 docs-only；若这条锁只住在带 job 级 if 的 job 里，" +
+      "「把 47 条导航链接改回文字重复（外部评审 i8 的原始缺陷形态）而 CI 一次都不跑」" +
+      "就落在无人检测的盲区（同 Gate 2b2/#3114 实测形态：PR 侧 Changes 绿、Static skipping，main push 才红）",
+    resolveWhen:
+      "它被点名进 changes job（本次已接，无 job 级 if 的那类面），或 01-docs/** 移出 CI_IGNORED_PATHS，或本锁被删",
+  },
 }
 
 // 嵌套 workflow 承认清单：path -> 为什么允许它存在但永不执行。只能缩小，新增即红。

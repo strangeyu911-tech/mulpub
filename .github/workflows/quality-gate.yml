@@ -124,6 +124,14 @@ jobs:
           # 预算出处的**复测入口**自身的锁（字段对齐 / 三档退出码 / 两档采样域不混记 / 接线）。
           # 与上一条同一个落点理由：本 job 不被 docs-only 短路，且在非 PR 早退之前。
           node --test scripts/electron-ci-shard-audit.test.js
+          # 设计稿导航契约锁（规格书 §12）。它的**输入**是 01-docs/ui-reference/design-2026-10/index.html，
+          # 命中 CI_IGNORED_PATHS 的 '01-docs/**' ⇒ 只改设计稿的 PR 会被判 docs-only；
+          # 住在 static-gates（带 job 级 if）就等于「改坏导航的那类 PR 一次都不跑」——
+          # 同 #3114 的实测形态（PR 侧 Changes 绿 / Static skipping，main push 才红）。
+          # 落在这里的理由同上一批：无 job 级 if 的 changes job，且在非 PR 早退之前。
+          # 判据本体只 require node 内置模块，本 job 不装依赖也能跑。
+          node --test scripts/check-design-nav.test.js
+          node scripts/check-design-nav.js
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "docs-only=false" >> "$GITHUB_OUTPUT"
             echo "docs-only=false (non-PR event: full run)"

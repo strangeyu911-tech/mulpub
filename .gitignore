@@ -273,6 +273,12 @@ scripts/*.js
 !scripts/qm6-exit-capabilities.js
 !scripts/qm6-exit-capabilities.test.js
 !scripts/qm6-exit-capabilities.mutation.js
+# 设计稿导航契约判据本体（2026-10-26，change: ui-design-nav-gate）。上面 `scripts/*.js` 通配规则
+# 会把它静默忽略 —— 漏 negation 时 `git status` 里它根本不存在：本机在盘、`node --test` 跑得通，
+# 而 quality-gate.yml 的 changes job 在 CI 上以 MODULE_NOT_FOUND 红，读起来像"判据坏了"而不是
+# "判据没被跟踪"（#3011 / Gate 2c3 / precommit-spawn-budget / same-type-risk-locks / 掩码覆盖 /
+# 引导按钮名 / 未接线组件 同族，这是第 7 次）。测试文件由下方 `!scripts/*.test.js` 通用例外兜住。
+!scripts/check-design-nav.js
 # scripts/*.js is ignored wholesale above, so every tracked script needs its own
 # negation. That per-file allowlist silently loses NEW test files (git add won't
 # warn). Test files must always be tracked, so un-ignore them by pattern instead.

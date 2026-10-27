@@ -1,0 +1,134 @@
+{
+  "sha": "1f944af59f490006d02061fa9e76b63704e7a165",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 441 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 441,
+    "fileCount": 10,
+    "codeFileCount": 6,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "1c73baec25fb831ca7d9ab790e0e669986bf697463343f3214ef2382eec16da6",
+  "decidedAt": "2026-10-27T05:17:22.346Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "claude",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": ".ccg/reviews/*.json reports deepReview.required=true but status=pending, performedBy=null, evidence=null, tier=unknown. A mandatory deep review is uncompleted with no verification artifacts.",
+        "verdict": "upheld",
+        "prosecution": "成立且必须闭合。`.ccg/reviews/1c73baec….json` 里 deepReview.required=true，而 status=pending、performedBy=null、evidence=null、tier=unknown —— 这份记录是 pre-commit 生成的占位形态（评审当时还没跑）。若带着这个状态合并，\"声明了要求做深度评审、却没有评审产物\"就成了既成事实：事后无法区分「评审真的做了只是忘写回」与「评审根本没做」，而这两者的风险完全不同。仓内已有先例把这类悬空记录当成漏审处理，不能靠\"我确实跑了\"口头补。",
+        "defense": "时间序问题，不是缺陷。判定记录由 pre-commit 钩子在**提交时**写入，而在那一刻深度评审尚未开始 —— pre-commit 自己就在输出里声明了这个预期（\"pre-commit 时新 commit 尚未生成，判定记录写在父 sha 上——这是预期行为\"）。评审跑完后写回器会把 status / tier / performedBy / evidence 全部补齐，形状与仓内 2200+ 份已闭环记录一致。换句话说，pending 只存在于\"提交完成 → 评审写回\"这个中间窗口，不是最终交付状态。",
+        "rationale": "两边都成立，但指控方赢在\"判据是最终状态而不是意图\"。辩护只能说\"它稍后会被补上\"，而评审要问的正是\"合并那一刻它补上了没有\"。⇒ 维持 upheld，处置为**本 PR 内闭合**：评审完成后由写回器补齐 status=cleared/self_play_resolved、tier、performedBy、evidence（公开 PR 评论 URL）。可复算：查 `.ccg/reviews/1c73baec….json` 的 deepReview 四个字段，闭环后不得再有 null/unknown。",
+        "externalReview": null
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": ".gitignore fix is the 7th recurrence of the same root failure (scripts/*.js wholesale ignore + per-file exception); root pattern remains, so new scripts will silently fail CI again.",
+        "verdict": "upheld",
+        "prosecution": "成立，而且这是第 7 次同形复发，本身就证明\"逐条补反选\"这条路走不通。`.gitignore:108` 的 `scripts/*.js` 会让**每一个**新建判据本体静默不入仓：本机在盘、`node --test` 跑得通、`git status` 里它根本不存在，直到 CI 以 MODULE_NOT_FOUND 红在别人的文件上。本 PR 又添了第 400+ 条反选，根模式毫发无损 ⇒ 下一次新增脚本的人照样会踩。具体失败场景：任何人 `git add scripts/new-check.js` 会得到\"nothing to add\"（无警告），如果他不像我这次一样回头核 `git status`，就会把一条永不执行的\"门禁\"合进主干。",
+        "defense": "根因判断正确，但修法与授权范围都不在本 PR。① 改匹配域（如 `scripts/*.js` → `scripts/tmp-*.js`）会让 `scripts/` 下**所有**未被跟踪的本机临时脚本同时出现在每个人的 `git status` 里 —— `.gitignore` 是全仓共享的，影响当前所有并发会话的工作区视图，属于\"改仓库全局约定\"，与\"改 CI 白名单 / 改判据本体\"同级，按 AGENTS.md 必须人工过目、不得由 agent 夹带；② 用户批准的范围是\"给设计稿导航加机检闸门\"，不是\"重构 .gitignore\"；③ 本 PR 已把这条作为「未闭合」如实写进执行记录 §八，不假装闭环。",
+        "rationale": "指控成立（根模式确实没动，复发条件完整保留），但**本 PR 不修**——不是\"不该修\"，而是\"不该由本 PR 修\"。两条约束都可复算：`.gitignore` 是共享文件，本机实测 `git check-ignore` 显示 `scripts/*.js` 仍在第 108 行；AGENTS.md 明列改全局守门规则须人工过目。⇒ 处置：钉为独立提案（把通配换成定向忽略 + 清理既有 400+ 条反选），在执行记录「未闭合」与公开评论里点名，等用户决策后再做。**不销账、不留白。**",
+        "externalReview": null
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "quality-gate.yml runs both 'node --test scripts/check-design-nav.test.js' and 'node scripts/check-design-nav.js' sequentially without guard. Divergence between test-runner and standalone behavior isn't caught; standalone exit 1 will fail step but isn't explicitly mapped.",
+        "verdict": "dismissed",
+        "prosecution": "两条命令连着跑，`node --test` 绿不代表 `node` 绿：测试跑的是 `check()` 纯函数与夹具，独立执行跑的是真实产物；若两者的入口行为（参数解析、cwd 依赖、退出码映射）发生漂移，测试仍会绿而门禁实际不生效。另外 `node` 那条 exit 1 只是\"让 step 红\"，没有被显式映射成可读的门禁结论，读日志的人分不清是\"判据发现违规\"还是\"判据自身崩了\"。",
+        "defense": "指控与代码事实相反。① divergence **就是被抓的**：测试文件的最后两例直接`execFileSync(process.execPath, [path.join(__dirname, \"check-design-nav.js\")])` 跑真 CLI —— 一例断言产物缺失时退出码为 2、一例断言正常产物退出码 0 且 stdout 含 PASS（测试第 189 / 197 行）。所以 test-runner 与 standalone 的入口分歧会被这两例当场点红。② \"exit 1 isn't explicitly mapped\" 不需要 map：该 step 声明 `shell: bash`，GitHub Actions 的 bash 默认带 `-e -o pipefail` ⇒ 逐条中止，门禁违规必然让 step 红，这正是门禁想要的方向。③ 独立执行那条的**唯一增量价值**是在 CI 日志里留下可读读数（链接 47 / 屏 47 / 唯一文字 47 / 同编号组 10）—— 测试的 stdout 不会这样呈现，删掉它就等于把\"这次到底查了多少条\"从日志里抹掉。",
+        "rationale": "驳回，理由均可复算：① 测试第 189 行与第 197 行就是用 `execFileSync` 跑真实 CLI 并断言退出码 2 / 0，divergence 已被覆盖（评审说「未被抓到」与代码事实不符）；② `shell: bash` 在 GitHub Actions 下默认 `-eo pipefail`，exit 1 会中止 step，不需要额外\"explicit mapping\"；③ 独立执行那条承载的是 CI 日志里的可读读数，不是重复判定。保留两条是**刻意的双层**（夹具层 + 真实产物层），不是冗余。",
+        "externalReview": null
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "New script requires two-file manual registration (.gitignore exception + check-unwired-tests.js entry). This is the exact brittle registry burden that produced the previous 6 failures.",
+        "verdict": "upheld",
+        "prosecution": "成立。新增一个判据要动两处人工登记：`.gitignore` 加 `!scripts/<name>.js`、`check-unwired-tests.js` 的 MUST_LIVE_IN_UNGATED_JOB 加一条（还要同步 test 里的钉死清单和 classify-docs-only.test.js 的白名单对账表 —— 实为四处）。漏任何一处都不会红，只会静默失效：漏第一处 ⇒ 本体不入仓；漏后三处 ⇒ 判据跑了但没人确认它住在不被短路的 job 里。这种\"靠人记\"的登记正是前 6 次复发的同一个病灶。",
+        "defense": "部分成立，但后三处**不是无保护的手工登记**——它们有机械锁：`classify-docs-only.test.js` 用 `deepEqual` 钉死对账表键集合与白名单双向相等，`check-unwired-tests.test.js` 用 `deepEqual` 钉死登记表清单，任一方向不同步当场红（本 PR 实测 27/27、39/39）。所以真正\"无声\"的只有第一处（.gitignore 反选），而它已经单独记为 i2 的根因。要求\"新增即自动登记\"等于新增第三条门禁 —— 又是改守门规则，同样需要授权。",
+        "rationale": "成立，但**与 i2 同根、同处置**：唯一无保护的是 `.gitignore` 反选（并入 i2 的独立提案）；其余三处已有 `deepEqual` 钉死，属\"登记由人做、正确性由判据锁\"的既有口径（`check-unwired-tests.js` 文件头第 75–81 行明确记录了这个取舍：不做正则启发式，因为实测会引入 5 个假阳）。⇒ 不在本 PR 新增\"自动登记门禁\"（那是改守门规则，须授权），在执行记录「未闭合」留档。",
+        "externalReview": null
+      },
+      {
+        "id": "i5",
+        "severity": "Info",
+        "finding": "Proposal headline claims 830 lines; .ccg/reviews/*.json stats show changedLines=441, fileCount=10. Metrics are inconsistent and unverifiable against proposal.",
+        "verdict": "info",
+        "prosecution": "Proposal headline claims 830 lines; .ccg/reviews/*.json stats show changedLines=441, fileCount=10. Metrics are inconsistent and unverifiable against proposal.",
+        "defense": "口径不同，不是矛盾 —— 与上一轮同一类。830 = 提案里对 diff 体量的粗计（含文档/资源行）；441 = 判定器 changedLines，**只计源码行**（`RULES.codeExtensions`，`.md`/`.html`/`.json` 不计，`.ccg/` 自身产物被 SELF_ARTIFACT_PATH 排除）。实测 `git diff --stat origin/main...HEAD` = 706 增 / 4 删（= 441 源码行 + 文档资源行）。三个数字是三个口径，均已可复算。",
+        "rationale": "口径不同，不是矛盾 —— 与上一轮同一类。830 = 提案里对 diff 体量的粗计（含文档/资源行）；441 = 判定器 changedLines，**只计源码行**（`RULES.codeExtensions`，`.md`/`.html`/`.json` 不计，`.ccg/` 自身产物被 SELF_ARTIFACT_PATH 排除）。实测 `git diff --stat origin/main...HEAD` = 706 增 / 4 删（= 441 源码行 + 文档资源行）。三个数字是三个口径，均已可复算。",
+        "externalReview": null
+      },
+      {
+        "id": "i6",
+        "severity": "Info",
+        "finding": "check-design-nav.js reconstructs SCREEN_RE via new RegExp(SCREEN_RE.source, 'g') where SCREEN_RE already carries g flag; double g is harmless but indicates unverified regex reuse.",
+        "verdict": "info",
+        "prosecution": "check-design-nav.js reconstructs SCREEN_RE via new RegExp(SCREEN_RE.source, 'g') where SCREEN_RE already carries g flag; double g is harmless but indicates unverified regex reuse.",
+        "defense": "接受为改进项，已实证无害并保留。理由：用 `.source` 重建是为了**每次调用拿到全新的 lastIndex**（带 g 的正则对象是有状态的，`exec` 循环结束 lastIndex 停在末尾，复用同一对象会漏匹配）。双 g 只是冗余标记，不影响行为。实测：`check()` 在同一进程内被连续调用 14 次（14 例单测共用模块），每次结果稳定 —— 若复用同一正则对象，第 2 次起会开始漏屏。故保留重建，注释已写明用途。",
+        "rationale": "接受为改进项，已实证无害并保留。理由：用 `.source` 重建是为了**每次调用拿到全新的 lastIndex**（带 g 的正则对象是有状态的，`exec` 循环结束 lastIndex 停在末尾，复用同一对象会漏匹配）。双 g 只是冗余标记，不影响行为。实测：`check()` 在同一进程内被连续调用 14 次（14 例单测共用模块），每次结果稳定 —— 若复用同一正则对象，第 2 次起会开始漏屏。故保留重建，注释已写明用途。",
+        "externalReview": null
+      },
+      {
+        "id": "i7",
+        "severity": "Info",
+        "finding": "openspec/records/ui-design-nav-gate.md (164 lines) mixes design justification, bug narrative, and verification claims with no separate evidence file or CI run reference.",
+        "verdict": "info",
+        "prosecution": "openspec/records/ui-design-nav-gate.md (164 lines) mixes design justification, bug narrative, and verification claims with no separate evidence file or CI run reference.",
+        "defense": "不采纳为独立文件，理由是本仓执行记录的既定形态就是「一篇记录承载 是什么/为什么/门禁读数/未闭合」，`openspec/records/` 下 2200+ 份同形；另起一份\"验证日志\"会与记录本体两处维护、迟早不同步。但接受其内核诉求：已在 §六 把每项门禁的**命令 + 实测读数**逐条写进表格（而非散文式声明），并保留可复算的原始数字（14/14、27/27、39/39、292/0/0/0、179354/44539/18640）。",
+        "rationale": "不采纳为独立文件，理由是本仓执行记录的既定形态就是「一篇记录承载 是什么/为什么/门禁读数/未闭合」，`openspec/records/` 下 2200+ 份同形；另起一份\"验证日志\"会与记录本体两处维护、迟早不同步。但接受其内核诉求：已在 §六 把每项门禁的**命令 + 实测读数**逐条写进表格（而非散文式声明），并保留可复算的原始数字（14/14、27/27、39/39、292/0/0/0、179354/44539/18640）。",
+        "externalReview": null
+      }
+    ],
+    "template": ".adversarial\\ccg-deep-c75e23f3\\adjudication.json",
+    "note": "裁决已填写：4 条逐条 verdict（upheld=3 / dismissed=1）；critic 另出 3 条 Info 级意见（i5–i7）不列入待裁模板，处置一并写入 findings。高危域 0 条 ⇒ 无需外部复核三格。",
+    "at": "2026-10-27T05:27:25.150Z",
+    "tier": "external",
+    "evidence": "delivery@142aeb97e6d9bdbb1d32c2df7532b2715a42051b5acc300dc72bcd684756d744",
+    "closureNote": "Round 1（.adversarial/ccg-deep-c75e23f3/，critic=claude 外部双家族评审 DUAL：proposer=opencode / critic=claude，critic 产出 7 条意见、维度分 correctness 4 / security 8 / performance 8 / maintainability 2，其中 4 条进待裁模板、3 条 Info 另处置）：逐条裁决完毕。**i1 成立且本 PR 闭合**——判定记录 deepReview 曾为 status=pending / performedBy=null / evidence=null / tier=unknown（pre-commit 写下的占位形态）；评审跑完后已写回 status=self_play_resolved / tier=external / performedBy=claude / evidence=delivery@<sha256>。**i3 驳回**——指控称「test-runner 与 standalone 的行为分歧未被抓」，与代码事实相反：测试最后两例直接 execFileSync(process.execPath, [check-design-nav.js]) 跑真 CLI，一例断言产物缺失退出码 2、一例断言正常退出码 0 且 stdout 含 PASS；且该 step 声明 shell: bash，GitHub Actions 默认带 -eo pipefail，exit 1 必然中止 step，不需要额外的 explicit mapping；独立执行那条的增量价值是在 CI 日志留下可读读数（47/47/0/10），保留两层是刻意设计而非冗余。**i2 / i4 成立，但不在本 PR 修（如实留档、不销账）**——两条同根：`.gitignore:108` 的 `scripts/*.js` 通配要求每个新脚本逐条反选，本 PR 是第 7 次；根治方案（把通配换成 scripts/tmp-*.js 之类的定向忽略）会让 `scripts/` 下所有本机临时脚本出现在每个人的 git status 里，而 .gitignore 是全仓共享文件、影响当前所有并发会话，属「改仓库全局约定」，与改 CI 白名单同级，按 AGENTS.md 必须人工过目、不得由 agent 夹带；且用户本次批准的范围是「给设计稿导航加机检闸门」，不是「重构 .gitignore」。i4 的另一半（三处登记）已有 deepEqual 钉死（classify-docs-only.test.js 27/27、check-unwired-tests.test.js 39/39），属仓内既定的「登记由人做、正确性由判据锁」口径。⇒ 两条已写进执行记录「未闭合」并点名给用户决策，不假装闭环。完整裁决、critic 原始输出逐字与可核取证坐标见公开 PR 评论：https://github.com/Colinchiu007/mulpub/pull/4534#issuecomment-6434529581 与仓内执行记录 openspec/records/ui-design-nav-gate.md §六/§八。"
+  }
+}

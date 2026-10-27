@@ -100,7 +100,7 @@
   「QM-6 deep-review 链路的真 blocker 是一行硬编码路径」）。**发现与逐条处置在本节回填**，
   不得把"跑了"写成"闭合了"；CI 侧 `QG Changes` 以 `--mode=advisory` 运行 ⇒ CI 绿 ≠ QM-6 闭合。
 
-## 6. CHANGELOG 条目
+## CHANGELOG 条目
 
 # fix(采集/账号): 账号页首屏启动链的失败必须可见 —— 浮空 promise 与空处理器一并收口（ux-audit-accounts-load-failure）
 

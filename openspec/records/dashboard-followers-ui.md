@@ -82,7 +82,7 @@ date: 2026-10-25
 2. **tasks §6 的 `data-testid` 一行曾写 `platform-<平台>-fans-scope`** ⇒ 该 testid 随小标签方案一起被撤
    ⇒ 现存的是槽位值 `platform-<平台>-fans` 与副标题 `platform-meta` ⇒ 一并订正。
 
-## 六、CHANGELOG 条目
+## CHANGELOG 条目
 
 # feat(dashboard): 账号粉丝上屏 —— 三态分开，口径标在卡片副标题
 

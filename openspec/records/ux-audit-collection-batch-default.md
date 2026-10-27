@@ -90,7 +90,7 @@ watch(batchVideoPlatformOptions, (list) => { …同形… }, { immediate: true }
 - merge SHA / 远程同步状态：由门禁按主干历史推导（`MERGE-ledger`），本文件不手写状态词。
 - main push 回读：`gh run list --workflow=quality-gate.yml --commit <merge SHA>` 必须有一条且 `conclusion=success`。
 
-## 7. CHANGELOG 条目
+## CHANGELOG 条目
 
 # fix(采集页): 批量「目标平台」默认值改由平台目录数据流驱动 —— 冷启动直达采集页不再要求手选（ux-audit-collection-batch-default）
 

@@ -89,7 +89,7 @@
 若最终产物落为 `dual`，本 PR **不**自扮演收口，按 AGENTS 停在未闭合状态并等人复核。
 
 
-## 6. CHANGELOG 条目
+## CHANGELOG 条目
 
 # Gate 7 新增 locale zh/en 键集对称档：两侧都改但改的不是同一批键，从此会被点名
 

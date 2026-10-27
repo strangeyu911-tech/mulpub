@@ -100,7 +100,7 @@ MISSED 先分"锁没测"与"探针没跑成"，别急着给锁加新用例。
 - 另案未做：`title-card-renderer` 的 Fontconfig/短名失败（任务 #31）、`test_scheduler_parity`
   自身 46s 用例不受 `testTimeout` 约束的机制（任务 #32 内已记）。
 
-## 6. CHANGELOG 条目
+## CHANGELOG 条目
 
 # 主干红可归因：parity 的 python 子进程现在自带时长打点、环境档重试与解释器探针
 

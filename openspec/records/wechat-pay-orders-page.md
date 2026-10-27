@@ -137,7 +137,7 @@ spec 要求 pending 订单的「继续支付」**用同一 `orderId` 重新取 `
 - `payment.failed` 状态机：PRD §4.2 明确非目标
 - 订单列表分页：服务端固定 `limit 50`，本期不做翻页
 
-## 9. CHANGELOG 条目
+## CHANGELOG 条目
 
 # 会员中心「订单与账单」展示真实订单
 

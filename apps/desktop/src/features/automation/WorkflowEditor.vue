@@ -4,8 +4,8 @@
     <section class="wf-section">
       <div class="wf-title">{{ t('automation.wfSourceTitle') }}</div>
       <div class="wf-row">
-        <label class="wf-label">{{ t('automation.wfSourceType') }}</label>
-        <select v-model="model.source.type" class="wf-input" data-testid="wf-source-type">
+        <label class="wf-label" :for="fid('sourceType')">{{ t('automation.wfSourceType') }}</label>
+        <select :id="fid('sourceType')" v-model="model.source.type" class="wf-input" data-testid="wf-source-type">
           <option v-for="s in meta.sources" :key="s.id" :value="s.id">{{ s.label }}</option>
         </select>
       </div>
@@ -22,8 +22,8 @@
           <div class="wf-hint">{{ t('automation.wfCategoriesHint') }}</div>
         </div>
         <div class="wf-row">
-          <label class="wf-label">{{ t('automation.wfLimit') }}</label>
-          <input v-model.number="model.source.limit" type="number" min="1" :max="meta.limits.maxHotTopicsLimit" class="wf-input wf-input--sm" />
+          <label class="wf-label" :for="fid('categoriesLimit')">{{ t('automation.wfLimit') }}</label>
+          <input :id="fid('categoriesLimit')" v-model.number="model.source.limit" type="number" min="1" :max="meta.limits.maxHotTopicsLimit" class="wf-input wf-input--sm" />
           <select v-model="model.source.sort" class="wf-input">
             <option value="latest">{{ t('automation.wfSortLatest') }}</option>
             <option value="score">{{ t('automation.wfSortScore') }}</option>
@@ -34,26 +34,26 @@
 
       <template v-else-if="model.source.type === 'creatorMonitor'">
         <div class="wf-row wf-row--block">
-          <label class="wf-label">{{ t('automation.wfFollowIds') }}</label>
-          <input :value="followIdsText" class="wf-input wf-input--full" :placeholder="t('automation.wfFollowIdsPlaceholder')" @input="onFollowIdsInput" />
+          <label class="wf-label" :for="fid('followIds')">{{ t('automation.wfFollowIds') }}</label>
+          <input :id="fid('followIds')" :value="followIdsText" class="wf-input wf-input--full" :placeholder="t('automation.wfFollowIdsPlaceholder')" @input="onFollowIdsInput" />
           <div class="wf-hint">{{ t('automation.wfFollowIdsHint') }}</div>
         </div>
         <div class="wf-row">
-          <label class="wf-label">{{ t('automation.wfPerCreator') }}</label>
-          <input v-model.number="model.source.perCreatorLimit" type="number" min="1" max="20" class="wf-input wf-input--sm" />
+          <label class="wf-label" :for="fid('perCreator')">{{ t('automation.wfPerCreator') }}</label>
+          <input :id="fid('perCreator')" v-model.number="model.source.perCreatorLimit" type="number" min="1" max="20" class="wf-input wf-input--sm" />
           <span class="wf-hint">{{ t('automation.wfPerCreatorHint') }}</span>
         </div>
       </template>
 
       <template v-else-if="model.source.type === 'zhihuFavlist'">
         <div class="wf-row wf-row--block">
-          <label class="wf-label">{{ t('automation.wfFolders') }}</label>
-          <input :value="folderTokensText" class="wf-input wf-input--full" :placeholder="t('automation.wfFoldersPlaceholder')" @input="onFolderTokensInput" />
+          <label class="wf-label" :for="fid('folders')">{{ t('automation.wfFolders') }}</label>
+          <input :id="fid('folders')" :value="folderTokensText" class="wf-input wf-input--full" :placeholder="t('automation.wfFoldersPlaceholder')" @input="onFolderTokensInput" />
           <div class="wf-hint">{{ t('automation.wfFoldersHint') }}</div>
         </div>
         <div class="wf-row">
-          <label class="wf-label">{{ t('automation.wfLimit') }}</label>
-          <input v-model.number="model.source.limit" type="number" min="1" :max="meta.limits.maxFolderLimit" class="wf-input wf-input--sm" />
+          <label class="wf-label" :for="fid('foldersLimit')">{{ t('automation.wfLimit') }}</label>
+          <input :id="fid('foldersLimit')" v-model.number="model.source.limit" type="number" min="1" :max="meta.limits.maxFolderLimit" class="wf-input wf-input--sm" />
           <span class="wf-hint">{{ t('automation.wfFolderLimitHint', { max: meta.limits.maxFolderLimit }) }}</span>
         </div>
       </template>
@@ -103,16 +103,16 @@
         </label>
       </div>
       <div v-if="model.content.type === 'video'" class="wf-row">
-        <label class="wf-label">{{ t('automation.wfPipeline') }}</label>
-        <select v-model="model.content.videoPipeline" class="wf-input" data-testid="wf-pipeline">
+        <label class="wf-label" :for="fid('pipeline')">{{ t('automation.wfPipeline') }}</label>
+        <select :id="fid('pipeline')" v-model="model.content.videoPipeline" class="wf-input" data-testid="wf-pipeline">
           <option value="">{{ t('automation.wfPipelinePlaceholder') }}</option>
           <option v-for="p in meta.videoPipelines" :key="p.id" :value="p.id">{{ p.label }}</option>
         </select>
         <span class="wf-hint">{{ t('automation.wfPipelineHint') }}</span>
       </div>
       <div v-if="model.content.type === 'podcast'" class="wf-row">
-        <label class="wf-label">{{ t('automation.wfChannel') }}</label>
-        <input v-model="model.content.podcastChannelId" class="wf-input" :placeholder="t('automation.wfChannelPlaceholder')" />
+        <label class="wf-label" :for="fid('channel')">{{ t('automation.wfChannel') }}</label>
+        <input :id="fid('channel')" v-model="model.content.podcastChannelId" class="wf-input" :placeholder="t('automation.wfChannelPlaceholder')" />
         <span class="wf-hint">{{ t('automation.wfChannelHint') }}</span>
       </div>
     </section>
@@ -148,8 +148,8 @@
         </div>
       </div>
       <div class="wf-row">
-        <label class="wf-label">{{ t('automation.wfPublishMode') }}</label>
-        <select v-model="model.publish.mode" class="wf-input">
+        <label class="wf-label" :for="fid('publishMode')">{{ t('automation.wfPublishMode') }}</label>
+        <select :id="fid('publishMode')" v-model="model.publish.mode" class="wf-input">
           <option value="immediate">{{ t('automation.wfModeImmediate') }}</option>
           <option value="scheduled">{{ t('automation.wfModeScheduled') }}</option>
         </select>
@@ -185,7 +185,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ACCOUNT_STATUS from '../../../shared/workflow-account-status.json'
 
@@ -196,6 +196,9 @@ const props = defineProps({
 })
 const model = defineModel({ type: Object, required: true })
 const { t } = useI18n()
+// 实例级 id：本页可同文档出现两份（自动化列表与模板预览），写死 id 必撞车
+const uid = useId()
+const fid = (key) => `${uid}-${key}`
 
 function categoryLabel (id) { return t('automation.wfCategory.' + id) }
 

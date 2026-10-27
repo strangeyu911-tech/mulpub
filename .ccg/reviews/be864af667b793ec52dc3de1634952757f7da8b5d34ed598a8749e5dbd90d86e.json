@@ -1,0 +1,91 @@
+{
+  "sha": "9a444c1b2f00204d8cf9b67cc5c2e863925ce5e7",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 125 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 125,
+    "fileCount": 12,
+    "codeFileCount": 4,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "be864af667b793ec52dc3de1634952757f7da8b5d34ed598a8749e5dbd90d86e",
+  "decidedAt": "2026-10-27T13:24:19.148Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "finding": ".ccg/reviews JSON sha=9a444c1b2≠head c606e4bff; changedLines=125≠proposal 508; review metadata stale/unverified",
+        "highRiskDomains": [],
+        "prosecution": "审查记录 metadata 与当前 head/变更行数不一致。",
+        "defense": "这是 CCG 存档元数据，不是代码缺陷；本次修复后已重跑，当前 head 与 PR diff 为准。",
+        "verdict": "dismissed",
+        "rationale": "元数据陈旧不改变实现；PR CI 与 exec record 会重新取证。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "usableCount/unusableCount/filteredAccountGroups use truthy `a.id`; numeric account ID 0 incorrectly excluded from all counts/filters",
+        "highRiskDomains": [],
+        "prosecution": "账号 ID 为数字 0 时被 truthy 判断排除。",
+        "defense": "已改为 hasAccountId 显式判断 undefined/null/空串，并加 0 号账号测试。",
+        "verdict": "dismissed",
+        "rationale": "数字 0 现在可渲染并计入健康统计；测试覆盖。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "clearAccounts/selectAllVisible access `model.value.publish.targets` with no null-guard; missing prop or publish key throws at runtime",
+        "highRiskDomains": [],
+        "prosecution": "selectAllVisible/clearAccounts 直接取 model.publish.targets，缺字段会抛错。",
+        "defense": "已加 targetList/readTargets 守卫，缺失时补空数组；selectedTargets/hasAccount 走只读。",
+        "verdict": "dismissed",
+        "rationale": "所有访问路径都有守卫，不再因缺 publish/targets 抛错。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T13:30:40.603Z"
+  }
+}

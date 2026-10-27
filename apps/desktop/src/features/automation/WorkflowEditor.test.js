@@ -17,6 +17,8 @@ const i18n = createI18n({
         wfContentType: '类型', wfContentArticle: '图文', wfContentVideo: '视频', wfContentPodcast: '播客',
         wfPipeline: '流水线', wfPipelineHint: 'hint', wfChannel: '频道', wfChannelPlaceholder: 'ph', wfChannelHint: 'hint',
         wfPublishTitle: '发布账号', wfAccountsHint: '选择账号', wfAccountsEmpty: '没有账号',
+        wfAccountSearchPlaceholder: '搜索账号', wfAccountSelectAll: '全选当前结果', wfAccountClear: '清空已选',
+        wfAccountHealth: '可用 {usable} 个 · 不可用 {unusable} 个', wfRecentAccounts: '最近使用', wfAccountNoResult: '没有匹配的账号',
         wfAccountsSelected: '已选 {count} 个账号', wfAccountsRequired: '请选择发布账号',
         wfAccountsLegacy: '模板建议平台：{platforms}',
         wfAccountExpired: '登录已过期',
@@ -116,6 +118,32 @@ describe('WorkflowEditor · 发布账号多选', () => {
     await expired.setValue(true)
     expect(w.props('modelValue').publish.targets).toEqual([])
     expect(w.text()).toContain('登录已过期')
+  })
+
+  it('搜索过滤账号，全选只选当前可见且可用的账号', async () => {
+    const w = mountEditor()
+    await w.find('[data-testid="wf-account-search"]').setValue('小号')
+    expect(w.find('[data-testid="wf-account-zhihu-1"]').exists()).toBe(false)
+    expect(w.find('[data-testid="wf-account-zhihu-2"]').exists()).toBe(true)
+    await w.find('[data-testid="wf-account-select-all"]').trigger('click')
+    expect(w.props('modelValue').publish.targets).toEqual([{ platform: 'zhihu', accountId: 'zhihu-2' }])
+    await w.find('[data-testid="wf-account-clear"]').trigger('click')
+    expect(w.props('modelValue').publish.targets).toEqual([])
+  })
+
+  it('健康状态汇总可用/不可用数量', () => {
+    const w = mountEditor()
+    expect(w.find('[data-testid="wf-account-health"]').text()).toContain('可用 2 个')
+    expect(w.find('[data-testid="wf-account-health"]').text()).toContain('不可用 1 个')
+  })
+
+  it('数字 0 账号 ID 也参与渲染与健康统计', () => {
+    const w = mount(WorkflowEditor, {
+      props: { meta, accounts: [{ id: 0, platform: 'zhihu', name: '零号', status: 'active' }], modelValue: config() },
+      global: { plugins: [i18n] },
+    })
+    expect(w.find('[data-testid="wf-account-0"]').exists()).toBe(true)
+    expect(w.find('[data-testid="wf-account-health"]').text()).toContain('可用 1 个')
   })
 
   it('没有已添加账号时给出明确空态，而不是展示平台假选项', () => {

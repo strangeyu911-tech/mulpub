@@ -125,7 +125,40 @@
           {{ t('automation.wfAccountsEmpty') }}
         </div>
         <div v-else class="wf-account-groups">
-          <div v-for="group in accountGroups" :key="group.platform" class="wf-account-group">
+          <div class="wf-account-toolbar">
+            <input
+              v-model="accountSearch"
+              class="wf-input wf-input--full"
+              :placeholder="t('automation.wfAccountSearchPlaceholder')"
+              data-testid="wf-account-search"
+            />
+            <button type="button" class="cohere-btn-text" data-testid="wf-account-select-all" @click="selectAllVisible">
+              {{ t('automation.wfAccountSelectAll') }}
+            </button>
+            <button type="button" class="cohere-btn-text" data-testid="wf-account-clear" @click="clearAccounts">
+              {{ t('automation.wfAccountClear') }}
+            </button>
+            <span class="wf-hint" data-testid="wf-account-health">
+              {{ t('automation.wfAccountHealth', { usable: usableCount, unusable: unusableCount }) }}
+            </span>
+          </div>
+          <div v-if="recentAccounts.length" class="wf-recent" data-testid="wf-recent-accounts">
+            <span class="wf-label">{{ t('automation.wfRecentAccounts') }}</span>
+            <button
+              v-for="acc in recentAccounts"
+              :key="'recent-' + acc.id"
+              type="button"
+              class="wf-chip wf-recent-chip"
+              :class="{ 'wf-chip--on': hasAccount(acc) }"
+              @click="toggleAccount(acc)"
+            >
+              {{ accountLabel(acc) }}
+            </button>
+          </div>
+          <div v-if="!filteredAccountGroups.length" class="wf-hint" data-testid="wf-account-no-result">
+            {{ t('automation.wfAccountNoResult') }}
+          </div>
+          <div v-for="group in filteredAccountGroups" :key="group.platform" class="wf-account-group">
             <div class="wf-account-group__title">{{ group.label }}</div>
             <div class="wf-chips">
               <label
@@ -185,7 +218,7 @@
 </template>
 
 <script setup>
-import { computed, useId } from 'vue'
+import { computed, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ACCOUNT_STATUS from '../../../shared/workflow-account-status.json'
 
@@ -222,10 +255,14 @@ function platformLabel (id) {
   return found ? found.label : id
 }
 
+function hasAccountId (acc) {
+  return Boolean(acc) && acc.id !== undefined && acc.id !== null && acc.id !== ''
+}
+
 const accountGroups = computed(() => {
   const groups = new Map()
   for (const acc of props.accounts || []) {
-    if (!acc || !acc.id || !acc.platform) continue
+    if (!hasAccountId(acc) || !acc.platform) continue
     if (!groups.has(acc.platform)) {
       groups.set(acc.platform, { platform: acc.platform, label: platformLabel(acc.platform), accounts: [] })
     }
@@ -234,6 +271,72 @@ const accountGroups = computed(() => {
   return Array.from(groups.values())
 })
 
+const accountSearch = ref('')
+const recentAccountIds = ref(readRecentAccounts())
+const filteredAccountGroups = computed(() => {
+  const q = accountSearch.value.trim().toLowerCase()
+  if (!q) return accountGroups.value
+  return accountGroups.value
+    .map((g) => ({
+      ...g,
+      accounts: g.accounts.filter((acc) => {
+        const hay = [accountLabel(acc), acc.platform, g.label, acc.status || '', acc.remark || '', acc.id]
+          .join(' ').toLowerCase()
+        return hay.includes(q)
+      }),
+    }))
+    .filter((g) => g.accounts.length > 0)
+})
+const visibleAccounts = computed(() => filteredAccountGroups.value.flatMap((g) => g.accounts))
+const unusableCount = computed(() => (props.accounts || []).filter((a) => hasAccountId(a) && !isAccountUsable(a)).length)
+const usableCount = computed(() => (props.accounts || []).filter((a) => hasAccountId(a) && isAccountUsable(a)).length)
+const recentAccounts = computed(() => {
+  const byId = new Map((props.accounts || []).filter(hasAccountId).map((a) => [String(a.id), a]))
+  return recentAccountIds.value.map((id) => byId.get(String(id))).filter((a) => a && isAccountUsable(a)).slice(0, 5)
+})
+
+function readRecentAccounts () {
+  try {
+    const raw = window.localStorage.getItem('workflow_recent_accounts')
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.map(String) : []
+  } catch (_) {
+    return []
+  }
+}
+
+function rememberAccount (acc) {
+  const id = String(acc.id)
+  const next = [id, ...recentAccountIds.value.filter((x) => x !== id)].slice(0, 10)
+  recentAccountIds.value = next
+  try { window.localStorage.setItem('workflow_recent_accounts', JSON.stringify(next)) } catch (_) { /* 隐私模式忽略 */ }
+}
+
+function readTargets () {
+  const publish = model.value && model.value.publish
+  return publish && Array.isArray(publish.targets) ? publish.targets : []
+}
+
+function targetList () {
+  if (!model.value) return []
+  if (!model.value.publish || typeof model.value.publish !== 'object') model.value.publish = { targets: [] }
+  if (!Array.isArray(model.value.publish.targets)) model.value.publish.targets = []
+  return model.value.publish.targets
+}
+
+function selectAllVisible () {
+  const targets = targetList()
+  for (const acc of visibleAccounts.value) {
+    if (isAccountUsable(acc) && !hasAccount(acc)) {
+      targets.push({ platform: acc.platform, accountId: String(acc.id) })
+    }
+  }
+}
+
+function clearAccounts () {
+  targetList().splice(0)
+}
+
 const UNUSABLE_ACCOUNT_STATUS = new Set(Array.isArray(ACCOUNT_STATUS.unusable) ? ACCOUNT_STATUS.unusable : [])
 
 function isAccountUsable (acc) {
@@ -241,14 +344,15 @@ function isAccountUsable (acc) {
 }
 
 function hasAccount (acc) {
-  return model.value.publish.targets.some(
+  return readTargets().some(
     (t) => t.platform === acc.platform && String(t.accountId) === String(acc.id),
   )
 }
 
 function toggleAccount (acc) {
   if (!isAccountUsable(acc)) return
-  const list = model.value.publish.targets
+  rememberAccount(acc)
+  const list = targetList()
   const idx = list.findIndex((t) => t.platform === acc.platform && String(t.accountId) === String(acc.id))
   if (idx >= 0) list.splice(idx, 1)
   else list.push({ platform: acc.platform, accountId: String(acc.id) })
@@ -266,7 +370,7 @@ function accountStatus (acc) {
   return status
 }
 
-const selectedTargets = computed(() => model.value.publish.targets.filter((t) => t.accountId))
+const selectedTargets = computed(() => readTargets().filter((t) => t.accountId))
 
 function toLocalInput (iso) {
   if (!iso) return ''
@@ -300,6 +404,9 @@ const startAtLocal = computed({
 .wf-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
 .wf-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid var(--color-border, #dcdfe6); border-radius: 999px; font-size: var(--font-size-xs, 12px); cursor: pointer; }
 .wf-account-groups { display: flex; flex-direction: column; gap: 10px; }
+.wf-account-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wf-recent { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wf-recent-chip { border: 1px solid var(--color-border, #d9d9e0); background: transparent; cursor: pointer; }
 .wf-account-group__title { margin-bottom: 6px; color: var(--color-text-secondary, #85858f); font-size: var(--font-size-xs, 12px); }
 .wf-account-status { padding: 0 4px; border-radius: 3px; background: #fdecec; color: #c0392b; font-size: var(--font-size-xs, 12px); }
 .wf-chip--on { border-color: #2f6fd0; background: #eef4ff; color: #2f6fd0; }

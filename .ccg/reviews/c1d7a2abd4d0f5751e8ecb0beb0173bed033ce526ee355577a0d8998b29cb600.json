@@ -1,0 +1,141 @@
+{
+  "sha": "6098fbfe27acb4e6d9326beebc0a1b3ad7cf4e5e",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 75 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 75,
+    "fileCount": 5,
+    "codeFileCount": 2,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 1,
+    "docSensitiveContentSample": [
+      "| 不可信来源 | `{ code: -3, errorCode: 'UNTRUSTED_SENDER', message: '未授权的调用来源' }` |"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "c1d7a2abd4d0f5751e8ecb0beb0173bed033ce526ee355577a0d8998b29cb600",
+  "decidedAt": "2026-10-27T10:15:49.991Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_blocked",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "domains": [
+          "auth"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "deepReview.required=true 但 status=pending 且 evidence=null；.ccg/reviews JSON 被新增却无评审内容，同时 PRD/记录声称 P1-1b 已交付，评审状态与实现状态矛盾。",
+        "highRiskDomains": [],
+        "prosecution": "如果提交时评审仍是 pending，记录会被读成「已交付但没评审」，PR 门禁应拦。",
+        "defense": "该 JSON 是 pre-commit 生成的**判定记录骨架**，status=pending 是「评审尚未运行」的预期初始态；本次 `deep-review.sh` 运行后会把 status 改为闭环值并写回同类 `.ccg/reviews` 记录。判定是否闭环以 `check-pr-exec-record.js` 的 OK/FAIL 为准，不以 pre-commit 瞬间的骨架为准。",
+        "verdict": "dismissed",
+        "rationale": "指控描述的是 pre-commit 的中间态，不是最终交付态；本次评审运行与后续记录写回就是修复动作。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "JSON 里 sha=6098fbfe2... 与 head a503ca414 不一致；评审元数据指向错误提交，无法验证变更完整性。",
+        "highRiskDomains": [],
+        "prosecution": "评审记录指向父提交，阅读者会以为评审的是旧代码。",
+        "defense": "pre-commit 生成记录时新 commit 尚未产生，记录写在父 sha 上——这是仓库既有约定，`deep-review.sh` 输出也明确打印「pre-commit 时新 commit 尚未生成，判定记录写在父 sha 上——这是预期行为」。head 与 diff 内容通过 `stagedDiffHash` 寻址，不依赖 commit sha。",
+        "verdict": "dismissed",
+        "rationale": "sha 差异是 pre-commit 记录生成顺序的已知预期，不是评审对象错误；内容寻址由 stagedDiffHash 保证。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "MECHANISM-MEMBER-TIERS.md 升至 v3.5 且 PLAN_MATRIX_VERSION 仍为 2026-10-26，机制版本与数值真源版本不同步。",
+        "highRiskDomains": [],
+        "prosecution": "两个版本号不一致会让读者误以为矩阵也变了。",
+        "defense": "`PLAN_MATRIX_VERSION` 是**数值矩阵**版本，只有 plan-matrix 数值变更才 bump；本 PR 只改 IPC 门禁，没有改任何数值/额度。`MECHANISM-MEMBER-TIERS.md` 的 v3.5 是机制文档版本，二者不是同一个版本轴。P1-1 时矩阵已是 2026-10-26，不需要改。",
+        "verdict": "dismissed",
+        "rationale": "两个版本号语义不同；本 PR 未改 plan-matrix 数值，保持 2026-10-26 正确。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "LOGIN_ONLY_FEATURE_MAP 移除 pipeline:start/render:start/story2video:batch:create，但 pipeline_run 仍保留仅用于 pause/resume 等；启动与控制权限被拆成不同 feature，后续维护易混淆。",
+        "highRiskDomains": [
+          "auth"
+        ],
+        "prosecution": "同一个 pipeline 域出现 video_create 和 pipeline_run 两个 feature，未来新增通道容易选错。",
+        "defense": "这是刻意的权限分层：**启动**消耗算力，必须 video_create；**暂停/恢复/取消/查询**是已有 run 的生命周期操作，必须允许免费档收尾，不能再用 video_create 二次拦截。`pipeline_run` 只是 LOGIN_ONLY_FEATURE_MAP 的语义标签（实际不强制 feature），启动通道已从该表移出并在 CHANNEL_FEATURE_MAP 显式映射。PRD §2 用表格把每个通道的归属写死，测试逐通道断言。",
+        "verdict": "dismissed",
+        "rationale": "拆分是产品要求（免费档必须能取消/收尾已有任务），不是维护疏忽；通道表 + 测试已把边界固定。",
+        "externalReview": {
+          "performedBy": "claude",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4553#issuecomment-6439289867",
+          "reviewedAt": "2026-10-27T10:20:00.000Z"
+        }
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "开发模式 app.isPackaged=false 仍跳过 video_create 检查；与 cloud_publish 同口径但形成已知绕过路径，QM-1 测试仅验证打包包。",
+        "highRiskDomains": [],
+        "prosecution": "开发模式可被用来绕过权益。",
+        "defense": "开发模式短路是既有 `CHANNEL_FEATURE_MAP` 的统一策略（`cloud_publish` 同样），用于本地验证发布链路；生产包 `app.isPackaged=true` 强制。QM-1 明确验证的是打包产物；开发态不是交付面。",
+        "verdict": "dismissed",
+        "rationale": "与既有 cloud_publish 同口径的开发态短路，不是本 PR 新增的绕过；生产包强制已由 QM-1 与单测覆盖。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "auth"
+        ]
+      }
+    ],
+    "note": "自扮演裁决：1 条指控成立或需外部复核",
+    "at": "2026-10-27T10:19:55.649Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4553#issuecomment-6439289867",
+    "tierBasis": "adjudicated-self-play-honored",
+    "adjudicationDigest": "adjudicated@d6efbcc3b7d7738b81e373420bdf95e398bf86b793000701560c556541cdb9fc"
+  }
+}

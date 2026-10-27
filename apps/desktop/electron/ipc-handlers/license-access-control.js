@@ -119,6 +119,13 @@ const CHANNEL_FEATURE_MAP = Object.freeze({
   'cloud-publisher:submit': 'cloud_publish',
   'cloud-publisher:list-tasks': 'cloud_publish',
   'cloud-publisher:get-task': 'cloud_publish',
+  // P1-1b：视频创作启动通道在 IPC 层强制 video_create。
+  // 只拦「新建创作」；pause/resume/cancel/status 仍走 LOGIN_ONLY，允许免费档收尾/取消已有任务。
+  'pipeline:start': 'video_create',
+  'pipeline:startOrchestrated': 'video_create',
+  'render:start': 'video_create',
+  'render:start-ai-video': 'video_create',
+  'story2video:batch:create': 'video_create',
 })
 
 // 登录即可（authenticated）的基础功能 feature 预留映射（2026-08-11）。
@@ -139,7 +146,7 @@ const LOGIN_ONLY_FEATURE_MAP = Object.freeze({
   'queue:retry': 'publish_history',
   'dashboard:stats': 'publish_history',
   // 流水线写操作/运行控制
-  'pipeline:start': 'pipeline_run',
+  // 启动通道已在 CHANNEL_FEATURE_MAP 里强制 video_create；这里保留收尾/查询。
   'pipeline:pause': 'pipeline_run',
   'pipeline:resume': 'pipeline_run',
   'pipeline:cancel': 'pipeline_run',
@@ -156,7 +163,6 @@ const LOGIN_ONLY_FEATURE_MAP = Object.freeze({
   'video:mix-audio': 'video_process',
   'video:search-stock': 'video_process',
   'video:generate-subtitle': 'video_process',
-  'render:start': 'video_process',
   'render:cancel': 'video_process',
   'render:validate-props': 'video_process',
   'render:list-compositions': 'video_process',
@@ -181,7 +187,6 @@ const LOGIN_ONLY_FEATURE_MAP = Object.freeze({
   'story2video:copy-path': 'story2video_write',
   'story2video:show-in-folder': 'story2video_write',
   'story2video:save-as': 'story2video_write',
-  'story2video:batch:create': 'story2video_write',
   'story2video:batch:status': 'story2video_write',
   'story2video:batch:cancel': 'story2video_write',
   // 模型服务商配置写操作（2026-08-11：未登录被拒）

@@ -202,12 +202,74 @@ describe('主进程许可证动态鉴权', () => {
     expect(identityService.requireEntitlement).toHaveBeenCalledWith('cloud_publish', { onlineOnly: true })
   })
 
-  it('显式 feature map 覆盖本地和云端发布写通道', () => {
+  it('显式 feature map 覆盖发布写通道与视频创作启动通道', () => {
     expect(CHANNEL_FEATURE_MAP).toMatchObject({
       'publish:wechat': 'cloud_publish',
       'publish:batch': 'cloud_publish',
       'cloud-publisher:submit': 'cloud_publish',
+      'pipeline:start': 'video_create',
+      'pipeline:startOrchestrated': 'video_create',
+      'render:start': 'video_create',
+      'render:start-ai-video': 'video_create',
+      'story2video:batch:create': 'video_create',
     })
+  })
+
+  it.each([
+    'pipeline:start',
+    'pipeline:startOrchestrated',
+    'render:start',
+    'render:start-ai-video',
+    'story2video:batch:create',
+  ])('缺少 video_create 时拒绝视频创作启动通道 %s 且不执行 handler', async (channel) => {
+    const identityService = {
+      getState: () => ({ status: 'authenticated' }),
+      requireEntitlement: vi.fn(async () => { throw new Error('ENTITLEMENT_REQUIRED') }),
+    }
+    const { ipcMain, handlers } = createIpcMainHarness()
+    const controlledIpcMain = createAccessControlledIpcMain(
+      ipcMain,
+      null,
+      { NODE_ENV: 'production' },
+      { isPackaged: true },
+      identityService,
+    )
+    const protectedHandler = vi.fn(async () => ({ code: 0 }))
+    controlledIpcMain.handle(channel, protectedHandler)
+
+    await expect(handlers[channel](trustedEvent, {})).resolves.toMatchObject({
+      code: -3,
+      errorCode: 'ENTITLEMENT_REQUIRED',
+    })
+    expect(identityService.requireEntitlement).toHaveBeenCalledWith('video_create', { onlineOnly: false })
+    expect(protectedHandler).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'pipeline:start',
+    'pipeline:startOrchestrated',
+    'render:start',
+    'render:start-ai-video',
+    'story2video:batch:create',
+  ])('有 video_create 时放行视频创作启动通道 %s', async (channel) => {
+    const identityService = {
+      getState: () => ({ status: 'authenticated' }),
+      requireEntitlement: vi.fn(async () => true),
+    }
+    const { ipcMain, handlers } = createIpcMainHarness()
+    const controlledIpcMain = createAccessControlledIpcMain(
+      ipcMain,
+      null,
+      { NODE_ENV: 'production' },
+      { isPackaged: true },
+      identityService,
+    )
+    const protectedHandler = vi.fn(async () => ({ code: 0 }))
+    controlledIpcMain.handle(channel, protectedHandler)
+
+    await expect(handlers[channel](trustedEvent, {})).resolves.toEqual({ code: 0 })
+    expect(identityService.requireEntitlement).toHaveBeenCalledWith('video_create', { onlineOnly: false })
+    expect(protectedHandler).toHaveBeenCalledTimes(1)
   })
 
   it('IPC 参数不能伪造许可证或访问级别', async () => {

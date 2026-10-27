@@ -1,6 +1,6 @@
 # 会员档位机制（MEMBER TIERS MECHANISM）
 
-> **状态**：🟢 现行（v3.4，2026-10-27）
+> **状态**：🟢 现行（v3.5，2026-10-27）
 > **数值真源**：`packages/api-publish-engine/src/auth/plan-matrix.js`（`PLAN_MATRIX_VERSION = 2026-10-26`）
 > **价格与积分推导**：`01-docs/PRD-CREDIT-PRICING-2026-10-25.md`
 > **价格解释**：`01-docs/pricing-strategy.md` §1–§2
@@ -313,7 +313,7 @@
 | 单次批量 | `limits.batch_size_per_run` | 云 API 批量/定时执行 + 桌面批量入口 | `batchSizePerRunOf` / `canBatchSize` 已接线 | **硬（客户端 + 云 API）** | 桌面按文章数、云按平台数；先判后扣（P0-4） |
 | 定时任务 | `features.schedule_batch` | 无 | 无 | **展示** | 免费可建；无数量上限 |
 | 自定义自动化 | 待新增 `maxWorkflows` / `automationDailyItems` | 无 | 无 | **展示** | 全局 `MAX_CUSTOM=50`，无档位门禁 |
-| 视频创作 | `features.video_create` | 无 | 无 | **硬（客户端入口）** | `/create` + 采集/热门选题就地入口；P1-1 |
+| 视频创作 | `features.video_create` | 无 | 无 | **硬（客户端入口 + IPC 启动通道）** | `/create` + 采集/热门选题就地入口（P1-1）；`pipeline:start`/`startOrchestrated`/`render:start*`/`story2video:batch:create` 强制（P1-1b） |
 | 知识库 | 待新增 `knowledge_base` feature | 无 | 无 | **未实现** | 免费可用；无 feature |
 | AI 写稿 | `quota.ai_write_monthly` | 无 | 无 | **展示** | 无 consume；建议改为 -1 全档 |
 | 官方积分 | `quota.official_credit_monthly` | 无 | 无 | **展示** | 无 grant/consume |
@@ -334,7 +334,7 @@
 | E | 桌面本地发布/批量/定时绕过服务端 | 不扣额、不校验数量 | `batch-manager.js`；`scheduler.js` | 接受为本地荣誉制；账号/功能在客户端拦 |
 | F | `api_key` legacy 与「无 businessUser」直接放行 | 门禁不是全调用面覆盖 | `plan-capability-guard.js:24-25`；`publish-api-server.js:566-573` | P1：收敛绕过面，至少记审计 |
 | G | AI/积分额度无 consume/grant | 免费可无限用官方模型；付费额度是空数字 | `plan-matrix.test.js:193`；`subscription-service.js:112-121` | P1：接 consume/grant + 失败退回 |
-| H | `schedule_batch` / `video_create` / `tier_access_*` 无消费点 | 功能轴全是纸面承诺 | 全仓 grep 仅命中派生与测试 | `video_create` ✅ 已接（P1-1）；其余 P1：逐 feature 补消费点或删除 |
+| H | `schedule_batch` / `video_create` / `tier_access_*` 无消费点 | 功能轴全是纸面承诺 | 全仓 grep 仅命中派生与测试 | `video_create` ✅ 已接（P1-1 客户端 + P1-1b IPC）；其余 P1：逐 feature 补消费点或删除 |
 | I | `UsageQuota.vue` 直接渲染原始 quota 键 | `-1` 显示 `-1`、英文键不本地化 | `UsageQuota.vue:26-35` | P2：接 `quotaLabelOf/quotaValueText` |
 | J | `labels.js` 缺新 feature/quota 文案 | 会员中心回退英文码 | `labels.js:52-72` | P2：补齐 zh/en |
 | K | 平台数软提示无 N/M 展示 | 用户不知道上限/已选数 | `usePlatformSelection.js:73-99` | ✅ 已随平台轴退役（P0）；`maxPlatforms = -1` 后不再触发 |
@@ -355,7 +355,7 @@
 | 本地批量 | 标准 10 条/次、专业不限；超出提示拆分或升级 | UI 误拦 | P0 改 entitlement |
 | 定时任务 | 免费不可建；标准 100 个；专业不限 | 免费可建 | P1 feature + 计数 |
 | 自定义自动化 | 免费不可用；标准 10 条/50 条·日；专业 50 条/500 条·日 | 仅全局 50 | P1 feature + 配额 |
-| 视频创作 | 免费入口关闭；标准/专业可用 | ✅ 已交付（P1-1） | 客户端入口层；见 `PRD-MEMBER-TIER-VIDEO-GATE-2026-10-27.md` |
+| 视频创作 | 免费入口关闭；标准/专业可用 | ✅ 已交付（P1-1 + P1-1b） | 客户端入口 + IPC 启动通道；见 `PRD-MEMBER-TIER-VIDEO-GATE-2026-10-27.md` / `PRD-MEMBER-TIER-VIDEO-IPC-GATE-2026-10-27.md` |
 | 知识库 | 免费入口关闭；标准/专业可用 | 免费可用 | P1 feature |
 | 官方积分 | 耗尽后引导 BYOK / 积分包；不锁发布 | 无扣减 | P1 consume + 引导 |
 | 登录设备 | 超限提示注销最旧设备，不静默踢线 | 无 cap | P1 |
@@ -450,6 +450,7 @@
 | # | 动作 | 验收 |
 |---|---|---|
 | P1-1 | `video_create` 门禁：免费入口关闭 | ✅ 已交付（2026-10-27）：免费点视频创作被拒；标准/专业可用 |
+| P1-1b | 视频创作 IPC 启动通道强制 `video_create` | ✅ 已交付（2026-10-27）：`pipeline:start`/`startOrchestrated`/`render:start*`/`story2video:batch:create` 无权益返回 -3；收尾/取消通道保持登录即可 |
 | P1-2 | `knowledge_base` feature：免费入口关闭 | 免费点知识库被拒；标准/专业可用 |
 | P1-3 | `schedule_batch` + 定时任务计数：免费 0、标准 100、专业不限 | 免费创建被拒；标准第 101 个被拒 |
 | P1-4 | 自定义自动化：免费 0；标准 10 条/50 条·日；专业 50 条/500 条·日 | 工作流创建/执行均有配额；超限有提示 |
@@ -554,6 +555,7 @@
 | 2026-10-26 | 机制 v3.2 | P0 落地：`maxAccounts` 进矩阵与 entitlement；`account:add` / `auth:open-login` 主进程拦截 + UI 弹窗；`maxPlatforms` 全档 -1；AI 写稿/视频改 -1；免费设备 1；详细 PRD 见 `PRD-MEMBER-TIER-ACCOUNT-LIMIT-2026-10-26.md` |
 | 2026-10-27 | 机制 v3.3 | P0-4 落地：批量 UI 改读 `batch_size_per_run`（纯订阅可批量）；本地批量按文章数、云 `/batch-publish` 先判后扣；修复 B/C 两项历史缺陷 |
 | 2026-10-27 | 机制 v3.4 | P1-1 落地：`features.video_create` 客户端门禁；`/create` 整页锁定 + 采集/热门选题就地入口拦截；缺失/空 features 仍 fail-open |
+| 2026-10-27 | 机制 v3.5 | P1-1b 落地：视频创作 IPC 启动通道强制 `video_create`（`pipeline:start`/`startOrchestrated`/`render:start*`/`story2video:batch:create`）；收尾/取消仍登录即可；QM-1 打包验证 |
 
 ## 附录 C：证据索引
 

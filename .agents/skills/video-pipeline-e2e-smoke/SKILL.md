@@ -127,7 +127,7 @@ extractArtifact → 只认 render/report/compose/finalize/export
 
 ## 7. 当前基准（2026-10-28）
 
-- 审计：`total=15 ready=14 blocked=0 broken=0 excluded=1`（READY 含 8 条静态条件）
+- 审计：`total=15 ready=14 blocked=0 broken=0 excluded=1`（静态）；其中 3 条需要用户选择，不能无参执行，真实可无参执行 11 条。
 - 真实 PASS（6）：talking-head、framework-smoke、podcast-repurpose、documentary-montage、animation、hybrid
 - READY 未重跑（8）：animated-explainer、cinematic、avatar-spokesperson、character-animation、clip-factory、localization-dub、film-engineering、story2video-compose
 - 关键 runId：

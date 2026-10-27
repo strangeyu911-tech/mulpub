@@ -2,7 +2,7 @@
 
 > 范围：`PIPELINE_DEFINITIONS` 中 14 条带 `stageDefs` 的视频流水线（`screen-demo` 为占位，排除）。
 > 代码基线：`origin/main`（含 PR #4515 / #4519 / #4535 / #4541 / #4556 / #4561 / 本文件对应 PR）。
-> 结论：**14 条均有驱动，审计 `ready=14 blocked=0 broken=0 excluded=1`；其中 6 条本轮真实跑出成片，8 条仍为静态 READY（共享驱动存在、本次未逐条重跑）。**
+> 结论：**14 条均有驱动，审计 `ready=14 blocked=0 broken=0 excluded=1`；其中 11 条本轮真实跑出成片，3 条受选择/契约前置阻塞（avatarId、selectedShotIds、research schema）。**
 
 ## 1. 为什么要做
 
@@ -46,14 +46,22 @@ SUMMARY total=15 ready=14 blocked=0 broken=0 excluded=1
 | `documentary-montage` | PASS | `mvqk0zj5_7v8p` | 142.8s | 67.37s，h264+aac |
 | `animation` | PASS | `mvqw26rm_jdeu` | 1434.5s | 21.20s，h264+aac |
 | `hybrid` | PASS | `mvqx5xae_7giv` | 621.0s | 5.20s，h264+aac |
+| `cinematic` | PASS | `mvr0j9oy_4ytr` | 7.9s | 4s，h264 |
+| `clip-factory` | PASS | `mvr0jty9_3xvo` | 15.1s | 12s，h264 |
+| `localization-dub` | PASS | `mvr2w1kp_vofb` | 6.2s | 2.304s，h264+aac |
+| `story2video-compose` | PASS | `mvr0omws_u0cp` | 465.4s | 5.28s，h264+aac |
+| `character-animation` | PASS | `mvr1dhhp_ajmc` | 1501.0s | 21.20s，h264+aac |
 
-## 5. READY 但本轮未逐条重跑（8 条）
+## 5. 仍未自动跑通的 3 条（前置阻塞）
 
-`animated-explainer`、`cinematic`、`avatar-spokesperson`、`character-animation`、`clip-factory`、`localization-dub`、`film-engineering`、`story2video-compose`。
+| 流水线 | 阻塞 | 证据 |
+|--------|------|------|
+| `animated-explainer` | research schema 校验失败：`data_points[].value` / `sources[].publisher` 额外字段、`angles_discovered` 为空 | run `mvr11zsl_qpd3`，25.7s |
+| `avatar-spokesperson` | 启动前需选择数字人形象，manifest 无 `avatarId`/`voiceId` 默认 | `AVATAR_ID_REQUIRED` |
+| `film-engineering` | 需 `kitDir` + 非空 `selectedShotIds`，不是无参可跑 | `SELECTED_SHOT_IDS_REQUIRED` |
 
-- 它们有共享 E2E 驱动（`pipeline-options-matrix.js` / `video-model-pipelines.js` / `animated-explainer-cdp.js` / `film-engineering-real.test.js`）。
-- `READY` 只代表静态条件（接线/驱动/工具/输入/provider）满足；**发布前仍需逐条真实执行并保存 runId + ffprobe**。
-- 建议按成本从低到高：`cinematic` → `clip-factory` → `localization-dub` → `story2video-compose` → `animated-explainer` → `avatar-spokesperson` → `character-animation` → `film-engineering`。
+- 这三条不是「代码坏了」，而是**需要用户选择/上游产物**；发布前应把它们在 UI 里走完选择再跑，或补受控测试夹具。
+- `READY` 仍只代表静态条件满足，不代表已跑。
 
 ## 6. 关键根因与修复
 

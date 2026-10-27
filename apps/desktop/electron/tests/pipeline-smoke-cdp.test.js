@@ -55,6 +55,13 @@ describe('pipeline-smoke-cdp — 参数与产物', () => {
     expect(manifestEntry('podcast-repurpose').pipeline).toBe('podcast-repurpose')
   })
 
+  it('findOutput 识别 localization sync.videoPath（译制成品在 sync 阶段）', () => {
+    const output = tempArtifact('localized.mp4')
+    const audio = tempArtifact('localized.mp3')
+    expect(findOutput({ transcribe: {}, sync: { videoPath: output } })).toBe(output)
+    expect(findOutput({ transcribe: {}, sync: { audioPath: audio } })).toBe(audio)
+  })
+
   it('findOutput 优先 render，且排除输入文件', () => {
     const input = tempArtifact('input.mp4')
     const output = tempArtifact('output.mp4')

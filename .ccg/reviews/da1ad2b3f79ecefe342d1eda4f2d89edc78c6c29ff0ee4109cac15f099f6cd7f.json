@@ -1,0 +1,95 @@
+{
+  "sha": "1773bce6b7fcea186610f4496390d93a06c86b65",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 12 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 12,
+    "fileCount": 5,
+    "codeFileCount": 2,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "da1ad2b3f79ecefe342d1eda4f2d89edc78c6c29ff0ee4109cac15f099f6cd7f",
+  "decidedAt": "2026-10-27T19:46:01.720Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": ".ccg/reviews/da1...json 引用 SHA 1773bce6b（非 head c07a487a）且 changedLines=12，与提案 211 行不符；是未对账的旧审查残留，破坏 CCG 审计追溯。",
+        "highRiskDomains": [],
+        "prosecution": ".ccg sha/行数与 head 不符。",
+        "defense": "pre-commit 记录写在父提交是预期；deep-review 完成后写回 tier/basis/status，并以 diff 内容寻址命中。",
+        "verdict": "dismissed",
+        "rationale": "流程产物，不是代码缺陷；最终写回记录已更新。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "findOutput 仅在 context.transcribe 存在时才加 sync 阶段，形成隐式流水线→阶段契约；未来无 transcribe 但有 sync 的流水线会漏提取产物。",
+        "highRiskDomains": [],
+        "prosecution": "transcribe 隐式契约会漏其他 sync 产物。",
+        "defense": "当前仓库只有 localization-dub 同时有 transcribe 与 sync；显式注释说明契约，未来新增流水线需在 manifest/findOutput 同步。",
+        "verdict": "dismissed",
+        "rationale": "当前唯一使用 sync 成品的流水线已覆盖；新增流水线需显式接入。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "报告将 5 条 READY（cinematic 等）直接移入 PASS 表，但无逐条 runId/duration/probe 证据；3 条阻塞仅用文本断言，无法独立验证。",
+        "highRiskDomains": [],
+        "prosecution": "5 条 PASS 无 runId/probe。",
+        "defense": "报告表已逐条写 runId + duration + probe：cinematic mvr0j9oy_4ytr/4s、clip-factory mvr0jty9_3xvo/12s、localization mvr2w1kp_vofb/2.304s、story2video mvr0omws_u0cp/5.28s、character mvr1dhhp_ajmc/21.20s；阻塞 3 条有 errorCode/runId。",
+        "verdict": "dismissed",
+        "rationale": "报告明细已含逐条证据。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T19:49:08.242Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4577#issuecomment-6451800279",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@1cdd14ec0e0847c4df1b0aa6eead2e2cf64d70b0695a516c06715119ee0d5a25"
+  }
+}

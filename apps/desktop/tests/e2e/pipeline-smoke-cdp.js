@@ -114,7 +114,10 @@ function isNonEmptyFile (file) {
 function findOutput (context, inputs = new Set(), depth = 0, seen = new Set()) {
   if (!context || typeof context !== 'object' || depth > 10 || seen.has(context)) return null
   seen.add(context)
-  for (const stageKey of ['render', 'report', 'compose', 'finalize', 'export']) {
+  // sync 只给 localization-dub（有 transcribe 阶段）用；其他流水线的 sync 不是成品阶段。
+  const stageKeys = ['render', 'report', 'compose', 'finalize', 'export']
+  if (context.transcribe) stageKeys.push('sync')
+  for (const stageKey of stageKeys) {
     const stage = context[stageKey]
     if (!stage || typeof stage !== 'object') continue
     for (const key of ['videoPath', 'outputPath', 'audioPath']) {

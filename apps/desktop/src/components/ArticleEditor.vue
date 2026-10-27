@@ -33,7 +33,7 @@
       v-model="mdContent"
       class="md-editor"
       :placeholder="placeholder"
-      :maxlength="maxChars"
+      :maxlength="effectiveMaxChars"
       :style="{ minHeight: height }"
       spellcheck="false"
     />
@@ -42,10 +42,10 @@
          与发布校验同口径（原始字符串 Unicode 码点数），超限变红。 -->
     <div
       class="article-char-counter"
-      :class="{ 'article-char-counter--over': charCount > maxChars }"
+      :class="{ 'article-char-counter--over': charCount > effectiveMaxChars }"
       data-testid="article-char-counter"
     >
-      {{ charCount }}/{{ maxChars }}{{ t('publishPage.articleCharCount') }}
+      {{ charCount }}/{{ effectiveMaxChars }}{{ t('publishPage.articleCharCount') }}
     </div>
   </div>
 </template>
@@ -101,6 +101,15 @@ const editorMode = ref('rich')
 // 与 validatePlatformContent / truncateByChars 同口径：按 Unicode 码点计数
 // （emoji 等代理对算 1 个字符），禁止另用 .length（UTF-16 单元）造成口径漂移。
 const charCount = computed(() => Array.from(props.modelValue || '').length)
+// 生效上限：必须是有限正整数，否则回落应用级默认值（审计 4.7 显示项缺陷）。
+// 为什么由组件自己兜：调用方传的是 `minContentBudget(selectedPlatforms, title)`，
+// 它在「未选平台 / 未知平台」时返回 null；而模板把 maxChars 原样渲染，
+// 用户就会看到「7/ 字」「7/null 字」「7/-5 字」这类垃圾分母（行为锁：ArticleEditor.max-chars.test.js）。
+const effectiveMaxChars = computed(() => {
+  const n = Number(props.maxChars)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : APP_ARTICLE_CONTENT_MAX
+})
+
 
 const richContent = computed({
   // 装载：纯文本按行成段（`toHtmlBody`），已是 HTML 幂等透传。

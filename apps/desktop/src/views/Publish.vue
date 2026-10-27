@@ -379,7 +379,7 @@
               </div>
               <div class="cohere-form-item">
                 <label class="cohere-form-label">{{ t('publishPage.content') }}</label>
-                <ArticleEditor data-testid="publish-editor" v-model="article.content" />
+                <ArticleEditor data-testid="publish-editor" v-model="article.content" :max-chars="minContentBudget(selectedPlatforms, article.title) ?? APP_ARTICLE_CONTENT_MAX" />
               </div>
               <div class="cohere-form-item" v-if="hasVideoPlatforms">
                 <label class="cohere-form-label">{{ t('publishPage.videoFile') }}</label>
@@ -717,7 +717,7 @@ import { usePublishHistoryPrefill } from '@/composables/usePublishHistoryPrefill
 import { useRouteHandoff } from '@/composables/useRouteHandoff'
 import {
   normalizePublishMentions,
-  normalizePublishStringList,
+  normalizePublishStringList, minContentBudget, APP_ARTICLE_CONTENT_MAX
 } from '@/features/publish/publish-contract'
 import { normalizeUploadFile, resolveUploadFilePath } from '@/features/publish/publish-upload-file'
 import { usePublishFieldSurface } from '@/features/publish/usePublishFieldSurface'

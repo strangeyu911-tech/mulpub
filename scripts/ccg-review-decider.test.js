@@ -2333,3 +2333,88 @@ test("残余2续 反向对偶：pre-commit 常态（无参数、空暂存区）�
     try { fs.rmSync(root, { recursive: true, force: true }) } catch { /* 夹具 */ }
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// SQL 形态必须要求 SQL 上下文（2026-10-27，无障碍/UI 切片被系统性抬成 DUAL）
+//
+// 起因：RULES.sensitiveContents 的 SQL 形态原先是
+//   /\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|DROP\s+TABLE|ALTER\s+TABLE)\b/i
+// —— SELECT 与 UPDATE 是**裸词**。而 `<`、`@`、`:`、`-` 都是非词字符，再加 i 标志：
+//   · HTML 标签名 `<select>`、EP 的 `el-select` ⇒ 命中 SELECT
+//   · Vue 最普遍的绑定写法 `@update:model-value` / `v-model:xxx` 的 emit 名 ⇒ 命中 UPDATE
+// 实测（三条在飞无障碍切片，先自证探针跑起来了）：#4531 = 2/2、#4529 = 22/22、
+// #4542 = 11/11 的内容命中**全部**是这两个词面，零行涉及真 SQL 语义。
+// 后果：`内容命中 ≥1 ⇒ DUAL` 是与行数无关的独立触发，而 DUAL 在验证层必然落到自扮演
+// ⇒ 前端组件类改动大面积不可合法闭合。
+//
+// 本节的纪律：修法必须**同时**锁住两端。
+//   ① 负控（原来误报的形态）改后不得命中；
+//   ② 正控（真 SQL）改后仍必须命中——并且要用**旧形态也会命中**的那几行做 A/B，
+//      证明收窄没有把检测能力一起削掉；
+//   ③ 已知残余（跨行 SQL 的字面 SELECT 行不再命中）必须**显式断言成现状**，
+//      并把补偿控制（`.sql` / migrations 路径命中 pathHits）同处锁住——
+//      静默的漏检比被钉住并命名的漏检更危险。
+// ═══════════════════════════════════════════════════════════════════
+
+const SQL_FALSE_POSITIVES = [
+  ["vue-select-tag", '        <select id="wev-source-type" v-model="model.source.type" class="wf-input">'],
+  ["ep-el-select", '          <el-select v-model="form.region" data-testid="pfs-region">'],
+  ["labelable-set", "const LABELABLE = new Set(['input', 'textarea', 'select', 'button']);"],
+  ["vue-update-binding", '        <UiInput :model-value="article.title" @update:model-value="value => emit(\'update:title\', value)" />'],
+  ["vue-update-arg", '        <Pager @update:page-size="onSize" :total="n" />'],
+  ["js-selector-ident", '        const rows = nodes.filter((n) => n.matches("select, input, textarea"));'],
+];
+
+const SQL_TRUE_POSITIVES = [
+  ["select-from-py", 'cursor.execute("SELECT id, name FROM accounts WHERE owner = ?", (uid,))'],
+  ["update-set-sql", 'db.query("UPDATE accounts SET status = ? WHERE id = ?", ["active", 7])'],
+  ["delete-from", 'await pool.query("DELETE FROM sessions WHERE expired = 1")'],
+  ["insert-into", 'conn.execute("INSERT INTO audit_log (actor, action) VALUES (?, ?)")'],
+  ["alter-table", "ALTER TABLE accounts ADD COLUMN last_validated TEXT"],
+  ["drop-table", "DROP TABLE IF EXISTS temp_import"],
+];
+
+function contentHits(line) {
+  return judge(makeStaged({
+    files: [{ file: "apps/desktop/src/features/publish/components/BatchArticleCard.vue", additions: 1, deletions: 1 }],
+    codeChangedLines: [line],
+    allChangedLines: [line],
+  })).stats.sensitiveContentHits;
+}
+
+test("SQL 形态负控：HTML 标签名与 Vue 的 update 绑定不得计为敏感内容", () => {
+  for (const [name, line] of SQL_FALSE_POSITIVES) {
+    assert.equal(contentHits(line), 0, `${name} 被当成敏感内容 ⇒ 会把纯 UI 接线抬成 DUAL：${line}`);
+  }
+});
+
+test("SQL 形态正控：真 SQL 语句改后仍必须命中（收窄不得连带削掉检测力）", () => {
+  for (const [name, line] of SQL_TRUE_POSITIVES) {
+    assert.equal(contentHits(line), 1, `${name} 未命中 ⇒ 判据被削窄到看不见真 SQL：${line}`);
+  }
+});
+
+test("SQL 形态 A/B：旧判据对上述每个负控都命中（证明这条假阳性真实存在，不是推测）", () => {
+  const LEGACY = /\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|DROP\s+TABLE|ALTER\s+TABLE)\b/i;
+  assert.ok(LEGACY.test(SQL_FALSE_POSITIVES[0][1]), "旧判据本身没命中 ⇒ 本条 A/B 失去意义（探针坏）");
+  for (const [name, line] of SQL_FALSE_POSITIVES) {
+    assert.ok(LEGACY.test(line), `${name} 在旧判据下也不命中 ⇒ 它不是本条要修的形态，不该放进负控表`);
+    assert.ok(contentHits(line) === 0, `${name} 新判据仍命中`);
+  }
+  for (const [name, line] of SQL_TRUE_POSITIVES) {
+    assert.ok(LEGACY.test(line), `${name} 旧判据不命中 ⇒ A/B 两臂不同源，不得据此说"能力未退化"`);
+  }
+});
+
+test("已知残余必须被命名：跨行 SQL 的字面 SELECT 行不再命中，但路径命中仍成立", () => {
+  const split = 'const q = "SELECT id, name"';
+  assert.equal(contentHits(split), 0, "跨行 SQL 的第一行不再命中——这是本次收窄的**已知残余**，写死成断言而不是留成口头保证");
+  const r = judge(makeStaged({
+    files: [{ file: "packages/python-backend/migrations/2026_10_add_col.sql", additions: 1, deletions: 1 }],
+    codeChangedLines: [split],
+    allChangedLines: [split],
+  }));
+  assert.ok(r.stats.sensitivePathHits.length > 0,
+    "补偿控制失守：.sql / migrations 路径必须由 sensitivePaths 独立命中，否则收窄就真的留了个洞");
+  assert.equal(r.mode, "dual", `路径命中应把该改动抬到 dual，实际 ${r.mode}`);
+});

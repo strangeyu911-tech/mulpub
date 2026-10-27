@@ -1,0 +1,60 @@
+{
+  "sha": "388c7532836b028606fa65df46d7d403fb216fff",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 94 行（≤ 200）但命中 auth/数据库/加密：敏感内容 6 处",
+  "stats": {
+    "changedLines": 94,
+    "fileCount": 3,
+    "codeFileCount": 2,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 6,
+    "docSensitiveContentHits": 2,
+    "docSensitiveContentSample": [
+      "2. **正控**：6 条真 SQL（SELECT…FROM / UPDATE…SET / DELETE FROM / INSERT INTO / ALTER TABLE / DROP TABLE）必须命中——",
+      "- 四条在飞无障碍切片按新旧两把正则各跑一遍：SQL 命中从 2/5/11/11 降到 0/0/0/0，真 SQL 语句（SELECT..FROM、UPDATE..SET、INSERT INTO、DELETE FROM、ALTER TABLE、DROP TABLE）仍全部命中。"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "1b4b9ec4a730127999d9cd9fccbe8ffdf30f22f3cef3cc4591fd9910d442819d",
+  "decidedAt": "2026-10-27T07:37:33.023Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

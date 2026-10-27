@@ -73,7 +73,14 @@ const RULES = {
     /[A-Za-z0-9_.-]*(password|passwd|pwd|secret|token|api[_-]?key|apikey|private[_-]?key|credential)s?\s*[:=]/i,
     /(?:^|[^A-Za-z0-9_])(bcrypt|scrypt|argon2|pbkdf2|jwt|oauth|aes|des|rsa)\s*\(/i,
     /[A-Za-z0-9_]*(md5|sha1|sha256)\s*\(/i,
-    /\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|DROP\s+TABLE|ALTER\s+TABLE)\b/i,
+    // SQL 形态**必须带 SQL 上下文**：裸词 SELECT / UPDATE 在 Vue/HTML 代码库里是标签名与绑定名
+    // （`<select>`、`el-select`、`@update:model-value`、`v-model:xxx` 的 emit 名），而 `<`、`@`、`:`、
+    // `-`、`"` 都是非词字符 + 本表一律带 i ⇒ 裸词形态逐字命中它们。实测三条无障碍切片
+    // （#4531 / #4529 / #4542）的内容命中 100% 是这两个词面、零行涉及真 SQL；由于
+    // 「内容命中 ≥1 ⇒ DUAL」是与行数无关的独立触发，前端组件改动被大面积抬成 DUAL。
+    // 已知残余（刻意保留并已被测试钉成断言，不写成口头保证）：跨行 SQL 的字面 SELECT 行不再命中；
+    // 补偿控制是 `.sql` / migrations / schema 这类**路径**由 sensitivePaths 独立命中，不依赖本行内容。
+    /\bSELECT\s+[\w*.,()'\s]{0,120}?\bFROM\b|\bUPDATE\s+[\w.`'"]{1,60}?\s+SET\b|INSERT\s+INTO|DELETE\s+FROM|DROP\s+TABLE|ALTER\s+TABLE/i,
     /(密钥|加密|解密|口令|密码|凭据|鉴权|授权)/,
   ],
 };

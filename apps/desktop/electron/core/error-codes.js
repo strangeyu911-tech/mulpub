@@ -32,6 +32,8 @@ const ERROR = {
   TEMPLATE_BAD_STATE: -23,
   // 会员档位（v3.1）：绑定账号数达到上限（客户端主进程判据）
   ACCOUNT_LIMIT_EXCEEDED: -30,
+  // 会员档位（P1-3）：定时任务数达到上限（客户端主进程判据）
+  SCHEDULE_LIMIT_EXCEEDED: -31,
   TASK_CANCELLED: -999,
   UNKNOWN_ERROR: -99,
 };
@@ -50,6 +52,7 @@ const MESSAGES = {
   [ERROR.TEMPLATE_NOT_FOUND]: 'Template not found',
   [ERROR.TEMPLATE_BAD_STATE]: 'Template bad state',
   [ERROR.ACCOUNT_LIMIT_EXCEEDED]: 'Account limit exceeded',
+  [ERROR.SCHEDULE_LIMIT_EXCEEDED]: 'Schedule limit exceeded',
   [ERROR.TASK_CANCELLED]: 'Task cancelled',
   [ERROR.UNKNOWN_ERROR]: 'Unknown error',
 };

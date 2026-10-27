@@ -206,3 +206,93 @@ describe("scheduler IPC handlers", () => {
     });
   });
 });
+
+describe("scheduler:create 定时任务数上限（P1-3）", () => {
+  function identityWith (limits) {
+    return {
+      getState: () => ({
+        user: { sub: "user-1" },
+        entitlement: limits === undefined ? null : { plan: "free", limits },
+      }),
+    };
+  }
+
+  function registerWith (identityService, store = null) {
+    const ipc = createMockIpcMain();
+    const sched = {
+      create: vi.fn(() => ({ id: "sched-new", status: "pending" })),
+      list: vi.fn(() => []),
+      cancel: vi.fn(),
+    };
+    registerHandlers(ipc, { scheduler: sched, identityService, store });
+    return { ipc, sched };
+  }
+
+  it("免费档 0 个：第 1 个定时任务被拒，handler 不执行", async () => {
+    const { ipc, sched } = registerWith(identityWith({ max_scheduled_tasks: 0 }));
+    const result = await ipc._callHandler("scheduler:create", {
+      platform: "toutiao", article: {}, publishTime: "2026-10-28T10:00:00Z",
+    });
+    expect(result).toMatchObject({ code: -31, errorCode: "SCHEDULE_LIMIT_EXCEEDED" });
+    expect(result.message).toContain("不支持定时任务");
+    expect(sched.create).not.toHaveBeenCalled();
+  });
+
+  it("标准 100 个：已有 100 个待执行时拒绝第 101 个", async () => {
+    const { ipc, sched } = registerWith(identityWith({ max_scheduled_tasks: 100 }));
+    sched.list.mockReturnValue(Array.from({ length: 100 }, (_, i) => ({ id: `s-${i}`, status: "submitted" })));
+    const result = await ipc._callHandler("scheduler:create", {
+      platform: "toutiao", article: {}, publishTime: "2026-10-28T10:00:00Z",
+    });
+    expect(result).toMatchObject({ code: -31, errorCode: "SCHEDULE_LIMIT_EXCEEDED" });
+    expect(result.data).toEqual({ current: 100, limit: 100 });
+    expect(sched.create).not.toHaveBeenCalled();
+  });
+
+  it("标准 99 个：放行第 100 个", async () => {
+    const { ipc, sched } = registerWith(identityWith({ max_scheduled_tasks: 100 }));
+    sched.list.mockReturnValue(Array.from({ length: 99 }, (_, i) => ({ id: `s-${i}`, status: "pending" })));
+    const result = await ipc._callHandler("scheduler:create", {
+      platform: "toutiao", article: {}, publishTime: "2026-10-28T10:00:00Z",
+    });
+    expect(result.code).toBe(0);
+    expect(sched.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("已排期批次计入同一个池：99 个单篇 + 1 个批次 = 100，拒绝新增", async () => {
+    const store = {
+      listBatchJobs: vi.fn(() => [{ id: "batch-1", status: "scheduled" }]),
+    };
+    const { ipc, sched } = registerWith(identityWith({ max_scheduled_tasks: 100 }), store);
+    sched.list.mockReturnValue(Array.from({ length: 99 }, (_, i) => ({ id: `s-${i}`, status: "submitted" })));
+    const result = await ipc._callHandler("scheduler:create", {
+      platform: "toutiao", article: {}, publishTime: "2026-10-28T10:00:00Z",
+    });
+    expect(result).toMatchObject({ code: -31, errorCode: "SCHEDULE_LIMIT_EXCEEDED" });
+    expect(result.data).toEqual({ current: 100, limit: 100 });
+    expect(sched.create).not.toHaveBeenCalled();
+  });
+
+  it("终态记录不计数，专业 -1 不限", async () => {
+    const { ipc, sched } = registerWith(identityWith({ max_scheduled_tasks: -1 }));
+    sched.list.mockReturnValue([
+      { id: "done", status: "executed" },
+      { id: "failed", status: "failed" },
+      { id: "cancelled", status: "cancelled" },
+    ]);
+    const result = await ipc._callHandler("scheduler:create", {
+      platform: "toutiao", article: {}, publishTime: "2026-10-28T10:00:00Z",
+    });
+    expect(result.code).toBe(0);
+    expect(sched.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("limits 缺失时 fail-open（不误拦旧快照付费用户）", async () => {
+    const { ipc, sched } = registerWith(identityWith(undefined));
+    const result = await ipc._callHandler("scheduler:create", {
+      platform: "toutiao", article: {}, publishTime: "2026-10-28T10:00:00Z",
+    });
+    expect(result.code).toBe(0);
+    expect(sched.create).toHaveBeenCalledTimes(1);
+  });
+});

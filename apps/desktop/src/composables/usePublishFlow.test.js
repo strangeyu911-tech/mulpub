@@ -142,12 +142,13 @@ selectedPlatforms = { value: ['toutiao'] }
     mockElMessageBox.confirm.mockResolvedValue(undefined)
   })
 
-  function createFlow() {
+  function createFlow(overrides = {}) {
     return usePublishFlow({
       article,
       selectedPlatforms,
       selectedAccounts,
       precheckEnabled,
+      ...overrides,
     })
   }
 
@@ -485,6 +486,20 @@ selectedPlatforms = { value: ['toutiao'] }
     })
     expect(r.result.value.success).toBe(true)
     expect(r.activeScheduleIds.value).toEqual(['schedule-1', 'schedule-2'])
+  })
+
+  it('免费档（max_scheduled_tasks=0）定时发布在调用 IPC 前被拒', async () => {
+    article.title = '免费定时'
+    article.content = '正文'
+    article.publishTime = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+    const r = createFlow({ getEntitlement: () => ({ limits: { max_scheduled_tasks: 0 } }) })
+
+    await r.handlePublish()
+
+    expect(mockSchedulerCreate).not.toHaveBeenCalled()
+    expect(mockPublishBatch).not.toHaveBeenCalled()
+    expect(r.result.value.success).toBe(false)
+    expect(r.result.value.message).toContain('升级')
   })
 
   it('定时任务业务失败无消息时使用稳定错误文案', async () => {

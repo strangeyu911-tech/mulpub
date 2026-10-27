@@ -415,6 +415,7 @@ export default {
       cancelledCount: (ctx) => '已取消 ' + ctx.named('count') + ' 个任务',
       taskCancelled: '任务已取消',
       scheduleCreateFailed: '定时任务创建失败',
+      scheduleUpgradeRequired: '当前套餐不支持定时任务，请升级后重试',
       scheduleCreateNoId: '定时任务创建成功但未返回任务 ID',
       scheduleRollbackFailed: (ctx) => ctx.named('count') + ' 个定时任务回滚失败，请点击取消重试',
       offlineCacheFailed: '离线任务缓存失败',
@@ -486,5 +487,6 @@ export default {
       retryResubmitFailed: '重新提交失败',
       batchNamePrefix: '批量发布 ',
       scheduleFailedFallback: '批量排期失败',
+      scheduleUpgradeRequired: '当前套餐不支持定时任务，请升级后重试',
     },
   }

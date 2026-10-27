@@ -20,6 +20,7 @@ import { formatUserError } from '@/utils/user-facing-error'
 import { useLoginGate } from './useLoginGate'
 import { useNotify } from './useNotify'
 import { resolveNotifyText } from '@/utils/notifyCore'
+import { maxScheduledTasksOf } from '@/features/member/plan-limits'
 import {
   publishBatch,
   sensitiveCheck,
@@ -95,6 +96,10 @@ export function usePublishFlow(options) {
     ? options.isAccountAvailable
     : null
   const activeMode = options.activeMode || null
+  // P1-3：定时任务档位判据。缺失/非法 limits → null（放行），0 = 本档不可建。
+  const getEntitlement = typeof options.getEntitlement === 'function'
+    ? options.getEntitlement
+    : () => options.entitlement || null
   // 主动操作登录门：发布前未登录 → 弹登录引导，登录成功后继续
   const { ensureLogin } = useLoginGate()
   // 统一通知通道（D1 决策）：toast/确认框走 useNotify，进度条文案走 resolveNotifyText
@@ -251,6 +256,10 @@ export function usePublishFlow(options) {
   }
 
   async function scheduleTargets (targets, data) {
+    // 客户端先拦免费档：避免先逐目标调 IPC、再回滚。标准档 100 个上限由主进程权威判定。
+    if (maxScheduledTasksOf(getEntitlement()) === 0) {
+      throw new Error(progressText('publishPage.publishFlow.scheduleUpgradeRequired'))
+    }
     const scheduleIds = []
     activeScheduleIds.value = []
     try {

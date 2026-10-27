@@ -115,6 +115,10 @@ test('plan-matrix 契约（spec §2）', async (t) => {
     assert.ok(standard.features.includes('schedule_batch'))
     assert.ok(standard.features.includes('dashboard_full'))
     assert.ok(getPlanEntitlement('pro').features.includes('knowledge_base'))
+    // v3.1：定时任务 0/100/不限
+    assert.strictEqual(free.limits.max_scheduled_tasks, 0)
+    assert.strictEqual(standard.limits.max_scheduled_tasks, 100)
+    assert.strictEqual(getPlanEntitlement('pro').limits.max_scheduled_tasks, -1)
     // v3.1：视频创作只做功能开关，不设条数上限（free 0 = 不提供）
     assert.strictEqual(standard.quota.video_create_monthly, -1)
     assert.strictEqual(getPlanEntitlement('pro').quota.video_create_monthly, -1)

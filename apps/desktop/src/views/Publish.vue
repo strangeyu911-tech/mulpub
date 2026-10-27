@@ -1252,6 +1252,7 @@ const {
   diffEdits,
   isAccountAvailable,
   activeMode,
+  getEntitlement: () => identityStore.entitlement,
 })
 // 一键发布成功回写（评审 MAJOR：PRD 承诺「保存草稿或发布成功后回写」）：
 // usePublishFlow 的 result.success 置 true 即发布链路完成（单篇/批量共用出口），旁路回写

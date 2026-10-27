@@ -1,8 +1,10 @@
 // @ts-check
-const { wrapIpcHandlerRaw, withSenderCheck } = require('./helpers')
+const { wrapIpcHandlerRaw, withSenderCheck, resolveIpcEntitlement } = require('./helpers')
+const { ERROR: EC } = require('../core/error-codes')
+const { scheduleLimitState } = require('../services/schedule-quota')
 
 function registerHandlers(ipcMain, deps) {
-  const { scheduler, identityService } = deps
+  const { scheduler, identityService, store } = deps
 
   function currentOwnerSubject () {
     if (!identityService) return undefined
@@ -14,12 +16,43 @@ function registerHandlers(ipcMain, deps) {
     return subject.trim()
   }
 
+  // P1-3：定时任务数上限。缺失/非法 limits 放行；0 是合法上限（第 1 个就拒）。
+  // 计数 = 待执行单篇排期（pending/submitted/dispatching）+ 已排期批次（scheduled）。
+  // 计数失败不冒充「达到上限」：让 create 自己报真实错误。
+  function scheduleLimitResponse (ownerSubject) {
+    let tasks
+    try {
+      tasks = ownerSubject === undefined ? scheduler.list() : scheduler.list(ownerSubject)
+    } catch (_) {
+      return null
+    }
+    let batches = []
+    try {
+      if (store && typeof store.listBatchJobs === 'function' && ownerSubject !== undefined) {
+        batches = store.listBatchJobs(ownerSubject)
+      }
+    } catch (_) { /* 批次计数失败不阻断单篇创建 */ }
+    const state = scheduleLimitState(resolveIpcEntitlement(identityService), tasks, batches)
+    if (!state.atLimit) return null
+    const message = state.limit === 0
+      ? '当前套餐不支持定时任务，请升级后重试'
+      : `当前套餐最多创建 ${state.limit} 个定时任务（已有 ${state.current} 个），请升级后重试`
+    return {
+      code: EC.SCHEDULE_LIMIT_EXCEEDED,
+      errorCode: 'SCHEDULE_LIMIT_EXCEEDED',
+      message,
+      data: { current: state.current, limit: state.limit },
+    }
+  }
+
   // 迁移至 wrapIpcHandlerRaw：统一 try-catch + 参数校验 + 错误日志
   // 保留原响应格式（含 message 字段）
   ipcMain.handle('scheduler:create', withSenderCheck(wrapIpcHandlerRaw(async (event, arg) => {
     // R51 P1：解构保护（requireArgs 已校验 arg 为对象）
     const { platform, article, publishTime } = arg
     const ownerSubject = currentOwnerSubject()
+    const denied = scheduleLimitResponse(ownerSubject)
+    if (denied) return denied
     const task = { platform, article, publishTime }
     if (ownerSubject !== undefined) task.owner_subject = ownerSubject
     const entry = scheduler.create(task)

@@ -405,6 +405,7 @@ export default {
       cancelledCount: (ctx) => 'Cancelled ' + ctx.named('count') + ' task(s)',
       taskCancelled: 'Task cancelled',
       scheduleCreateFailed: 'Failed to create scheduled task',
+      scheduleUpgradeRequired: 'Scheduled publishing is not available on your current plan. Please upgrade and retry.',
       scheduleCreateNoId: 'Scheduled task created but no task ID returned',
       scheduleRollbackFailed: (ctx) => ctx.named('count') + ' scheduled task(s) failed to roll back, please click cancel and retry',
       offlineCacheFailed: 'Failed to cache offline task',
@@ -476,5 +477,6 @@ export default {
       retryResubmitFailed: 'Failed to resubmit',
       batchNamePrefix: 'Batch Publish ',
       scheduleFailedFallback: 'Failed to schedule batch',
+      scheduleUpgradeRequired: 'Scheduled publishing is not available on your current plan. Please upgrade and retry.',
     },
   }

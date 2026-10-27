@@ -5,7 +5,7 @@
  * （batchCreate + batchSchedule/batchExecute）+ 档位权限检查；参数：article、entitlement。
  */
 import { ref, computed, watch, getCurrentScope, onScopeDispose } from 'vue'
-import { batchSizePerRunOf } from '@/features/member/plan-limits'
+import { batchSizePerRunOf, maxScheduledTasksOf } from '@/features/member/plan-limits'
 import { formatUserError } from '@/utils/user-facing-error'
 import { useLoginGate } from './useLoginGate'
 import { useNotify } from './useNotify'
@@ -574,6 +574,7 @@ export function useBatchPublish(options) {
     publishProgressStore, totalPlatformTasks,
     batchStatusPollMaxAttempts, batchStatusPollIntervalMs,
     progressHandles, getBatchLimit: batchLimit,
+    getScheduleLimit: () => maxScheduledTasksOf(getEntitlement()),
   })
 
   // 批量模式切换时初始化

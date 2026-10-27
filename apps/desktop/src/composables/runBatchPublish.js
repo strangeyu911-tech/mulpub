@@ -24,7 +24,7 @@ export function createBatchPublisher (deps) {
     clearBatchTracking, batchProgress, failedBatchTasks, scheduledBatchId,
     publishProgressStore, totalPlatformTasks,
     batchStatusPollMaxAttempts, batchStatusPollIntervalMs,
-    progressHandles, getBatchLimit,
+    progressHandles, getBatchLimit, getScheduleLimit = () => null,
   } = deps
 
   async function handleBatchPublish () {
@@ -125,6 +125,10 @@ export function createBatchPublisher (deps) {
       })
       if (!scheduleCheck.valid) {
         notifyWarning('publishPage.batchNotify.scheduleInvalid', { params: { message: scheduleCheck.message } })
+        return
+      }
+      if (scheduleEntries.length > 0 && getScheduleLimit() === 0) {
+        notifyWarning('publishPage.batchNotify.scheduleUpgradeRequired')
         return
       }
 

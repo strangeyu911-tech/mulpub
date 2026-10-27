@@ -46,6 +46,8 @@ const BASE_MATRIX = {
     aiWriteMonthly: -1,
     videoMonthly: 0,
     scheduleBatch: false,
+    // v3.1：定时任务数（0 = 不可建；标准 100；专业 -1 不限）
+    maxScheduledTasks: 0,
     dashboard: 'basic',
     // v3.1：知识库只做功能开关（免费不提供，标准/专业提供），不设容量档
     knowledgeBase: false,
@@ -82,6 +84,7 @@ const BASE_MATRIX = {
     // v3.1：视频创作只做功能开关（0 = 不提供，-1 = 可用且不限条数）
     videoMonthly: -1,
     scheduleBatch: true,
+    maxScheduledTasks: 100,
     dashboard: 'full',
     knowledgeBase: true,
     // 成本占比 25.42%（¥59 × 25.42% ≈ ¥15.21）。年付按月等额发放，年付总量因此恒为 12×本值
@@ -112,6 +115,7 @@ const BASE_MATRIX = {
     aiWriteMonthly: -1,
     videoMonthly: -1,
     scheduleBatch: true,
+    maxScheduledTasks: -1,
     dashboard: 'full',
     knowledgeBase: true,
     // 成本占比 25.21%（¥119 × 25.21% ≈ ¥30）。年付按月等额发放 ⇒ 年付 12×3000 = 36000 积分
@@ -138,11 +142,12 @@ const NUMERIC_KEYS = Object.freeze([
   'priceMonthlyCents', 'priceYearlyCents', 'maxPlatforms', 'dailyPublish',
   'aiWriteMonthly', 'videoMonthly', 'officialCreditMonthly', 'concurrentTasks',
   'maxDevices', 'maxAccounts', 'maxCloudAccounts', 'batchSizePerRun', 'modelTier',
+  'maxScheduledTasks',
 ])
 // 不含 dailyPublish：它派生 quota.cloud_publish_monthly，该 feature 会被 consumeFeature 扣减（要求 limit >= 0），-1 会导致发布链路 503
 const UNLIMITED_ALLOWED = Object.freeze([
   'maxPlatforms', 'aiWriteMonthly', 'videoMonthly', 'officialCreditMonthly',
-  'maxDevices', 'maxCloudAccounts', 'batchSizePerRun',
+  'maxDevices', 'maxCloudAccounts', 'batchSizePerRun', 'maxScheduledTasks',
 ])
 // concurrentTasks 至少 1：0 并发为病态配置。dailyPublish 不在此列（0 属刻意清零配额，仍合法）。
 const MIN_ONE_KEYS = Object.freeze(['concurrentTasks'])
@@ -264,6 +269,7 @@ function getPlanEntitlement(plan, overrides) {
       max_accounts: matrix.maxAccounts,
       max_cloud_accounts: matrix.maxCloudAccounts,
       batch_size_per_run: matrix.batchSizePerRun,
+      max_scheduled_tasks: matrix.maxScheduledTasks,
       model_tier: matrix.modelTier,
       plan_rank: matrix.rank,
     },

@@ -15,7 +15,8 @@
  *
  * ⚠ 接线状态（CCG i6，别误读为已生效能力）：**已接线**的是 `maxPlatformsOf` / `canAddPlatform` /
  * `platformLimitState`（发布页平台选择）、`maxAccountsOf` / `canAddAccount` / `accountLimitState`
- * （账号页添加账号入口，v3.1 P0）与 `batchSizePerRunOf` / `canBatchSize`（批量发布入口，P0-4）；
+ * （账号页添加账号入口，v3.1 P0）、`batchSizePerRunOf` / `canBatchSize`（批量发布入口，P0-4）与
+ * `maxScheduledTasksOf` / `canScheduleTask`（定时任务入口，P1-3）；
  * 其余导出（`canPublishToday` / `concurrentTasksOf` / `maxDevicesOf` / `maxCloudAccountsOf`）
  * **尚未接线**——它们缺数据源（今日已发条数、设备/云账号管理页），按 PRD §12 N5/N1/N2 排期。在接线前，
  * 这些函数只是一份可单测的判据，不构成任何运行时限制。
@@ -76,6 +77,38 @@ export function maxCloudAccountsOf(entitlement) {
 /** 绑定账号数上限；null 表示无信息（放行）。v3.1 主计量轴。 */
 export function maxAccountsOf(entitlement) {
   return readLimit(entitlement && entitlement.limits, 'max_accounts')
+}
+
+/** 定时任务数上限；null 表示无信息（放行），0 表示本档不可建，-1 表示不限。 */
+export function maxScheduledTasksOf(entitlement) {
+  return readLimit(entitlement && entitlement.limits, 'max_scheduled_tasks')
+}
+
+/**
+ * 是否还能再创建一个定时任务。
+ * @param {object|null|undefined} entitlement
+ * @param {number} currentCount 当前待执行定时任务数（不含待创建的那个）
+ * @returns {boolean} 无限制信息或 -1 时恒 true；0 时恒 false
+ */
+export function canScheduleTask(entitlement, currentCount) {
+  const limit = maxScheduledTasksOf(entitlement)
+  if (limit === null || limit < 0) return true
+  const count = Number(currentCount)
+  if (!Number.isFinite(count)) return true
+  return count < limit
+}
+
+/**
+ * 定时任务上限展示态：给出本档上限与当前数量，供 UI 提示。
+ * @param {object|null|undefined} entitlement
+ * @param {number} currentCount
+ * @returns {{limit: number|null, current: number, atLimit: boolean}}
+ */
+export function scheduledTaskLimitState(entitlement, currentCount) {
+  const limit = maxScheduledTasksOf(entitlement)
+  const current = Number.isFinite(Number(currentCount)) ? Number(currentCount) : 0
+  const unlimited = limit === null || limit < 0
+  return { limit: unlimited ? null : limit, current, atLimit: !unlimited && current >= limit }
 }
 
 /**

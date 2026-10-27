@@ -16,33 +16,36 @@ import {
   maxDevicesOf,
   maxCloudAccountsOf,
   maxAccountsOf,
+  maxScheduledTasksOf,
   canAddPlatform,
   canAddAccount,
   canBatchSize,
+  canScheduleTask,
   canPublishToday,
   platformLimitState,
   accountLimitState,
+  scheduledTaskLimitState,
 } from './plan-limits'
 
 const FREE = {
   plan: 'free',
   limits: {
     max_platforms: -1, daily_publish: 5, concurrent_tasks: 1,
-    max_devices: 1, max_accounts: 5, max_cloud_accounts: 0, batch_size_per_run: 1, model_tier: 0, plan_rank: 0,
+    max_devices: 1, max_accounts: 5, max_cloud_accounts: 0, batch_size_per_run: 1, max_scheduled_tasks: 0, model_tier: 0, plan_rank: 0,
   },
 }
 const STANDARD = {
   plan: 'standard',
   limits: {
     max_platforms: -1, daily_publish: 50, concurrent_tasks: 3,
-    max_devices: 3, max_accounts: 20, max_cloud_accounts: 20, batch_size_per_run: 10, model_tier: 1, plan_rank: 1,
+    max_devices: 3, max_accounts: 20, max_cloud_accounts: 20, batch_size_per_run: 10, max_scheduled_tasks: 100, model_tier: 1, plan_rank: 1,
   },
 }
 const PRO = {
   plan: 'pro',
   limits: {
     max_platforms: -1, daily_publish: 1000, concurrent_tasks: 10,
-    max_devices: -1, max_accounts: 100, max_cloud_accounts: 100, batch_size_per_run: -1, model_tier: 2, plan_rank: 2,
+    max_devices: -1, max_accounts: 100, max_cloud_accounts: 100, batch_size_per_run: -1, max_scheduled_tasks: -1, model_tier: 2, plan_rank: 2,
   },
 }
 // 平台数已不再是档位轴（v3.1），但判据本身仍要被测：用独立夹具锁旧语义。
@@ -59,6 +62,9 @@ describe('plan-limits — 读取', () => {
     expect(maxAccountsOf(FREE)).toBe(5)
     expect(maxAccountsOf(STANDARD)).toBe(20)
     expect(maxAccountsOf(PRO)).toBe(100)
+    expect(maxScheduledTasksOf(FREE)).toBe(0)
+    expect(maxScheduledTasksOf(STANDARD)).toBe(100)
+    expect(maxScheduledTasksOf(PRO)).toBe(UNLIMITED)
     expect(maxCloudAccountsOf(FREE)).toBe(0)
     expect(batchSizePerRunOf(STANDARD)).toBe(10)
   })
@@ -67,8 +73,10 @@ describe('plan-limits — 读取', () => {
     for (const input of [null, undefined, {}, { plan: 'free' }, { limits: null }, { limits: 'oops' }]) {
       expect(maxPlatformsOf(input)).toBeNull()
       expect(maxAccountsOf(input)).toBeNull()
+      expect(maxScheduledTasksOf(input)).toBeNull()
       expect(canAddPlatform(input, 999)).toBe(true)
       expect(canAddAccount(input, 999)).toBe(true)
+      expect(canScheduleTask(input, 999)).toBe(true)
       expect(canBatchSize(input, 999)).toBe(true)
       expect(canPublishToday(input, 999)).toBe(true)
     }
@@ -165,5 +173,30 @@ describe('plan-limits — 批量与日发', () => {
     expect(canPublishToday(PRO, 999, 1)).toBe(true)
     // pro 的日发是有限高值 1000（防除零），不是 -1 无限
     expect(canPublishToday(PRO, 1000, 1)).toBe(false)
+  })
+})
+
+describe('plan-limits — 定时任务（P1-3）', () => {
+  it('免费档 0 个：第 1 个即拒绝', () => {
+    expect(canScheduleTask(FREE, 0)).toBe(false)
+    expect(canScheduleTask(FREE, 1)).toBe(false)
+  })
+
+  it('标准 100 个、专业不限：边界为闭区间', () => {
+    expect(canScheduleTask(STANDARD, 99)).toBe(true)
+    expect(canScheduleTask(STANDARD, 100)).toBe(false)
+    expect(canScheduleTask(PRO, 999)).toBe(true)
+  })
+
+  it('缺失/非法 currentCount 不得静默拦截；-1 不限', () => {
+    expect(canScheduleTask(FREE, undefined)).toBe(true)
+    expect(canScheduleTask(FREE, NaN)).toBe(true)
+    expect(canScheduleTask({ limits: { max_scheduled_tasks: -1 } }, 999)).toBe(true)
+  })
+
+  it('scheduledTaskLimitState 给出可填进 i18n 的参数', () => {
+    expect(scheduledTaskLimitState(FREE, 0)).toEqual({ limit: 0, current: 0, atLimit: true })
+    expect(scheduledTaskLimitState(STANDARD, 99)).toEqual({ limit: 100, current: 99, atLimit: false })
+    expect(scheduledTaskLimitState(PRO, 999)).toEqual({ limit: null, current: 999, atLimit: false })
   })
 })

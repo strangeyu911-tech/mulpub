@@ -1,0 +1,107 @@
+{
+  "sha": "fa6200d6840966dad73eca43bbc4d81fa1ec9c49",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 354 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 354,
+    "fileCount": 19,
+    "codeFileCount": 16,
+    "sensitivePathHits": [
+      "packages/api-publish-engine/src/auth/plan-matrix.js"
+    ],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "4e6c812e800c1584a7cda1569a3bb73ea79cc740d4c04126a42e24816b11fa78",
+  "decidedAt": "2026-10-27T15:06:42.303Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "scheduler.list() 异常被静默捕获并返回 null，数据库故障时不限创建（fail-open）。计数失败不应被视作「未达限」。",
+        "highRiskDomains": [],
+        "prosecution": "若 scheduler.list 抛错而 create 成功，用户可突破 100 上限。",
+        "defense": "`scheduler.list()` 自己捕获读取异常并返回 []（见 shared-utils/scheduler.js list 的 catch），本函数外层 catch 只防御实现变化；`scheduler.create` 走同一份 JSONL 文件，读失败时 create 也会失败。计数失败按 fail-open 与账号上限（account.js 的 max_accounts）同口径，避免一次快照/读盘抖动把付费用户整片拦死；免费档另有客户端入口拦截，生产主进程仍以 entitlement 为权威。",
+        "verdict": "dismissed",
+        "rationale": "读取异常已被 scheduler 内部吞成 []，且创建依赖同一文件；fail-open 是既有账号上限同口径，不是本切片新引入的绕过。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "isActiveScheduledTask 对无 status 字段任务视为活跃（!status）；已删除/损坏记录可能被计入上限，误拦正常用户。",
+        "highRiskDomains": [],
+        "prosecution": "旧 JSONL 若有无 status 的历史行，会被永久计入 100，导致标准用户无法再建。",
+        "defense": "无 status 被视为 pending 是 scheduler/Calendar 既有的历史兼容口径（`isPendingSchedule` 同样 `!status` 为待发）；这类记录本来就会被 restore/派发，计入配额是保守但正确的。终态记录都有 status（executed/failed/cancelled），不计入；测试覆盖终态过滤。",
+        "verdict": "dismissed",
+        "rationale": "无 status 的历史行按既有 pending 语义处理，不是损坏数据；保守计数不会放过超限，只会让极旧数据占位。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "scheduleLimitResponse 仅在 ownerSubject !== undefined 时统计批次，导致无主任务与有主任务计数不一致。",
+        "highRiskDomains": [],
+        "prosecution": "legacy 模式（无 identityService）下批次不计数，可能超限。",
+        "defense": "legacy 模式没有 owner，`store.listBatchJobs(owner)` 需要 owner 才能查询；此模式只存在于身份服务未启用的兼容路径，生产打包启用 Logto 后 ownerSubject 恒存在。无主要绕过需先关闭身份服务，属开发/兼容态，与其它 feature 的 dev 短路同口径。",
+        "verdict": "dismissed",
+        "rationale": "生产身份模式下 owner 恒存在；legacy 无主模式是兼容路径，无法按 owner 查批次。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "客户端用 getEntitlement() === 0 拦截免费档，但主进程已做权威判决；若身份注入被绕过（直接 invoke IPC），客户端拦截无效。",
+        "highRiskDomains": [],
+        "prosecution": "客户端 gate 可被绕过。",
+        "defense": "P1-3 的设计就是双层：客户端只负责免费档提前提示（避免逐目标 IPC 后回滚），主进程 `scheduler:create` 用 `resolveIpcEntitlement` 做权威判决并返回 -31；直接 invoke 会被主进程拒。测试同时覆盖客户端不调用 IPC 与主进程 100/0 拒绝。",
+        "verdict": "dismissed",
+        "rationale": "客户端不是唯一防线；主进程已权威拒绝，双层职责与测试均已落地。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T15:10:28.030Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4566#issuecomment-6445628679",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@d2fe0569b47213da4f28bf322820ce7d247289eac740ccd36124b431cb1c4ec5"
+  }
+}

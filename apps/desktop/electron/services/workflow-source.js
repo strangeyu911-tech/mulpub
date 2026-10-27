@@ -92,6 +92,30 @@ function normalizeZhihuItem (item, index) {
   }
 }
 
+function normalizeDouyinViral (item, index) {
+  const content = String(item.content || item.summary || '')
+  return {
+    sourceType: 'douyinViral',
+    platform: 'douyin',
+    externalId: String(item.id || item.external_id || item.url || index),
+    title: String(item.title || ''),
+    content,
+    summary: content,
+    url: String(item.url || ''),
+    coverImage: String(item.cover_url || item.coverImage || ''),
+    publishedAt: item.published_at || item.publishedAt || item.created_at || '',
+    needsCollect: false,
+    needsGeneration: false,
+    meta: {
+      industry: String(item.industry || ''),
+      likes: Number(item.likes) || 0,
+      collections: Number(item.collections) || 0,
+      comments: Number(item.comments) || 0,
+      author: String(item.author || ''),
+    },
+  }
+}
+
 /**
  * @param {{
  *   hotTopics?: { fetchTopics: Function },
@@ -185,12 +209,50 @@ function createWorkflowSources (deps = {}) {
     }
   }
 
+  async function collectDouyinViral (source) {
+    if (!deps.viralLibrary || typeof deps.viralLibrary.listViral !== 'function') {
+      return { items: [], warnings: [{ sourceType: 'douyinViral', message: '爆款库服务未装配' }] }
+    }
+    try {
+      const result = await deps.viralLibrary.listViral({
+        platform: 'douyin',
+        industry: source.industry,
+        minLikes: source.minLikes,
+        page: 1,
+        pageSize: source.limit,
+        sortBy: source.sort === 'score' ? 'likes' : 'created_at',
+        sortOrder: 'desc',
+      })
+      const data = result && result.code === 0 ? result.data : null
+      const rows = asArray(data && data.items)
+      const items = []
+      let dropped = 0
+      rows.forEach((row) => {
+        const item = normalizeDouyinViral(row, items.length)
+        if (!item.content || !item.title) {
+          dropped += 1
+          return
+        }
+        items.push(item)
+      })
+      const warnings = dropped > 0
+        ? [{ sourceType: 'douyinViral', message: dropped + ' 条爆款缺少标题或正文，已跳过' }]
+        : []
+      return { items: items.slice(0, source.limit), warnings }
+    } catch (e) {
+      const message = e && e.message ? e.message : String(e)
+      safeWarn(log, '抖音爆款库采集失败: ' + message)
+      return { items: [], warnings: [{ sourceType: 'douyinViral', message }] }
+    }
+  }
+
   return {
     async collect (config) {
       const source = (config && config.source) || {}
       if (source.type === 'hotTopics') return collectHotTopics(source)
       if (source.type === 'creatorMonitor') return collectCreator(source)
       if (source.type === 'zhihuFavlist') return collectZhihu(source)
+      if (source.type === 'douyinViral') return collectDouyinViral(source)
       return { items: [], warnings: [{ sourceType: String(source.type || ''), message: '未知来源类型' }] }
     },
   }

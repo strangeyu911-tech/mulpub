@@ -170,6 +170,7 @@ const SCHEMA_SQL = [
     like_collect_ratio  REAL DEFAULT 0,
     published_at        TEXT DEFAULT '',
     platform            TEXT DEFAULT '',
+    industry            TEXT DEFAULT '',
     source              TEXT DEFAULT 'manual', external_id TEXT DEFAULT '', creator_id TEXT DEFAULT '',
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL
@@ -403,6 +404,7 @@ function migrateKnowledgeEvolutionSchema(db) {
       "ALTER TABLE viral_library ADD COLUMN status         TEXT    DEFAULT 'active'",
       "ALTER TABLE viral_library ADD COLUMN access_count   INTEGER DEFAULT 0",
       "ALTER TABLE viral_library ADD COLUMN last_accessed  TEXT",
+      "ALTER TABLE viral_library ADD COLUMN industry       TEXT    DEFAULT ''",
     ],
     personal_knowledge: [
       "ALTER TABLE personal_knowledge ADD COLUMN confidence     REAL    DEFAULT 0.5",

@@ -23,7 +23,7 @@ describe('knowledge-library-store keyword search', function () {
         id TEXT PRIMARY KEY, title TEXT, cover_url TEXT, author TEXT, url TEXT,
         content TEXT, tags TEXT, likes INTEGER DEFAULT 0, collections INTEGER DEFAULT 0,
         comments INTEGER DEFAULT 0, like_collect_ratio REAL DEFAULT 0, published_at TEXT,
-        platform TEXT, source TEXT, created_at TEXT, updated_at TEXT,
+        platform TEXT, industry TEXT DEFAULT '', source TEXT, created_at TEXT, updated_at TEXT,
         confidence REAL DEFAULT 0.5, status TEXT DEFAULT 'active',
         access_count INTEGER DEFAULT 0, last_accessed TEXT
       );

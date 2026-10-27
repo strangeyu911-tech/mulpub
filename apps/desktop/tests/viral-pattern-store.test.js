@@ -8,7 +8,7 @@ CREATE TABLE viral_library (
   id TEXT PRIMARY KEY, title TEXT DEFAULT '', cover_url TEXT DEFAULT '', author TEXT DEFAULT '',
   url TEXT DEFAULT '', content TEXT NOT NULL, tags TEXT DEFAULT '[]',
   likes INTEGER DEFAULT 0, collections INTEGER DEFAULT 0, comments INTEGER DEFAULT 0,
-  like_collect_ratio REAL DEFAULT 0, published_at TEXT DEFAULT '', platform TEXT DEFAULT '',
+  like_collect_ratio REAL DEFAULT 0, published_at TEXT DEFAULT '', platform TEXT DEFAULT '', industry TEXT DEFAULT '',
   source TEXT DEFAULT 'manual', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   confidence REAL DEFAULT 0.5, status TEXT DEFAULT 'active',
   access_count INTEGER DEFAULT 0, last_accessed TEXT

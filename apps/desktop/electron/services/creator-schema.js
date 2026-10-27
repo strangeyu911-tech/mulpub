@@ -205,6 +205,7 @@ function migrateCreatorLinkageSchema (db, execSchemaSql) {
     for (const [name, ddl] of [
       ['external_id', 'ALTER TABLE viral_library ADD COLUMN external_id TEXT DEFAULT \'\''],
       ['creator_id', 'ALTER TABLE viral_library ADD COLUMN creator_id TEXT DEFAULT \'\''],
+      ['industry', 'ALTER TABLE viral_library ADD COLUMN industry TEXT DEFAULT \'\''],
     ]) {
       if (!cols.includes(name)) run(ddl)
     }

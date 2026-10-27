@@ -16,7 +16,7 @@ function makeFake () {
       return {
         run (...a) { captured.args.push(a); return { changes: 1 } },
         get () { return null },
-        all () { return [] },
+        all (...a) { captured.args.push(a); return [] },
       }
     },
   }
@@ -78,5 +78,15 @@ describe('viral_library P0 NULL 语义（normalizeViralItem）', () => {
     mixin.listViralItems.call(f.self, { page: 1, pageSize: 10 })
     const sql = f.captured.sqls.find(s => s.includes('ORDER BY')) || ''
     expect(sql).toContain('created_at DESC')
+  })
+
+  it('U-108: 抖音爆款按 platform/industry/minLikes 过滤', () => {
+    const f = makeFake()
+    mixin.listViralItems.call(f.self, { page: 1, pageSize: 20, platform: 'douyin', industry: '美妆', minLikes: 1000 })
+    const sql = f.captured.sqls.find(s => s.includes('ORDER BY')) || ''
+    expect(sql).toContain('platform = ?')
+    expect(sql).toContain('industry = ?')
+    expect(sql).toContain('likes >= ?')
+    expect(f.captured.args[0]).toEqual(expect.arrayContaining(['douyin', '美妆', 1000]))
   })
 })

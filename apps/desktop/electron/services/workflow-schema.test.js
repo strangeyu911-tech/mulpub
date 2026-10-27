@@ -6,6 +6,7 @@
  */
 const {
   SOURCE_TYPES,
+  VIRAL_INDUSTRIES,
   CONTENT_TYPES,
   VIDEO_PIPELINES,
   PLATFORMS,
@@ -33,8 +34,13 @@ function validConfig (patch = {}) {
 }
 
 describe('workflow-schema · 枚举与默认值', () => {
+  it('行业枚举与共享 JSON 同源，避免打包 fallback 漂移', () => {
+    const shared = require('../../shared/viral-industries.json')
+    expect(VIRAL_INDUSTRIES).toEqual(shared.industries)
+  })
+
   it('来源/内容类型/流水线/平台为显式白名单', () => {
-    expect(SOURCE_TYPES).toEqual(['hotTopics', 'creatorMonitor', 'zhihuFavlist'])
+    expect(SOURCE_TYPES).toEqual(['hotTopics', 'creatorMonitor', 'zhihuFavlist', 'douyinViral'])
     expect(CONTENT_TYPES).toEqual(['article', 'video', 'podcast'])
     expect(VIDEO_PIPELINES).toContain('story2video-compose')
     // 只允许「文案可直接启动」的流水线，素材型流水线不在选项里
@@ -102,8 +108,26 @@ describe('workflow-schema · 来源校验', () => {
     expect(empty.errors[0]).toMatchObject({ field: 'source.folderTokens', reason: 'empty' })
   })
 
+  it('抖音爆款库要求行业，limit/minLikes 有边界', () => {
+    const ok = validateWorkflowConfig(validConfig({
+      source: { type: 'douyinViral', industry: '美妆', limit: 20, minLikes: 1000 },
+    }))
+    expect(ok.ok).toBe(true)
+
+    const missing = validateWorkflowConfig(validConfig({
+      source: { type: 'douyinViral', industry: '', limit: 20, minLikes: 0 },
+    }))
+    expect(missing.ok).toBe(false)
+    expect(missing.errors[0]).toMatchObject({ field: 'source.industry', reason: 'unknown' })
+
+    const badLikes = validateWorkflowConfig(validConfig({
+      source: { type: 'douyinViral', industry: '美妆', limit: 20, minLikes: -1 },
+    }))
+    expect(badLikes.errors[0]).toMatchObject({ field: 'source.minLikes', reason: 'outOfRange' })
+  })
+
   it('未知来源类型直接拒绝', () => {
-    const r = validateWorkflowConfig(validConfig({ source: { type: 'douyinViral' } }))
+    const r = validateWorkflowConfig(validConfig({ source: { type: 'unknownSource' } }))
     expect(r.ok).toBe(false)
     expect(r.errors[0]).toMatchObject({ field: 'source.type', reason: 'unknown' })
   })

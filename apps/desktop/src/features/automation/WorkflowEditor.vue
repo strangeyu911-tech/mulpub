@@ -57,6 +57,25 @@
           <span class="wf-hint">{{ t('automation.wfFolderLimitHint', { max: meta.limits.maxFolderLimit }) }}</span>
         </div>
       </template>
+
+      <template v-else-if="model.source.type === 'douyinViral'">
+        <div class="wf-row">
+          <label class="wf-label">{{ t('automation.wfViralIndustry') }}</label>
+          <select v-model="model.source.industry" class="wf-input" data-testid="wf-viral-industry">
+            <option value="">{{ t('automation.wfViralIndustryPlaceholder') }}</option>
+            <option v-for="industry in meta.viralIndustries" :key="industry" :value="industry">{{ industry }}</option>
+          </select>
+          <span class="wf-hint">{{ t('automation.wfViralIndustryHint') }}</span>
+        </div>
+        <div class="wf-row">
+          <label class="wf-label">{{ t('automation.wfLimit') }}</label>
+          <input v-model.number="model.source.limit" type="number" min="1" max="50" class="wf-input wf-input--sm" />
+          <label class="wf-label">{{ t('automation.wfViralMinLikes') }}</label>
+          <input v-model.number="model.source.minLikes" type="number" min="0" max="10000000" class="wf-input wf-input--sm" data-testid="wf-viral-min-likes" />
+          <span class="wf-hint">{{ t('automation.wfViralLimitHint') }}</span>
+        </div>
+        <div class="wf-hint">{{ t('automation.wfViralSourceHint') }}</div>
+      </template>
     </section>
 
     <!-- 2. 改写 -->

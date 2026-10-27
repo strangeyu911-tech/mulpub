@@ -25,6 +25,8 @@ const i18n = createI18n({
         wfCadenceTitle: '节奏', wfCadence: '间隔', wfCadenceHint: 'hint', wfGuard: '护栏',
         wfGuardPerRun: '每次', wfGuardDaily: '每天', wfReview: '审核', wfDedupe: '去重', wfReviewHint: 'hint',
         wfCategory: { general: '综合', society: '社会', finance: '财经', tech: '科技', ai: 'AI' },
+        wfViralIndustry: '行业', wfViralIndustryPlaceholder: '请选择行业', wfViralIndustryHint: 'hint',
+        wfViralMinLikes: '最低点赞', wfViralLimitHint: 'hint', wfViralSourceHint: 'hint',
       },
     },
   },
@@ -44,7 +46,8 @@ function config () {
 }
 
 const meta = {
-  sources: [{ id: 'hotTopics', label: '热门选题' }],
+  sources: [{ id: 'hotTopics', label: '热门选题' }, { id: 'douyinViral', label: '抖音爆款库' }],
+  viralIndustries: ['美妆'],
   contentTypes: [
     { id: 'article', label: '图文' },
     { id: 'video', label: '视频' },
@@ -71,6 +74,15 @@ function mountEditor () {
     global: { plugins: [i18n] },
   })
 }
+
+describe('WorkflowEditor · 抖音爆款来源', () => {
+  it('切换到抖音爆款库后显示行业与最低点赞输入', async () => {
+    const w = mountEditor()
+    await w.find('[data-testid="wf-source-type"]').setValue('douyinViral')
+    expect(w.find('[data-testid="wf-viral-industry"]').exists()).toBe(true)
+    expect(w.find('[data-testid="wf-viral-min-likes"]').exists()).toBe(true)
+  })
+})
 
 describe('WorkflowEditor · 发布账号多选', () => {
   it('按账号渲染复选框（同平台多个账号都可见），不再只渲染平台', () => {

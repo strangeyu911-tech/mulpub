@@ -27,6 +27,7 @@ function registerWorkflowServices(container) {
       pipelineEngine: c.get('pipelineEngine'),
       taskQueue: c.get('taskQueue'),
       urlCollector: c.get('urlCollector'),
+      viralLibrary: c.get('knowledgeLibraryService'),
       podcastHostProvider: () => {
         const host = require('../services/podcast-episode-host');
         return typeof host.getSharedEpisodeHost === 'function' ? host.getSharedEpisodeHost() : null;

@@ -345,6 +345,16 @@
 - 续跑失败只写 `WorkflowRunner` 通知，不阻塞主窗口；已 `scheduled/published/failed/skipped` 的条目保持原状，不重复。
 - 这解决的是「30 分钟硬超时/进程崩溃后已完成的进度不丢」，不是把生成改成独立队列；生成仍在应用内异步执行，但可跨重启续跑。
 
+### 7.12 抖音爆款库来源
+
+- 数据源定义：**已采集到 `viral_library` 且 `platform=douyin` 的内容**，不是实时抓抖音热榜；没有数据时先到爆款库采集。
+- `viral_library` 新增 `industry` 列；建表、store-schema 迁移、creator-schema 迁移三处同步，旧数据为空串。
+- 行业枚举：美妆/穿搭/美食/母婴/家居/数码/职场/情感/教育/健身/旅行/财经/其他；共享文件 `apps/desktop/shared/viral-industries.json`，后端 fallback 内置同值。
+- 来源配置：`type=douyinViral`，`industry` 必填，`limit` 1–50，`minLikes` 0–10,000,000，`sort=score` 按点赞 / `latest` 按入库时间。
+- 归一化：`needsCollect=false`、`needsGeneration=false`，正文直接进入改写/排期；`meta` 带 industry/likes/collections/comments/author。
+- 爆款库表单/列表新增行业；旧数据无行业不会被新来源选中（数据质量门禁）。
+- 服务未装配时返回 warning「爆款库服务未装配」，不拖垮其他来源；过滤为空时 items=[]，由运行摘要显示 0。
+
 ### 7.7 护栏
 
 - 单次上限：采集后截断，`summary.truncated=true`、`truncateReason=maxItemsPerRun`。

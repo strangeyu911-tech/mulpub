@@ -82,16 +82,16 @@ describe('creator-schema · viral_library 迁移 · partial 索引（防应用�
   })
 
   it('列已存在时不重复 ALTER（幂等）', () => {
-    const { db, executed } = makeDb({ viralLibraryCols: ['id', 'external_id', 'creator_id'] })
+    const { db, executed } = makeDb({ viralLibraryCols: ['id', 'external_id', 'creator_id', 'industry'] })
     migrateCreatorLinkageSchema(db, execSchemaSql)
     expect(executed.filter(s => s.includes('ADD COLUMN'))).toHaveLength(0)
   })
 
-  it('列缺失时补齐两列', () => {
+  it('列缺失时补齐三列', () => {
     const { db, executed } = makeDb({ viralLibraryCols: ['id'] })
     migrateCreatorLinkageSchema(db, execSchemaSql)
     const alters = executed.filter(s => s.includes('ADD COLUMN'))
-    expect(alters).toHaveLength(2)
+    expect(alters).toHaveLength(3)
     expect(alters.join(' ')).toContain('external_id')
     expect(alters.join(' ')).toContain('creator_id')
   })

@@ -1,0 +1,139 @@
+{
+  "sha": "b75ab257bc4097e9267f28dae6b042009d7c9633",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 15 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 15,
+    "fileCount": 5,
+    "codeFileCount": 5,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "819bb532f2e265b0454fea912e56c0d9ba9504ff3307c5ab958fe70df58bb391",
+  "decidedAt": "2026-10-27T10:08:38.316Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_blocked",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "domains": [
+          "datamigration"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "Deep review required=true resolved by self-play (confidence 0.6) with blocking i2 still open; external evidence URL unverified.",
+        "highRiskDomains": [],
+        "prosecution": "上一轮 external evidence 未验证，Critical 未闭环。",
+        "defense": "evidence 已在 PR 评论公开；本轮修复的是 CI 夹具失败，不改变裁决事实。",
+        "verdict": "dismissed",
+        "rationale": "元判据指向的 evidence URL 可公开访问；后续提交不否定该证据，仅补齐测试夹具。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "store-schema.js and creator-schema.js both run ALTER TABLE viral_library ADD COLUMN industry; parallel paths risk divergence.",
+        "highRiskDomains": [
+          "datamigration"
+        ],
+        "prosecution": "两个 schema 文件重复 ALTER industry，可能漂移。",
+        "defense": "两个入口服务不同建库路径，各自先读 PRAGMA 列再 ALTER；重复执行幂等。",
+        "verdict": "dismissed",
+        "rationale": "与 external_id/creator_id 既有模式一致；删任一处会让只走另一入口的旧库缺列。",
+        "externalReview": {
+          "performedBy": "claude",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4547#issuecomment-6439180919",
+          "reviewedAt": "2026-10-27T10:13:32Z"
+        }
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "industry is free TEXT; validation only checks shared JSON enum at app layer, DB accepts any 50-char string.",
+        "highRiskDomains": [],
+        "prosecution": "industry 是自由 TEXT，DB 无 CHECK。",
+        "defense": "schema 枚举 + 表单下拉双重限制；旧库加 CHECK 需重建表。",
+        "verdict": "dismissed",
+        "rationale": "当前所有写入口走 normalizeViralItem/schema；DB 约束留作后续 schema 重构。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "normalizeDouyinViral filters item.content && item.title silently; missing fields drop rows without warning/log.",
+        "highRiskDomains": [],
+        "prosecution": "normalizeDouyinViral 过滤缺字段条目时静默丢弃。",
+        "defense": "已改为逐条计数并输出 warning，新增回归测试。",
+        "verdict": "dismissed",
+        "rationale": "workflow-source.js collectDouyinViral 现在返回 `N 条爆款缺少标题或正文，已跳过`；测试覆盖。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "VIRAL_INDUSTRIES loaded via require() with silent catch; Electron build may miss JSON, falling back silently.",
+        "highRiskDomains": [],
+        "prosecution": "VIRAL_INDUSTRIES 静默 fallback，打包可能缺 JSON。",
+        "defense": "新增测试断言枚举与共享 JSON 完全一致；shared/**/* 已在打包 files，QM-1 覆盖。",
+        "verdict": "dismissed",
+        "rationale": "测试 + 打包配置双重覆盖，fallback 仅作为最后防线。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "datamigration"
+        ]
+      }
+    ],
+    "note": "自扮演裁决：1 条指控成立或需外部复核",
+    "at": "2026-10-27T10:17:37.319Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4547#issuecomment-6439180919",
+    "tierBasis": "adjudicated-self-play-honored",
+    "adjudicationDigest": "adjudicated@35b850c95e3f7ff3d8b3bb8b6e2917b66164e523a5cb7d76fdc2f1f2ca453bce"
+  }
+}

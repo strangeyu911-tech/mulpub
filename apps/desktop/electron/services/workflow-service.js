@@ -19,6 +19,7 @@ const {
   VIDEO_PIPELINES,
   PLATFORMS,
   HOT_TOPIC_CATEGORIES,
+  VIRAL_INDUSTRIES,
   SOURCE_LABELS,
   CONTENT_LABELS,
   PLATFORM_LABELS,
@@ -140,6 +141,7 @@ function createWorkflowService (deps = {}) {
       videoPipelines: VIDEO_PIPELINES.map((id) => ({ id, label: id })),
       platforms: PLATFORMS.map((id) => ({ id, label: PLATFORM_LABELS[id] })),
       categories: HOT_TOPIC_CATEGORIES.slice(),
+      viralIndustries: VIRAL_INDUSTRIES.slice(),
       limits: { ...LIMITS },
     }
   }

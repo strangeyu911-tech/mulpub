@@ -1,0 +1,137 @@
+{
+  "sha": "86e8580fa6722027fccfd5e377e49374d99c3dc8",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 260 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 260,
+    "fileCount": 32,
+    "codeFileCount": 22,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 8,
+    "docSensitiveContentHits": 3,
+    "docSensitiveContentSample": [
+      "- 旧库：`store-schema.js migrateKnowledgeEvolutionSchema` + `creator-schema.js` 的列检查各补一条 `ALTER TABLE`，重复执行幂等。",
+      "`addViralItem/updateViralItem` 的 INSERT/UPDATE 都写 industry；`parseViralRow` 直接透传。",
+      "- [x] 1.2 store add/update/list 支持 industry 与 platform/minLikes 过滤"
+    ],
+    "ccgSensitiveContentHits": 9,
+    "ccgSensitiveContentSample": [
+      "      \"- 旧库：`store-schema.js migrateKnowledgeEvolutionSchema` + `creator-schema.js` 的列检查各补一条 `ALTER TABLE`，重复执行幂等。\",",
+      "      \"`addViralItem/updateViralItem` 的 INSERT/UPDATE 都写 industry；`parseViralRow` 直接透传。\",",
+      "      \"- [x] 1.2 store add/update/list 支持 industry 与 platform/minLikes 过滤\""
+    ],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "c93d6b2e0539169967904c0eab60fed9bfb9a36d72689c9073d2a7bc465a2197",
+  "decidedAt": "2026-10-27T08:41:50.174Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "domains": [
+          "datamigration"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "finding": "`douyinViral` 来源未校验 `sort` 字段，只映射 `score`/`latest`，非法值会透传到 DB 查询。",
+        "highRiskDomains": [],
+        "prosecution": "douyinViral 的 sort 未校验，非法值会透传到 listViral 的 sortBy。",
+        "defense": "validateWorkflowConfig 已把 sort 归一化为 score 或 latest；douyin 分支没有绕过 schema。",
+        "verdict": "dismissed",
+        "rationale": "schema 归一化已限制为两值；source collect 只读归一化后的 config。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "`store-schema.js` 与 `creator-schema.js` 同时执行 `industry` ALTER，迁移路径重复。",
+        "highRiskDomains": [
+          "datamigration"
+        ],
+        "prosecution": "industry 列在两个 schema 文件都执行 ALTER，重复迁移可能造成不一致。",
+        "defense": "两个入口服务不同建库路径，各自先读 PRAGMA 列再 ALTER；重复执行幂等，删掉一处会让另一入口旧库缺列。",
+        "verdict": "dismissed",
+        "rationale": "保留双入口幂等迁移是既有模式（external_id/creator_id 同样处理），不是重复缺陷。",
+        "externalReview": {
+          "performedBy": "claude",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4547#issuecomment-6437581583",
+          "reviewedAt": "2026-10-27T08:51:34Z"
+        }
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "Vue 组件直接 `import` 共享 `.json`；打包配置未在变更中确认，可能导致 `require` 失败。",
+        "highRiskDomains": [],
+        "prosecution": "Vue 直接 import shared JSON，打包配置未在本次 diff 中确认。",
+        "defense": "P0 已在 package.json files 加 shared/**/*；本次 build:vue 与 QM-1 打包启动均通过。",
+        "verdict": "dismissed",
+        "rationale": "构建与打包实测覆盖该 import；不是未验证路径。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "`normalizeViralItem` 对 `platform` 与新 `industry` 仅截断到 50 字符，未在 DB 层加约束。",
+        "highRiskDomains": [],
+        "prosecution": "industry 在 DB 层无长度/枚举约束，应用层只截断 50 字符。",
+        "defense": "SQLite 加 CHECK 需重建表；应用层 normalize 已截断，旧库迁移无风险。",
+        "verdict": "dismissed",
+        "rationale": "当前数据入口都走 normalizeViralItem；DB 约束留作后续 schema 重构。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "datamigration"
+        ]
+      }
+    ],
+    "note": "i2 高危域已按公开评论 externalReview 补证；其余 dismissed",
+    "at": "2026-10-27T08:53:51.803Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4547#issuecomment-6437581583",
+    "tierBasis": "adjudicated-self-play-honored",
+    "adjudicationDigest": "adjudicated@3f0e1b29713086193ed617faac4ebe5b32e7860fbc4f84b3d429b927bb060790"
+  }
+}

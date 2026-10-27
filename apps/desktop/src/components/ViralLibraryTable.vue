@@ -23,6 +23,7 @@
               <th style="width:76px" class="sortable" @click="sortBy('like_collect_ratio')">{{ t('knowledgeBase.colRatio') }}</th>
               <th style="width:112px">{{ t('knowledgeBase.colPublishedAt') }}</th>
               <th style="width:88px">{{ t('knowledgeBase.colPlatform') }}</th>
+              <th style="width:88px">{{ t('knowledgeBase.colIndustry') }}</th>
               <th style="width:120px">{{ t('knowledgeBase.colActions') }}</th>
             </tr>
           </thead>
@@ -64,6 +65,7 @@
               <td>{{ item.like_collect_ratio != null ? Number(item.like_collect_ratio).toFixed(1) : '-' }}</td>
               <td>{{ item.published_at ? item.published_at.slice(0, 10) : '-' }}</td>
               <td>{{ item.platform || '-' }}</td>
+              <td>{{ item.industry || '-' }}</td>
               <td>
                 <button type="button" class="mp-btn mp-btn--ghost mp-btn--sm" @click="editItem(item)">{{ t('knowledgeBase.edit') }}</button>
                 <button type="button" class="mp-btn mp-btn--danger mp-btn--sm" @click="deleteItem(item)">{{ t('knowledgeBase.delete') }}</button>

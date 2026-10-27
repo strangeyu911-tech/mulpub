@@ -16,8 +16,8 @@
 
 const crypto = require('crypto')
 
-/** 来源类型白名单（抖音爆款按产品决策本期隐藏，不在此列） */
-const SOURCE_TYPES = Object.freeze(['hotTopics', 'creatorMonitor', 'zhihuFavlist'])
+/** 来源类型白名单（douyinViral = 已采集到爆款库的抖音内容） */
+const SOURCE_TYPES = Object.freeze(['hotTopics', 'creatorMonitor', 'zhihuFavlist', 'douyinViral'])
 /** 内容类型：图文 / 视频 / 播客（播客走 RSS 频道） */
 const CONTENT_TYPES = Object.freeze(['article', 'video', 'podcast'])
 /** 文案可直接启动的视频流水线（排除需要先导入素材的 talking-head / cinematic / clip-factory / localization-dub / podcast-repurpose） */
@@ -40,6 +40,14 @@ const HOT_TOPIC_CATEGORIES = Object.freeze([
   'general', 'society', 'finance', 'tech', 'ai', 'entertainment',
   'sports', 'emotion', 'education', 'health', 'international',
 ])
+/** 抖音爆款库行业枚举（与前端下拉/数据录入共用；新增项必须同步共享 JSON） */
+let VIRAL_INDUSTRIES = Object.freeze(['美妆', '穿搭', '美食', '母婴', '家居', '数码', '职场', '情感', '教育', '健身', '旅行', '财经', '其他'])
+try {
+  const loaded = require('../../shared/viral-industries.json')
+  if (loaded && Array.isArray(loaded.industries)) VIRAL_INDUSTRIES = Object.freeze(loaded.industries.slice())
+} catch (_) {
+  // 打包遗漏时保留内置枚举，避免模块加载失败。
+}
 
 const PLATFORM_LABELS = Object.freeze({
   wechat_mp: '微信公众号', zhihu: '知乎', weibo: '微博', douyin: '抖音', xiaohongshu: '小红书',
@@ -47,7 +55,7 @@ const PLATFORM_LABELS = Object.freeze({
   tiktok: 'TikTok', bilibili: 'B站', baijiahao: '百家号', twitter: 'X', instagram: 'Instagram',
   facebook: 'Facebook',
 })
-const SOURCE_LABELS = Object.freeze({ hotTopics: '热门选题', creatorMonitor: '关注博主', zhihuFavlist: '知乎收藏夹' })
+const SOURCE_LABELS = Object.freeze({ hotTopics: '热门选题', creatorMonitor: '关注博主', zhihuFavlist: '知乎收藏夹', douyinViral: '抖音爆款库' })
 const CONTENT_LABELS = Object.freeze({ article: '图文', video: '视频', podcast: '播客' })
 
 const LIMITS = Object.freeze({
@@ -161,6 +169,17 @@ function errorsForSource (source) {
       errors.push({ field: 'source.limit', reason: 'outOfRange', params: { min: 1, max: LIMITS.maxFolderLimit } })
     }
   }
+  if (source.type === 'douyinViral') {
+    if (!VIRAL_INDUSTRIES.includes(source.industry)) {
+      errors.push({ field: 'source.industry', reason: 'unknown', params: { allowed: VIRAL_INDUSTRIES } })
+    }
+    if (!intInRange(source.limit, 1, 50)) {
+      errors.push({ field: 'source.limit', reason: 'outOfRange', params: { min: 1, max: 50 } })
+    }
+    if (!Number.isInteger(source.minLikes) || source.minLikes < 0 || source.minLikes > 10000000) {
+      errors.push({ field: 'source.minLikes', reason: 'outOfRange', params: { min: 0, max: 10000000 } })
+    }
+  }
   return errors
 }
 
@@ -219,6 +238,8 @@ function validateWorkflowConfig (raw, opts = {}) {
     followIds: normalizeStringArray(rawSource.followIds, LIMITS.maxFollows + 1),
     perCreatorLimit: Number.isInteger(rawSource.perCreatorLimit) ? rawSource.perCreatorLimit : 3,
     folderTokens: normalizeStringArray(rawSource.folderTokens, LIMITS.maxFolders + 1),
+    industry: typeof rawSource.industry === 'string' ? rawSource.industry : '',
+    minLikes: Number.isInteger(rawSource.minLikes) ? rawSource.minLikes : 0,
   }
   errors.push(...errorsForSource(source))
 
@@ -295,7 +316,7 @@ function validateWorkflowConfig (raw, opts = {}) {
 /** 新建工作流时的默认配置（全部落在合法区间内） */
 function buildDefaultWorkflowConfig () {
   return {
-    source: { type: 'hotTopics', categories: ['ai'], limit: 10, sort: 'latest', followIds: [], perCreatorLimit: 3, folderTokens: [] },
+    source: { type: 'hotTopics', categories: ['ai'], limit: 10, sort: 'latest', followIds: [], perCreatorLimit: 3, folderTokens: [], industry: '', minLikes: 0 },
     rewrite: { mode: 'default', strategyId: '', length: 'keep' },
     content: { type: 'article', videoPipeline: '', podcastChannelId: '' },
     publish: { targets: [], mode: 'immediate', startAt: '' },
@@ -458,6 +479,7 @@ module.exports = {
   VIDEO_PIPELINES,
   PLATFORMS,
   HOT_TOPIC_CATEGORIES,
+  VIRAL_INDUSTRIES,
   PLATFORM_LABELS,
   SOURCE_LABELS,
   CONTENT_LABELS,

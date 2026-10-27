@@ -109,12 +109,13 @@ describe('creator-schema · 存量库升级形态（真 sqlite 文件库）', ()
 })
 
 describe('creator-schema · 建表与查询同源（新库不再注定失败）', () => {
-  it('store-schema 的 viral_library 建表 DDL 必须自带 external_id / creator_id', () => {
+  it('store-schema 的 viral_library 建表 DDL 必须自带 external_id / creator_id / industry', () => {
     const src = readFileSync(join(HERE, 'store-schema.js'), 'utf8')
     const m = /CREATE TABLE IF NOT EXISTS viral_library \(([\s\S]*?)\n\s*\)`/.exec(src)
     expect(m, '取不到 viral_library 建表体 ⇒ 判据失明，不得当作通过').toBeTruthy()
     expect(m[1]).toMatch(/external_id/)
     expect(m[1]).toMatch(/creator_id/)
+    expect(m[1]).toMatch(/industry/)
   })
 
   it('按仓内真实 SCHEMA_SQL 建出来的新库，预检一次都不能失败', () => {

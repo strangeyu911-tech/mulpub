@@ -31,6 +31,13 @@
           <input id="vfd-platform" v-model="form.platform" class="cohere-input" :placeholder="t('knowledgeBase.formPlatform')" />
         </div>
         <div class="cohere-form-item">
+          <label class="cohere-form-label" for="vfd-industry">{{ t('knowledgeBase.formIndustry') }}</label>
+          <select id="vfd-industry" v-model="form.industry" class="cohere-input">
+            <option value="">{{ t('knowledgeBase.formIndustryPlaceholder') }}</option>
+            <option v-for="industry in INDUSTRIES" :key="industry" :value="industry">{{ industry }}</option>
+          </select>
+        </div>
+        <div class="cohere-form-item">
           <label class="cohere-form-label" for="vfd-tagstext">{{ t('knowledgeBase.formTags') }}</label>
           <input id="vfd-tagstext" v-model="tagsText" class="cohere-input" :placeholder="t('knowledgeBase.formTags')" />
         </div>
@@ -72,6 +79,9 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { addViralToLibrary, updateViralItem } from '@/api/knowledge-library'
+import INDUSTRY_CONFIG from '../../shared/viral-industries.json'
+
+const INDUSTRIES = INDUSTRY_CONFIG.industries
 
 const props = defineProps({
   item: { type: Object, default: null },
@@ -88,6 +98,7 @@ const form = ref({
   content: props.item?.content || '',
   author: props.item?.author || '',
   platform: props.item?.platform || '',
+  industry: props.item?.industry || '',
   cover_url: props.item?.cover_url || '',
   published_at: props.item?.published_at ? props.item.published_at.slice(0, 10) : '',
   likes: props.item?.likes ?? null,
@@ -121,6 +132,7 @@ async function submit () {
     content,
     author: form.value.author || undefined,
     platform: form.value.platform || undefined,
+    industry: form.value.industry || undefined,
     cover_url: form.value.cover_url || undefined,
     published_at: form.value.published_at || undefined,
     likes: form.value.likes ?? undefined,

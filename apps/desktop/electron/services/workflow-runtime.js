@@ -48,6 +48,7 @@ function extractVideoPath (runStatus) {
  *   pipelineEngine?: object,
  *   taskQueue: object,
  *   urlCollector?: object,
+ *   viralLibrary?: object,
  *   podcastHostProvider?: () => object|null,
  *   accountProvider?: () => Promise<Array<{id:string,platform:string,status?:string}>>,
  *   now?: () => number,
@@ -119,6 +120,7 @@ function createWorkflowRuntime (deps = {}) {
       : undefined,
     creator: creatorSource,
     zhihu: zhihuSource,
+    viralLibrary: deps.viralLibrary,
     log,
   })
 

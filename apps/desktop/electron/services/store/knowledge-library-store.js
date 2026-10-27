@@ -45,6 +45,7 @@ function normalizeViralItem (item) {
     like_collect_ratio: ratio,
     published_at: String(item.published_at || ''),
     platform: String(item.platform || '').slice(0, 50),
+    industry: String(item.industry || '').slice(0, 50),
     // 枚举：collection（采集）/ analysis（爆款分析报告落库，P1 来源标记）/ manual（人工新增）
     source: item.source === 'collection' ? 'collection' : item.source === 'analysis' ? 'analysis' : 'manual',
   }
@@ -82,12 +83,12 @@ module.exports = {
       this.db.prepare(`
         INSERT OR REPLACE INTO viral_library
           (id, title, cover_url, author, url, content, tags, likes, collections, comments,
-           like_collect_ratio, published_at, platform, source, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           like_collect_ratio, published_at, platform, industry, source, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         row.id, row.title, row.cover_url, row.author, row.url, row.content, row.tags,
         row.likes, row.collections, row.comments, row.like_collect_ratio,
-        row.published_at, row.platform, row.source, now, now,
+        row.published_at, row.platform, row.industry, row.source, now, now,
       )
       return row.id
     } catch (e) {
@@ -118,6 +119,18 @@ module.exports = {
       const kw = '%' + String(opts.search).trim().replace(/[%_]/g, '') + '%'
       conditions.push('(title LIKE ? OR content LIKE ? OR tags LIKE ? OR author LIKE ? OR platform LIKE ?)')
       params.push(kw, kw, kw, kw, kw)
+    }
+    if (opts.platform && String(opts.platform).trim()) {
+      conditions.push('platform = ?')
+      params.push(String(opts.platform).trim())
+    }
+    if (opts.industry && String(opts.industry).trim()) {
+      conditions.push('industry = ?')
+      params.push(String(opts.industry).trim())
+    }
+    if (Number.isFinite(Number(opts.minLikes)) && Number(opts.minLikes) > 0) {
+      conditions.push('likes >= ?')
+      params.push(Number(opts.minLikes))
     }
 
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : ''
@@ -156,12 +169,12 @@ module.exports = {
       const result = this.db.prepare(`
         UPDATE viral_library SET title = ?, cover_url = ?, author = ?, url = ?, content = ?, tags = ?,
           likes = ?, collections = ?, comments = ?, like_collect_ratio = ?, published_at = ?, platform = ?,
-          source = ?, updated_at = ?
+          industry = ?, source = ?, updated_at = ?
         WHERE id = ?
       `).run(
         row.title, row.cover_url, row.author, row.url, row.content, row.tags,
         row.likes, row.collections, row.comments, row.like_collect_ratio,
-        row.published_at, row.platform, row.source, now, String(id),
+        row.published_at, row.platform, row.industry, row.source, now, String(id),
       )
       return (result.changes || 0) > 0
     } catch (e) {

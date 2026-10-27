@@ -17,7 +17,7 @@ import ViralFormDialog from "./ViralFormDialog.vue";
 const SRC = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "ViralFormDialog.vue"), "utf8").replace(/\r\n/g, "\n");
 
 const PAIRS = [
-  "vfd-title", "vfd-url", "vfd-content", "vfd-author", "vfd-platform",
+  "vfd-title", "vfd-url", "vfd-content", "vfd-author", "vfd-platform", "vfd-industry",
   "vfd-tagstext", "vfd-cover-url", "vfd-published-at", "vfd-likes", "vfd-collections", "vfd-comments",
 ];
 const LABELABLE = new Set(["INPUT", "SELECT", "TEXTAREA", "BUTTON", "METER", "OUTPUT", "PROGRESS"]);
@@ -50,7 +50,7 @@ describe("ViralFormDialog label↔控件关联（审计 4.3）", () => {
     }
   });
 
-  it("清单：11 对 for↔id 逐个存在，且文件里的 for 集合不多不少（新增孤岛或漏接线都会红）", () => {
+  it("清单：12 对 for↔id 逐个存在，且文件里的 for 集合不多不少（新增孤岛或漏接线都会红）", () => {
     const pairs = [...SRC.matchAll(/<label\b[^>]*\bfor="([^"]+)"/g)].map((m) => m[1]).sort();
     expect(pairs, "label[for] 集合与本用例清单不一致").toEqual([...PAIRS].sort());
     for (const id of PAIRS) {

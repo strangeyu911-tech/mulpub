@@ -41,6 +41,45 @@
 
 判据纪律（本 PRD 最重要的一条）：**宿主属性归属不得由"同为表单控件"外推**。本仓曾把"ElInput 会转发 aria-labelledby"外推成"EP 控件都会"，据此写下两批计划；按上表实测后计划作废。任何"给某组件加关联属性"的方案，动手前先 mount 一次打印三层落点，并把该实测钉成锁。
 
+### 3.1 二次复测（2026-10-27，PR #4529 动手前）：上表成立，但有两处必须补充的现场
+
+在 `PublishFrequencySettings.vue` 收编前，为确认"哪个字段有救"，用**四种写法**当场复测 `ElInput`（EP 2.14.2，探针用例跑完即删）：
+
+| 复测写法 | 内层 `<input>` 的 `id` | 内层 `aria-labelledby` | 全文件 `querySelectorAll('[id=…]')` 命中 |
+|---|---|---|---|
+| 模板静态 `<el-input id="x">` | 空串 | `null` | **0** |
+| 模板 `<el-input :model-value="v" id="x">`（同页另有 `data-testid`） | 空串 | — | **0**（而 `data-testid` 落在内层 `<input>` 上） |
+| `mount(ElInput, { attrs: { id: 'x' } })` | 空串 | `null` | **0** |
+| `mount(ElInput, { props: { id: 'x' } })` | 空串 | `null` | **0** |
+
+三条要补进正文的现场：
+
+1. **声明与字节不同源，且这次的反差是陷阱而不是提示**。`element-plus/es/components/input/src/input.mjs` 里 `id` 是**声明过的 prop**，注释原文 `@description native input id`。只看 props 表 / `input.d.ts` 会得出"`for`+`id` 可用"的结论，实测四档全部为空串。**所以资格表的判据只能是 mount 后的 DOM 事实，不能是类型声明**（与 §7「施工切片 SOP」第 1 条同向，此处是把该条打在"声明长得像证据"这一格上的实例）。
+2. **`ElInputNumber` 的"未测得"有确切错误串**：jsdom 下 `mount` 抛 `Cannot read properties of undefined (reading 'setAttribute')`。写死这一句是为了让下一次复测能判断"还是同一个障碍"还是"EP 修了、只是探针写法变了"。
+3. **`data-testid` 会转发而 `id` 不会** —— 两者都是"看起来一样的字符串属性"，因此**不能**用"`data-testid` 在测试里能查到"来推断"`for` 在生产里能成立"。这类"邻近属性可转发 ⇒ 目标属性也可转发"的推理，就是 §3 判据纪律点名禁止的外推。
+
+## 3.2 测试宿主本身会假造转发（本 PRD 的装饰性门禁补录）
+
+`apps/desktop/test-setup.js` 给**所有**测试装了 Element Plus 全局 stub，其中一条是：
+
+```js
+'el-input': { template: '<input class="el-input" />' },
+```
+
+它把**任何**属性原样透传到那个原生 `<input>` 上——包括真 `ElInput` 会整条丢弃的 `id`。后果必须逐字读清楚：
+
+> 用这个 stub 做挂载级标签关联断言时，「给 `<el-input>` 写 `for`+`id`」这种在生产里**规范级无效**（§3 实测四档命中 0）的接线，会**照样通过**，而且比真宿主更干净、更快。
+
+这是本仓「装饰性门禁」的一个新落点：**夹具形状对、语义不对**（同型先例见 AGENTS.md「契约夹具不得替对方剥壳」「mock 要对齐语义不只对齐形状」）。两条硬约束：
+
+1. 凡挂载级断言要度量**宿主转发面**（`for` / `aria-labelledby` / `aria-describedby` / `controls` / `owns`），必须显式覆盖全局 stub：`global.stubs = { 'el-input': ElInput }`（用真组件当 stub 定义）。
+2. **并带一条正控**：断言渲染出的确实是真 EP 的结构（本项目取 `.el-input__inner`；另一种等价取法是 `root.classList.contains('el-input') && root.tagName === 'DIV'`，因为全局 stub 的根就是 `<input>`）。没有正控时，将来有人把 stub 换回全局那份，测试仍然全绿——那就是"锁还在、已经不测东西"。
+
+参照实现：`apps/desktop/src/components/PublishFrequencySettings.label-association.test.js`（PR #4529）的挂载锁，以及其执行记录 §三。
+
+**本节不改动 §3 资格表**：资格表的所有读数都取**真组件**，未被全局 stub 污染；本条只约束"用挂载层去复现资格表结论"时的夹具装配。
+
+
 ## 4. id 的取值规则（数据校验面）
 
 1. **必须唯一**，且不得与同文件内任何 `data-testid` 撞名——撞名时 `getElementById` 与 `for` 会指到别的元素，比缺失更坏。

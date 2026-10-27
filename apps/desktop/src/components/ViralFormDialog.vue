@@ -11,49 +11,49 @@
 
       <div class="dialog-body">
         <div class="cohere-form-item">
-          <label class="cohere-form-label">{{ t('knowledgeBase.formTitle') }}</label>
-          <input v-model="form.title" class="cohere-input" :placeholder="t('knowledgeBase.formTitle')" />
+          <label class="cohere-form-label" for="vfd-title">{{ t('knowledgeBase.formTitle') }}</label>
+          <input id="vfd-title" v-model="form.title" class="cohere-input" :placeholder="t('knowledgeBase.formTitle')" />
         </div>
         <div class="cohere-form-item">
-          <label class="cohere-form-label">{{ t('knowledgeBase.formLink') }}</label>
-          <input v-model="form.url" class="cohere-input" :placeholder="t('knowledgeBase.formLink')" />
+          <label class="cohere-form-label" for="vfd-url">{{ t('knowledgeBase.formLink') }}</label>
+          <input id="vfd-url" v-model="form.url" class="cohere-input" :placeholder="t('knowledgeBase.formLink')" />
         </div>
         <div class="cohere-form-item">
-          <label class="cohere-form-label">{{ t('knowledgeBase.formContent') }} <span style="color:var(--danger,#c53b3b)">*</span></label>
-          <textarea v-model="form.content" class="cohere-input" rows="5" :placeholder="t('knowledgeBase.formContent')"></textarea>
+          <label class="cohere-form-label" for="vfd-content">{{ t('knowledgeBase.formContent') }} <span style="color:var(--danger,#c53b3b)">*</span></label>
+          <textarea id="vfd-content" v-model="form.content" aria-required="true" class="cohere-input" rows="5" :placeholder="t('knowledgeBase.formContent')"></textarea>
         </div>
         <div class="cohere-form-item">
-          <label class="cohere-form-label">{{ t('knowledgeBase.formAuthor') }}</label>
-          <input v-model="form.author" class="cohere-input" :placeholder="t('knowledgeBase.formAuthor')" />
+          <label class="cohere-form-label" for="vfd-author">{{ t('knowledgeBase.formAuthor') }}</label>
+          <input id="vfd-author" v-model="form.author" class="cohere-input" :placeholder="t('knowledgeBase.formAuthor')" />
         </div>
         <div class="cohere-form-item">
-          <label class="cohere-form-label">{{ t('knowledgeBase.formPlatform') }}</label>
-          <input v-model="form.platform" class="cohere-input" :placeholder="t('knowledgeBase.formPlatform')" />
+          <label class="cohere-form-label" for="vfd-platform">{{ t('knowledgeBase.formPlatform') }}</label>
+          <input id="vfd-platform" v-model="form.platform" class="cohere-input" :placeholder="t('knowledgeBase.formPlatform')" />
         </div>
         <div class="cohere-form-item">
-          <label class="cohere-form-label">{{ t('knowledgeBase.formTags') }}</label>
-          <input v-model="tagsText" class="cohere-input" :placeholder="t('knowledgeBase.formTags')" />
+          <label class="cohere-form-label" for="vfd-tagstext">{{ t('knowledgeBase.formTags') }}</label>
+          <input id="vfd-tagstext" v-model="tagsText" class="cohere-input" :placeholder="t('knowledgeBase.formTags')" />
         </div>
         <div class="cohere-form-item">
-          <label class="cohere-form-label">{{ t('knowledgeBase.colCover') }}</label>
-          <input v-model="form.cover_url" class="cohere-input" placeholder="https://..." />
+          <label class="cohere-form-label" for="vfd-cover-url">{{ t('knowledgeBase.colCover') }}</label>
+          <input id="vfd-cover-url" v-model="form.cover_url" class="cohere-input" placeholder="https://..." />
         </div>
         <div class="cohere-form-item">
-          <label class="cohere-form-label">{{ t('knowledgeBase.colPublishedAt') }}</label>
-          <input v-model="form.published_at" type="date" class="cohere-input" />
+          <label class="cohere-form-label" for="vfd-published-at">{{ t('knowledgeBase.colPublishedAt') }}</label>
+          <input id="vfd-published-at" v-model="form.published_at" type="date" class="cohere-input" />
         </div>
         <div style="display:flex;gap:8px">
           <div class="cohere-form-item" style="flex:1">
-            <label class="cohere-form-label">{{ t('knowledgeBase.colLikes') }}</label>
-            <input v-model.number="form.likes" type="number" class="cohere-input" />
+            <label class="cohere-form-label" for="vfd-likes">{{ t('knowledgeBase.colLikes') }}</label>
+            <input id="vfd-likes" v-model.number="form.likes" type="number" class="cohere-input" />
           </div>
           <div class="cohere-form-item" style="flex:1">
-            <label class="cohere-form-label">{{ t('knowledgeBase.colCollections') }}</label>
-            <input v-model.number="form.collections" type="number" class="cohere-input" />
+            <label class="cohere-form-label" for="vfd-collections">{{ t('knowledgeBase.colCollections') }}</label>
+            <input id="vfd-collections" v-model.number="form.collections" type="number" class="cohere-input" />
           </div>
           <div class="cohere-form-item" style="flex:1">
-            <label class="cohere-form-label">{{ t('knowledgeBase.colComments') }}</label>
-            <input v-model.number="form.comments" type="number" class="cohere-input" />
+            <label class="cohere-form-label" for="vfd-comments">{{ t('knowledgeBase.colComments') }}</label>
+            <input id="vfd-comments" v-model.number="form.comments" type="number" class="cohere-input" />
           </div>
         </div>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>

@@ -2,9 +2,10 @@
 /**
  * useBatchPublish.js — 批量发布 composable（从 Publish.vue 拆分）
  * 职责：batchMode/articles/batchProgress 状态 + 文章管理 + handleBatchPublish 流程
- * （batchCreate + batchSchedule/batchExecute）+ Pro 权限检查；参数：article、licenseStore。
+ * （batchCreate + batchSchedule/batchExecute）+ 档位权限检查；参数：article、entitlement。
  */
 import { ref, computed, watch, getCurrentScope, onScopeDispose } from 'vue'
+import { batchSizePerRunOf } from '@/features/member/plan-limits'
 import { formatUserError } from '@/utils/user-facing-error'
 import { useLoginGate } from './useLoginGate'
 import { useNotify } from './useNotify'
@@ -85,12 +86,15 @@ function positiveInteger(value, fallback) {
  * 批量发布 composable
  * @param {object} options
  * @param {object} options.article - 单篇模式 reactive article
- * @param {object} options.licenseStore - { isPro: boolean }
+ * @param {object} [options.entitlement] - `/api/v1/me` 下发的权益快照（含 limits）
+ * @param {Function} [options.getEntitlement] - 读取最新权益快照（升级后不刷新页面也生效）
  * @returns {object} 响应式状态 + 方法
  */
 export function useBatchPublish(options) {
   const article = options.article
-  const licenseStore = options.licenseStore
+  const getEntitlement = typeof options.getEntitlement === 'function'
+    ? options.getEntitlement
+    : () => options.entitlement || null
   const isAccountAvailable = typeof options.isAccountAvailable === 'function'
     ? options.isAccountAvailable
     : null
@@ -182,9 +186,18 @@ export function useBatchPublish(options) {
     return hasExplicitAccount ? normalized : (articleItem.platforms || []).slice()
   }
 
+  function batchLimit () {
+    return batchSizePerRunOf(getEntitlement())
+  }
+
   function checkBatchAccess() {
-    if (batchMode.value && licenseStore && !licenseStore.isPro) {
+    if (!batchMode.value) return
+    const limit = batchLimit()
+    // 0/1 都视为「本档不提供批量」：1 条没有批量的意义，且与服务端 batch_size_per_run
+    // 的语义一致（免费档 1）。缺失/-1/10 等放行，由 addArticle / 提交前再按上限收口。
+    if (limit !== null && limit >= 0 && limit <= 1) {
       batchMode.value = false
+      notifyWarning('publishPage.batchSizeExceeded', { params: { limit } })
     }
   }
 
@@ -331,7 +344,13 @@ export function useBatchPublish(options) {
   }
 
   function addArticle() {
+    const limit = batchLimit()
+    if (limit !== null && limit >= 0 && articles.value.length >= limit) {
+      notifyWarning('publishPage.batchSizeExceeded', { params: { limit } })
+      return false
+    }
     articles.value.push(createArticleItem())
+    return true
   }
 
   /**
@@ -352,7 +371,12 @@ export function useBatchPublish(options) {
       draft && typeof draft === 'object' && typeof draft.id === 'string' && draft.id.trim()
     ))
     if (items.length === 0) return 0
-    articles.value = items.map(draft => {
+    const limit = batchLimit()
+    const allowed = limit !== null && limit >= 0 ? Math.min(items.length, limit) : items.length
+    if (allowed < items.length) {
+      notifyWarning('publishPage.batchSizeExceeded', { params: { limit } })
+    }
+    articles.value = items.slice(0, allowed).map(draft => {
       const item = createArticleItem()
       item.title = typeof draft.title === 'string' ? draft.title : ''
       item.content = typeof draft.content === 'string' ? draft.content : ''
@@ -363,7 +387,7 @@ export function useBatchPublish(options) {
       item.topicsText = item.topics.join(',')
       return item
     })
-    return items.length
+    return allowed
   }
 
   /**
@@ -549,7 +573,7 @@ export function useBatchPublish(options) {
     clearBatchTracking, batchProgress, failedBatchTasks, scheduledBatchId,
     publishProgressStore, totalPlatformTasks,
     batchStatusPollMaxAttempts, batchStatusPollIntervalMs,
-    progressHandles,
+    progressHandles, getBatchLimit: batchLimit,
   })
 
   // 批量模式切换时初始化

@@ -1145,10 +1145,11 @@ class PublishApiServer {
         var opts = {};
         if (this._opts.dryRun) opts.dryRun = true;
         try {
-          await this._authorizeImmediateEntry(req, platforms.length);
           // 批量入口同时受两条上限约束：平台数（跨平台数）与单次批量（条数）。
           // 免费档 batch_size_per_run=1，所以「一条批量请求打 5 个平台」在免费档必须被拒。
+          // P0-4：先判数量上限，再扣 cloud_publish 额度；否则 402 被拒时额度已被扣减。
           await assertPlanCapabilitiesForRequest(this._entitlementProvider, req, { platforms, batchSize: platforms.length });
+          await this._authorizeImmediateEntry(req, platforms.length);
         } catch (error) {
           this._logError(error && error.code ? error.code : "ENTITLEMENT_USAGE_UNAVAILABLE", error, this._ctx(req));
           this._json(res, error && error.status ? error.status : 503, {

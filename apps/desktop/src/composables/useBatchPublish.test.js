@@ -281,31 +281,6 @@ describe('useBatchPublish — composable setup', () => {
     expect(r.showTemplatePicker.value).toBe(false)
   })
 
-  // ─── checkBatchAccess ────────────────────────
-  it('checkBatchAccess 非 Pro 用户禁止批量模式', () => {
-    licenseStore.isPro = false
-    const r = useBatchPublish({ article, licenseStore })
-    r.batchMode.value = true
-    r.checkBatchAccess()
-    expect(r.batchMode.value).toBe(false)
-  })
-
-  it('checkBatchAccess Pro 用户允许批量模式', () => {
-    licenseStore.isPro = true
-    const r = useBatchPublish({ article, licenseStore })
-    r.batchMode.value = true
-    r.checkBatchAccess()
-    expect(r.batchMode.value).toBe(true)
-  })
-
-  it('checkBatchAccess batchMode=false 时不检查', () => {
-    licenseStore.isPro = false
-    const r = useBatchPublish({ article, licenseStore })
-    r.batchMode.value = false
-    r.checkBatchAccess()
-    expect(r.batchMode.value).toBe(false)
-  })
-
   // ─── watch batchMode ─────────────────────────
   it('batchMode 切换为 true 时自动 addArticle（articles 为空）', async () => {
     const r = useBatchPublish({ article, licenseStore })

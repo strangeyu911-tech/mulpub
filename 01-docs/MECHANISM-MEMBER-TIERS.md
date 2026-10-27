@@ -1,7 +1,7 @@
 # 会员档位机制（MEMBER TIERS MECHANISM）
 
-> **状态**：🟢 现行（v3.2，2026-10-26）
-> **数值真源**：`packages/api-publish-engine/src/auth/plan-matrix.js`（`PLAN_MATRIX_VERSION = 2026-10-25`；v3.1 的新增轴为设计值，待 P0/P1 落代码）
+> **状态**：🟢 现行（v3.3，2026-10-27）
+> **数值真源**：`packages/api-publish-engine/src/auth/plan-matrix.js`（`PLAN_MATRIX_VERSION = 2026-10-26`）
 > **价格与积分推导**：`01-docs/PRD-CREDIT-PRICING-2026-10-25.md`
 > **价格解释**：`01-docs/pricing-strategy.md` §1–§2
 > **取代**：`01-docs/MECHANISM-MEMBER-TIERS-2026-10-19.md`（v1.2）与 `01-docs/MECHANISM-MEMBER-TIERS-DEEP-2026-10-19.md`（v2.2）；两份保留为历史存档，**不引用其中任何价格/配额数字**
@@ -177,7 +177,7 @@
 | # | 权益项 | 免费版 | 标准版 | 专业版 | 计量/重置 | 差异强度 | 证据/备注 |
 |---|---|---|---|---|---|---|---|
 | 6 | 本地单篇/多平台即时发布 | 可用 | 可用 | 可用 | 不扣额度 | 无差异 | 桌面路径不经过 `publish-api-server` |
-| 7 | 本地批量发布 | 仅单篇 | 10 条/次 | 不限 | 按次 | **软（有缺陷）** | UI 读旧 `licenseStore.isPro`，纯订阅用户可能被误拦（§7-B） |
+| 7 | 本地批量发布 | 仅单篇 | 10 条/次 | 不限 | 按次 | **硬（客户端 + 云 API）** | UI 读 `entitlement.limits.batch_size_per_run`；本地按文章条数，云 `/batch-publish` 先判后扣（2026-10-27 P0-4） |
 | 8 | 定时任务 | 0 | 100 个 | 不限 | 按任务数 | **规划** | `schedule_batch` 无消费点；免费现可建 |
 | 9 | 自定义自动化（工作流条数） | 0（仅内置模板） | 10 条 | 50 条 | 按模板数 | **规划** | `workflow-service` 已有 `MAX_CUSTOM=50`，无档位门禁 |
 | 10 | 自定义自动化（每日执行条数） | 0 | 50 条/日 | 500 条/日 | 按日 | **规划** | `workflow-schema` 有 `dailyItemLimit`，无档位映射 |
@@ -310,7 +310,7 @@
 |---|---|---|---|---|---|
 | 绑定账号 | `limits.max_accounts` | 无（客户端判据） | 主进程 `account:*` + `auth:open-login` + UI | **硬（已实现）** | P0 已完成：字段、计数、IPC 拦截、弹窗、串行锁 |
 | 平台数 | `limits.max_platforms` | 三入口调用但数组→NaN | 发布页第 6 个提示 | **已退役（-1）** | v3.2 起全档 `-1`，不再作为套餐轴 |
-| 单次批量 | `limits.batch_size_per_run` | 云 API 批量/定时执行 | `canBatchSize` 未接线 | **强（仅云 API）** | 桌面本地不拦；先扣后判（§7-B） |
+| 单次批量 | `limits.batch_size_per_run` | 云 API 批量/定时执行 + 桌面批量入口 | `batchSizePerRunOf` / `canBatchSize` 已接线 | **硬（客户端 + 云 API）** | 桌面按文章数、云按平台数；先判后扣（P0-4） |
 | 定时任务 | `features.schedule_batch` | 无 | 无 | **展示** | 免费可建；无数量上限 |
 | 自定义自动化 | 待新增 `maxWorkflows` / `automationDailyItems` | 无 | 无 | **展示** | 全局 `MAX_CUSTOM=50`，无档位门禁 |
 | 视频创作 | `features.video_create` | 无 | 无 | **展示** | 免费未被拦 |
@@ -328,8 +328,8 @@
 | ID | 缺陷 | 影响 | 证据 | 建议 |
 |---|---|---|---|---|
 | A | **没有绑定账号上限**：`account:*` 无 plan 校验 | 免费用户可无限加账号 | `account.js` 无 entitlement 读取 | ✅ 已修（P0）：`maxAccounts` + 主进程计数拦截 + UI 弹窗 |
-| B | `/batch-publish` 先扣额度、再判批量上限 | 被拒请求白扣用户额度 | `publish-api-server.js:1141→1144` | P0：先判后扣 |
-| C | 批量 UI 读旧 `licenseStore.isPro` | 纯订阅标准/专业用户可能被 UI 拦住 | `useBatchPublish.js:185-189`；`Publish.vue:77/1324` | P0：改读 entitlement |
+| B | `/batch-publish` 先扣额度、再判批量上限 | 被拒请求白扣用户额度 | `publish-api-server.js` 批量路由 | ✅ 已修（P0-4）：先判数量上限，再 `_authorizeImmediateEntry` 扣额；被拒不扣 |
+| C | 批量 UI 读旧 `licenseStore.isPro` | 纯订阅标准/专业用户可能被 UI 拦住 | `useBatchPublish.js`；`Publish.vue` | ✅ 已修（P0-4）：改读 `entitlement.limits.batch_size_per_run`；纯订阅可批量 |
 | D | `max_platforms` 判据收到数组，`Number(array)=NaN` | 平台数上限从未生效 | `plan-capabilities.js:67-69` | ✅ 已随平台轴退役（P0）：全档 `-1`，不再作为套餐轴；判据不再被调用 |
 | E | 桌面本地发布/批量/定时绕过服务端 | 不扣额、不校验数量 | `batch-manager.js`；`scheduler.js` | 接受为本地荣誉制；账号/功能在客户端拦 |
 | F | `api_key` legacy 与「无 businessUser」直接放行 | 门禁不是全调用面覆盖 | `plan-capability-guard.js:24-25`；`publish-api-server.js:566-573` | P1：收敛绕过面，至少记审计 |
@@ -443,6 +443,8 @@
 | P0-4 | 批量 UI 改读 entitlement；`/batch-publish` 先判后扣 | 纯订阅用户可批量；被拒不扣额 |
 | P0-5 | 平台数字段降级（不再作为套餐轴）；`max_platforms` 判据修复或删除 | 不再出现「平台数上限」文案；死代码清除 |
 
+> **P0-1~P0-5 已于 2026-10-26/27 全部落地。** P0-4 证据：`useBatchPublish` 读 entitlement、`addArticle`/提交前双重收口；`/batch-publish` 先判后扣；见 `PRD-MEMBER-TIER-BATCH-ENTITLEMENT-2026-10-27.md`。
+
 ### P1：功能开关 + 额度（2–4 周）
 
 | # | 动作 | 验收 |
@@ -550,6 +552,7 @@
 | 2026-10-26 | 机制 v3.0 | 合并旧两版、刷新竞品 15 家、补可执行性矩阵与缺陷清单、对外可售表、路线图 |
 | 2026-10-26 | 机制 v3.1 | 主计量轴→绑定账号（5/20/100，客户端硬限）；视频/知识库改功能开关；AI 写稿不限；云 API/去水印/加购包移除；免费设备 1 台 |
 | 2026-10-26 | 机制 v3.2 | P0 落地：`maxAccounts` 进矩阵与 entitlement；`account:add` / `auth:open-login` 主进程拦截 + UI 弹窗；`maxPlatforms` 全档 -1；AI 写稿/视频改 -1；免费设备 1；详细 PRD 见 `PRD-MEMBER-TIER-ACCOUNT-LIMIT-2026-10-26.md` |
+| 2026-10-27 | 机制 v3.3 | P0-4 落地：批量 UI 改读 `batch_size_per_run`（纯订阅可批量）；本地批量按文章数、云 `/batch-publish` 先判后扣；修复 B/C 两项历史缺陷 |
 
 ## 附录 C：证据索引
 

@@ -1,0 +1,139 @@
+{
+  "sha": "d3dc51379bcee6c7e9e10ff47c71cc4e93c9bcd3",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 305 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 305,
+    "fileCount": 12,
+    "codeFileCount": 9,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "377542f635f708863212c9cadc509d6c91b67bde1cda8f2becc0d9a9623eca0d",
+  "decidedAt": "2026-10-27T02:22:55.227Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_blocked",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "domains": [
+          "auth"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "runBatchPublish.js 依赖 getBatchLimit，但 diff 未见 Publish.vue 或入口处传入；若缺失则 batchLimit() → null，缺失即放行会绕过上限。",
+        "highRiskDomains": [],
+        "prosecution": "如果 createBatchPublisher 的 deps 里没有 getBatchLimit，runBatchPublish 的 typeof getBatchLimit 检查会返回 null，提交前二次判据失效，standard 用户可提交 11 篇。",
+        "defense": "`useBatchPublish.js` 的 createBatchPublisher 调用已显式传 `getBatchLimit: batchLimit`；`Publish.vue` 已传 `getEntitlement: () => identityStore.entitlement`，`batchLimit()` 再经 `batchSizePerRunOf(getEntitlement())` 读取。单测 `useBatchPublish.batch-entitlement.test.js` 的「提交前按 entitlement 复核条数」用例已验证超限不创建批次。",
+        "verdict": "dismissed",
+        "rationale": "指控与 diff 不符：两个注入点都在本次变更里，且有行为测试覆盖。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "batchSizePerRunOf 对缺失 entitlement 返回放行（null）；云 /batch-publish 同理，快照缺失时不扣额且放行批量。",
+        "highRiskDomains": [],
+        "prosecution": "攻击者制造空 entitlement 就能绕过批量上限；服务端 `resolveLimits` 也会把缺失当无信息。",
+        "defense": "这是 plan-limits 三条纪律之一的「缺失即放行」，PRD §2/§5 与 plan-capabilities 头注都写死：旧快照没有字段时按 0 处理会把全体存量用户挡在门外。服务端 `resolveLimits` 同样明确 `present=false` 放行；要收紧必须另立「快照缺失告警/修复」切片，不能在批量入口单独 fail-closed。",
+        "verdict": "dismissed",
+        "rationale": "指控描述的是既定且写入 PRD 的 fail-open 取舍，不是本 PR 引入的缺陷。"
+      },
+      {
+        "id": "i3",
+        "severity": "High",
+        "finding": "addArticle() 以 articles.value.length >= limit 判界；标准档 10 条允许第 10 条，拒绝第 11 条，语义与 PRD 一致，但提交前二次判据 articles.value.length > batchLimit 对 10 条也拒绝（>10），与 addArticle 不对称。",
+        "highRiskDomains": [],
+        "prosecution": "如果提交前判据是 `> limit`，标准档 10 条会被误拒，用户明明没超限。",
+        "defense": "`10 > 10` 为 false，10 条会放行；`addArticle` 的 `length >= limit` 是在「准备添加第 11 条」时判，此时 length 已是 10，拒绝第 11 条。两处边界分别对应「添加前」与「提交前」，数学上一致：允许恰好 limit 条。",
+        "verdict": "dismissed",
+        "rationale": "指控的算术前提错误：`> limit` 不会拒绝恰好 limit 条；两处判据边界一致，且单测覆盖 2 条上限时第 3 次 addArticle 返回 false。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "plan-capabilities-wiring.test.js 用 indexOf 字符串匹配断言 guard 在 authorize 之前，易碎。",
+        "highRiskDomains": [
+          "auth"
+        ],
+        "prosecution": "改一个空格、换行或变量名，indexOf 就找不到，测试会以「找不到」而不是「顺序错了」失败，维护者可能误改判据。",
+        "defense": "这是一条**接线锁**，不是行为测试；仓库既有同类锁（如 plan-capabilities-wiring 原有三条）都用精确调用串 + 位置比较。它锁的正是「先判后扣」这个顺序，字符串一旦漂移就应当红，提醒同步更新接线锁；运行时行为由 `publish-permission-recheck.test.js` 的 402 不扣额用例覆盖。",
+        "verdict": "dismissed",
+        "rationale": "指控是测试实现风格问题，不是产品缺陷；该锁的失效形态是「红」而非「假绿」，且行为层已有独立集成测试。",
+        "externalReview": {
+          "performedBy": "claude",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4518#issuecomment-6432258513",
+          "reviewedAt": "2026-10-27T02:34:00.000Z"
+        }
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "useBatchPublish.test.js 删除旧 licenseStore.isPro 测试，新独立文件未覆盖非批量路径回归。",
+        "highRiskDomains": [],
+        "prosecution": "删掉旧测试会丢失「非 Pro 禁止批量」的回归保护，未来可能把免费档又放进来。",
+        "defense": "旧测试锁的是已废弃的 `licenseStore.isPro` 真源；新文件用 entitlement 重新覆盖了免费/标准/专业/缺失四档，且原 `useBatchPublish.test.js` 仍保留 81 个非批量路径用例（批量提交、字段面、进度、离线等），不是「未覆盖」。",
+        "verdict": "dismissed",
+        "rationale": "旧断言随真源迁移被替换，不是净删除覆盖；新文件 10 例 + 旧文件 81 例，共 91 例覆盖批量与非批量路径。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "auth"
+        ]
+      }
+    ],
+    "note": "自扮演裁决：1 条指控成立或需外部复核",
+    "at": "2026-10-27T02:35:14.926Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4518#issuecomment-6432258513",
+    "tierBasis": "adjudicated-self-play-honored",
+    "adjudicationDigest": "adjudicated@ae4ac35ed353e78edfab34c5d536ea71d22e6a1ae941f7b8045c975692cb15e1"
+  }
+}

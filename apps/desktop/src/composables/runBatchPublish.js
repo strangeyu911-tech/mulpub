@@ -24,7 +24,7 @@ export function createBatchPublisher (deps) {
     clearBatchTracking, batchProgress, failedBatchTasks, scheduledBatchId,
     publishProgressStore, totalPlatformTasks,
     batchStatusPollMaxAttempts, batchStatusPollIntervalMs,
-    progressHandles,
+    progressHandles, getBatchLimit,
   } = deps
 
   async function handleBatchPublish () {
@@ -35,6 +35,13 @@ export function createBatchPublisher (deps) {
 
     let keepPublishingLock = false
     try {
+      // P0-4：提交前再按 entitlement 收口一次。addArticle / seedArticlesFromDrafts 已拦，
+      // 这里防的是「旧草稿交接 / 直接改 articles」等绕过 UI 的路径；被拒时不创建批次、不扣额度。
+      const batchLimit = typeof getBatchLimit === 'function' ? getBatchLimit() : null
+      if (batchLimit !== null && batchLimit >= 0 && articles.value.length > batchLimit) {
+        notifyWarning('publishPage.batchSizeExceeded', { params: { limit: batchLimit } })
+        return
+      }
       // 平台字数限制体系：逐条目收集截断记录（PRD §F3），确认弹窗汇总提示
       const conversionSummaries = []
       // 验证每篇文章

@@ -36,12 +36,17 @@ test('即时发布入口接了平台数判据', () => {
   )
 })
 
-test('批量发布入口同时判平台数与批量条数', () => {
+test('批量发布入口同时判平台数与批量条数（先判后扣）', () => {
   const source = readServer()
-  const index = source.indexOf('await this._authorizeImmediateEntry(req, platforms.length);')
-  assert.ok(index > 0, '批量发布的授权调用点必须存在')
-  const window = source.slice(index, index + 800)
-  assert.match(window, /assertPlanCapabilitiesForRequest\(this\._entitlementProvider, req, \{ platforms, batchSize: platforms\.length \}\)/)
+  const guardCall = 'assertPlanCapabilitiesForRequest(this._entitlementProvider, req, { platforms, batchSize: platforms.length })'
+  const guardIndex = source.indexOf(guardCall)
+  assert.ok(guardIndex > 0, '批量发布必须接数量判据')
+  const authorizeIndex = source.indexOf('await this._authorizeImmediateEntry(req, platforms.length);')
+  assert.ok(authorizeIndex > 0, '批量发布的授权调用点必须存在')
+  assert.ok(
+    guardIndex < authorizeIndex,
+    '先判上限再扣额度：超批量被拒的请求不得先消费 cloud_publish',
+  )
 })
 
 test('定时入口与即时入口对称：_authorizeScheduledEntry 也接了判据且排在扣额度之前', () => {

@@ -14,10 +14,10 @@
  *    「-1 个」参与任何加法/减法。
  *
  * ⚠ 接线状态（CCG i6，别误读为已生效能力）：**已接线**的是 `maxPlatformsOf` / `canAddPlatform` /
- * `platformLimitState`（发布页平台选择）与 `maxAccountsOf` / `canAddAccount` / `accountLimitState`
- * （账号页添加账号入口，v3.1 P0）；其余导出（`canBatchSize` / `canPublishToday` /
- * `concurrentTasksOf` / `maxDevicesOf` / `maxCloudAccountsOf`）**尚未接线**——它们缺数据源
- * （今日已发条数、批量入口、设备/云账号管理页），按 PRD §12 N5/N1/N2 排期。在接线前，
+ * `platformLimitState`（发布页平台选择）、`maxAccountsOf` / `canAddAccount` / `accountLimitState`
+ * （账号页添加账号入口，v3.1 P0）与 `batchSizePerRunOf` / `canBatchSize`（批量发布入口，P0-4）；
+ * 其余导出（`canPublishToday` / `concurrentTasksOf` / `maxDevicesOf` / `maxCloudAccountsOf`）
+ * **尚未接线**——它们缺数据源（今日已发条数、设备/云账号管理页），按 PRD §12 N5/N1/N2 排期。在接线前，
  * 这些函数只是一份可单测的判据，不构成任何运行时限制。
  */
 

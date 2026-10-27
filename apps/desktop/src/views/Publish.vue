@@ -688,7 +688,6 @@ import ArticleEditor from '@/components/ArticleEditor.vue'
 import TemplatePicker from '@/components/TemplatePicker.vue'
 // eslint-disable-next-line no-unused-vars
 import { useTemplateStore } from '@/stores/templates'
-import { useLicenseStore } from '@/stores/license'
 // eslint-disable-next-line no-unused-vars
 import AiWriterPanel from '@/components/AiWriterPanel.vue'
 import CoverCropDialog from '@/components/CoverCropDialog.vue'
@@ -790,7 +789,6 @@ const platformStore = usePlatformStore()
 const riskStore = useRiskStore()
 platformStore.load()
 const accountStore = useAccountStore()
-const licenseStore = useLicenseStore()
 const { platforms, groupedPlatforms } = usePublishPlatformCatalog(platformStore, accountStore)
 
 // 无账号平台空态出口 + 账号列表加载：理由见 composables/usePublishAddAccountTargets 头部与 PRD-PUBLISH-ADD-ACCOUNT-ENTRY-2026-10-15.md
@@ -1290,7 +1288,7 @@ const {
   setBatchArticleOverrides,
   seedArticlesFromDrafts,
   applyTargetsToAll,
-} = useBatchPublish({ article, licenseStore, isAccountAvailable })
+} = useBatchPublish({ article, getEntitlement: () => identityStore.entitlement, isAccountAvailable })
 
 // 话题标签统一（topic-tag-unify）：接线收在 use-topic-tag-bridge（行数门禁拆出）；必须在 useBatchPublish 后（articles 由其产出）。
 const {

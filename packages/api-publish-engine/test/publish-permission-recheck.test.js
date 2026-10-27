@@ -200,6 +200,31 @@ test('集成：POST /api/v1/batch-publish 对活跃 Logto 用户放行并扣减�
   }
 })
 
+test('集成：POST /api/v1/batch-publish 超出单次批量上限时先判后扣（不扣权益）', async () => {
+  const rejecting = {
+    requireFeatureCalls: 0,
+    consumeFeatureCalls: 0,
+    async getForUser() {
+      return { plan: 'free', features: ['cloud_publish'], limits: { batch_size_per_run: 1 } }
+    },
+    async requireFeature() { this.requireFeatureCalls += 1; return true },
+    async consumeFeature() { this.consumeFeatureCalls += 1; return { granted: true } },
+  }
+  const { server } = activeLogtoServer({ entitlementProvider: rejecting })
+  await server.start(0)
+  const port = server._server.address().port
+  try {
+    const res = await request(port, 'POST', '/api/v1/batch-publish', 'tok-active', {
+      platforms: ['zhihu', 'weibo'], title: 't', content: 'c',
+    })
+    assert.strictEqual(res.status, 402)
+    assert.strictEqual(res.body.error, 'BATCH_SIZE_EXCEEDED')
+    assert.strictEqual(rejecting.consumeFeatureCalls, 0, '超批量被拒时不得扣减 cloud_publish 额度')
+  } finally {
+    await server.stop()
+  }
+})
+
 test('安全：启用 Logto 且 identityAuthRequired=true 时，真实 API Key Bearer 被拒绝（401）', async () => {
   const entitlement = makeEntitlementProvider()
   const server = new PublishApiServer({

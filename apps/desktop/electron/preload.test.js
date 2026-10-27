@@ -71,6 +71,7 @@ const PUBLISH_METHODS = [
   'pipelineCancel', 'pipelineStatus', 'pipelineAdvance', 'pipelineHistory', 'pipelineFetch',
   'pipelineStartOrchestrated', 'pipelineExecuteStage',
   'pipelineAdvanceToNextCheckpoint', 'pipelineGetRunContext',
+  'pipelineApprovalGate', 'pipelineApproveStageGate', 'pipelineRejectStageGate',
   'story2videoImportMedia', 'story2videoExportZip', 'story2videoCreateShareUrl',
   'story2videoCopyPath', 'story2videoShowInFolder', 'story2videoSaveAs', 'story2videoListProjects',
   'story2videoGetProject', 'story2videoGetThumbnail', 'story2videoDeleteProject', 'story2videoUpdateSegments',
@@ -199,12 +200,15 @@ describe('preload 子模块工厂函数', () => {
 
 // === 总方法数验证（防止漏迁移或重复）===
 describe('preload 子模块方法数', () => {
-  it('publish 模块应导出 132 个键（W1 §5 enforcement：+onRiskSuspended/listSuspendedRisk/resumeRisk/isSuspendedRisk；2026-10-06 定时派发失败信号 +onSchedulerDispatchFailed；2026-10-10 发布频率策略 v2 +getPublishFrequencyPolicy/setPublishFrequencyPolicy/emergencyReleasePublishWait/getPublishEmergencyStatus/onPublishEmergencyReleased；2026-10-15 「再次发布」+historyGetRepublishSnapshot；2026-10-17 历史 BGM 路径核验 +story2videoBgmLibraryStatus；2026-10-23 快速渲染视频能力查询 +renderAiVideoCapabilities）', () => {
+  it('publish 模块应导出 135 个键（W1 §5 enforcement：+onRiskSuspended/listSuspendedRisk/resumeRisk/isSuspendedRisk；2026-10-06 定时派发失败信号 +onSchedulerDispatchFailed；2026-10-10 发布频率策略 v2 +getPublishFrequencyPolicy/setPublishFrequencyPolicy/emergencyReleasePublishWait/getPublishEmergencyStatus/onPublishEmergencyReleased；2026-10-15 「再次发布」+historyGetRepublishSnapshot；2026-10-17 历史 BGM 路径核验 +story2videoBgmLibraryStatus；2026-10-23 快速渲染视频能力查询 +renderAiVideoCapabilities；2026-10-25 AI 讲解视频人工审批门 +pipelineApprovalGate/pipelineApproveStageGate/pipelineRejectStageGate）', () => {
     const { createPublishApi } = require('./preload/publish')
     const r = createPublishApi(ipcRenderer)
-    expect(Object.keys(r).length).toBe(132)
+    expect(Object.keys(r).length).toBe(135)
     // 新增方法必须真实存在于聚合入口，防止「改了数字但方法没接上」
     expect(Object.keys(r)).toContain('renderAiVideoCapabilities')
+    expect(Object.keys(r)).toContain('pipelineApprovalGate')
+    expect(Object.keys(r)).toContain('pipelineApproveStageGate')
+    expect(Object.keys(r)).toContain('pipelineRejectStageGate')
   })
 
   it('account 模块应导出 52 个方法（51 + accountGetProxy，2026-10-15 账号页列表零解密——代理状态改为打开弹窗时经 account:get-proxy 按需读取；50 + probeXiaohongshuDraftChain，2026-10-08 小红书 API 草稿链受控调试通道；49 + accountCredentialNames，2026-10-07 小红书 AT 凭据诊断；52 - 3 个 scheduled_tasks 死桥接，2026-10-02 死路径清理）', () => {
@@ -240,11 +244,13 @@ describe('preload 子模块方法数', () => {
   })
 
   // 两处各自把总键数从 339 推到 340：#4202 加 onOfflineLost（离线横幅），
-  // 本 PR 加 renderAiVideoCapabilities（视频能力查询）⇒ 合并后为 341。
-  // 2026-10-26：+ identitySessionsRevokeOne（单设备下线）⇒ 342。
-  // 2026-10-27：+5 modelQuota*（P1b-2a）⇒ 347。
-  it('合并后 api 总键数应为 347（2026-10-27：= 342 + 5 modelQuota*；342 = 2026-10-26 341 + identitySessionsRevokeOne）', () => {
-    expect(Object.keys(api).length).toBe(347)
+  // 本 PR 加 renderAiVideoCapabilities（视频能力查询）⇒ 合并后为 341；
+  // 2026-10-25 AI 讲解视频人工审批门再加 3 个（pipelineApprovalGate / pipelineApproveStageGate /
+  // pipelineRejectStageGate）⇒ 344；
+  // 2026-10-26 identitySessionsRevokeOne（单设备下线）⇒ 345；
+  // 2026-10-27 再加 5 个 modelQuota*（P1b-2a）⇒ 350。
+  it('合并后 api 总键数应为 350（2026-10-27：= 341 + pipelineApprovalGate + pipelineApproveStageGate + pipelineRejectStageGate + identitySessionsRevokeOne + 5 个 modelQuota*；341 = 2026-10-24 339 + onOfflineLost(#4202) + renderAiVideoCapabilities；339 = 2026-10-20 338 + aiRewriteCancel）', () => {
+    expect(Object.keys(api).length).toBe(350)
     // 新键必须真实存在于聚合入口，防止「改了数字但方法没接上」
     expect(Object.keys(api)).toContain('identityRedeemCode')
     expect(Object.keys(api)).toContain('historyGetRepublishSnapshot')
@@ -253,15 +259,21 @@ describe('preload 子模块方法数', () => {
     expect(Object.keys(api)).toContain('aiGenerateGenVideoTitle')
     expect(Object.keys(api)).toContain('aiRewriteCancel')
     expect(Object.keys(api)).toContain('renderAiVideoCapabilities')
+    expect(Object.keys(api)).toContain('pipelineApprovalGate')
+    expect(Object.keys(api)).toContain('pipelineApproveStageGate')
+    expect(Object.keys(api)).toContain('pipelineRejectStageGate')
   })
 
   it('PUBLISH_METHODS 常量包含编排 API', () => {
-    expect(PUBLISH_METHODS.length).toBe(89)
+    expect(PUBLISH_METHODS.length).toBe(92)
     expect(PUBLISH_METHODS).toEqual(expect.arrayContaining([
       'pipelineStartOrchestrated',
       'pipelineExecuteStage',
       'pipelineAdvanceToNextCheckpoint',
       'pipelineGetRunContext',
+      'pipelineApprovalGate',
+      'pipelineApproveStageGate',
+      'pipelineRejectStageGate',
       'renderAiVideoCapabilities',
     ]))
   })
@@ -381,6 +393,9 @@ describe('invoke 类方法转发到 ipcRenderer.invoke', () => {
     ['pipelineExecuteStage', 'pipeline:executeStage', ['run-1']],
     ['pipelineAdvanceToNextCheckpoint', 'pipeline:advanceToNextCheckpoint', ['run-1']],
     ['pipelineGetRunContext', 'pipeline:getRunContext', ['run-1']],
+    ['pipelineApprovalGate', 'pipeline:approval-gate', ['run-1']],
+    ['pipelineApproveStageGate', 'pipeline:approve-stage-gate', ['run-1', { stage: 'proposal', renderRuntime: 'remotion' }]],
+    ['pipelineRejectStageGate', 'pipeline:reject-stage-gate', ['run-1', { stage: 'proposal', note: 'n' }]],
     ['story2videoExportZip', 'story2video:export-zip', [[{ path: 'C:/video.mp4' }], 'C:/videos.zip']],
     ['story2videoCreateShareUrl', 'story2video:create-share-url', ['C:/video.mp4']],
     ['story2videoCopyPath', 'story2video:copy-path', ['C:/video.mp4']],

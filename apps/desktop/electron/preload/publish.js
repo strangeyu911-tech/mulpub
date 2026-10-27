@@ -182,6 +182,11 @@ function createPublishApi(ipcRenderer, options = {}) {
     pipelineAdvanceToNextCheckpoint: (runId) => ipcRenderer.invoke('pipeline:advanceToNextCheckpoint', runId),
     pipelineConfirmSceneAssets: (runId, selections) => ipcRenderer.invoke('pipeline:confirmSceneAssets', runId, selections),
     pipelineConfirmStageGate: (runId, contextPatch) => ipcRenderer.invoke('pipeline:confirm-stage-gate', runId, contextPatch),
+    // AI 讲解视频的人工审批门（上游 animated-explainer 的 checkpoint/human_approval 语义）：
+    // pipelineApprovalGate 读当前门的类型化载荷；pipelineRejectStageGate 驳回并停住。
+    pipelineApprovalGate: (runId) => ipcRenderer.invoke('pipeline:approval-gate', runId),
+    pipelineApproveStageGate: (runId, payload) => ipcRenderer.invoke('pipeline:approve-stage-gate', runId, payload),
+    pipelineRejectStageGate: (runId, payload) => ipcRenderer.invoke('pipeline:reject-stage-gate', runId, payload),
     pipelineGetRunContext: (runId) => ipcRenderer.invoke('pipeline:getRunContext', runId),
 
     // Story2Video 本地交付

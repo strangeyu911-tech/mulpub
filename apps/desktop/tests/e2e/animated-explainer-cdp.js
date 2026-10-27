@@ -134,7 +134,8 @@ function findVideoPath (node, depth = 0, exists = fs.existsSync) {
 
 class ExplainerCdpRunner {
   constructor (options) {
-    this.options = options
+    // 审批模式：'guided' ⇒ 五道人工审批门真的会在阶段产出后停下来等人批（由环境变量注入，避免改运行器）
+    this.options = { ...options, approvalMode: (options && options.approvalMode) || process.env.E2E_APPROVAL_MODE || '' }
     this.client = null
   }
 
@@ -230,7 +231,7 @@ class ExplainerCdpRunner {
       '!!document.querySelector(\'[data-pipeline-id="animated-explainer"]\')',
       { timeout: 90000, interval: 1000, label: 'pipeline-card' }
     )
-    const clicked = await this.evalJson('(async () => {' +
+    const clicked = await this.evalJson('(async (approvalMode) => {' +
       ' const card = document.querySelector(\'[data-pipeline-id="animated-explainer"]\');' +
       ' if (!card) return { ok: false, reason: "no-card" };' +
       ' card.click();' +
@@ -240,12 +241,18 @@ class ExplainerCdpRunner {
       ' area.value = ' + JSON.stringify(topic) + ';' +
       ' area.dispatchEvent(new Event("input", { bubbles: true }));' +
       ' await new Promise(r => setTimeout(r, 800));' +
+      ' if (approvalMode) {' +
+      '   const sel = document.querySelector(\'[data-testid="explainer-approval-mode-select"]\');' +
+      '   if (sel) { sel.value = approvalMode; sel.dispatchEvent(new Event("change", { bubbles: true }));' +
+      '     sel.dispatchEvent(new Event("input", { bubbles: true })); }' +
+      ' }' +
+      ' await new Promise(r => setTimeout(r, 400));' +
       ' const btn = document.querySelector(\'[data-testid="start-story2video"]\');' +
       ' if (!btn) return { ok: false, reason: "no-button" };' +
       ' const disabled = btn.disabled === true;' +
       ' btn.click();' +
       ' return { ok: true, disabled }' +
-      '})()')
+      '})(' + JSON.stringify(this.options.approvalMode || '') + ')')
     log('UI 操作结果：', JSON.stringify(clicked))
     if (!clicked || clicked.ok !== true) throw new Error('UI 驱动失败: ' + JSON.stringify(clicked))
     if (clicked.disabled === true) throw new Error('启动按钮处于禁用态（主题未写入或流水线不可用）')
@@ -257,7 +264,8 @@ class ExplainerCdpRunner {
     const params = {
       text: topic,
       inputMode: 'text',
-      checkpointPolicy: 'none',
+      // 审批模式：'guided' ⇒ 上游五道人工审批门真的会在阶段产出后停下来等人批
+      checkpointPolicy: this.options.approvalMode || 'none',
       autoAdvance: true,
       background: true,
       storyboardMode: 'auto',
@@ -315,9 +323,67 @@ class ExplainerCdpRunner {
         }
         if (TERMINAL_STATUSES.has(status)) return data
       }
+      if (this.options.approvalMode === 'guided') {
+        const gate = await this.approveGateIfPresent(runId)
+        if (gate) {
+          this.approvalGates = this.approvalGates || []
+          // ⚠ **加门序号**：门名取自 `checkpoint.stageName`（引擎的当前阶段口径），
+          //   某些时刻它与「刚被批准的那道门」不完全对齐 ⇒ 门名不可作唯一证据；
+          //   ⇒ 序号 + 门序（第 N 道门）是**与门名无关**的独立证据。
+          this.approvalGates.push({ ...gate, seq: this.approvalGates.length + 1 })
+          log('审批门已批准：', JSON.stringify(this.approvalGates[this.approvalGates.length - 1]))
+        }
+      }
       await sleep(2000)
     }
     throw new Error('等待运行结束超时（' + timeoutMs + 'ms），最后阶段=' + lastStage)
+  }
+
+  /**
+   * 人工审批门：检测弹窗 → （G1）选渲染引擎 → 点「批准并继续」。
+   * UI 模式下弹窗真实存在 ⇒ 走 DOM（顺带验证渲染层）；API 模式没有弹窗 ⇒ 回退 IPC（验主进程链路）。
+   */
+  async approveGateIfPresent (runId) {
+    // ⚠ **runtime 必须选「非默认的那个」**（ffmpeg）⇒ 否则测不出「门批准后重跑把用户选择冲掉」这个缺陷
+    //   （默认就是 remotion ⇒ 冲掉后仍是 remotion ⇒ 断言恒真）。
+    const runtime = this.options.approvalRuntime || 'remotion'
+    const runtimeTestId = runtime === 'ffmpeg'
+      ? 'explainer-approval-gate-runtime-ffmpeg'
+      : 'explainer-approval-gate-runtime-remotion'
+    const viaUi = await this.evalJson('(async (runtimeTestId) => {' +
+      ' const content = document.querySelector(\'[data-testid="explainer-approval-gate-content"]\');' +
+      ' if (!content) return { ok: false, reason: "no-gate" };' +
+      ' const radio = document.querySelector(\'[data-testid="' + runtimeTestId + '"]\');' +
+      ' if (radio) { radio.click(); await new Promise(r => setTimeout(r, 300)); }' +
+      ' const idx = document.querySelector(\'[data-testid="explainer-approval-gate-index"]\');' +
+      ' const btn = document.querySelector(\'[data-testid="explainer-approval-gate-approve"]\');' +
+      ' if (!btn) return { ok: false, reason: "no-approve-button" };' +
+      ' if (btn.disabled) return { ok: false, reason: "approve-disabled" };' +
+      ' btn.click();' +
+      ' return { ok: true, gate: idx ? String(idx.textContent || "").trim() : "", runtime };' +
+      '})(' + JSON.stringify(runtimeTestId) + ')').catch(() => null)
+    if (viaUi && viaUi.ok) return { via: 'ui', gate: viaUi.gate || '', runtime }
+    if (viaUi && viaUi.reason === 'no-gate') {
+      // UI 模式没有弹窗 ⇒ 可能还没到门；API 模式 ⇒ 直接问主进程当前是不是门
+      // ⚠⚠⚴ **必须用带 runId 的 `pipelineApprovalGate`**：
+      //   旧写法用 `pipelineStatus("animated-explainer")`（**不带 runId**）⇒ 拿到的是
+      //   「最近一次/当前活跃运行」的 checkpoint ⇒ 与本 run 的门**可能不是同一个**
+      //   ⇒ 实测把 assets 门记成了 scenes ⇒ **读数点错了**（不是引擎滞后）。
+      const probed = await this.evalJson(
+        '(async () => window.electronAPI.pipelineApprovalGate(' + JSON.stringify(runId) + '))()'
+      ).catch(() => null)
+      if (!probed || probed.code !== 0) return null
+      const stage = String((probed.data && probed.data.stage) || '')
+      if (!stage) return null
+      const gateType = String((probed.data && probed.data.payload && probed.data.payload.type) || '')
+      const approve = await this.evalJson(
+        '(async () => window.electronAPI.pipelineApproveStageGate(' + JSON.stringify(runId) +
+        ', { stage: ' + JSON.stringify(stage) + ', renderRuntime: ' + JSON.stringify(runtime) + ' }))()'
+      ).catch(() => null)
+      if (!approve || approve.code !== 0) return null
+      return { via: 'ipc', gate: stage, gateType, runtime }
+    }
+    return null
   }
 
   /** 跑一轮 */
@@ -342,6 +408,7 @@ class ExplainerCdpRunner {
       elapsedMs,
       error: snapshot.error || null,
       errorCode: snapshot.errorCode || null,
+      approvalGates: (this.approvalGates || []).slice(),
       stageStatuses: (snapshot.stages || []).map(s => ({
         name: s.name,
         status: s.status,
@@ -418,6 +485,9 @@ async function main () {
     timeoutMs: Number(args['timeout-ms'] || 20 * 60 * 1000),
     concurrencyWaitMs: Number(args['concurrency-wait-ms'] || 10 * 60 * 1000),
     mode: args.mode === 'ui' ? 'ui' : 'api',
+    // ⚠ G1 选的渲染引擎。**必须选非默认的那个**（ffmpeg）⇒ 否则测不出
+    //   「门批准后阶段重跑 ⇒ 把用户选择冲回默认值」这个缺陷（默认 remotion ⇒ 冲掉后仍相同 ⇒ 断言恒真）。
+    approvalRuntime: args['approval-runtime'] || process.env.E2E_APPROVAL_RUNTIME || 'remotion',
     resolution: args.resolution || '1920x1080',
     aspectRatio: args['aspect-ratio'] || '16:9',
     fps: Number(args.fps || 30),

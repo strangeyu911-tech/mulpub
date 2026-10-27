@@ -59,6 +59,7 @@ const {
   muxNarration,
 } = require('./explainer-narration-track')
 const { stageRemotionMedia, mirrorPublicDir } = require('./explainer-remotion-media')
+const { resolveRenderRuntimeIntent } = require('./explainer-render-runtime-intent')
 
 /**
  * asset_manifest → 内置 compose 消费的**旧形态** `{scenes:[...]}`（消费点适配）。
@@ -346,26 +347,34 @@ function createComposeExecutor (pipelineEngine) {
     // ⚠ **且必须带 inputFrom**：`_resolveInput`（stage-executor.js:977）按 `context[stage.inputFrom]`
     //   取输入；漏了它就会走 fallback（读 params.assets / params.text）⇒ 拿到 null
     //   ⇒ 内置 compose 报「Invalid assetManifest: missing scenes or image/audio pairs」。
-    const remotion = await tryRenderWithRemotion({ context, stage, onProgress, runId })
+    // ⚠ **单一真源**：渲染意图判定只在 `resolveRenderRuntimeIntent`（有独立单测）一处实现，不得再写 inline 判据
+    const renderIntent = resolveRenderRuntimeIntent(context.proposal)
+    const userPickedFfmpeg = renderIntent === 'ffmpeg'
+
     let output
     let fellBackToFfmpeg = false
     let fallbackReason = ''
-    if (remotion.ok) {
-      // ⚠ **Remotion 出的画面没有旁白**（上游架构：视觉渲染 + 混轨 + mux）
-      //   ⇒ 必须补上旁白，否则交付的是一条**静音片**（比不做更糟）。
-      const narrated = await attachNarrationToVideo({ context, videoPath: remotion.videoPath })
-      if (narrated.ok) {
-        output = { videoPath: narrated.videoPath, renderRuntime: 'remotion' }
-      } else {
-        // ⚠ 拿不到旁白 ⇒ **不交付静音片** ⇒ 回落 ffmpeg 轮播（那条路本来就带旁白）
-        fellBackToFfmpeg = true
-        fallbackReason = 'Remotion 成片无法带上旁白：' + narrated.reason
-      }
+    if (userPickedFfmpeg) {
+      // ⚠ 用户显式选了 ffmpeg ⇒ **不试 Remotion**（试了等于作废用户的选择）⇒ 直接走 ffmpeg 轮播；这**不是回落** ⇒ 不写回落原因
     } else {
-      fellBackToFfmpeg = true
-      fallbackReason = remotion.reason
+      const remotion = await tryRenderWithRemotion({ context, stage, onProgress, runId })
+      if (remotion.ok) {
+        // ⚠ **Remotion 出的画面没有旁白**（上游架构：视觉渲染 + 混轨 + mux）
+        //   ⇒ 必须补上旁白，否则交付的是一条**静音片**（比不做更糟）。
+        const narrated = await attachNarrationToVideo({ context, videoPath: remotion.videoPath })
+        if (narrated.ok) {
+          output = { videoPath: narrated.videoPath, renderRuntime: 'remotion' }
+        } else {
+          // ⚠ 拿不到旁白 ⇒ **不交付静音片** ⇒ 回落 ffmpeg 轮播（那条路本来就带旁白）
+          fellBackToFfmpeg = true
+          fallbackReason = 'Remotion 成片无法带上旁白：' + narrated.reason
+        }
+      } else {
+        fellBackToFfmpeg = true
+        fallbackReason = remotion.reason
+      }
     }
-    if (fellBackToFfmpeg) {
+    if (fellBackToFfmpeg || userPickedFfmpeg) {
       const inner = await pipelineEngine.stageExecutor.execute({
         runId,
         stage: { name: 'compose', type: 'compose', options, inputFrom: 'assets' },
@@ -431,10 +440,13 @@ function createComposeExecutor (pipelineEngine) {
       success: true,
       output: {
         ...composeOutputWithArtifacts(output, renderReport, finalReview),
-        // ⚠ 回落要**可见**（不静默降级）：用户与后续排查必须知道「想要 Remotion，实际走了 ffmpeg」
-        ...(fellBackToFfmpeg
-          ? { render_runtime_requested: 'remotion', render_fallback_reason: fallbackReason }
-          : {}),
+        // ⚠ 回落要**可见**（不静默降级）：用户与排查必须知道「想要 Remotion，实际走了 ffmpeg」
+        // ⚠ `render_runtime_requested` = **本次请求的 runtime** = 渲染意图（恒有值）：
+        //   显式选 ffmpeg ⇒ 'ffmpeg'（**非回落** ⇒ 不写回落原因）；缺省/显式 remotion/回落 ⇒ 'remotion'（回落时另带原因）
+        ...({
+          render_runtime_requested: renderIntent,
+          ...(fellBackToFfmpeg ? { render_fallback_reason: fallbackReason } : {}),
+        }),
       },
       // ⚠ final_review.status = 'fail' 时**不把成片当完成品**（上游 schema 明写）
       //   但**不阻断流水线** —— 成片在盘上，阻断只会让用户拿不到。

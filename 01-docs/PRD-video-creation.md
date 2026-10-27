@@ -5824,3 +5824,306 @@ formatStory2VideoNotification({ errorCode: 'PIPELINE_STAGE_EXECUTOR_MISSING' })
 3. **`screen-demo` 是显式占位**：没有 `stageDefs` 不代表接线缺陷，前端已按「开发中」禁用；若未来实现，必须补 `stageDefs` 并同步 `PIPELINE_STAGE_REGISTRARS`。
 4. **本变更不校验 provider 可用性**：接线完整性只回答「阶段有没有实现」，不回答「模型 Key 是否配好」「ffmpeg 是否存在」。后者由 `pipeline-model-preflight`、各阶段自身 fail-closed 与 `framework-smoke` 流水线负责。
 5. **不改变既有失败语义**：`PIPELINE_STAGE_EXECUTOR_MISSING` 不属于内容政策类，历史卡片仍允许「从断点继续」；若执行器缺失未修复，续跑会再次失败并显示同一文案。
+
+## 21. 人工审批门（explainer-approval-gates，2026-10-25）
+
+### 21.1 背景与上游真源
+
+上游 OpenMontage 的 `animated-explainer` 流水线除「阶段名 + 顺序」外，还有一套**人工审批门**机制：
+每个阶段产出后按 `checkpoint_required` / `human_approval_default` 决定是否停下来等人批准。
+本仓（截至本节前）只搬了外壳：**全部 8 个阶段的 `checkpointRequired` 都是 `false`**，
+仓内唯一的 checkpoint 消费者是影视工程的「成本确认入口闸」（`checkpointType: 'cost_confirm'`），
+AI 讲解视频这条线**一道门都没有**。
+
+**上游真源取证**（本节所有语义以此为准，不凭印象）：
+
+| 项 | 值 | 取证方式 |
+|---|---|---|
+| 上游 yaml | `pipeline_defs/animated-explainer.yaml` | `api.github.com` contents 端点拉取，blob `bd17a1975214077c74b6ebc8fb68ad18eaf331ed`，269 行 |
+| 上游 checkpoint schema | `schemas/checkpoints/checkpoint.schema.json` | 本仓 P1 已 1:1 落地（`apps/desktop/electron/services/explainer/schemas/checkpoints/checkpoint.schema.json`），sha256 在 P1 门禁内锁死 |
+| 上游审批门集合 | `human_approval_default: true` 的阶段 | **恰好 5 个**：proposal / script / scene_plan / assets / publish |
+
+⚠ **口径订正**：本仓 `packages/python-backend/.../definitions/animated-explainer.yaml` 是上游 yaml 的**过期副本**
+（它把 `assets` 写成 `human_approval_default: false`），且**桌面端 `pipeline-engine.js` 从不读 YAML**
+⇒ **该文件不是真源**，本节以 GitHub 上游 blob 为准。
+
+### 21.2 五道门与本仓阶段名映射
+
+上游阶段名与本仓不同（上游 `scene_plan` ↔ 本仓 `scenes`）⇒ 门按**本仓阶段名**绑定：
+
+| 门 | 本仓 stageName | 上游 stage | 本仓产物（`run.context` 键） | 上游 produces |
+|---|---|---|---|---|
+| G1 | `proposal` | `proposal` | `context.proposal` | proposal_packet, decision_log |
+| G2 | `script` | `script` | `context.script` | script |
+| G3 | `scenes` | `scene_plan` | `context.scenes` | scene_plan |
+| G4 | `assets` | `assets` | `context.assets` | asset_manifest |
+| G5 | `publish` | `publish` | `context.publish` | publish_log |
+
+**不做门的阶段**（照上游）：`research`（`checkpoint_required: false`）、
+`editing`（上游 `edit`，`checkpoint_required: true` 但 `human_approval_default: false`）、
+`compose`（同上）⇒ 这两个阶段**仍会落 checkpoint 快照**（上游语义），但**不要求人批**。
+
+### 21.3 数据校验
+
+#### 21.3.1 门载荷（上游 checkpoint.schema.json 形状）
+
+门在渲染层展示的载荷**严格按上游 schema 逐字 1:1**（`additionalProperties: false` ⇒ **不得新增顶层字段**）：
+
+| 字段 | 类型 | 本片取值规则 |
+|---|---|---|
+| `version` | const `"1.0"` | 固定 |
+| `project_id` | string | `runId` |
+| `pipeline_type` | string | `"animated-explainer"` |
+| `stage` | string | 本仓 stageName |
+| `status` | enum | `"awaiting_human"`（等待人批时恒为此值） |
+| `timestamp` | date-time | 生成时刻 ISO |
+| `checkpoint_policy` | enum | 本次运行的策略（`guided`/`manual_all`/`auto_noncreative`） |
+| `human_approval_required` | boolean | 恒 `true` |
+| `human_approved` | boolean | 恒 `false`（载荷生成时未批） |
+| `artifacts` | object | **类型化产物 map**：键 = 上游 artifact 名（`proposal_packet`/`decision_log`/`script`/`scene_plan`/`asset_manifest`/`publish_log`），值 = 该产物对象 |
+| `review` | object | `focus`（上游 `review_focus`）/ `success_criteria`（上游 `success_criteria`）/ `auto_checks` / `manual_checks` |
+| `cost_snapshot` | object | 三项金额；**本仓无单价表 ⇒ 金额恒 0**，并在 `metadata.cost_note` 写「单价未知」 |
+| `metadata` | object | 自定义信息全落这里（`gate_index` / `gate_total` / `gate_title_key` / `cost_note` / `render_runtime_options`） |
+
+⭐ **`review` 的「机判 / 人审」分离**（照上游设计意图）：
+上游 `success_criteria` 里既有计数型（可机械判，如「至少 3 个 concept_options」）
+也有不可机械判的（如「概念真正不同」）⇒ 本片把**可机械判的**放进 `review.auto_checks`、
+**只能人判的**放进 `review.manual_checks` ⇒ **不把「人判」伪装成自动断言**。
+
+#### 21.3.2 批准载荷
+
+批准 = 调既有 IPC `pipeline:confirm-stage-gate`，`contextPatch` 形状：
+
+```jsonc
+{
+  "approval_proposal": {          // 键名 = "approval_" + stageName
+    "stage": "proposal",
+    "approved": true,
+    "approved_at": "<ISO>",
+    "note": "<用户可选备注>",
+    "render_runtime": "remotion"   // 仅 G1 有
+  }
+}
+```
+
+**G1 的 runtime 选择必须写回产物本体**：批准载荷额外带
+`proposal`（**修改后的完整 proposal_packet**）⇒ 其 `production_plan.render_runtime` 被设为用户所选、
+`metadata.render_runtime_selection` 记为用户显式确认 ⇒
+**compose / edit 链路零改动自动生效**（读点：`explainer-prod-stages.js:437` 读 `proposal.production_plan.render_runtime`）。
+
+#### 21.3.3 驳回载荷
+
+```jsonc
+{ "stage": "proposal", "note": "<驳回理由>", "rejected_at": "<ISO>" }
+```
+
+### 21.4 流程
+
+```
+① 用户启动 AI 讲解视频（checkpointPolicy = none | guided | manual_all | auto_noncreative）
+② 阶段执行完毕 ⇒ _shouldCheckpoint 命中（checkpointRequired=true 且策略命中）
+   ⇒ run 置 paused，构造 checkpoint（含全量 context）⇒ emit checkpoint:pause
+③ 渲染层收到 paused 态 ⇒ 识别 stageName ∈ 5 门 ⇒ 打开「审批门」弹窗
+   （非门阶段 ⇒ 走既有「进度弹窗」，行为不变）
+④ 弹窗展示：门标题 / 产物摘要 / review.focus / review.auto_checks / review.manual_checks
+   / G1 额外展示渲染引擎单选
+⑤ 用户操作：
+   ├─ 批准 ⇒ IPC pipeline:confirm-stage-gate ⇒ 写 context ⇒ 解除该阶段 gateCleared
+   │          ⇒ **跳过该阶段**（复用已产出的产物，不重跑）⇒ 继续下一阶段
+   └─ 驳回 ⇒ IPC pipeline:reject-stage-gate ⇒ 写 context 的 approval_<stage>（approved=false）
+             ⇒ run 保持 paused（不推进、不自动重跑）⇒ 弹窗转「已驳回」态
+```
+
+⚠ **「批准 ⇒ 跳过该阶段」是硬要求**（不是优化，是正确性）：本片五道门都在**阶段产出之后**触发，
+若批准后从当前阶段重跑，则 ① 该阶段的昂贵副作用（素材生产 / 模型调用）会**白做一遍**；
+② **用户在 G1 门里选的渲染引擎会被冲掉**——`confirmStageGate` 把选择写回
+`run.context.proposal.production_plan.render_runtime`，而重跑 proposal 会用新的模型输出**重新归一化**
+（缺省被补成 `remotion`）⇒ P3「选项写回产物本体 ⇒ 下游零改动自动生效」的设计当场失效。
+⇒ 实现见 20.5.1 第 5 条。
+
+**「驳回后停住」的准确语义**：驳回后流水线**停在该门**，等用户处理（改文案 / 改素材声明 / 直接取消重跑）。
+本片**不做**「自动返工」（上游的 REVISE / SEND_BACK 属 **P4 EP 编排**）。
+
+### 21.5 功能逻辑
+
+#### 21.5.1 主进程侧
+
+1. **门触发**：`pipeline-engine.js` 的 explainer `stageDefs` 里 5 个 `checkpointRequired: false → true`。
+   ⚠ **只改字符串值，不加行**（该文件在点名还账清单里，target 2776 / 现 2776 / 容差 0）。
+2. **门识别**：渲染层按 `checkpoint.stageName ∈ 5 门` 识别（`checkpoint.type` 恒为 `'stage'`，
+   因为 explainer 的 stageDefs 没有 `checkpointType` ⇒ **不靠 type 区分**，避免动主文件）。
+3. **驳回**：新增 IPC `pipeline:reject-stage-gate` + 独立模块
+   `apps/desktop/electron/services/explainer/explainer-approval-gates.js`。
+   ⚠ **为何不写进 `pipeline-engine.js`**：该文件余量为 0（target 2776 = 现 2776），
+   `container.setup.js` 也只剩 1 行且门禁口径是 `lines >= limit`（500 即红）⇒
+   唯一有余量的接线点是 `ipc-handlers/pipeline.js`（410 / 上限 500）⇒ 模块挂在那一层。
+   ⚠ **本片唯一一次跨模块访问 `pipelineEngine._runs` 私有成员**，集中在新模块的一处，
+   并加机械锁「`_runs` 的跨模块访问只允许出现在 `explainer-approval-gates.js`」。
+4. **策略档位**：`checkpointPolicy` 由渲染层下发，沿用既有 `params.checkpointPolicy` 通道。
+   ⚠ **本仓只暴露两档**（`none` / `guided`）：`_shouldCheckpoint` 的 `manual_all` 分支会让
+   **除 split 外的所有阶段**都暂停（含 research / editing / compose），而本仓只有五道门有人审 UI
+   ⇒ 暴露它会让流水线停在没有 UI 的门里（用户只能看着不动）。
+   `auto_noncreative` 在本仓只命中 `publish`（阶段名不含 optimize/compose）⇒ 语义不成立。
+   ⇒ 上游四档枚举**在主进程仍然有效**（本片不改该判据），只是**渲染层不提供这两档入口**。
+5. **门批准后复用产物，不重跑**：`explainer-stages.js` 的 `withGateReuse(executor)` 包装层
+   —— 判据 `stage.gateCleared === true`（刚被门放行）**且** `context[stage.name]` 已存在 ⇒ 直接复用产物。
+   ⚠ **只套在 5 个门阶段上**（`EXPLAINER_GATE_STAGE_TYPES`），research / editing / compose 行为不变。
+   ⚠ **为什么放在执行器层而不是引擎层**：影视工程的 `film_generate_videos` 是**另一种门**
+   （成本确认入口闸：第一次执行只产「等待态清单」、**零 provider 调用**，批准后**必须**重入才真生成）
+   ⇒ 引擎层「有产物就跳过」会让它**永远不生成视频** ⇒ 两种门语义并存，只能在 explainer 这一层区分。
+   ⚠ **「断点续跑」不受影响**：应用重启后从 checkpoint 恢复时不会带 `gateCleared` ⇒ 仍然照常重跑。
+
+#### 21.5.2 G1 渲染引擎的**生效链路**（写回 ≠ 生效）
+
+⚠ **G1 把选择写回产物本体，并不等于选择会生效** —— 消费端**必须真的读那个字段**。
+
+8. **写回（主进程）**：`buildApprovalContextPatch` 在 `stageName === 'proposal'` 时写
+   `proposal.production_plan.render_runtime = <用户所选>` 且
+   `proposal.metadata.render_runtime_source = 'user_confirmed'`
+   ⇒ **两个字段都写**（`source` 是「这是用户确认过的」的唯一凭据）。
+9. **判定（纯函数，单一真源）**：`explainer-render-runtime-intent.js` 的 `resolveRenderRuntimeIntent(proposal)`
+   ⇒ 只有「`metadata.render_runtime_source === 'user_confirmed'`」**且**
+   「`production_plan.render_runtime === 'ffmpeg'`」两条**同时**成立才返回 `'ffmpeg'`；
+   否则返回 `'remotion'`（P5a 的既有行为 ⇒ 零回归）。
+   - ⚠ **必须看 `source`**：归一化会把缺省/LLM 给的 runtime 补成 `'remotion'`；
+     若只看值，**LLM 恰好给 `'ffmpeg'` 也会改掉 P5a 行为** ⇒ 静默回归。
+   - ⚠ **逐字比较、不 `trim`**：带空白的值**不是**枚举成员 ⇒ 判据不成立
+     ⇒ **规范化是写入层的责任**，消费端的宽容等于给判据开后门。
+10. **消费（compose 执行器）**：`userPickedFfmpeg` 为真 ⇒ **不试 Remotion**（试了等于作废用户的选择）
+    ⇒ 直接走 ffmpeg 轮播。⚠ 这**不是回落** ⇒ **不写** `render_fallback_reason`。
+    ⭐ 判据**只允许在纯函数一处实现**（曾因「纯函数 + inline 判据」并存而重复声明 ⇒ 整个文件语法错误）。
+11. **产物字段**：`render_runtime_requested` = **本次请求的 runtime = 渲染意图**（**恒有值**）：
+    显式选 ffmpeg ⇒ `'ffmpeg'`（**非回落** ⇒ 不带回落原因）；缺省 / 显式 remotion / Remotion 失败回落
+    ⇒ `'remotion'`（回落时另带 `render_fallback_reason`）⇒ 消费方据此区分
+    「用户要的就是 ffmpeg」与「想要 remotion 却回落了」。
+
+⚠ **本片踩过的两个真缺陷正好在同一条语义的两端**：
+「产物被重跑冲掉」（写回了，随后被重新生成覆盖）＋「消费端压根不读」（写回了，但没人看）
+⇒ ⇒ **验收必须落在「消费端读到的值」上**，而不只是「产物里那个字段被写对了」。
+
+#### 21.5.3 渲染层侧
+
+5. **审批门弹窗**：新组件 `components/explainer/ExplainerApprovalGateDialog.vue`
+   （新建文件 ⇒ 不占 `CreateView.vue` 的 297 行余量；`CreateView.vue` 只需少量接线）。
+6. **G1 渲染引擎单选**：`remotion`（**标注「推荐」并高亮**）/ `ffmpeg`（更快但表现力弱）。
+   ⚠ **禁止静默默认**：**默认无选中态**，未显式选择时**批准按钮禁用**并提示「请选择渲染引擎」。
+   （「高亮推荐」≠「已选中」——否则退回静默默认。）
+7. **默认策略 = `none`**（见 21.10 的偏离登记）；UI 提供 `none` / `guided` 两档选择。
+
+### 21.6 交互逻辑
+
+| 场景 | 界面行为 |
+|---|---|
+| 进入门 | 弹窗打开；标题 = 门名（如「方案确认」）；副标题 = 阶段说明 |
+| 加载中 | 门载荷来自 `checkpoint.context`（已在主进程随 checkpoint 下发）⇒ **无需二次请求**，无 loading 态 |
+| G1 未选 runtime | 批准按钮 **disabled**；提示行显示「请选择渲染引擎（remotion 为推荐项）」 |
+| 批准 | 按钮进入 busy（禁用双击）⇒ 调 IPC ⇒ 成功后弹窗关闭并回到进度弹窗 |
+| 驳回 | 驳回理由输入框（可选）⇒ 调 IPC ⇒ 成功后弹窗转「已驳回」态：显示驳回时间与理由，**不再有批准/驳回按钮**，只留「关闭」 |
+| IPC 失败 | 弹窗顶部红色错误条（显示后端 message），按钮恢复可点 |
+| 流水线被取消 | 弹窗随 `pipeline:fail` / 终态关闭 |
+
+⚠ **驳回态下用户能做什么**：只能关闭弹窗（流水线停在门内）；
+后续动作（改文案重跑 / 取消）在既有进度弹窗里 ⇒ **本片不新增重跑入口**。
+
+### 21.7 显示项（每道门显示什么）
+
+| 门 | 主产物摘要（从 artifacts 读） | 额外显示项 |
+|---|---|---|
+| G1 proposal | 概念选项数 / 已选概念 / 制作方案要点 / 成本估算条目数 | **渲染引擎单选（remotion / ffmpeg）** |
+| G2 script | 段落数 / 总时长 / 旁白预览（前若干字） | — |
+| G3 scenes | 镜数 / 每镜时长 / 素材声明数（`required_assets`） | — |
+| G4 assets | 资产总数 / 缺项数 / 旁白覆盖率 | — |
+| G5 publish | 目标平台 / 发布动作 | — |
+
+⚠ **显示项的字段名一律取自对应上游 artifact schema 的真实字段**，缺字段即显示「—」，**不编造数字**。
+
+### 21.8 提示文字（zh / en 成对）
+
+新增 locale 命名空间 `pipelines.approvalGate.*`（`locales/pipelines/zh.js` + `en.js` **成对**）：
+
+> ⚠ 命名空间放在 `pipelines/` 而不是 `create/`：`locales/create/{zh,en}.js` 原本 456 / 461 行，
+> 审批门文案会让它们**破 500 行上限**（`check-max-lines` 的 `NEW_OVER_LIMIT`）⇒ 按仓内既有的
+> 「命名空间按目录拆分」范式移到 `pipelines/`（127 → 228 行，仍在上限内）。
+
+| 键 | 中文 | English |
+|---|---|---|
+| `title.proposal` | 方案确认 | Proposal confirmation |
+| `title.script` | 脚本确认 | Script confirmation |
+| `title.scenes` | 分镜确认 | Scene plan confirmation |
+| `title.assets` | 素材确认 | Asset confirmation |
+| `title.publish` | 发布确认 | Publish confirmation |
+| `runtime.label` | 渲染引擎 | Render engine |
+| `runtime.remotion` | Remotion 程序化动画（推荐） | Remotion programmatic animation (recommended) |
+| `runtime.ffmpeg` | FFmpeg 图片轮播（更快，表现力较弱） | FFmpeg slideshow (faster, less expressive) |
+| `runtime.required` | 请选择渲染引擎 | Please choose a render engine |
+| `approve` | 批准并继续 | Approve and continue |
+| `reject` | 驳回 | Reject |
+| `rejectNote` | 驳回理由（可选） | Rejection reason (optional) |
+| `rejectedTitle` | 已驳回，流水线已停在此处 | Rejected — the pipeline is stopped here |
+| `close` | 关闭 | Close |
+| `focusLabel` | 请重点确认 | Please focus on |
+| `autoChecksLabel` | 系统已自动核对 | Automatically checked |
+| `manualChecksLabel` | 需人工判断 | Needs human judgement |
+| `loadFailed` | 审批信息加载失败 | Failed to load the approval payload |
+
+⚠ `.vue` template 里的中文会被 `check-locale-sync --cjk` 扫 ⇒ **模板里只写 i18n 键，不写中文**。
+
+### 21.9 验收矩阵
+
+| # | 场景 | 判据 | 层级 |
+|---|---|---|---|
+| A1 | 5 门定义与上游一致 | 门集合 = {proposal, script, scenes, assets, publish} | 单元 |
+| A2 | 门载荷符合上游 schema | 用仓内 `artifact-schema-validator` 校验 checkpoint 载荷 | 单元 |
+| A3 | `status` 恒为 `awaiting_human` | 载荷字段断言 | 单元 |
+| A4 | 驳回后 run 保持 paused 且不推进 | `rejectStageGate` 返回 paused=true；`_autoAdvanceRun` 未被调用 | 单元 |
+| A5 | 驳回意见落 `run.context.approval_<stage>` | context 读取断言 | 单元 |
+| A6 | 批准路径复用 `confirmStageGate` | 集成断言：批准后阶段继续推进 | 单元/集成 |
+| A7 | G1 选 ffmpeg ⇒ compose 用 ffmpeg | `proposal.production_plan.render_runtime === 'ffmpeg'` ⇒ edit/compose 读到 ffmpeg | 单元 |
+| A8 | G1 未选 runtime ⇒ 不可批准 | 组件断言：批准按钮 disabled | 组件单测 |
+| A9 | 门触发：`checkpointRequired` 已置 true | 契约锁读 `pipeline-engine.js` 源码 | 契约测试 |
+| A10 | `_runs` 跨模块访问只在新模块 | 契约锁扫全仓 | 契约测试 |
+| A11 | 审批模式默认 `none`（零回归） | 契约锁读渲染层默认值 | 契约测试 |
+| A12 | locale zh/en 成对 | `check-locale-sync --cjk` | 门禁 |
+| A13 | 端到端：开着门真跑通 | E2E：5 门逐个批准 ⇒ 出片 | E2E |
+| A14 | 端到端：驳回后停住 | E2E：G1 驳回 ⇒ 流水线停住、无成片 | E2E |
+| A15 | 门批准后**不重跑**该阶段 | `gateCleared=true` + `context[stage]` 已存在 ⇒ 复用产物（执行器未被调用） | 单元 |
+| A16 | 门批准后**用户的选择不丢** | G1 写回的 `render_runtime` 在重入后仍是用户选的值（≠ 被归一化补成的默认值） | 单元 |
+| A17 | 无产物 / 无 `gateCleared` 时**不误跳过** | `context` 里没有该阶段产物、或没有 `gateCleared`（断点续跑）⇒ 照常执行 | 单元 |
+| A18 | 门阶段清单**恰好 5 个** | 与运行时 `stageDefs` 里 `checkpointRequired===true` 的集合**逐字一致**（挡住「第 6 个阶段被悄悄设成门」） | 契约测试 |
+| A19 | ⭐ G1 选了 ffmpeg ⇒ **compose 真走 ffmpeg** | `render_runtime_requested='ffmpeg'` **且** `render_runtime_used='ffmpeg'` **且** `render_fallback_reason` 为空 | E2E |
+| A20 | ⭐ G1 的选择**不会被非用户确认覆盖** | `render_runtime_source !== 'user_confirmed'`（LLM 自己给 ffmpeg / 缺省）⇒ 意图仍是 `remotion`（P5a 行为不变） | 单元 |
+| A21 | ⭐ 渲染意图判定**逐字** | `source` / `runtime` 带空白、大小写不同、前缀不同 ⇒ 意图 = `remotion`（fail-safe 到既有行为） | 单元 |
+| A22 | ⭐ 判据**真的被接线**（不是叶子模块自嗨） | 接线锁：compose 执行器真的 `require` 且真的**调用**该判据；`userPickedFfmpeg` 的声明**恰好一份且形态精确**；`render_runtime_requested` **取自渲染意图**（不得硬编码） | 契约测试 |
+| A23 | 门批准后**不重跑**该阶段（端到端） | 门批准后该阶段**重入且耗时 ≈ 1ms**（复用产物）⇒ 实测 assets 16643ms → 2ms | E2E |
+
+### 21.10 已知限制与未闭合项
+
+1. ⚠ **默认策略偏离上游**（如实登记）：上游 `default_checkpoint_policy: guided`（五门默认全开），
+   本片**默认 `none`**（保持今天「一键出片」零回归），用户可在 UI 选 `guided` 打开五门。
+   ⇒ **理由**：改默认值会打断所有既有「一键出片」用户，且上游本身提供了策略档位来覆盖这个需求。
+   ⇒ **代价**：默认状态下用户看不到审批门（能力齐备但需显式开启）。
+2. **驳回不做自动返工**：上游的 REVISE / SEND_BACK（返工 / 退回上游阶段）属 **P4 EP 编排**，
+   本片驳回只「停住 + 记录」。
+3. **成本快照金额恒 0**：本仓无单价表 ⇒ `cost_snapshot` 三项为 0，`metadata.cost_note` 写「单价未知」；
+   P4 的预算闸落地后才会有真值。
+4. **`artifacts` 里若某产物缺字段**：显示「—」，**不编造**；门本身仍可批准。
+5. **门与已有「成本确认入口闸」并存**：影视工程的 `cost_confirm` 与本片五门是两套机制，
+   本片不动影视工程那条线。
+6. **审批门在 `none` 策略下完全不出现**：这是设计意图（策略闸在 `_shouldCheckpoint` 第一条）。
+7. ⚠ **publish 门是「发布后确认」，挡不住发布**（如实登记，偏离上游语义）：上游的 publish 门是
+   **发布前**确认（先出待发布清单 → 人确认 → 才真发布）；本仓 `explainer_publish` 阶段**第一次执行就真发布**
+   ⇒ 门在发布**之后**才触发 ⇒ 人在批准时视频**已经发出去了**。
+   ⇒ 本片只做「批准后不重复发布」（复用产物），**不拆阶段形态**（改成「清单 → 确认 → 真发布」要动阶段定义，
+   属后续片）；⇒ **在有发布平台的场景下不要依赖 publish 门来拦截发布**。
+8. ⚠ **其它流水线的「产物后」门同样会重跑**（非本片范围）：本仓 `story2video` 等流水线的阶段里也有
+   `checkpointRequired: true` 的门，它们若也是「产物已出后」触发，会与本片修复前一样重跑。
+   ⇒ 本片只修 explainer（执行器层，不动引擎通用机制）⇒ 其它流水线的同类问题**留给各自后续片**。
+9. ⚠ **成片分辨率只是「旁证」，不是契约**：本轮实测 **ffmpeg 路径 = 1280×720**、
+   **Remotion 路径 = 1920×1080**（上游 `Root.tsx` 硬编码）⇒ 分辨率**能**区分两条路径。
+   但它依赖「ffmpeg 路径用默认尺寸」这个**实现事实** ⇒ **P5c（动态尺寸）落地后即失效**
+   ⇒ ⇒ 渲染路径的**主判据**只认两个产物字段：`render_runtime_requested`（请求的）
+   与 `render_runtime_used`（实际用的）；分辨率只作额外旁证。
+   （另：E2E 脚本**没有传尺寸**，分辨率取流水线默认值。）
+10. ⚠ **「音轨非静音」依赖环境**：TTS 走 `edge-tts`（Python 包）⇒ 沙箱/精简环境缺该包时会**回落成静音**
+    （日志 `fallback silence`）⇒ 这条验收依赖环境，不在用户机器上恒成立。
+11. ⚠ **publish 门是「发布后确认」**（已在上文第 7 条登记，重复提醒）：不要依赖它拦截发布。

@@ -36,6 +36,57 @@ function registerHandlers(ipcMain, deps) {
     }
   }))
 
+  // AI 讲解视频的人工审批门（上游 animated-explainer 的 checkpoint/human_approval 语义）：
+  // 读当前门的类型化载荷（严格按上游 checkpoint.schema.json 形状）。
+  ipcMain.handle('pipeline:approval-gate', withSenderCheck((_event, runId) => {
+    if (typeof runId !== 'string' || !runId.trim()) return { code: EC.VALIDATION_ERROR, message: '缺少或非法 runId' }
+    try {
+      const { readApprovalGatePayload } = require('../services/explainer/explainer-approval-gates')
+      const result = readApprovalGatePayload(pipelineEngine, runId)
+      if (!result.success) return { code: EC.REQUEST_ERROR, message: result.error, errorCode: result.errorCode || null }
+      return { code: 0, data: result }
+    } catch (err) {
+      log.error('[pipeline] approvalGate error:', err)
+      return { code: EC.REQUEST_ERROR, message: err.message, errorCode: err?.errorCode || err?.code || null, errorParams: err?.errorParams || null }
+    }
+  }))
+
+  // 批准当前审批门：主进程组装 contextPatch（含 G1 的渲染引擎写回 proposal 本体）后走既有
+  // confirmStageGate ⇒ 组装口径只存在于主进程，渲染层不参与拼装。
+  ipcMain.handle('pipeline:approve-stage-gate', withSenderCheck(async (_event, runId, payload) => {
+    if (typeof runId !== 'string' || !runId.trim()) return { code: EC.VALIDATION_ERROR, message: '缺少或非法 runId' }
+    if (payload !== undefined && (payload === null || typeof payload !== 'object' || Array.isArray(payload))) {
+      return { code: EC.VALIDATION_ERROR, message: '批准载荷必须为对象' }
+    }
+    try {
+      const { approveStageGate } = require('../services/explainer/explainer-approval-gates')
+      const result = await approveStageGate(pipelineEngine, runId, payload)
+      if (!result.success) return { code: EC.REQUEST_ERROR, message: result.error, errorCode: result.errorCode || null }
+      return { code: 0, data: result }
+    } catch (err) {
+      log.error('[pipeline] approveStageGate error:', err)
+      return { code: EC.REQUEST_ERROR, message: err.message, errorCode: err?.errorCode || err?.code || null, errorParams: err?.errorParams || null }
+    }
+  }))
+
+  // 驳回当前审批门：记录驳回意见并停住（不推进、不自动重跑）。
+  // 上游的 REVISE / SEND_BACK（返工 / 退回上游阶段）属 EP 编排（P4），本片不做。
+  ipcMain.handle('pipeline:reject-stage-gate', withSenderCheck((_event, runId, payload) => {
+    if (typeof runId !== 'string' || !runId.trim()) return { code: EC.VALIDATION_ERROR, message: '缺少或非法 runId' }
+    if (payload !== undefined && (payload === null || typeof payload !== 'object' || Array.isArray(payload))) {
+      return { code: EC.VALIDATION_ERROR, message: '驳回载荷必须为对象' }
+    }
+    try {
+      const { rejectStageGate } = require('../services/explainer/explainer-approval-gates')
+      const result = rejectStageGate(pipelineEngine, runId, payload)
+      if (!result.success) return { code: EC.REQUEST_ERROR, message: result.error, errorCode: result.errorCode || null }
+      return { code: 0, data: result }
+    } catch (err) {
+      log.error('[pipeline] rejectStageGate error:', err)
+      return { code: EC.REQUEST_ERROR, message: err.message, errorCode: err?.errorCode || err?.code || null, errorParams: err?.errorParams || null }
+    }
+  }))
+
   ipcMain.handle('pipeline:pause', withSenderCheck(() => {
     try {
       return { code: 0, data: pipelineEngine.pause() }

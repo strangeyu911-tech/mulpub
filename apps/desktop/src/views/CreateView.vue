@@ -200,6 +200,22 @@
               </select>
               <span class="config-hint" data-testid="explainer-visual-mode-hint" v-if="explainerVisualMode === 'title-card'">{{ $t('create.explainer.visualMode.hint') }}</span>
             </div>
+            <ExplainerApprovalGateDialog
+              :visible="approvalGateVisible"
+              :run-id="orchestrationRunId || ''"
+              @close="onApprovalGateClosed"
+              @approved="onApprovalGateSettled"
+              @rejected="onApprovalGateSettled"
+            />
+            <!-- 审批模式（仅 AI 讲解视频）：五道人工审批门（上游 animated-explainer 的 checkpoint 语义） -->
+            <div class="config-item" v-if="isExplainerPipeline(selectedPipeline?.name)">
+              <label>{{ $t('pipelines.approvalMode.label') }}</label>
+              <select v-model="explainerApprovalMode" class="form-select" data-testid="explainer-approval-mode-select">
+                <option value="none">{{ $t('pipelines.approvalMode.none') }}</option>
+                <option value="guided">{{ $t('pipelines.approvalMode.guided') }}</option>
+              </select>
+              <span class="config-hint" data-testid="explainer-approval-mode-hint">{{ $t('pipelines.approvalMode.hint') }}</span>
+            </div>
           </div>
         </div>
 
@@ -1010,11 +1026,13 @@ import {
   pipelineList, pipelineStart, pipelinePause, pipelineResume, pipelineCancel,
   pipelineStatus, pipelineAdvance, pipelineHistory,
   pipelineStartOrchestrated, pipelineResumeOrchestration, pipelineAdvanceToNextCheckpoint, pipelineConfirmSceneAssets, pipelineGetRunContext,
+  pipelineApprovalGate,
   pipelinePauseRun, pipelineDeleteRun,
   storeGetSetting, storeSetSetting,
   story2videoImportMedia, story2videoImportMediaPath, story2videoTranscribe, story2videoListProjects, story2videoGetThumbnail,
   story2videoDeleteProject,
 } from '@/api/publisher'
+import ExplainerApprovalGateDialog from '@/components/explainer/ExplainerApprovalGateDialog.vue'
 import { bgmLibraryRefs, bgmLibraryMethods, setupBgmLibraryDeps } from './video-creation/composables/useBgmLibrary'
 import { ttsVoicesRefs, ttsVoicesComputeds, ttsVoicesMethods, setupTtsVoicesDeps } from './video-creation/composables/useTtsVoices'
 // 能力级默认模型解析（voice-model-program-resolved，2026-10-18）：语音/视频域共用同一口径，
@@ -1202,6 +1220,11 @@ export default {
       //   ai        = AI 生成画面（调模型设置里的默认生图模型，消耗积分/额度）
       //   title-card= 动效标题卡（本地 ffmpeg 渲染，不消耗积分；表现形式单一：只是图片展示文字）
       explainerVisualMode: 'ai',
+      // 审批模式（仅 AI 讲解视频）：none=不打断（默认，保持一键出片）/ guided=五道人工审批门
+      explainerApprovalMode: 'none',
+      // 人工审批门弹窗（上游 animated-explainer 的 checkpoint/human_approval 语义）
+      approvalGateVisible: false,
+      approvalGateDismissedStage: '',
       outputConfig: { resolution: '1920x1080', fps: 30, format: 'mp4' },
       s2vOutputConfig: { resolution: '720x1280', fps: 30, format: 'mp4' },
       // 输出分辨率能力开关（运营后台）：'1080p'（默认，前端不出现 4K）| '4k'
@@ -2700,7 +2723,10 @@ export default {
         }
         const output = this.cloneForIpc(this.activeOutputConfig)
         const params = {
-          text, inputMode: 'text', checkpointPolicy: 'none', autoAdvance: true, background: true,
+          text, inputMode: 'text',
+          // 审批模式：仅 AI 讲解视频有五道人工审批门；其余流水线保持 none（不打断）。
+          checkpointPolicy: this.isExplainerPipeline(this.selectedPipeline.name) ? this.explainerApprovalMode : 'none',
+          autoAdvance: true, background: true,
           storyboardMode: this.storyboardMode, style: this.selectedStyle,
           resolution: output.resolution,
           // 画幅必须随分辨率一起下发（2026-10-06 fix-s2v-image-aspect-adapters）：本入口服务非
@@ -3922,6 +3948,8 @@ export default {
         normalized.stages = this.orchestrationStages
         this.pipelineRunStatus = normalized
         this.syncPipelineCheckpointState(normalized, this.orchestrationContext)
+        // 人工审批门：状态刷新后判定是否停在五道门之一（判定口径在主进程，渲染层不硬编码门名单）
+        await this.syncApprovalGate()
         if (PIPELINE_END_STATUSES.includes(normalized.status)) {
           this.applyOrchestrationTerminalStatus(normalized.status, {
             ...statusResult.data,
@@ -4568,6 +4596,42 @@ export default {
         this.pollTimer = setInterval(() => this.updateOrchestrationStatus(), 3000)
       }
       return true
+    },
+    /**
+     * 人工审批门：判定当前是否停在五道门之一（判定口径在主进程，渲染层不硬编码门名单），
+     * 命中则打开审批门弹窗；同一门被用户关闭后不再自动弹出（驳回态由弹窗内部展示）。
+     */
+    async syncApprovalGate() {
+      const runId = String(this.orchestrationRunId || this.pipelineRunStatus?.runId || '').trim()
+      if (!runId || this.selectedPipeline?.name !== 'animated-explainer') {
+        this.approvalGateVisible = false
+        return
+      }
+      const status = this.pipelineRunStatus || {}
+      if (status.status !== 'paused' || !status.checkpoint) {
+        this.approvalGateVisible = false
+        return
+      }
+      try {
+        const res = await pipelineApprovalGate(runId)
+        const gate = res && res.code === 0 && res.data && res.data.success ? res.data : null
+        if (!gate || this.approvalGateDismissedStage === gate.stage) {
+          this.approvalGateVisible = false
+          return
+        }
+        this.approvalGateVisible = true
+      } catch (_) {
+        this.approvalGateVisible = false
+      }
+    },
+    onApprovalGateClosed(stageName) {
+      this.approvalGateVisible = false
+      if (stageName) this.approvalGateDismissedStage = stageName
+    },
+    onApprovalGateSettled() {
+      this.approvalGateVisible = false
+      this.approvalGateDismissedStage = ''
+      this.updateOrchestrationStatus()
     },
     async showOrchestrationCheckpoint(runId, pipelineName, outcome = {}) {
       const normalizedRunId = typeof runId === 'string' ? runId.trim() : ''

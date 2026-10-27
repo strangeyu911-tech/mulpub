@@ -3,6 +3,106 @@
  * 从 locales/zh.js 拆出，键名与拆出前完全一致；zh/en 成对维护（CI Gate 7）。
  */
 export default {
+      approvalMode: {
+        label: '审批模式',
+        none: '不打断（一键出片）',
+        guided: '五道人工审批门',
+        hint: '开启后，方案 / 脚本 / 分镜 / 素材 / 发布 各阶段产出后停下来等你确认；驳回会停在该阶段等你处理。',
+      },
+      approvalGate: {
+        title: {
+          proposal: '方案确认',
+          script: '脚本确认',
+          scenes: '分镜确认',
+          assets: '素材确认',
+          publish: '发布确认',
+        },
+        runtime: {
+          label: '渲染引擎',
+          remotion: 'Remotion 程序化动画（推荐）',
+          ffmpeg: 'FFmpeg 图片轮播（更快，表现力较弱）',
+          required: '请选择渲染引擎',
+        },
+        approve: '批准并继续',
+        reject: '驳回',
+        rejectNote: '驳回理由（可选）',
+        rejectedTitle: '已驳回，流水线停在此处',
+        close: '关闭',
+        summary: {
+          concepts: '概念选项',
+          costItems: '成本条目',
+          sections: '段落数',
+          duration: '总时长（秒）',
+          scenes: '镜数',
+          assets: '资产数',
+          entries: '发布条目',
+        },
+        focusLabel: '请重点确认',
+        autoChecksLabel: '系统已自动核对',
+        manualChecksLabel: '需人工判断',
+        loadFailed: '审批信息加载失败',
+        artifactMissing: '该阶段产物缺失，请谨慎判断',
+        focus: {
+          proposal: [
+            '概念选项确有差异（结构 / 钩子 / 受众）',
+            '每个概念都有研究结论支撑，不是泛泛而谈',
+            '制作方案与预检得出的可用工具一致',
+            '成本估算是逐项列出的，且如实',
+            '质量与成本的取舍讲得清楚',
+            '给出了不同价位的备选制作路径',
+            '与参考作品的差异化（参考驱动时）',
+          ],
+          script: [
+            '字数与所选概念的目标时长偏差在 ±10% 内',
+            '强化提示密度：每 8~10 秒一处',
+            '叙事弧线完整：钩子 → 铺垫 → 推进 → 高潮 → 收尾',
+            '带有供 TTS 使用的说话指示',
+            '声音表演方案包含具体的语速、停顿、重音与音色示例',
+            '脚本用上了研究中的数据点与引用事实',
+          ],
+          scenes: [
+            '脚本时长被完整覆盖，没有空档',
+            '视觉有变化：不出现连续 3 镜以上同类型',
+            '素材可行：每个 required_asset 都用制作方案里的工具',
+            '符合视觉手册：转场、配色、节奏规则',
+          ],
+          assets: [
+            '所有素材文件在磁盘上确实存在',
+            '旁白覆盖脚本的全部段落',
+            '旁白素材套用了已确认的声音表演方案与音色设置',
+            '总成本在 proposal_packet 批准的预算内',
+            '所有生成画面的风格一致',
+          ],
+          publish: [
+            'SEO 元信息完整且关键词充实',
+            '存在章节标记',
+            '导出包结构正确',
+          ],
+        },
+        autoChecks: {
+          proposal: [
+            'proposal_packet 符合 schema，且概念选项不少于 3 个',
+            '已选概念引用了存在的 concept_id',
+            '成本估算含逐项明细，且每个工具有单价',
+          ],
+          script: [
+            'script 符合 schema，且每段都有强化提示',
+            '总时长与所选概念的目标偏差在 10% 内',
+          ],
+          scenes: [
+            'scene_plan 符合 schema，且每镜都有 required_assets',
+            '至少用到 3 种不同的场景类型',
+          ],
+          assets: [
+            'asset_manifest 符合 schema，且必需素材都已生成',
+            '所有文件路径都能解析到真实文件',
+          ],
+          publish: [
+            'publish_log 符合 schema',
+            '导出目录里有视频、元信息与缩略图概念',
+          ],
+        },
+      },
     names: {
       'animated-explainer': 'AI 讲解视频',
       'talking-head': '口播视频',

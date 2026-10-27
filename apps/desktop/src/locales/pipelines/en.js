@@ -3,6 +3,106 @@
  * 从 locales/en.js 拆出，键名与拆出前完全一致；zh/en 成对维护（CI Gate 7）。
  */
 export default {
+      approvalMode: {
+        label: 'Approval mode',
+        none: 'No approval (one-click)',
+        guided: 'Five human approval gates',
+        hint: 'When enabled, the proposal / script / scene plan / assets / publish stages stop for your confirmation after producing their artifacts; a rejection leaves the pipeline at that stage.',
+      },
+      approvalGate: {
+        title: {
+          proposal: 'Proposal confirmation',
+          script: 'Script confirmation',
+          scenes: 'Scene plan confirmation',
+          assets: 'Asset confirmation',
+          publish: 'Publish confirmation',
+        },
+        runtime: {
+          label: 'Render engine',
+          remotion: 'Remotion programmatic animation (recommended)',
+          ffmpeg: 'FFmpeg slideshow (faster, less expressive)',
+          required: 'Please choose a render engine',
+        },
+        approve: 'Approve and continue',
+        reject: 'Reject',
+        rejectNote: 'Rejection reason (optional)',
+        rejectedTitle: 'Rejected — the pipeline is stopped here',
+        close: 'Close',
+        summary: {
+          concepts: 'Concepts',
+          costItems: 'Cost items',
+          sections: 'Sections',
+          duration: 'Duration (s)',
+          scenes: 'Scenes',
+          assets: 'Assets',
+          entries: 'Publish entries',
+        },
+        focusLabel: 'Please focus on',
+        autoChecksLabel: 'Automatically checked',
+        manualChecksLabel: 'Needs human judgement',
+        loadFailed: 'Failed to load the approval payload',
+        artifactMissing: 'Artifacts for this stage are missing — judge with care',
+        focus: {
+          proposal: [
+            'Concept options are genuinely different (structure, hook, audience)',
+            'Each concept is grounded in research findings, not generic',
+            'Production plan reflects actual tool availability from preflight',
+            'Cost estimate is itemized and honest',
+            'Quality/cost tradeoffs are clearly presented',
+            'Alternative production paths shown at different price points',
+            'Concept differentiation from reference (if reference-driven)',
+          ],
+          script: [
+            'Word count within +/-10% of duration target from selected concept',
+            'Enhancement cue density: 1 per 8-10 seconds',
+            'Narrative arc: hook -> setup -> build -> climax -> landing',
+            'Speaker directions present for TTS',
+            'Voice performance plan includes concrete pacing, pause, emphasis, and sample cues',
+            'Script incorporates research data points and cited facts',
+          ],
+          scenes: [
+            'Full script duration covered with no gaps',
+            'Visual variety: no 3+ consecutive scenes of same type',
+            'Asset feasibility - every required_asset uses a tool from the production plan',
+            'Playbook adherence - transitions, colors, pacing rules',
+          ],
+          assets: [
+            'All asset files exist on disk',
+            'Narration covers all script sections',
+            'Narration assets apply the approved voice performance plan and sample settings',
+            'Total cost within approved budget from proposal_packet',
+            'Image style consistency across all generated visuals',
+          ],
+          publish: [
+            'SEO metadata complete and keyword-rich',
+            'Chapter markers present',
+            'Export package structured correctly',
+          ],
+        },
+        autoChecks: {
+          proposal: [
+            'Schema-valid proposal_packet with at least 3 concept_options',
+            'selected_concept references a valid concept_id',
+            'cost_estimate has itemized line_items with per-tool costs',
+          ],
+          script: [
+            'Schema-valid script with enhancement_cues per section',
+            'Total duration matches selected concept target within 10%',
+          ],
+          scenes: [
+            'Schema-valid scene_plan with required_assets per scene',
+            'At least 3 different scene types used',
+          ],
+          assets: [
+            'Schema-valid asset_manifest with all required assets generated',
+            'All file paths resolve to existing files',
+          ],
+          publish: [
+            'Schema-valid publish_log',
+            'Export directory contains video, metadata, and thumbnail concept',
+          ],
+        },
+      },
     names: {
       'animated-explainer': 'AI Explainer',
       'talking-head': 'Talking Head',

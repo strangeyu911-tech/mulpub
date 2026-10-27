@@ -432,6 +432,10 @@ export async function pipelineExecuteStage(runId) { return invokeWithFallback("p
 export async function pipelineAdvanceToNextCheckpoint(runId) { return invokeWithFallback("pipelineAdvanceToNextCheckpoint", { code: -1 }, runId) }
 export async function pipelineConfirmSceneAssets(runId, selections) { return invokeWithFallback("pipelineConfirmSceneAssets", { code: -1, message: 'electronAPI not available' }, runId, selections) }
 export async function pipelineConfirmStageGate(runId, contextPatch) { return invokeWithFallback("pipelineConfirmStageGate", { code: -1, message: 'electronAPI not available' }, runId, contextPatch) }
+// AI 讲解视频的人工审批门：读门载荷 / 批准 / 驳回
+export async function pipelineApprovalGate(runId) { return invokeWithFallback("pipelineApprovalGate", { code: -1, message: 'electronAPI not available' }, runId) }
+export async function pipelineApproveStageGate(runId, payload) { return invokeWithFallback("pipelineApproveStageGate", { code: -1, message: 'electronAPI not available' }, runId, payload) }
+export async function pipelineRejectStageGate(runId, payload) { return invokeWithFallback("pipelineRejectStageGate", { code: -1, message: 'electronAPI not available' }, runId, payload) }
 export async function filmEngineeringRetryShot(payload) { const res = await invokeNamespace("filmEngineering", "retryShot", payload); return res === undefined ? { code: -1, message: 'electronAPI not available' } : res }
 export async function filmEngineeringProductionRetryShot(payload) { const res = await invokeNamespace("filmEngineering", "productionRetryShot", payload); return res === undefined ? { code: -1, message: 'electronAPI not available' } : res }
 // 资产导入（PR-3b · F-J **写路径**）：**无参数** —— 路径只能由主进程的原生对话框返回

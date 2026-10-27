@@ -186,6 +186,12 @@ async function main () {
       '--image-base-url=http://127.0.0.1:' + IMAGE_PORT,
       '--out-dir=' + OUT_DIR,
       '--runs=1',
+      // ⚠ 审批门相关开关的透传（否则只能跑默认的 api 模式 + remotion）：
+      //   E2E_MODE=ui             ⇒ 走真实 UI 按钮启动（**只有这条路渲染层才持有 run** ⇒ 弹窗 DOM 才会出现）
+      //   E2E_APPROVAL_RUNTIME=ffmpeg ⇒ G1 选**非默认**的渲染引擎
+      //     ⇒ 否则测不出「门批准后阶段重跑把用户选择冲回默认值」（默认 remotion ⇒ 冲掉后仍相同 ⇒ 断言恒真）
+      '--mode=' + (process.env.E2E_MODE || 'api'),
+      '--approval-runtime=' + (process.env.E2E_APPROVAL_RUNTIME || 'remotion'),
       '--resolution=' + RESOLUTION,
       '--timeout-ms=' + (Number(process.env.E2E_TIMEOUT_MS) || 5400000),
     ]

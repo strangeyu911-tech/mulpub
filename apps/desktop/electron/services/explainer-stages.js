@@ -47,6 +47,63 @@ const EXPLAINER_STAGE_TYPES = {
 }
 
 /**
+ * ⚠ **人工审批门阶段**（P3）：上游 `human_approval_default: true` 恰好 5 个阶段
+ *   —— proposal / script / scene_plan / assets / publish
+ *   ⇒ 映射到本仓阶段名 = proposal / script / scenes / assets / publish。
+ *   ⚠ 这份清单必须与 `pipeline-engine.js` 里 explainer stageDefs 的
+ *     `checkpointRequired: true` **逐字一致**（契约锁会对拍）⇒ 两处不许各自漂移。
+ */
+const EXPLAINER_GATE_STAGE_TYPES = [
+  EXPLAINER_STAGE_TYPES.PROPOSAL,
+  EXPLAINER_STAGE_TYPES.SCRIPT,
+  EXPLAINER_STAGE_TYPES.SCENES,
+  EXPLAINER_STAGE_TYPES.GENERATE_ASSETS,
+  EXPLAINER_STAGE_TYPES.PUBLISH,
+]
+
+/**
+ * ⚠ **门批准后重入 ⇒ 复用已产出的产物，不重跑**（P3 收口）
+ *
+ * 背景：P3 给 explainer 的 5 个阶段开了人工审批门。门在**阶段产出之后**触发
+ *   （引擎 `_executeStage` 末尾），而 `confirmStageGate` 放行后走 `_autoAdvanceRun`
+ *   ⇒ **从当前阶段重跑**。实测（E2E 日志）：assets 因此完整生产了两遍
+ *   （10 图 + 10 TTS × 2）。
+ *
+ * 两个真缺陷（本包装层同时修掉）：
+ *   ① **重复消耗**：assets 阶段的素材、LLM 阶段的模型调用都会白做一遍；
+ *   ② **用户在 G1 门里的选择被冲掉**：`confirmStageGate` 把选中的
+ *      `proposal.production_plan.render_runtime` 写回 `run.context.proposal`，
+ *      而重跑 proposal 会用新的 LLM 输出**重新归一化**
+ *      ⇒ `render_runtime` 被重置成默认值（`explainer-artifacts.js` 的
+ *      `plan.render_runtime = runtimeFromLlm || 'remotion'`）
+ *      ⇒ P3「选项写回产物本体 ⇒ 下游零改动生效」的设计**当场失效**。
+ *
+ * ⚠ **为什么必须放在执行器层、不能放引擎层**：
+ *   film-engineering 的 `film_generate_videos` 是**另一种门**（成本确认入口闸：
+ *   第一次执行只产「等待态清单」、**零 provider 调用**，批准后**必须**重入才真生成）
+ *   ⇒ 引擎层「有产物就跳过」会让它**永远不生成视频**。
+ *   ⇒ 两种门语义并存 ⇒ 只能在 explainer 这一层区分。
+ *
+ * 判据：`stage.gateCleared === true`（刚被门放行）**且** `context[stage.name]` 已存在
+ *   ⇒ 复用产物。
+ *   ⚠ 「应用重启后从 checkpoint 断点续跑」**不会**带 `gateCleared`
+ *   ⇒ 仍然照常重跑（既有行为不变）。
+ *
+ * @param {Function} executor - 原阶段执行器
+ * @returns {Function} 包装后的执行器
+ */
+function withGateReuse (executor) {
+  return async (args) => {
+    const stage = args && args.stage
+    const context = args && args.context
+    if (stage && stage.gateCleared === true && context && context[stage.name] !== undefined) {
+      return { success: true, output: context[stage.name] }
+    }
+    return executor(args)
+  }
+}
+
+/**
  * 注册 animated-explainer 流水线的自定义阶段执行器
  * @param {object} pipelineEngine - PipelineEngine 实例（需已注入 serviceBus）
  * @returns {{success: boolean, error?: string, registered?: string[]}}
@@ -73,7 +130,11 @@ function registerExplainerStages (pipelineEngine) {
   ]
 
   for (const [stageType, executor] of executors) {
-    pipelineEngine.registerStageExecutor(stageType, executor)
+    // ⚠ 只包装**有门**的阶段 ⇒ 无门阶段（research / editing / compose）行为完全不变
+    const effective = EXPLAINER_GATE_STAGE_TYPES.includes(stageType)
+      ? withGateReuse(executor)
+      : executor
+    pipelineEngine.registerStageExecutor(stageType, effective)
     registered.push(stageType)
   }
 
@@ -82,6 +143,8 @@ function registerExplainerStages (pipelineEngine) {
 
 module.exports = {
   EXPLAINER_STAGE_TYPES,
+  EXPLAINER_GATE_STAGE_TYPES,
+  withGateReuse,
   // 三个前生产阶段的提示词已抽到 explainer/explainer-preprod-stages.js
   // 五个生产阶段的实现已抽到 explainer/explainer-prod-stages.js + explainer/explainer-review-stages.js
   // （explainer-stages.js 只做**注册**，不堆实现）

@@ -92,6 +92,8 @@
 
     <UpdateNotification />
     <SettingsDialog :visible="showSettingsDialog" :initial-tab="settingsDialogInitialTab" @close="closeSettingsDialog" />
+    <!-- 模型额度兜底：App 根层单例，任何页面都能弹（P1b-2b） -->
+    <ModelQuotaFallbackDialog @settings="openModelSettingsFromQuota" />
     <PipelineBackgroundToast />
     <!-- 发布进度全局面板（publish-progress-ux）：App 级常驻，setup 内完成事件订阅 -->
     <PublishProgressPanel />
@@ -107,6 +109,7 @@ import NavBar from '@/components/NavBar.vue'
 import OfflineIndicator from '@/components/OfflineIndicator.vue'
 import UpdateNotification from '@/components/UpdateNotification.vue'
 import SettingsDialog from '@/components/SettingsDialog.vue'
+import ModelQuotaFallbackDialog from '@/components/model-quota/ModelQuotaFallbackDialog.vue'
 import BackToTop from '@/components/BackToTop.vue'
 import PipelineBackgroundToast from '@/components/PipelineBackgroundToast.vue'
 import PublishProgressPanel from '@/components/PublishProgressPanel.vue'
@@ -123,7 +126,7 @@ import { clearRouteLoadError, routeLoadError } from '@/router'
 import { useLicenseStore } from '@/stores/license'
 import { useIdentityStore } from '@/stores/identity'
 import { useTabStore } from '@/stores/tab'
-import { notifySettingsDialogClosed, settingsDialogRequest } from '@/stores/settings-dialog'
+import { notifySettingsDialogClosed, requestSettingsDialog, settingsDialogRequest } from '@/stores/settings-dialog'
 import {
   reportSidebarCollapsed,
   sidebarCollapsed,
@@ -274,6 +277,11 @@ watch(settingsDialogRequest, (req) => {
 function closeSettingsDialog () {
   showSettingsDialog.value = false
   notifySettingsDialogClosed()
+}
+
+// 额度兜底弹窗选择「去更新模型设置」：直接落到设置 → 模型设置。
+function openModelSettingsFromQuota () {
+  requestSettingsDialog('model')
 }
 
 // 全屏路由（脱离任何导航壳，独立整屏渲染）：首跑引导

@@ -166,7 +166,8 @@ class ModelQuotaCoordinator {
     }
 
     this._markDeclined(runId, capability)
-    if (answer.remember && answer.decision === 'cancel' && this._store && typeof this._store.setSetting === 'function') {
+    // PRD §7.2：勾选 + 去设置 → policy=byok；取消不写 policy（取消只暂停本次任务）。
+    if (answer.remember && answer.decision === 'settings' && this._store && typeof this._store.setSetting === 'function') {
       this._store.setSetting(POLICY_KEY, 'byok')
     }
     const stopped = {

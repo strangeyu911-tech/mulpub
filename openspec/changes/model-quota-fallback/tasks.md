@@ -37,9 +37,9 @@
 - [x] `apps/desktop/src/locales/user-errors/zh.js` / `en.js`：五条精确文案（成对）
 - [x] `apps/desktop/src/components/AiWriterPanel.vue`：额度/凭据码 →「前往模型设置」；限流不给
 
-## 2bis. P1b：设置 + 弹窗 + 任务级覆盖（P1b-1 后端 + P1b-2a 设置 IPC/卡片已实现；P1b-2b 未实现）
+## 2bis. P1b：设置 + 弹窗 + 任务级覆盖（P1b-1 后端 + P1b-2a 设置 IPC/卡片 + P1b-2b 弹窗已实现；P1b-2c 未实现）
 
-> P1b-1：纯函数决策器 + Coordinator + `modelSourceOverrides`；P1b-2a：IPC/preload + 策略卡片；P1b-2b：弹窗 + 业务域接入。
+> P1b-1：纯函数决策器 + Coordinator + `modelSourceOverrides`；P1b-2a：IPC/preload + 策略卡片；P1b-2b：弹窗 + App 根层；P1b-2c：Coordinator 生产接线 + 业务域接入。
 
 ### 2b.1 TDD
 
@@ -49,6 +49,8 @@
 - [x] `apps/desktop/src/views/model-quota-labels.test.js`（新增）：state/quotaKind/reason → locale key
 - [x] `apps/desktop/electron/ipc-handlers/model-quota.test.js`（新增）：读写/非法值/未就绪降级
 - [x] `apps/desktop/src/components/model-quota/ModelQuotaPolicyCard.test.js`（新增）：隐藏态/官方可用/保存/cap 边界
+- [x] `apps/desktop/src/components/model-quota/ModelQuotaFallbackDialog.test.js`（新增）：无请求隐藏/信息展示/官方禁用/取消/remember
+- [x] `apps/desktop/src/composables/useModelQuotaFallback.test.js`（新增）：订阅/成功清空/失败保留/设置出口/卸载退订
 
 ### 2b.2 实现
 
@@ -58,14 +60,14 @@
 - [x] `apps/desktop/electron/ipc-handlers/model-quota.js`（新增）：4 条渲染端通道 + `withSenderCheck`（`model-quota:required` 为 main→renderer 事件）
 - [x] `apps/desktop/electron/preload/system.js`：暴露 `modelQuota` API（任务书写 `preload/index.js`，实际工厂在 `system.js`）
 - [x] `apps/desktop/src/api/model-quota.js`（新增）：渲染层统一桥接，组件不直调 `window.electronAPI`
-- [ ] `apps/desktop/electron/bootstrap/*.js`：实例化 Coordinator 并注入 run 生命周期（P1b-2b）
+- [ ] `apps/desktop/electron/bootstrap/*.js`：实例化 Coordinator 并注入 run 生命周期（P1b-2c）
 - [x] `apps/desktop/src/components/model-quota/ModelQuotaPolicyCard.vue`（新增）
-- [ ] `apps/desktop/src/components/model-quota/ModelQuotaFallbackDialog.vue`（新增，App.vue 根层，P1b-2b）
-- [ ] `apps/desktop/src/composables/useModelQuotaFallback.js`（新增，P1b-2b）
+- [x] `apps/desktop/src/components/model-quota/ModelQuotaFallbackDialog.vue`（新增，App.vue 根层）
+- [x] `apps/desktop/src/composables/useModelQuotaFallback.js`（新增）
 - [x] `apps/desktop/src/views/model-quota-labels.js`（新增）
 - [x] `apps/desktop/src/views/ModelProviders.vue`：挂载 `ModelQuotaPolicyCard`（仅当 `officialStatus.available` 或政策已设置时显示）
 - [x] `apps/desktop/src/locales/model-quota/zh.js` / `en.js`（新增，成对）
-- [ ] Story2Video / 图片轮播 / 数字人 / Film Engineering：统一弹窗 + 检查点写 `modelSourceOverrides`（P1b-2b）
+- [ ] Story2Video / 图片轮播 / 数字人 / Film Engineering：统一弹窗 + 检查点写 `modelSourceOverrides`（P1b-2c）
 - [ ] 改写 / 热榜 / 快速采集 / 提示词引擎：只接错误码与「去更新设置」（LLM 官方供给未定）
 - [ ] 模型设置「测试连接」：展示分类结果，不触发官方兜底
 

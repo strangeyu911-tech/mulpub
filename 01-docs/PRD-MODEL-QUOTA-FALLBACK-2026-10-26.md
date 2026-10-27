@@ -1,7 +1,7 @@
 # PRD：模型额度用尽时的来源切换策略（model-quota-fallback）
 
 > **文档性质**：产品需求 + 决策记录（PRD）。本文件是「用户自带模型 Key（BYOK）」与「平台官方模型（消耗官方积分）」之间**优先级与切换控制**的单一真源。
-> **状态**：🚧 **P1a 已实现**（错误识别 + 精确提示 + 「前往模型设置」动作）；**P1b-1 后端决策层已实现**（纯函数决策器 + Coordinator + run context 覆盖）；**P1b-2a 设置 IPC/preload + 策略卡片已实现**，**P1b-2b 弹窗/业务域接入未实现**；P2/P3 未实现。P1b-1 见 §13.2，P1b-2a 见 §13.3 与 `openspec/records/model-quota-p1b2.md`。官方兜底仍受 D-11 约束（官方算力代理 D-① 未落地，官方按钮禁用、卡片默认隐藏）。
+> **状态**：🚧 **P1a 已实现**（错误识别 + 精确提示 + 「前往模型设置」动作）；**P1b-1 后端决策层已实现**；**P1b-2a 设置 IPC/preload + 策略卡片已实现**；**P1b-2b 兜底弹窗 + App 根层 + composable 已实现**，**P1b-2c Coordinator 生产接线/业务域接入未实现**；P2/P3 未实现。P1b-1 见 §13.2，P1b-2a 见 §13.3，P1b-2b 见 §13.4 与 `openspec/records/model-quota-p1b2b.md`。官方兜底仍受 D-11 约束（官方算力代理 D-① 未落地，官方按钮禁用、卡片默认隐藏）。
 > **关联设计**：`01-docs/DESIGN-MODEL-QUOTA-FALLBACK-2026-10-26.md`
 > **上游依赖**：`01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（D-① 官方算力代理，**未落地**）、`01-docs/PRD-CREDIT-CONSUME-API-2026-10-25.md`（扣分端点，已实现）、`01-docs/PRD-OFFICIAL-COMPUTE-CHARGE-STATE-2026-10-25.md`（扣分状态机，已实现）
 > **日期**：2026-10-26
@@ -702,7 +702,8 @@ runContext.modelSourceOverrides = {
 | **P1a（本 PR）** | 统一错误分类器（`model-access-failure.js`）+ 产品级 `userErrorCode` + `httpStatus`/`providerCode` 分离 + 精确文案 + 「前往模型设置」动作 | 无（可先于官方算力） | ✅ 本 PR 实现 |
 | **P1b-1** | 纯函数决策器 + Coordinator + `modelSourceOverrides` + 检查点/埋点编排 | 无（可先于官方算力） | ✅ 本 PR 实现 |
 | **P1b-2a** | IPC/preload + `ModelQuotaPolicyCard` + 标签/locales；官方按钮按能力 gate 禁用 | P1b-1 | ✅ 本 PR 实现 |
-| **P1b-2b** | `ModelQuotaFallbackDialog` + `useModelQuotaFallback` + App 根层挂载 + Coordinator 生产接线 + 业务域接入 | P1b-2a | ❌ 下一 PR |
+| **P1b-2b** | `ModelQuotaFallbackDialog` + `useModelQuotaFallback` + App 根层挂载 | P1b-2a | ✅ 本 PR 实现 |
+| **P1b-2c** | Coordinator 生产实例化 + run 生命周期 + 业务域接入 + 模型设置「测试连接」分类展示 | P1b-2b | ❌ 下一 PR |
 | **P2** | 官方算力代理 D-① + 余额读通道 U-13 + 价格卡 U-12 + 官方调用客户端 + `byok=0` + 扣分 | D-① / U-12 / U-13 | ❌ 与官方算力同批 |
 | **P3** | 自动档 `official` 全量开放 + 任务积分上限 + 埋点看板 + LLM 官方供给（若 U-1 决定做） | P2 + U-1 | ❌ |
 
@@ -765,6 +766,22 @@ runContext.modelSourceOverrides = {
 **测试**：P1b-2a 定向 7 文件 460 例全绿（IPC 9 + 渲染桥 5 + preload/access/card/labels/ModelProviders 既有+新增）。
 
 **P1b-2a 明确不做**：`ModelQuotaFallbackDialog.vue`、`useModelQuotaFallback.js`、`App.vue` 根层挂载、Coordinator 生产实例化与 run 生命周期、业务域接入、模型设置「测试连接」分类展示。官方按钮在 P2 D-① 未落地前仍禁用。
+
+### 13.4 P1b-2b 兜底弹窗 + App 根层落地记录（2026-10-27）
+
+**范围**：只做「弹窗 UI + 状态机 composable + App 根层挂载」；不做 Coordinator 生产实例化、run 生命周期、业务域接入（P1b-2c）。
+
+| 层 | 实际实现 | 说明 |
+|---|---|---|
+| Composable | `src/composables/useModelQuotaFallback.js`（新增） | 订阅 `onModelQuotaRequired`；维护 `currentRequest`；`decide('official'|'settings'|'cancel')` 回传 `requestId/runId/capability/remember`；卸载取消订阅；decide 成功清空请求、失败保留并标记 |
+| Dialog | `src/components/model-quota/ModelQuotaFallbackDialog.vue`（新增） | 全局单例；provider/model/错误类型/预计积分/官方余额/单任务上限；官方不可用禁用按钮并显示原因；记住选择；设置/取消/官方三出口；ESC/遮罩/× 均走 cancel |
+| App 挂载 | `src/App.vue` | 根层 `<ModelQuotaFallbackDialog @settings="openModelSettingsFromQuota" />`；设置出口调用 `requestSettingsDialog('model')` |
+| 文案 | `locales/model-quota/{zh,en}.js` | 新增 `dialog.*` 成对文案；无中文硬编码 |
+| 协调器修复 | `model-quota-coordinator.js` | 修正 PRD §7.2：`remember + settings` 才写 `policy=byok`；`cancel` 不写 policy；补 2 例回归测试 |
+
+**测试**：`useModelQuotaFallback.test.js` 5 例；`ModelQuotaFallbackDialog.test.js` 5 例；`model-quota-coordinator.test.js` 9 例（新增 2 例 remember 语义）。P1b-2b 定向 19 例全绿。
+
+**P1b-2b 明确不做**：Coordinator 生产实例化、`checkpointPort` 的 run 生命周期、`modelQuotaSwitchBack` 的真实 run 上下文、Story2Video/图片轮播/数字人/Film Engineering 业务域接入、模型设置「测试连接」分类展示。这些属 P1b-2c。
 
 ---
 

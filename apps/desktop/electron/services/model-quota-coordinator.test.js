@@ -81,6 +81,26 @@ describe('ModelQuotaCoordinator', () => {
     await p
   })
 
+  it('cancel + remember 不写 policy（PRD：取消不写）', async () => {
+    const h = makeHarness()
+    const p = h.coordinator.decide({ ...baseArgs, runContext: new ProviderRunContext() })
+    await flush()
+    const payload = h.emitToRenderer.mock.calls[0][1]
+    h.coordinator.userDecision({ requestId: payload.requestId, runId: 'run-1', capability: 'image', decision: 'cancel', remember: true })
+    await p
+    expect(h.rows.modelQuotaFallbackPolicy).toBeUndefined()
+  })
+
+  it('settings + remember 写 policy=byok', async () => {
+    const h = makeHarness({ rows: { modelQuotaFallbackPolicy: 'ask' } })
+    const p = h.coordinator.decide({ ...baseArgs, runContext: new ProviderRunContext() })
+    await flush()
+    const payload = h.emitToRenderer.mock.calls[0][1]
+    h.coordinator.userDecision({ requestId: payload.requestId, runId: 'run-1', capability: 'image', decision: 'settings', remember: true })
+    await p
+    expect(h.rows.modelQuotaFallbackPolicy).toBe('byok')
+  })
+
   it('超时视为 cancel，并清理 pending', async () => {
     const h = makeHarness()
     const p = h.coordinator.decide({ ...baseArgs, runContext: new ProviderRunContext() })

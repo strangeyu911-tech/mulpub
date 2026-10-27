@@ -30,6 +30,7 @@ const messages = {
       creatorCollectNew: '一键采集新作品',
       creatorCollectOne: '采集',
       creatorCollectedAt: '已采集 · {time}',
+      creatorWorkflowPublished: '已由工作流发布',
       creatorCapOfficial: '官方接口',
       creatorCapBestEffort: '尽力而为（可能不稳定）',
       creatorCapUnsupported: '暂不支持',
@@ -304,6 +305,16 @@ describe('CreatorMonitor · 发现列表与单条采集', () => {
     await flushPromises(); await nextTick()
     expect(w.find('[data-testid="creator-collect-one"]').exists()).toBe(false)
     expect(w.find('[data-testid="creator-collected"]').exists()).toBe(true)
+  })
+
+  it('workflow_published 显示「已由工作流发布」且不显示采集按钮', async () => {
+    globalThis.electronAPI.creatorDiscoveries.mockResolvedValue({
+      code: 0, items: [disc({ collect_state: 'workflow_published' })],
+    })
+    const w = mountMonitor()
+    await flushPromises(); await nextTick()
+    expect(w.find('[data-testid="creator-workflow-published"]').text()).toBe('已由工作流发布')
+    expect(w.find('[data-testid="creator-collect-one"]').exists()).toBe(false)
   })
 
   it('quality=stub 使用「仅标题与简介」文案（区别于 full）', async () => {

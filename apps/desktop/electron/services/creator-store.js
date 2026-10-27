@@ -132,6 +132,8 @@ function createCreatorStore (db, opts = {}) {
     claimDiscovery: discoveries.claimDiscovery,
     markCollected: discoveries.markCollected,
     markFailed: discoveries.markFailed,
+    markWorkflowPublished: discoveries.markWorkflowPublished,
+    markWorkflowFailed: discoveries.markWorkflowFailed,
     renewLease: discoveries.renewLease,
     finalizeCollected: discoveries.finalizeCollected,
 

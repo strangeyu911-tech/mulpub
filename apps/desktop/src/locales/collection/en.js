@@ -95,6 +95,7 @@ export default {
     creatorCollectManual: 'Collect manually',
     creatorCollectOne: 'Collect',
     creatorCollectedAt: 'Collected · {time}',
+    creatorWorkflowPublished: 'Published by workflow',
     creatorSendToWriter: 'Send to AI Writer',
     creatorIgnore: 'Ignore',
     creatorCapOfficial: 'Official API',

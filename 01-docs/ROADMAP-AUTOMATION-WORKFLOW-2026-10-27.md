@@ -24,7 +24,7 @@
 | 11 | 预算与成本护栏 | 本 PR（估算） | guardrails.budget 预检 + workflow_budget_ledger；记录 estimated 占用，不冒充供应商账单 |
 | 12 | 发布后效果回流 | 待做 | 阅读/播放/互动数据与自动暂停/复核 |
 | 13 | 播客宿主下沉 | 待做 | 不要求先打开播客页 |
-| 14 | 博主发现项状态回写 | 待做 | `markCollected/finalizeCollected` |
+| 14 | 博主发现项状态回写 | 本 PR | 成功写 workflow_published、失败写 failed；不冒充 collected，不写资产/outbox；博主页显示 |
 
 ## P2 工程质量与体验
 

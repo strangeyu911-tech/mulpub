@@ -132,6 +132,24 @@ describe('workflow-source · 关注博主', () => {
     expect(out.items).toHaveLength(2)
     expect(out.items.map((i) => i.externalId)).toEqual(['v1', 'v2'])
     expect(out.items[0].needsCollect).toBe(true)
+    expect(out.items[0].meta.discoveryId).toBe('d1')
+  })
+
+  it('成功/失败回写调用 creatorStore，无 discoveryId 时跳过', async () => {
+    const calls = []
+    const d = deps({
+      creator: {
+        listNewDiscoveries: async () => [{ id: 'd1', platform: 'youtube', externalId: 'v1', title: '视频1', url: 'https://y/1' }],
+        markWorkflowPublished: async (id, runId) => { calls.push(['published', id, runId]); return { ok: true } },
+        markWorkflowFailed: async (id, message) => { calls.push(['failed', id, message]); return { ok: true } },
+      },
+    })
+    const sources = createWorkflowSources(d)
+    const out = await sources.collect({ source: { type: 'creatorMonitor', followIds: ['f1'], perCreatorLimit: 5 } })
+    await sources.markCreatorPublished(out.items[0], 'run-1')
+    await sources.markCreatorFailed(out.items[0], 'boom')
+    expect(calls).toEqual([['published', 'd1', 'run-1'], ['failed', 'd1', 'boom']])
+    expect(await sources.markCreatorPublished({ meta: {} }, 'run-1')).toMatchObject({ skipped: true })
   })
 })
 

@@ -95,6 +95,7 @@ export default {
     creatorCollectManual: '手动批量采集',
     creatorCollectOne: '采集',
     creatorCollectedAt: '已采集 · {time}',
+    creatorWorkflowPublished: '已由工作流发布',
     creatorSendToWriter: '送入 AI 写作',
     creatorIgnore: '忽略',
     creatorCapOfficial: '官方接口',

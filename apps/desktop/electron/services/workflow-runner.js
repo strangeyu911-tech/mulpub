@@ -12,6 +12,7 @@ const { buildArticle, itemKeyOf } = require('./workflow-article')
 const { adaptArticle } = require('./workflow-adaptation')
 const { newRunId, iso, newSummary, withRetry } = require('./workflow-run-utils')
 const { prepareBudgetForRun, finishBudgetForRun } = require('./workflow-budget-runner')
+const { writebackCreatorStatus } = require('./workflow-creator-status')
 const { snapshotRun } = require('./workflow-run-snapshot')
 const { resumePersistedRun } = require('./workflow-resume')
 const RUNS_KEY = 'workflow_runs'
@@ -192,7 +193,7 @@ function createWorkflowRunner (deps = {}) {
       scheduleRules: config.scheduleRules,
     })
 
-    // 设计约束：去重先于创作；单条失败不拖垮整批；账本不可读 fail-closed；审核开关；额度截断可解释。
+    // 去重先于创作；单条失败不拖垮整批；账本不可读 fail-closed；审核开关；额度截断可解释。
     run._sources = selected.map((src) => ({ ...src }))
     persist(run)
 
@@ -213,6 +214,7 @@ function createWorkflowRunner (deps = {}) {
           aborted = true
         }
       }
+      await writebackCreatorStatus({ sources: deps.sources, src, record, runId: run.id, warn: (message) => run.warnings.push({ sourceType: 'creatorMonitor', message }) })
       run._sources[i] = null
       persist(run)
     }

@@ -131,6 +131,16 @@ describe('creator-store · fencing（迟到提交必须被拒）', () => {
     const sql = db.log.find(s => /lease_expires_at/.test(s) && /UPDATE/.test(s))
     expect(sql).toMatch(/AND\s+claim_token\s*=/)
   })
+
+  it('工作流回写用独立 workflow_published 状态，不冒充 collected', () => {
+    const db = makeDb({ run: () => ({ changes: 1 }) })
+    const store = createCreatorStore(db, { now: () => NOW })
+    expect(store.markWorkflowPublished('d1', 'run-1')).toMatchObject({ ok: true })
+    const sql = db.log.find(s => /workflow_published/.test(s))
+    expect(sql).toMatch(/collect_state\s+IN\s*\('pending',\s*'failed'\)/)
+    expect(sql).not.toMatch(/claimed_by\s*=/)
+    expect(store.markWorkflowFailed('d1', 'boom')).toMatchObject({ ok: true })
+  })
 })
 
 describe('creator-store · 释放与冷却', () => {

@@ -68,7 +68,7 @@ function normalizeCreatorItem (item) {
     publishedAt: item.publishedAt || item.published_at || item.discovered_at || '',
     needsCollect: !content && !!url,
     needsGeneration: false,
-    meta: { creatorId: item.creatorId || item.creator_id || '', followId: item.followId || item.follow_id || '' },
+    meta: { creatorId: item.creatorId || item.creator_id || '', followId: item.followId || item.follow_id || '', discoveryId: item.id || item.discoveryId || '' },
   }
 }
 
@@ -254,6 +254,18 @@ function createWorkflowSources (deps = {}) {
       if (source.type === 'zhihuFavlist') return collectZhihu(source)
       if (source.type === 'douyinViral') return collectDouyinViral(source)
       return { items: [], warnings: [{ sourceType: String(source.type || ''), message: '未知来源类型' }] }
+    },
+    async markCreatorPublished (item, runId) {
+      const id = item && item.meta && item.meta.discoveryId
+      if (!id) return { ok: true, skipped: true }
+      if (!deps.creator || typeof deps.creator.markWorkflowPublished !== 'function') return { ok: false, reason: 'unsupported' }
+      return deps.creator.markWorkflowPublished(id, runId)
+    },
+    async markCreatorFailed (item, message) {
+      const id = item && item.meta && item.meta.discoveryId
+      if (!id) return { ok: true, skipped: true }
+      if (!deps.creator || typeof deps.creator.markWorkflowFailed !== 'function') return { ok: false, reason: 'unsupported' }
+      return deps.creator.markWorkflowFailed(id, message)
     },
   }
 }

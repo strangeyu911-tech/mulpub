@@ -456,6 +456,9 @@ async function loadPlatforms () {
             >
               {{ $t('collection.creatorCollectOne') }}
             </button>
+            <span v-else-if="d.collect_state === 'workflow_published'" class="creator-collected" data-testid="creator-workflow-published">
+              {{ $t('collection.creatorWorkflowPublished') }}
+            </span>
             <span v-else class="creator-collected" data-testid="creator-collected">
               {{ $t('collection.creatorCollectedAt', { time: d.collected_at || '' }) }}
             </span>

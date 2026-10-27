@@ -403,6 +403,14 @@
 - 诚实边界：**记录的是按配置预估的预算占用，不是供应商账单**；没有真实 usage 时不写成「实际花费」。不做动态定价/运行中逐条熔断（本期）。台账写失败不回滚已发内容，但写 run.warnings。
 - UI 护栏区：开关、币种、总预算、每项预估；提示「按每项预估累计占用；不是供应商账单」。
 
+### 7.19 博主发现状态回写
+
+- 工作流从博主监控取 pending 发现项后，条目 `meta.discoveryId` 保留。
+- 成功（published/scheduled/awaiting_review）→ `creator_discoveries.collect_state='workflow_published'`；失败 → `failed` 并保留 last_error；只允许从 `pending|failed` 条件更新。
+- **不冒充 collected**：不写 viral_library、不写 collection_outbox、不扣 collection_quota_ledger；工作流只回写发现状态。
+- 回写失败只进 run.warnings，不影响已排期/已发布结果；无 discoveryId 的旧数据 skipped。
+- 博主页显示「已由工作流发布」，且不显示采集按钮；collected 仍显示「已采集 · 时间」。
+
 ### 7.7 护栏
 
 - 单次上限：采集后截断，`summary.truncated=true`、`truncateReason=maxItemsPerRun`。

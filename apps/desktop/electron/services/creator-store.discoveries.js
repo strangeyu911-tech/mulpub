@@ -260,6 +260,21 @@ function createDiscoveryStore (db, ctx) {
     claimDiscovery,
     markCollected: (id, token) => finalizeCollected(id, token, null),
     markFailed,
+    // 工作流不采集 viral_library，只回写发现状态；用独立状态避免冒充 collected。
+    markWorkflowPublished: (id, runId) => {
+      const r = run(`UPDATE creator_discoveries
+          SET collect_state = 'workflow_published', last_error = '', updated_at = ?
+        WHERE id = ? AND collect_state IN ('pending', 'failed')`,
+      [now(), id])
+      return { ok: changesOf(r) > 0, reason: changesOf(r) > 0 ? '' : 'invalid_state_or_missing' }
+    },
+    markWorkflowFailed: (id, message) => {
+      const r = run(`UPDATE creator_discoveries
+          SET collect_state = 'failed', last_error = ?, updated_at = ?
+        WHERE id = ? AND collect_state IN ('pending', 'failed')`,
+      [String(message || '').slice(0, 500), now(), id])
+      return { ok: changesOf(r) > 0, reason: changesOf(r) > 0 ? '' : 'invalid_state_or_missing' }
+    },
     renewLease,
     usedUnits,
     canSpend,

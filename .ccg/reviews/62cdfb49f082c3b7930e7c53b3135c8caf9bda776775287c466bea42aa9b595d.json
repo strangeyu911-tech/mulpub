@@ -1,0 +1,117 @@
+{
+  "sha": "96073611019f06addd788bf655ca52ea4d5ddd96",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 99 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 99,
+    "fileCount": 19,
+    "codeFileCount": 11,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 1,
+    "docSensitiveContentSample": [
+      "UPDATE ... SET collect_state='failed', last_error=?, updated_at=?"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "62cdfb49f082c3b7930e7c53b3135c8caf9bda776775287c466bea42aa9b595d",
+  "decidedAt": "2026-10-27T18:22:24.417Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "creator-store.markWorkflowPublished sets claimed_by='workflow:'+runId，覆盖租约/围栏令牌；与“不改变 claim/lease”矛盾，伪造采集链状态。",
+        "highRiskDomains": [],
+        "prosecution": "markWorkflowPublished 写 claimed_by 覆盖租约。",
+        "defense": "已移除 claimed_by 写入；新增 SQL 断言；只回写状态。",
+        "verdict": "dismissed",
+        "rationale": "不再伪造采集链字段。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "workflow-creator-status.js 直接访问 record.status，若 record 为 null/undefined 会抛 TypeError 导致 runner 崩溃。",
+        "highRiskDomains": [],
+        "prosecution": "record null 会 TypeError。",
+        "defense": "helper 首行同时校验 src/record；null 直接 return。",
+        "verdict": "dismissed",
+        "rationale": "runner 不再因回写崩溃。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "runId || '' 对数字 0 为假，会生成 claimed_by='workflow:' 丢失运行标识。",
+        "highRiskDomains": [],
+        "prosecution": "runId 0 会丢标识。",
+        "defense": "成功回写不再拼 workflow: 前缀，runId 不参与状态写入。",
+        "verdict": "dismissed",
+        "rationale": "workflow_published 本身足够表达终态。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "workflow-runner.js 删除了“去重先于创作”等设计约束注释，削弱架构防护。",
+        "highRiskDomains": [],
+        "prosecution": "删除了设计约束注释。",
+        "defense": "恢复注释并压缩空行保持 <500。",
+        "verdict": "dismissed",
+        "rationale": "架构约束仍在源码可见。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "评审 JSON 统计 changedLines=99，与提案头部 552 行不符，说明评审文件可能指向错误提交。",
+        "highRiskDomains": [],
+        "prosecution": "评审统计行数与提案不符。",
+        "defense": "公开评论证据；最终 artifact 在合并前重生成。",
+        "verdict": "dismissed",
+        "rationale": "以 head/证据为准。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T18:26:51.813Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4575#issuecomment-6450279667",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@1b2fde32aa7817d3d27692639fce0c98d64d82cf059ead907c988cef44d60a61"
+  }
+}

@@ -90,3 +90,17 @@ describe('workflow-service · 预览', () => {
     expect(r.errors[0].field).toBe('cadence.minMinutes')
   })
 })
+
+describe('workflow-service · 发布队列门面', () => {
+  it('list/summary/retry 透传给队列', () => {
+    const queue = {
+      list: () => [{ id: 'wq_1', status: 'failed' }],
+      summary: () => ({ total: 1, pending: 0, dispatching: 0, dispatched: 0, failed: 1, missed: 0, cancelled: 0 }),
+      retry: (id) => ({ ok: id === 'wq_1' }),
+    }
+    const svc = createWorkflowService({ store: fakeStore(), runner: {}, queue, now: () => NOW })
+    expect(svc.listQueue()).toEqual([{ id: 'wq_1', status: 'failed' }])
+    expect(svc.queueSummary().failed).toBe(1)
+    expect(svc.retryQueueItem('wq_1')).toEqual({ ok: true })
+  })
+})

@@ -34,6 +34,8 @@ vi.mock('@/api/automation', () => ({
   automationUpdate: () => Promise.resolve({ code: 0, ok: true }),
   automationRemove: () => Promise.resolve({ code: 0, ok: true }),
   automationRunNow: () => Promise.resolve({ code: 0, ok: true }),
+  listWorkflowQueue: () => Promise.resolve({ code: 0, data: { entries: [], summary: { failed: 0, missed: 0 } } }),
+  retryWorkflowQueueItem: () => Promise.resolve({ code: 0, ok: true }),
   onAutomationNotification: (cb) => {
     mockState.registerOrder.push('register')
     mockState.notifier = cb

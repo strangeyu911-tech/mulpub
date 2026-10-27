@@ -28,6 +28,8 @@ function createAutomationApi(ipcRenderer) {
     automationGetRun: (runId) => ipcRenderer.invoke('automation:runs:get', runId),
     automationApproveRun: (runId) => ipcRenderer.invoke('automation:runs:approve', runId),
     automationCancelRun: (runId) => ipcRenderer.invoke('automation:runs:cancel', runId),
+    automationListQueue: () => ipcRenderer.invoke('automation:queue:list'),
+    automationRetryQueueItem: (id) => ipcRenderer.invoke('automation:queue:retry', id),
     // 后台任务通知（失败 / 从失败恢复）：渲染层转 toast，不打断当前操作
     onAutomationNotification: (cb) => {
       const h = (_, payload) => cb(payload)

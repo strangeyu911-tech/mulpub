@@ -21,6 +21,11 @@
         {{ t('automation.resourceNotice') }}
       </div>
 
+      <div v-if="queueProblemCount" class="automation-alert automation-alert--warn" data-testid="automation-queue-banner">
+        <span>{{ t('automation.wfQueueBanner', { failed: queueSummary.failed || 0, missed: queueSummary.missed || 0 }) }}</span>
+        <button class="cohere-btn-text" @click="showRuns = true">{{ t('automation.wfQueueOpen') }}</button>
+      </div>
+
       <!-- 真源不可读提示：「读不到」与「没有任务」是两件事 -->
       <div v-if="status !== 'ok'" class="automation-alert" data-testid="automation-status">
         {{ status === 'unreadable' ? t('automation.unreadable') : t('automation.saveFailed') }}
@@ -104,11 +109,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   automationList, automationUpdate, automationRemove, automationRunNow,
-  onAutomationNotification, listWorkflowRuns,
+  onAutomationNotification, listWorkflowRuns, listWorkflowQueue,
 } from '@/api/automation'
 import { useNotify } from '@/composables/useNotify'
 import AutomationTaskDialog from '@/features/automation/AutomationTaskDialog.vue'
@@ -123,6 +128,13 @@ const showDialog = ref(false)
 const editingTask = ref(null)
 const showRuns = ref(false)
 const runs = ref([])
+const queueSummary = ref({ failed: 0, missed: 0 })
+const queueProblemCount = computed(() => (queueSummary.value.failed || 0) + (queueSummary.value.missed || 0))
+
+async function loadQueueSummary () {
+  const res = await listWorkflowQueue()
+  if (res && res.code === 0 && res.data && res.data.summary) queueSummary.value = res.data.summary
+}
 
 let stopNotifier = null
 
@@ -203,6 +215,7 @@ onMounted(async () => {
     load()
   })
   await load()
+  await loadQueueSummary()
 })
 
 onUnmounted(() => {
@@ -222,6 +235,7 @@ onUnmounted(() => {
   padding: 10px 14px; margin-bottom: 12px; border-radius: 8px;
   background: #fef0f0; color: #d9534f; font-size: var(--font-size-xs, 12px);
 }
+.automation-alert--warn { display: flex; justify-content: space-between; gap: 8px; align-items: center; background: #fff8e6; color: #8a6100; }
 .automation-empty {
   padding: 48px 16px; text-align: center; color: var(--color-text-secondary, #85858f);
   font-size: var(--font-size-sm, 13px);

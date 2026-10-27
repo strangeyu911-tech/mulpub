@@ -49,6 +49,7 @@ function extractVideoPath (runStatus) {
  *   taskQueue: object,
  *   urlCollector?: object,
  *   podcastHostProvider?: () => object|null,
+ *   accountProvider?: () => Promise<Array<{id:string,platform:string,status?:string}>>,
  *   now?: () => number,
  *   random?: () => number,
  * }} deps
@@ -211,11 +212,33 @@ function createWorkflowRuntime (deps = {}) {
     }
   }
 
+  let runnerRef = null
+  const pendingQueueEvents = []
+  function queueReplayFailure (entry, detail) {
+    entry._replayAttempts = (entry._replayAttempts || 0) + 1
+    if (entry._replayAttempts <= 3) {
+      pendingQueueEvents.push(entry)
+    } else {
+      log.error && log.error('WorkflowRuntime', '队列事件回放连续失败，丢弃 run=' + entry.runId + ' item=' + entry.itemKey + ': ' + detail)
+    }
+  }
   const queue = createWorkflowPublishQueue({
     store,
     log,
     now,
     minDispatchDelayMs: 60 * 1000,
+    onEvent: (entry) => {
+      if (!runnerRef || typeof runnerRef.applyQueueEvent !== 'function') {
+        pendingQueueEvents.push(entry)
+        return
+      }
+      try {
+        const result = runnerRef.applyQueueEvent(entry)
+        if (result && result.ok === false) queueReplayFailure(entry, result.error || 'unknown')
+      } catch (e) {
+        queueReplayFailure(entry, e && e.message ? e.message : String(e))
+      }
+    },
     enqueue: async (entry) => {
       const article = { ...entry.article, accountId: entry.accountId }
       deps.taskQueue.add({
@@ -235,11 +258,12 @@ function createWorkflowRuntime (deps = {}) {
     collectArticle,
     createVideo,
     createPodcast,
+    accountProvider: deps.accountProvider,
     schedulePublish: async (payload) => {
       const r = queue.add({
         runId: payload.runId,
         workflowId: payload.workflowId,
-        itemKey: payload.item && (payload.item.externalId || payload.item.url || payload.item.title),
+        itemKey: payload.itemKey || (payload.item && (payload.item.externalId || payload.item.url || payload.item.title)),
         title: payload.item && payload.item.title,
         platform: payload.target.platform,
         accountId: payload.target.accountId,
@@ -254,6 +278,20 @@ function createWorkflowRuntime (deps = {}) {
     now,
     random,
   })
+  runnerRef = runner
+
+  // 构造队列时 runner 尚未装配：先把事件排队，装配后统一回放，避免丢掉
+  // recoverStaleDispatching 产生的 dispatch-uncertain。这里不再扫 queue.list()，
+  // 否则同一条停滞条目会先经 onEvent 入队、再被扫一遍，造成重复回写。
+  const replay = pendingQueueEvents.splice(0)
+  for (const entry of replay) {
+    try {
+      runner.applyQueueEvent(entry)
+    } catch (e) {
+      // 回放失败不能把事件无限留在内存：最多重试 3 次，之后明确 error 日志。
+      queueReplayFailure(entry, e && e.message ? e.message : String(e))
+    }
+  }
 
   return { ledger, sources, queue, runner }
 }

@@ -31,6 +31,10 @@ function registerWorkflowServices(container) {
         const host = require('../services/podcast-episode-host');
         return typeof host.getSharedEpisodeHost === 'function' ? host.getSharedEpisodeHost() : null;
       },
+      accountProvider: async () => {
+        const accountManager = require('../publishers/account-manager');
+        return typeof accountManager.listAccounts === 'function' ? accountManager.listAccounts() : [];
+      },
     });
   });
   container.register('workflowRunner', function(c) { return c.get('workflowRuntime').runner });

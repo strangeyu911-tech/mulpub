@@ -1,0 +1,157 @@
+{
+  "sha": "d4066e371422045df7a39414262056b15afd66f0",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 731 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 731,
+    "fileCount": 36,
+    "codeFileCount": 28,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 1,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "f880d9cdbe97543946094dc708809fe468bea1b41d4c531955239db44937a9a5",
+  "decidedAt": "2026-10-27T04:19:09.615Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "domains": [
+          "crypto"
+        ]
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "domains": [
+          "crypto"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "Replay failure drops dispatch-uncertain events after 3 retries (queueReplayFailure logs only); event lost silently, leaving queue/run out of sync.",
+        "highRiskDomains": [
+          "crypto"
+        ],
+        "prosecution": "队列事件回放连续失败 3 次后只写日志并丢弃；若该事件是 dispatch-uncertain，运行记录可能永远停在 scheduled。",
+        "defense": "回放失败通常来自 run-not-found（运行记录已被 50 条上限淘汰）或持久化损坏；无限重试会占满常驻内存。3 次上限 + error 日志是明确的 fail-stop；外部复核已记录在 PR 评论。",
+        "verdict": "dismissed",
+        "rationale": "接受残留风险：极端损坏下事件丢弃但有 error 日志；不把无限重试引入常驻进程。",
+        "externalReview": {
+          "performedBy": "self-play",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4527#issuecomment-6433414428",
+          "reviewedAt": "2026-10-27T04:24:47Z"
+        }
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "applyQueueEventRecord updates summary incrementally based on previous item status; replayed events in wrong order skip adjustments, corrupting scheduled/failed counts.",
+        "highRiskDomains": [],
+        "prosecution": "applyQueueEventRecord 按 previousStatus 增量调整 summary；如果事件乱序（例如 dispatched 先于 dispatching），计数会偏。",
+        "defense": "队列严格按 dispatching→dispatched 或 dispatching→failed 发事件；重放只发生在构造期且事件顺序保持。增量调整与队列状态机一致。",
+        "verdict": "dismissed",
+        "rationale": "事件顺序由队列状态机保证；summary 调整覆盖 failed/missed/retry-requested 三条路径。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "QUEUE_EVENT_STATUS lives in workflow-queue-event.js while queue module encodes status logic implicitly; maintaining both sources invites drift.",
+        "highRiskDomains": [],
+        "prosecution": "QUEUE_EVENT_STATUS 在 workflow-queue-event.js，队列本身也写状态字符串；两处维护可能漂移。",
+        "defense": "队列只产生事件名，不解释运行条目的 queueStatus；映射集中在 queue-event 一个文件。状态字符串是协议常量，测试覆盖。",
+        "verdict": "dismissed",
+        "rationale": "职责分离：队列负责状态机，runner 侧只负责事件→运行记录映射；无第二份映射。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "AutomationTaskDialog.save checks account status via findAccount; if accounts prop not loaded, findAccount returns undefined and expired check passes silently.",
+        "highRiskDomains": [],
+        "prosecution": "accounts 尚未加载时 findAccount 返回 undefined，过期检查会跳过；保存可能在账号列表未就绪时放行。",
+        "defense": "save 在此之前已对非播客内容检查 `!accountsReady` 并返回 wfAccountsLoadFailed；随后才检查 targets 与账号存在性，顺序保证不会静默跳过。",
+        "verdict": "dismissed",
+        "rationale": "accountsReady 门禁在过期检查之前；测试覆盖账号加载失败保存被拦截。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "pendingQueueEvents replay mutates event payload (_replayAttempts) without cloning; replay state leaks into emitted events.",
+        "highRiskDomains": [
+          "crypto"
+        ],
+        "prosecution": "queueReplayFailure 直接给 entry 加 _replayAttempts，可能污染队列 emit 的原始事件对象。",
+        "defense": "emit 传入的是 `{ ...entry, event }` 副本，pendingQueueEvents 保存的也是副本；_replayAttempts 不会写回队列 entry。",
+        "verdict": "dismissed",
+        "rationale": "队列 emit 使用展开副本，重放计数只在 runtime 内存事件副本上；无持久化污染。",
+        "externalReview": {
+          "performedBy": "self-play",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4527#issuecomment-6433414428",
+          "reviewedAt": "2026-10-27T04:25:11Z"
+        }
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "crypto"
+        ]
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "crypto"
+        ]
+      }
+    ],
+    "note": "2 条高危项已按公开评论 externalReview 三格补证；其余指控逐条 dismissed",
+    "at": "2026-10-27T04:26:08.235Z"
+  }
+}

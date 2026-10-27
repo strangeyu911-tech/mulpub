@@ -18,6 +18,8 @@ const DEFAULT_KEY = 'workflow_publish_queue'
 const DEFAULT_MAX_ATTEMPTS = 3
 const DEFAULT_GRACE_MS = 24 * 60 * 60 * 1000
 const DEFAULT_TICK_MS = 30 * 1000
+const DEFAULT_DISPATCH_LEASE_MS = 10 * 60 * 1000
+const MAX_MANUAL_RETRIES = 10
 const MAX_ENTRIES = 500
 
 function newId () {
@@ -36,7 +38,7 @@ function parse (raw) {
 }
 
 /**
- * @param {{ store: object, key?: string, now?: () => number, enqueue: Function, log?: object, tickMs?: number, maxAttempts?: number, graceMs?: number, minDispatchDelayMs?: number }} deps
+ * @param {{ store: object, key?: string, now?: () => number, enqueue: Function, log?: object, tickMs?: number, maxAttempts?: number, graceMs?: number, minDispatchDelayMs?: number, dispatchLeaseMs?: number, onEvent?: Function }} deps
  */
 function createWorkflowPublishQueue (deps = {}) {
   const store = deps.store
@@ -52,6 +54,7 @@ function createWorkflowPublishQueue (deps = {}) {
   // 新入队项的静默期：多目标排期是逐条写入的，给「第 N 条失败 → 回滚前 N-1 条」
   // 留出窗口；测试默认 0，生产在 runtime 里显式设 60s。
   const minDispatchDelayMs = Number.isFinite(deps.minDispatchDelayMs) ? deps.minDispatchDelayMs : 0
+  const dispatchLeaseMs = Number.isFinite(deps.dispatchLeaseMs) ? deps.dispatchLeaseMs : DEFAULT_DISPATCH_LEASE_MS
   const log = deps.log || { warn () {}, error () {} }
 
   const loaded = parse(store.getSetting(key))
@@ -60,11 +63,38 @@ function createWorkflowPublishQueue (deps = {}) {
   let timer = null
   let ticking = false
 
+  function emit (entry, event) {
+    if (typeof deps.onEvent !== 'function') return
+    try {
+      deps.onEvent({ ...entry, event })
+    } catch (e) {
+      log.warn && log.warn('WorkflowQueue', '状态回写失败 run=' + entry.runId + ': ' + (e && e.message ? e.message : String(e)))
+    }
+  }
+
+  function recoverStaleDispatching () {
+    const at = now()
+    let changed = false
+    for (const e of entries) {
+      if (e.status !== 'dispatching') continue
+      const startedAt = Date.parse(e.dispatchStartedAt)
+      if (Number.isFinite(startedAt) && at - startedAt <= dispatchLeaseMs) continue
+      e.status = 'failed'
+      e.error = 'dispatch-uncertain'
+      e.needsReview = true
+      changed = true
+      emit(e, 'dispatch-uncertain')
+    }
+    if (changed) persist()
+  }
+
   function persist () {
     const trimmed = entries.slice(-MAX_ENTRIES)
     entries = trimmed
     store.setSetting(key, JSON.stringify(entries))
   }
+
+  recoverStaleDispatching()
 
   async function tickInternal () {
     if (unreadable) return { dispatched: 0, failed: 0, missed: 0, error: 'queue-unreadable' }
@@ -88,6 +118,8 @@ function createWorkflowPublishQueue (deps = {}) {
           e.error = 'invalid-publish-at'
           failed += 1
           changed = true
+          persist()
+          emit(e, 'failed')
           continue
         }
         if (due + graceMs < at) {
@@ -95,27 +127,46 @@ function createWorkflowPublishQueue (deps = {}) {
           e.error = '超过 24 小时未派发'
           missed += 1
           changed = true
+          persist()
+          emit(e, 'missed')
           continue
         }
         if (due > at) continue
+        const late = at - due > 60 * 1000
+        // 先落 dispatching 再交给 TaskQueue：进程若在 enqueue 后、标记 dispatched 前崩溃，
+        // 重启后这条记录会停在 dispatching，由 recoverStaleDispatching 标成
+        // dispatch-uncertain（不自动重发），宁可人工确认也不重复发布。
+        e.status = 'dispatching'
+        e.dispatchStartedAt = new Date(at).toISOString()
+        e.dispatchToken = newId()
+        changed = true
+        persist()
+        emit(e, 'dispatching')
         try {
-          const late = at - due > 60 * 1000
           await deps.enqueue({ ...e, late })
           e.status = 'dispatched'
           e.dispatchedAt = new Date(at).toISOString()
           e.attempts = (e.attempts || 0) + 1
           e.late = late
           e.error = ''
+          e.needsReview = false
           dispatched += 1
           changed = true
+          persist()
+          emit(e, 'dispatched')
         } catch (err) {
           e.attempts = (e.attempts || 0) + 1
           e.error = err && err.message ? err.message : String(err)
           if (e.attempts >= maxAttempts) {
             e.status = 'failed'
+            e.needsReview = true
             failed += 1
+          } else {
+            e.status = 'pending'
           }
           changed = true
+          persist()
+          emit(e, e.status === 'failed' ? 'failed' : 'retry')
           log.warn && log.warn('WorkflowQueue', '派发失败 run=' + e.runId + ' attempts=' + e.attempts + ': ' + e.error)
         }
       }
@@ -161,6 +212,34 @@ function createWorkflowPublishQueue (deps = {}) {
     list () {
       return entries.map((e) => ({ ...e }))
     },
+    summary () {
+      const out = { total: entries.length, pending: 0, dispatching: 0, dispatched: 0, failed: 0, missed: 0, cancelled: 0 }
+      for (const e of entries) {
+        if (Object.prototype.hasOwnProperty.call(out, e.status)) out[e.status] += 1
+      }
+      return out
+    },
+    /** 人工重试：只允许失败/错过/派发不确定的条目，重试后回到 pending 等下一 tick */
+    retry (id) {
+      const entry = entries.find((e) => e.id === String(id))
+      if (!entry) return { ok: false, reason: 'not-found' }
+      if (!['failed', 'missed', 'dispatch-uncertain'].includes(entry.status)) {
+        return { ok: false, reason: 'not-retryable' }
+      }
+      if ((entry.retryCount || 0) >= MAX_MANUAL_RETRIES) {
+        return { ok: false, reason: 'retry-limit' }
+      }
+      entry.status = 'pending'
+      entry.error = ''
+      entry.needsReview = false
+      entry.dispatchStartedAt = ''
+      entry.attempts = 0
+      entry.retryCount = (entry.retryCount || 0) + 1
+      entry.lastRetriedAt = new Date(now()).toISOString()
+      persist()
+      emit(entry, 'retry-requested')
+      return { ok: true }
+    },
     size () { return entries.length },
     tick () { return tickInternal() },
     cancelRun (runId) {
@@ -198,4 +277,4 @@ function createWorkflowPublishQueue (deps = {}) {
   }
 }
 
-module.exports = { createWorkflowPublishQueue, DEFAULT_KEY, DEFAULT_MAX_ATTEMPTS, DEFAULT_GRACE_MS, DEFAULT_TICK_MS }
+module.exports = { createWorkflowPublishQueue, DEFAULT_KEY, DEFAULT_MAX_ATTEMPTS, DEFAULT_GRACE_MS, DEFAULT_TICK_MS, DEFAULT_DISPATCH_LEASE_MS, MAX_MANUAL_RETRIES }

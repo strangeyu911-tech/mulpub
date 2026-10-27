@@ -142,6 +142,7 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "shared/**/*",
       "electron/services/.cover-rasterize-worker.js",
       "resources/**/*",
       "node_modules/**/*",

@@ -6,6 +6,23 @@
         <button class="cohere-btn-text" @click="close">{{ t('automation.cancel') }}</button>
       </div>
 
+      <div class="wfr-queue-panel" data-testid="workflow-queue">
+        <div class="wfr-queue-title">{{ t('automation.wfQueueTitle') }}</div>
+        <div class="wfr-queue-summary">
+          {{ t('automation.wfQueueSummary', {
+            pending: queueSummary.pending || 0,
+            dispatching: queueSummary.dispatching || 0,
+            failed: queueSummary.failed || 0,
+            missed: queueSummary.missed || 0,
+          }) }}
+        </div>
+        <div v-for="entry in queueProblems" :key="entry.id" class="wfr-queue-item">
+          <span class="wfr-queue-item__title">{{ entry.title || entry.itemKey || entry.id }}</span>
+          <span class="wfr-queue-item__error" :title="entry.error">{{ entry.error }}</span>
+          <button class="cohere-btn-text" @click="retryQueue(entry.id)">{{ t('automation.wfQueueRetry') }}</button>
+        </div>
+      </div>
+
       <div v-if="!runs.length" class="wfr-empty">{{ t('automation.wfRunsEmpty') }}</div>
 
       <div v-else class="wfr-list">
@@ -42,6 +59,9 @@
             <div v-for="item in detail.items" :key="item.index" class="wfr-item">
               <span :class="'wfr-item__status wfr-item__status--' + item.status">{{ itemStatus(item.status) }}</span>
               <span class="wfr-item__title">{{ item.title || item.url || item.externalId }}</span>
+              <span v-if="item.queueStatus" class="wfr-queue" :class="'wfr-queue--' + item.queueStatus">
+                {{ queueStatus(item.queueStatus) }}
+              </span>
               <span class="wfr-item__time">{{ item.publishAt ? formatTime(item.publishAt) : '' }}</span>
               <span v-if="item.error" class="wfr-item__err" :title="item.error">{{ item.error }}</span>
             </div>
@@ -56,9 +76,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getWorkflowRun, approveWorkflowRun, cancelWorkflowRun } from '@/api/automation'
+import { getWorkflowRun, approveWorkflowRun, cancelWorkflowRun, listWorkflowQueue, retryWorkflowQueueItem } from '@/api/automation'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -68,6 +88,24 @@ const emit = defineEmits(['update:modelValue', 'refresh'])
 const { t } = useI18n()
 const expanded = ref('')
 const detail = ref(null)
+const queue = ref([])
+const queueSummary = ref({ pending: 0, dispatching: 0, failed: 0, missed: 0 })
+const queueProblems = computed(() => queue.value.filter((e) => ['failed', 'missed', 'dispatch-uncertain'].includes(e.status)))
+
+async function loadQueue () {
+  const res = await listWorkflowQueue()
+  if (res && res.code === 0 && res.data) {
+    queue.value = Array.isArray(res.data.entries) ? res.data.entries : []
+    queueSummary.value = res.data.summary || {}
+  }
+}
+async function retryQueue (id) {
+  await retryWorkflowQueueItem(id)
+  await loadQueue()
+  emit('refresh')
+}
+watch(() => props.modelValue, (open) => { if (open) loadQueue() })
+onMounted(() => { if (props.modelValue) loadQueue() })
 
 function close () { emit('update:modelValue', false) }
 function onKeydown (e) { if (e.key === 'Escape' && props.modelValue) close() }
@@ -90,6 +128,17 @@ async function cancel (runId) {
 
 function statusLabel (s) { return t('automation.wfRunStatus.' + s) }
 function itemStatus (s) { return t('automation.wfItemStatus.' + s) }
+function queueStatus (s) {
+  const key = {
+    pending: 'wfQueuePending',
+    dispatching: 'wfQueueDispatching',
+    dispatched: 'wfQueueDispatched',
+    failed: 'wfQueueFailed',
+    missed: 'wfQueueMissed',
+    'dispatch-uncertain': 'wfQueueUncertain',
+  }[s]
+  return key ? t('automation.' + key) : s
+}
 function formatTime (value) {
   if (!value) return ''
   const d = new Date(value)
@@ -111,6 +160,14 @@ function formatTime (value) {
 .wfr-run__meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .wfr-sub { color: #85858f; font-size: var(--font-size-xs, 12px); }
 .wfr-status { font-size: var(--font-size-xs, 12px); padding: 1px 8px; border-radius: 10px; background: #f2f3f5; }
+.wfr-queue-panel { margin-bottom: 12px; padding: 10px 12px; border: 1px solid #e6e8ee; border-radius: 8px; }
+.wfr-queue-title { font-weight: 500; margin-bottom: 4px; }
+.wfr-queue-summary { color: #85858f; font-size: var(--font-size-xs, 12px); }
+.wfr-queue-item { display: flex; gap: 8px; align-items: center; margin-top: 6px; font-size: var(--font-size-xs, 12px); }
+.wfr-queue-item__title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wfr-queue-item__error { color: #c0392b; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wfr-queue { padding: 0 6px; border-radius: 8px; background: #eef4ff; color: #2f6fd0; font-size: var(--font-size-xs, 12px); }
+.wfr-queue--failed, .wfr-queue--missed, .wfr-queue--dispatch-uncertain { background: #fdecec; color: #c0392b; }
 .wfr-status--completed { background: #e8f7ee; color: #2e7d4f; }
 .wfr-status--failed { background: #fdecec; color: #c0392b; }
 .wfr-status--awaiting_review { background: #fff4e5; color: #b26a00; }

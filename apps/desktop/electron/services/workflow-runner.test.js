@@ -64,6 +64,10 @@ function makeRunner (opts = {}) {
     createVideo: async ({ item: it, pipeline }) => { calls.video.push(pipeline); return { ok: true, videoPath: '/v/' + it.externalId + '.mp4', runId: 'pr1' } },
     createPodcast: async ({ item: it, channelId }) => { calls.podcast.push(channelId); return { ok: true, episodeId: 'ep-' + it.externalId } },
     schedulePublish: async (payload) => { calls.schedule.push(payload); return { ok: true, scheduleId: 's' + calls.schedule.length } },
+    accountProvider: async () => [
+      { id: 'a1', platform: 'bilibili', status: 'active' },
+      { id: 'a1', platform: 'zhihu', status: 'active' },
+    ],
     store,
     log: { warn: () => {}, error: () => {}, info: () => {} },
     now: () => NOW,
@@ -218,6 +222,110 @@ describe('workflow-runner · 失败策略', () => {
     expect(r.error).toBe('invalid-config')
     expect(r.errors[0]).toMatchObject({ field: 'publish.targets[0].accountId', reason: 'empty' })
     expect(calls.schedule).toHaveLength(0)
+  })
+
+  it('账号检查器缺失 → account-check-unavailable（不静默跳过）', async () => {
+    const { runner, calls } = makeRunner({
+      items: [item(1)],
+      deps: { accountProvider: undefined },
+    })
+    const r = await runner.startRun(task(config()))
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe('account-check-unavailable')
+    expect(calls.collect).toHaveLength(0)
+  })
+
+  it('账号登录过期 → account-unavailable，采集与排期都不发生', async () => {
+    const { runner, calls } = makeRunner({
+      items: [item(1)],
+      deps: { accountProvider: async () => [{ id: 'a1', platform: 'bilibili', status: 'expired' }] },
+    })
+    const r = await runner.startRun(task(config()))
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe('account-unavailable')
+    expect(r.accounts[0]).toMatchObject({ platform: 'bilibili', accountId: 'a1', reason: 'expired' })
+    expect(calls.collect).toHaveLength(0)
+    expect(calls.schedule).toHaveLength(0)
+  })
+
+  it('账号不存在 → account-unavailable，不带着无效目标开跑', async () => {
+    const { runner, calls } = makeRunner({
+      items: [item(1)],
+      deps: { accountProvider: async () => [{ id: 'other', platform: 'bilibili', status: 'active' }] },
+    })
+    const r = await runner.startRun(task(config()))
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe('account-unavailable')
+    expect(r.accounts[0]).toMatchObject({ platform: 'bilibili', accountId: 'a1', reason: 'missing' })
+    expect(calls.collect).toHaveLength(0)
+  })
+
+  it('账号检查本身失败 → account-check-failed（fail-closed）', async () => {
+    const { runner, calls } = makeRunner({
+      items: [item(1)],
+      deps: { accountProvider: async () => { throw new Error('backend down') } },
+    })
+    const r = await runner.startRun(task(config()))
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe('account-check-failed')
+    expect(calls.collect).toHaveLength(0)
+  })
+
+  it('队列派发失败回写运行条目：failed + queueStatus/queueError', async () => {
+    const { runner } = makeRunner({ items: [item(1)] })
+    const r = await runner.startRun(task(config()))
+    expect(r.ok).toBe(true)
+    expect(runner.applyQueueEvent({
+      runId: r.runId,
+      itemKey: '0|t1',
+      event: 'failed',
+      error: 'dispatch boom',
+      attempts: 3,
+    })).toEqual({ ok: true })
+    expect(runner.getRun(r.runId).items[0]).toMatchObject({
+      status: 'failed',
+      queueStatus: 'failed',
+      queueError: 'dispatch boom',
+      queueAttempts: 3,
+    })
+  })
+
+  it('队列已派发只是回写 queueStatus，不把 scheduled 直接改 published', async () => {
+    const { runner } = makeRunner({ items: [item(1)] })
+    const r = await runner.startRun(task(config()))
+    await runner.applyQueueEvent({ runId: r.runId, itemKey: '0|t1', event: 'dispatched', attempts: 1 })
+    expect(runner.getRun(r.runId).items[0]).toMatchObject({
+      status: 'scheduled',
+      queueStatus: 'dispatched',
+      error: '',
+    })
+  })
+
+  it('同标题多条用 index 前缀区分，不串写错误状态', async () => {
+    const { runner, calls } = makeRunner({
+      items: [
+        { ...item(1), title: '同名标题' },
+        { ...item(2), title: '同名标题' },
+      ],
+    })
+    const r = await runner.startRun(task(config()))
+    expect(new Set(calls.schedule.map((x) => x.itemKey)).size).toBe(2)
+    const second = runner.getRun(r.runId).items[1]
+    await runner.applyQueueEvent({ runId: r.runId, itemKey: second.itemKey, event: 'failed', error: 'second failed' })
+    const detail = runner.getRun(r.runId)
+    expect(detail.items[0].status).toBe('scheduled')
+    expect(detail.items[1]).toMatchObject({ status: 'failed', queueError: 'second failed' })
+  })
+
+  it('人工重试回写把 failed 条目恢复为 scheduled，并修正 summary', async () => {
+    const { runner } = makeRunner({ items: [item(1)] })
+    const r = await runner.startRun(task(config()))
+    await runner.applyQueueEvent({ runId: r.runId, itemKey: '0|t1', event: 'failed', error: 'boom' })
+    expect(runner.getRun(r.runId).summary.failed).toBe(1)
+    await runner.applyQueueEvent({ runId: r.runId, itemKey: '0|t1', event: 'retry-requested' })
+    const detail = runner.getRun(r.runId)
+    expect(detail.items[0]).toMatchObject({ status: 'scheduled', queueStatus: 'pending', error: '' })
+    expect(detail.summary.failed).toBe(0)
   })
 
   it('账本写入失败 → 回滚已排期项，不留下「无账本记录却会发」的队列项', async () => {

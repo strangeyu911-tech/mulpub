@@ -77,6 +77,14 @@ export async function cancelWorkflowRun (runId) {
   return invokeWithFallback('automationCancelRun', { code: -1, message: 'electronAPI not available', ok: false }, runId)
 }
 
+export async function listWorkflowQueue () {
+  return invokeWithFallback('automationListQueue', { code: -1, message: 'electronAPI not available', data: { entries: [], summary: {} } })
+}
+
+export async function retryWorkflowQueueItem (id) {
+  return invokeWithFallback('automationRetryQueueItem', { code: -1, message: 'electronAPI not available', ok: false }, id)
+}
+
 /**
  * 订阅后台任务通知（失败 / 从失败恢复）。
  * @param {(payload: {level:string,title:string,message:string,taskId:string}) => void} callback

@@ -43,6 +43,50 @@ describe('workflow-publish-queue · 到点派发', () => {
     expect(q2.list()[0].status).toBe('dispatched')
   })
 
+  it('派发状态先落 dispatching 再发，并把事件回写给上层', async () => {
+    const store = fakeStore()
+    const events = []
+    const q = createWorkflowPublishQueue({
+      store,
+      now: () => NOW,
+      onEvent: (e) => events.push(e.event),
+      enqueue: async () => {},
+    })
+    q.add(entry())
+    await q.tick()
+    expect(events).toEqual(['dispatching', 'dispatched'])
+    expect(q.list()[0].status).toBe('dispatched')
+  })
+
+  it('重启遇到停滞 dispatching → dispatch-uncertain，不自动重发', async () => {
+    const stale = entry({
+      id: 'wq_stale',
+      status: 'dispatching',
+      dispatchStartedAt: new Date(NOW - 20 * 60 * 1000).toISOString(),
+    })
+    const store = fakeStore({ workflow_publish_queue: JSON.stringify([stale]) })
+    const calls = []
+    const q = createWorkflowPublishQueue({ store, now: () => NOW, enqueue: async (e) => { calls.push(e) } })
+    expect(q.list()[0]).toMatchObject({ status: 'failed', error: 'dispatch-uncertain', needsReview: true })
+    expect(await q.tick()).toMatchObject({ dispatched: 0 })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('人工 retry 把 failed 条目放回 pending', async () => {
+    const failed = entry({ id: 'wq_failed', status: 'failed', error: 'boom' })
+    const store = fakeStore({ workflow_publish_queue: JSON.stringify([failed]) })
+    const q = createWorkflowPublishQueue({ store, now: () => NOW, enqueue: async () => {} })
+    expect(q.retry('wq_failed')).toEqual({ ok: true })
+    expect(q.list()[0]).toMatchObject({ status: 'pending', error: '', attempts: 0 })
+  })
+
+  it('人工 retry 有上限，超过 10 次拒绝', () => {
+    const failed = entry({ id: 'wq_limit', status: 'failed', retryCount: 10 })
+    const store = fakeStore({ workflow_publish_queue: JSON.stringify([failed]) })
+    const q = createWorkflowPublishQueue({ store, now: () => NOW, enqueue: async () => {} })
+    expect(q.retry('wq_limit')).toEqual({ ok: false, reason: 'retry-limit' })
+  })
+
   it('派发失败：同一条最多重试 3 次后置 failed，不无限重试', async () => {
     const store = fakeStore()
     let attempts = 0

@@ -170,6 +170,13 @@ function createWorkflowService (deps = {}) {
     previewPlan,
     listRuns: () => (deps.runner && typeof deps.runner.listRuns === 'function' ? deps.runner.listRuns() : []),
     getRun: (runId) => (deps.runner && typeof deps.runner.getRun === 'function' ? deps.runner.getRun(runId) : null),
+    listQueue: () => (deps.queue && typeof deps.queue.list === 'function' ? deps.queue.list() : []),
+    queueSummary: () => (deps.queue && typeof deps.queue.summary === 'function'
+      ? deps.queue.summary()
+      : { total: 0, pending: 0, dispatching: 0, dispatched: 0, failed: 0, missed: 0, cancelled: 0 }),
+    retryQueueItem: (id) => (deps.queue && typeof deps.queue.retry === 'function'
+      ? deps.queue.retry(id)
+      : { ok: false, reason: 'queue-unavailable' }),
     approveRun: (runId) => (deps.runner && typeof deps.runner.approveRun === 'function' ? deps.runner.approveRun(runId) : { ok: false, error: 'runner-unavailable' }),
     cancelRun: (runId) => {
       const runnerResult = deps.runner && typeof deps.runner.cancel === 'function'

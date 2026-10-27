@@ -135,6 +135,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ACCOUNT_STATUS from '../../../shared/workflow-account-status.json'
 import {
   automationCreate, automationUpdate,
   listWorkflowTemplates, saveWorkflowTemplate, getWorkflowMeta, previewWorkflowPlan,
@@ -365,6 +366,14 @@ async function save () {
     }
     if (targets.some((x) => !findAccount(x.platform, x.accountId))) {
       formError.value = t('automation.wfAccountsUnavailable')
+      return
+    }
+    const expired = targets.find((x) => {
+      const acc = findAccount(x.platform, x.accountId)
+      return acc && Array.isArray(ACCOUNT_STATUS.unusable) && ACCOUNT_STATUS.unusable.includes(String(acc.status || ''))
+    })
+    if (expired) {
+      formError.value = t('automation.wfAccountsExpired')
       return
     }
   }

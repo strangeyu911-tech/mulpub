@@ -323,8 +323,18 @@
 - tick 间隔 30 秒；`setInterval().unref()`，不阻止应用退出。
 - 重启恢复：`publishAt + 24h < now` → `missed`（不补发）；否则立即补发并标 `late=true`。
 - 派发失败：同一条最多 3 次，之后 `failed` 并保留错误；不做无限重试。
+- **派发幂等**：tick 到点后先把条目置 `dispatching` 并落盘，再调用 `taskQueue.add`；成功后置 `dispatched`。若进程在 enqueue 后、标记 dispatched 前崩溃，重启时该条会停在 `dispatching`，超过 10 分钟租约后标 `failed` + `error=dispatch-uncertain` + `needsReview=true`，**不自动重发**，由用户在队列面板人工确认/重试。
+- **队列状态回写运行记录**：队列每次状态变化（`dispatching/dispatched/failed/missed/dispatch-uncertain/retry-requested`）回调 `workflowRunner.applyQueueEvent`，更新对应条目的 `queueStatus/queueError/queueAttempts/queueAt`；`failed/missed/dispatch-uncertain` 同时把条目置 `failed`，运行摘要从 scheduled 扣减、failed 增加。
+- **人工重试**：队列面板对 `failed/missed/dispatch-uncertain` 提供「重试」，`queue.retry(id)` 重置为 `pending`（attempts=0、清错误），等下一 tick 重新派发；不提供自动无限重试。
 - **多目标排期回滚**：一条内容排到多个平台时，若第 N 个目标入队失败，前 N-1 个已写入队列的条目会被撤回（`queue.remove`），避免「条目记失败但队列里还留着它，重跑后重复发布」。
 - 队列 JSON 损坏 → `queue-unreadable`，拒绝写入、不覆盖原值。
+
+### 7.10 账号预检
+
+- 运行前（schema 校验之后、采集之前）调用 `accountProvider` 读取 `listAccounts()`；对每个非播客 target 按 `platform + accountId` 匹配。
+- 账号不存在 → `account-unavailable`，`accounts[]` 带 `reason=missing`；账号状态为 `expired/inactive/disabled` → `account-unavailable`，带对应 reason；读取账号列表抛错 → `account-check-failed`。三种情况都**不采集、不改写、不排期、不消耗额度**。
+- UI 侧对 `expired/inactive/disabled` 账号禁用复选框并显示状态文案（登录已过期/未启用）；保存时再次校验，防止绕过 UI 直接调用。
+- 账号列表来自「账号管理」的 `listAccounts()`，任务只引用账号 ID，不复制凭证。
 
 ### 7.7 护栏
 
@@ -355,9 +365,10 @@
 
 1. 页头：标题 + 副标题 + 「运行记录」文字按钮 + 「新建任务」主按钮。
 2. 资源提示条：后台执行会占用模型额度与浏览器资源，可能与手动发布竞争平台限流。
-3. 任务表：名称（含启停开关）/ 触发方式 / 动作摘要 / 失败策略 / 上次运行 / 操作（立即运行、编辑、删除）。
-4. 无任务：空态文案「还没有自动化任务。点击「新建任务」，让采集到发布自动跑起来。」
-5. 读取失败：红条「任务列表读取失败，可能是未登录或存储不可用。为避免覆盖真源，本次未写入任何改动。」
+3. 队列告警条：当队列存在 `failed` 或 `missed` 条目时显示黄条「发布队列有 N 条派发失败、M 条已错过，请打开运行记录处理」+「查看队列」按钮；无问题时不显示。
+4. 任务表：名称（含启停开关）/ 触发方式 / 动作摘要 / 失败策略 / 上次运行 / 操作（立即运行、编辑、删除）。
+5. 无任务：空态文案「还没有自动化任务。点击「新建任务」，让采集到发布自动跑起来。」
+6. 读取失败：红条「任务列表读取失败，可能是未登录或存储不可用。为避免覆盖真源，本次未写入任何改动。」
 
 ### 8.2 新建/编辑弹窗
 
@@ -389,7 +400,8 @@
 ### 8.5 运行记录抽屉
 
 - 列表：工作流名、状态徽标（运行中/已完成/部分失败/失败/已取消/待审核）、开始时间、摘要「采集 N · 已排期 N · 跳过 N · 失败 N」。
-- 展开：条目行（状态、标题、排期时间、错误）；来源 warning 黄条。
+- 队列面板：顶部固定显示「发布队列」摘要「排队 N · 派发中 N · 失败 N · 错过 N」；失败/错过/派发不确定条目逐一显示标题、错误与「重试」按钮，重试回到 pending 等下一 tick。
+- 展开：条目行（状态、标题、队列状态徽标、排期时间、错误）；队列状态徽标为 `排队中/派发中/已交给发布器/派发失败/已错过/派发不确定`；来源 warning 黄条。
 - 待审核：行内「确认发布」按钮（主按钮）；运行中：`取消运行`。
 - 空态：「还没有运行记录。任务运行后会在这里显示每条内容的处理结果。」
 

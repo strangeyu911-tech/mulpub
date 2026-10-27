@@ -19,6 +19,8 @@ const i18n = createI18n({
         wfPublishTitle: '发布账号', wfAccountsHint: '选择账号', wfAccountsEmpty: '没有账号',
         wfAccountsSelected: '已选 {count} 个账号', wfAccountsRequired: '请选择发布账号',
         wfAccountsLegacy: '模板建议平台：{platforms}',
+        wfAccountExpired: '登录已过期',
+        wfAccountInactive: '未启用',
         wfPublishMode: '发布方式', wfModeImmediate: '立即', wfModeScheduled: '定时', wfScheduleWarn: 'warn',
         wfCadenceTitle: '节奏', wfCadence: '间隔', wfCadenceHint: 'hint', wfGuard: '护栏',
         wfGuardPerRun: '每次', wfGuardDaily: '每天', wfReview: '审核', wfDedupe: '去重', wfReviewHint: 'hint',
@@ -93,6 +95,15 @@ describe('WorkflowEditor · 发布账号多选', () => {
     expect(w.props('modelValue').publish.targets).toEqual([
       { platform: 'zhihu', accountId: 'zhihu-2' },
     ])
+  })
+
+  it('过期账号显示状态且不可勾选（保存前预检的第一道）', async () => {
+    const w = mountEditor()
+    const expired = w.find('[data-testid="wf-account-bili-1"] input')
+    expect(expired.attributes('disabled')).toBeDefined()
+    await expired.setValue(true)
+    expect(w.props('modelValue').publish.targets).toEqual([])
+    expect(w.text()).toContain('登录已过期')
   })
 
   it('没有已添加账号时给出明确空态，而不是展示平台假选项', () => {

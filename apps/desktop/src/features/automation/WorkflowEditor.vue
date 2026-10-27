@@ -113,10 +113,10 @@
                 v-for="acc in group.accounts"
                 :key="acc.id"
                 class="wf-chip"
-                :class="{ 'wf-chip--on': hasAccount(acc) }"
+                :class="{ 'wf-chip--on': hasAccount(acc), 'wf-chip--off': !isAccountUsable(acc) }"
                 :data-testid="'wf-account-' + acc.id"
               >
-                <input type="checkbox" :checked="hasAccount(acc)" @change="toggleAccount(acc)" />
+                <input type="checkbox" :checked="hasAccount(acc)" :disabled="!isAccountUsable(acc)" @change="toggleAccount(acc)" />
                 {{ accountLabel(acc) }}
                 <span v-if="accountStatus(acc)" class="wf-account-status">{{ accountStatus(acc) }}</span>
               </label>
@@ -168,6 +168,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ACCOUNT_STATUS from '../../../shared/workflow-account-status.json'
 
 const props = defineProps({
   meta: { type: Object, required: true },
@@ -211,6 +212,12 @@ const accountGroups = computed(() => {
   return Array.from(groups.values())
 })
 
+const UNUSABLE_ACCOUNT_STATUS = new Set(Array.isArray(ACCOUNT_STATUS.unusable) ? ACCOUNT_STATUS.unusable : [])
+
+function isAccountUsable (acc) {
+  return !UNUSABLE_ACCOUNT_STATUS.has(String((acc && acc.status) || ''))
+}
+
 function hasAccount (acc) {
   return model.value.publish.targets.some(
     (t) => t.platform === acc.platform && String(t.accountId) === String(acc.id),
@@ -218,6 +225,7 @@ function hasAccount (acc) {
 }
 
 function toggleAccount (acc) {
+  if (!isAccountUsable(acc)) return
   const list = model.value.publish.targets
   const idx = list.findIndex((t) => t.platform === acc.platform && String(t.accountId) === String(acc.id))
   if (idx >= 0) list.splice(idx, 1)
@@ -273,6 +281,7 @@ const startAtLocal = computed({
 .wf-account-group__title { margin-bottom: 6px; color: var(--color-text-secondary, #85858f); font-size: var(--font-size-xs, 12px); }
 .wf-account-status { padding: 0 4px; border-radius: 3px; background: #fdecec; color: #c0392b; font-size: var(--font-size-xs, 12px); }
 .wf-chip--on { border-color: #2f6fd0; background: #eef4ff; color: #2f6fd0; }
+.wf-chip--off { opacity: .55; cursor: not-allowed; }
 .wf-chip input { display: none; }
 .wf-radio, .wf-check { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; font-size: var(--font-size-sm, 13px); cursor: pointer; }
 </style>

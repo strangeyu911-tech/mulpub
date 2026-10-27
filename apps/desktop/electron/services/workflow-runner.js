@@ -15,31 +15,15 @@
  * ⑤ **额度截断可解释**：少跑了几条必须在 summary 里说清是单次上限还是每日额度。
  */
 
-const crypto = require('crypto')
 const { validateWorkflowConfig } = require('./workflow-schema')
 const { createPacer, resolveTargetKey, checkGuardrails, buildDedupeKeys } = require('./workflow-plan')
+const { createAccountGuard } = require('./workflow-account-guard')
+const { applyQueueEventRecord } = require('./workflow-queue-event')
+const { buildArticle, itemKeyOf } = require('./workflow-article')
+const { newRunId, iso, newSummary } = require('./workflow-run-utils')
 
 const RUNS_KEY = 'workflow_runs'
 const MAX_PERSISTED_RUNS = 50
-
-function newRunId () {
-  return 'wf_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex')
-}
-
-function iso (ms) {
-  return new Date(ms).toISOString()
-}
-
-function buildArticle (item, contentType) {
-  const article = {
-    title: item.title || '',
-    content: item.content || '',
-    cover_path: item.coverImage || '',
-    tags: [],
-  }
-  if (contentType === 'video') article.video_path = item.videoPath || ''
-  return article
-}
 
 /**
  * @param {{
@@ -66,6 +50,7 @@ function createWorkflowRunner (deps = {}) {
   const now = typeof deps.now === 'function' ? deps.now : Date.now
   const random = typeof deps.random === 'function' ? deps.random : Math.random
   const log = deps.log || { warn () {}, error () {}, info () {} }
+  const accountGuard = createAccountGuard({ accountProvider: deps.accountProvider })
 
   /** @type {Map<string, object>} */
   const live = new Map()
@@ -122,10 +107,15 @@ function createWorkflowRunner (deps = {}) {
         platform: i.platform,
         externalId: i.externalId,
         url: i.url,
+        itemKey: i.itemKey || '',
         status: i.status,
         error: i.error,
         scheduleId: i.scheduleId,
         publishAt: i.publishAt,
+        queueStatus: i.queueStatus || '',
+        queueError: i.queueError || '',
+        queueAttempts: i.queueAttempts || 0,
+        queueAt: i.queueAt || '',
         videoPath: i.videoPath,
         episodeId: i.episodeId,
       })),
@@ -147,10 +137,6 @@ function createWorkflowRunner (deps = {}) {
     return last || { ok: false, error: 'unknown' }
   }
 
-  function newSummary () {
-    return { collected: 0, skipped: 0, scheduled: 0, published: 0, failed: 0, awaitingReview: 0, truncated: false, truncateReason: '' }
-  }
-
   /**
    * 启动一次运行。等待「生成 + 排期」完成（发布由持久队列在到点时执行）。
    * @param {object} task 归一化后的自动化任务
@@ -162,6 +148,8 @@ function createWorkflowRunner (deps = {}) {
       return { ok: false, error: 'invalid-config', errors: validation.errors }
     }
     const config = validation.config
+    const accountCheck = await accountGuard.check(config)
+    if (!accountCheck.ok) return accountCheck
     if (!deps.ledger.isReadable()) return { ok: false, error: 'ledger-unreadable' }
 
     const usedToday = typeof deps.ledger.countToday === 'function' ? deps.ledger.countToday() : 0
@@ -221,6 +209,7 @@ function createWorkflowRunner (deps = {}) {
         platform: src.platform || '',
         externalId: src.externalId || '',
         url: src.url || '',
+        itemKey: String(index) + '|' + itemKeyOf(src),
         status: 'pending',
         error: '',
         scheduleId: '',
@@ -354,6 +343,8 @@ function createWorkflowRunner (deps = {}) {
 
   async function scheduleItem ({ run, record, item, config, pacer, targets }) {
     record.status = 'scheduling'
+    // itemKey 已在 startRun 建记录时按 index 固化；不要在这里按可变的 title/url 重算，
+    // 否则快照键与队列键会分叉，applyQueueEvent 可能找不到记录。
     const article = record._article || buildArticle(item, config.content.type)
     const scheduleIds = []
     try {
@@ -364,6 +355,7 @@ function createWorkflowRunner (deps = {}) {
           runId: run.id,
           workflowId: run.workflowId,
           item,
+          itemKey: record.itemKey,
           target,
           publishAt: iso(slot.atMs),
           article,
@@ -416,6 +408,20 @@ function createWorkflowRunner (deps = {}) {
       return r
     }
     return { ok: true }
+  }
+
+  /**
+   * 队列状态回写：队列只负责「到点把任务交给 TaskQueue」，运行记录需要知道
+   * dispatching/dispatched/failed/missed/dispatch-uncertain，否则用户看到永远是 scheduled。
+   */
+  function applyQueueEvent (payload) {
+    if (!payload || !payload.runId) return { ok: false, error: 'invalid-event' }
+    const runId = String(payload.runId)
+    const run = live.get(runId) || loadPersisted().find((r) => r && r.id === runId)
+    if (!run) return { ok: false, error: 'run-not-found' }
+    const result = applyQueueEventRecord({ run, payload, now })
+    if (result.ok) persist(run)
+    return result
   }
 
   async function approveRun (runId) {
@@ -482,7 +488,7 @@ function createWorkflowRunner (deps = {}) {
     return { ok: true }
   }
 
-  return { startRun, approveRun, getRun, listRuns, cancel }
+  return { startRun, approveRun, getRun, listRuns, cancel, applyQueueEvent }
 }
 
 module.exports = { createWorkflowRunner, RUNS_KEY, MAX_PERSISTED_RUNS }

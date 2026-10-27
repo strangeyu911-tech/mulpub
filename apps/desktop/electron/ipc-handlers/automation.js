@@ -31,6 +31,7 @@ function registerHandlers (ipcMain, deps) {
     'automation:workflow:meta',
     'automation:preview-plan',
     'automation:runs:list', 'automation:runs:get', 'automation:runs:approve', 'automation:runs:cancel',
+    'automation:queue:list', 'automation:queue:retry',
   ]
 
   if (!automationScheduler) {
@@ -67,6 +68,8 @@ function registerHandlers (ipcMain, deps) {
     }))
     ipcMain.handle('automation:runs:list', () => guard(() => ({ data: { runs: workflowService.listRuns() } })))
     ipcMain.handle('automation:runs:get', (_e, runId) => guard(() => ({ data: workflowService.getRun(String(runId || '')) })))
+    ipcMain.handle('automation:queue:list', () => guard(() => ({ data: { entries: workflowService.listQueue(), summary: workflowService.queueSummary() } })))
+    ipcMain.handle('automation:queue:retry', (_e, id) => guard(() => workflowService.retryQueueItem(String(id || ''))))
     ipcMain.handle('automation:runs:approve', async (_e, runId) => {
       try { return { code: 0, ...(await workflowService.approveRun(String(runId || ''))) } }
       catch (e) { warn(e); return { code: -1, message: e.message, ok: false } }

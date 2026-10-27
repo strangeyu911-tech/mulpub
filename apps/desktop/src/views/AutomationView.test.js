@@ -13,6 +13,7 @@ const mockState = {
   updateRes: { code: 0, ok: true, task: {} },
   removeRes: { code: 0, ok: true },
   runRes: { code: 0, ok: true, data: {} },
+  queueRes: { code: 0, data: { entries: [], summary: { failed: 0, missed: 0 } } },
   lastPayload: null,
   notifier: null,
 }
@@ -48,6 +49,8 @@ vi.mock('@/api/automation', () => ({
   }),
   previewWorkflowPlan: () => Promise.resolve({ code: 0, ok: true, summary: '预览', totalMinutes: 0 }),
   listWorkflowRuns: () => Promise.resolve({ code: 0, data: { runs: [] } }),
+  listWorkflowQueue: () => Promise.resolve(mockState.queueRes),
+  retryWorkflowQueueItem: () => Promise.resolve({ code: 0, ok: true }),
   onAutomationNotification: (cb) => {
     mockState.notifier = cb
     return () => { mockState.notifier = null }
@@ -81,6 +84,8 @@ const i18n = createI18n({
       automation: {
         title: '自动化', subtitle: 'sub', resourceNotice: 'notice',
         wfRunsTitle: '运行记录',
+        wfQueueBanner: '发布队列有 {failed} 条派发失败、{missed} 条已错过，请打开运行记录处理。',
+        wfQueueOpen: '查看队列',
         wfAccountsRequired: '请选择至少一个发布账号（不能只选平台）',
         wfAccountsEmpty: '还没有已添加的自媒体账号，请先到「账号管理」添加。',
         wfAccountsHint: '勾选要发布的账号；同一平台可多选。',
@@ -171,8 +176,20 @@ describe('自动化页 · 空态与真源状态', () => {
 })
 
 describe('自动化页 · 任务列表显示项', () => {
-  beforeEach(() => { mockState.listRes = { code: 0, data: { tasks: [sampleTask] } } })
+  beforeEach(() => {
+    mockState.listRes = { code: 0, data: { tasks: [sampleTask] } }
+    mockState.queueRes = { code: 0, data: { entries: [], summary: { failed: 0, missed: 0 } } }
+  })
   afterEach(() => { vi.clearAllMocks() })
+
+  it('队列有派发失败/错过时显示顶部告警', async () => {
+    mockState.queueRes = { code: 0, data: { entries: [], summary: { failed: 2, missed: 1 } } }
+    const w = mountView()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(w.find('[data-testid="automation-queue-banner"]').exists()).toBe(true)
+    expect(w.find('[data-testid="automation-queue-banner"]').text()).toContain('2')
+    w.unmount()
+  })
 
   it('显示名称 / 触发摘要 / 失败策略 / 上次运行结果', async () => {
     const w = mountView()

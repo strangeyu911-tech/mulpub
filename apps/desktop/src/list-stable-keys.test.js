@@ -29,7 +29,10 @@ const SITES = [
   { file: 'views/Calendar.vue', marker: 'in calendarDays', item: 'day' },
   { file: 'views/PromptEvalView.vue', marker: 'in selectedImages', item: 'img' },
   { file: 'features/collection/BatchCollectPanel.vue', marker: 'in zhihuFavItems', item: 'it' },
-  { file: 'views/FilmEngineeringView.vue', marker: 'in b.shots', item: 'sh' },
+  // change `film-view-split-debt`（2026-10-27）：全量出片面板整块搬进子组件，
+  // 该站点的 `v-for="(sh, si) in b.shots"` **逐字保留**在原处（只在文件里换了宿主文件），
+  // 所以这里改的是**路径**，不是判据 —— 锚点与 item 一字未动。
+  { file: 'views/film-engineering/FilmProductionPanel.vue', marker: 'in b.shots', item: 'sh' },
 ]
 
 /**

@@ -1,12 +1,10 @@
 // @ts-check
 /**
  * workflow-schema.js — 复合自动化工作流的配置契约（纯函数，无副作用）
- *
- * 为什么独立：复合配置六段任一非法都不该保存；纯函数供 IPC/调度器/预览共用，可注入时钟测试。
- *
- * 三条硬约束（PRD §4）：播客走 RSS；视频只能选文案可直接启动的流水线；抖音爆款读取爆款库（P1-6）。
+ * 三条硬约束：播客走 RSS；视频只选文案可直接启动的流水线；抖音爆款读取爆款库。
  */
 const crypto = require('crypto')
+const SCHEMA_VERSION = 2
 const { normalizeAdaptation, validateAdaptation, ADAPTATION_LIMITS } = require('./workflow-adaptation')
 const { normalizeScheduleRules, validateScheduleRules } = require('./workflow-schedule-rules')
 const { normalizeBudget, validateBudget } = require('./workflow-budget')
@@ -311,13 +309,14 @@ function validateWorkflowConfig (raw, opts = {}) {
   return {
     ok: errors.length === 0,
     errors,
-    config: { source, rewrite, content, publish, cadence, guardrails, scheduleRules, review, dedupe },
+    config: { schemaVersion: SCHEMA_VERSION, source, rewrite, content, publish, cadence, guardrails, scheduleRules, review, dedupe },
   }
 }
 
 /** 新建工作流时的默认配置（全部落在合法区间内） */
 function buildDefaultWorkflowConfig () {
   return {
+    schemaVersion: SCHEMA_VERSION,
     source: { type: 'hotTopics', categories: ['ai'], limit: 10, sort: 'latest', followIds: [], perCreatorLimit: 3, folderTokens: [], industry: '', minLikes: 0 },
     rewrite: { mode: 'default', strategyId: '', length: 'keep' },
     content: { type: 'article', videoPipeline: '', podcastChannelId: '', adaptation: normalizeAdaptation() },
@@ -477,6 +476,7 @@ const BUILTIN_TEMPLATES = Object.freeze([
 ])
 
 module.exports = {
+  SCHEMA_VERSION,
   SOURCE_TYPES,
   CONTENT_TYPES,
   VIDEO_PIPELINES,

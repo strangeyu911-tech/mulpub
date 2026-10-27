@@ -134,6 +134,12 @@ describe('workflow-schema · 来源校验', () => {
 })
 
 describe('workflow-schema · 改写/内容/发布校验', () => {
+  it('旧配置无 schemaVersion 时归一化为当前版本', () => {
+    const r = validateWorkflowConfig(validConfig())
+    expect(r.config.schemaVersion).toBe(2)
+    expect(buildDefaultWorkflowConfig().schemaVersion).toBe(2)
+  })
+
   it('预算护栏：默认关闭；启用后 maxCost/perItem 必须大于 0', () => {
     const def = validateWorkflowConfig(validConfig())
     expect(def.config.guardrails.budget.enabled).toBe(false)

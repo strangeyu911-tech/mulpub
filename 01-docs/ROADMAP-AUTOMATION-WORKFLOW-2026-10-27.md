@@ -30,9 +30,9 @@
 
 | # | 项目 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| 15 | 拆分 `AutomationTaskDialog` / 提取账号 composable | 待做 | 400+ 行，账号清洗逻辑独立可测；`platformLabel` 去重 |
+| 15 | 拆分 `AutomationTaskDialog` / 提取账号 composable | 本 PR | `useAccountSelection` + 59 行 picker；同平台多账号/numeric 0 独立测试 |
 | 16 | 队列/账本可观测与导出/重置 | 待做 | 本 PR 已有队列面板；账本导出/重置后续 |
-| 17 | 配置版本迁移 | 待做 | `schemaVersion` 升级与旧配置迁移 |
+| 17 | 配置版本迁移 | 本 PR | `SCHEMA_VERSION=2`，旧配置归一化；模板版本独立 |
 | 18 | E2E/视觉回归 | 待做 | 账号多选/模板应用/失效账号/队列恢复/跨机器模板 |
 | 19 | 性能（账号虚拟列表、队列批量） | 待做 | 账号上百、队列上限提升前先做索引/分批 |
 | 20 | 模板/任务账号语义显式类型 | 待做 | `allowEmptyAccounts` 常量/类型化，防误用 |

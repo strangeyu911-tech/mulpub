@@ -1,0 +1,59 @@
+{
+  "sha": "96073611019f06addd788bf655ca52ea4d5ddd96",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 293 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 293,
+    "fileCount": 12,
+    "codeFileCount": 5,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "f39d3866211d41dccfc85df0be9577e71df61715e247b5ff40512d4d93ed69a1",
+  "decidedAt": "2026-10-27T18:51:13.110Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "tier": "external",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null,
+    "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4576#issuecomment-6450855188",
+    "closureNote": "低风险结构重构；CCG 判定 SKIP，无阻断项；证据见 PR 评论"
+  }
+}

@@ -418,6 +418,13 @@
 - 回写失败只进 run.warnings，不影响已排期/已发布结果；无 discoveryId 的旧数据 skipped。
 - 博主页显示「已由工作流发布」，且不显示采集按钮；collected 仍显示「已采集 · 时间」。
 
+### 7.20 账号选择 composable 与配置版本（P2）
+
+- 账号选择逻辑抽到 `useAccountSelection`：分组、搜索、健康过滤、最近使用、targets 增删；组件只渲染。`id===0` 是有效账号，不得 truthy 判断。
+- 同平台多账号仍完全自由选择，不引入平台级默认限制。
+- `workflow-schema` 增加 `SCHEMA_VERSION=2`；`validateWorkflowConfig`/`buildDefaultWorkflowConfig` 返回 `schemaVersion=2`；旧配置缺字段归一化为 2。
+- 模板版本仍由 `TEMPLATE_VERSION` 独立管理，不混用。
+
 ### 7.7 护栏
 
 - 单次上限：采集后截断，`summary.truncated=true`、`truncateReason=maxItemsPerRun`。

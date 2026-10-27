@@ -128,12 +128,26 @@ test('接线锁：本判据、它的测试与反证驱动都必须被 workflow �
   assert.doesNotMatch(block, /^[^\n]*\bnode\b[^\n]*\|\s*(tail|head)\b/m, '步骤块内不得用 tail/head 吃 rc')
 })
 
-test('.gitignore 反锁：判据本体与反证驱动都必须被反选（第 108 行 scripts/*.js 会静默忽略新建脚本）', () => {
-  // 漏 negation 的症状不是本地红，而是 CI 上 `Cannot find module` —— 本地文件在磁盘上存在，
+test('.gitignore 反锁：判据本体与反证驱动都必须能进 git（不被静默忽略）', () => {
+  // 漏收的症状不是本地红，而是 CI 上 `Cannot find module` —— 本地文件在磁盘上存在，
   // 只是没进 git，checkout 出来的树上没有它（本仓同族实测：#3011 / #3724 / #3876）。
-  const gi = fs.readFileSync(path.join(__dirname, '..', '.gitignore'), 'utf8')
-  assert.match(gi, /^!scripts\/check-unwired-components\.js$/m, '判据本体必须被反选')
-  assert.match(gi, /^!scripts\/unwired-components-mutate\.js$/m, '反证驱动必须被反选')
+  //
+  // ⚠ 2026-10-27（change: gitignore-scripts-root）：原件断言「.gitignore 里必须有
+  // `!scripts/check-unwired-components.js` 与 `!scripts/unwired-components-mutate.js` 两条反选」。
+  // 那条 `scripts/*.js` 通配已被根治删除（它让每个新判据本体默认不入仓，实测复发 7 次），
+  // negation 机制不复存在 ⇒ 改断言**行为**：git check-ignore 必须说这两个文件不被忽略。
+  const { execFileSync } = require('node:child_process')
+  const root = path.join(__dirname, '..')
+  for (const rel of ['scripts/check-unwired-components.js', 'scripts/unwired-components-mutate.js']) {
+    let hit = ''
+    try {
+      hit = execFileSync('git', ['-C', root, 'check-ignore', '--no-index', '--', rel], { encoding: 'utf8' })
+    } catch (e) {
+      hit = String(e.stdout || '') // exit 1 = 不被忽略，正是期望
+    }
+    assert.equal(hit.trim(), '',
+      rel + ' 被 .gitignore 忽略了 ⇒ 本地全绿、CI 上 Cannot find module（取证：git check-ignore -v ' + rel + '）')
+  }
 })
 
 test('消费者域规模下界：本仓实测 components=87 上下、consumers≈1200+，退化即红', () => {

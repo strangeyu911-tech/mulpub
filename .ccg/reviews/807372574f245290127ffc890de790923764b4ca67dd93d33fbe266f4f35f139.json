@@ -1,0 +1,144 @@
+{
+  "sha": "86e8580fa6722027fccfd5e377e49374d99c3dc8",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 98 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 98,
+    "fileCount": 3,
+    "codeFileCount": 1,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "807372574f245290127ffc890de790923764b4ca67dd93d33fbe266f4f35f139",
+  "decidedAt": "2026-10-27T08:59:56.976Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "claude",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "Removing 120 granular !scripts/*.js allowlists eliminates defense-in-depth. Re-adding global ignore would silently exclude all tracked scripts with no per-file signal.",
+        "verdict": "upheld",
+        "prosecution": "Critical 且必须闭合。删掉 120 条细粒度反选等于拆掉了纵深防御：重新引入一条全局忽略会让整个 scripts/ 目录再次隐形，而这一次没有任何逐文件信号能提示\"有人把规则加回来了\"。上一轮（PR #4534）刚因为同一条通配让新判据本体静默不入仓，第 7 次复发就是证据 —— 不设闸，第 8 次只是时间问题。",
+        "defense": "指控的前半句与 git 语义相反：`.gitignore` 只作用于**未跟踪**文件，已跟踪的 193 个脚本不会因为重新加通配而被排除。我用一次性迷你仓库实测过：加回 `scripts/*.js` 后，已跟踪的两个文件仍在 index，只有新写的未跟踪脚本被忽略。所以\"拆掉纵深防御\"这个说法不成立 —— 真正没防的是\"新脚本被吞\"，而这一半我同意应当有闸。",
+        "rationale": "两边各对一半，但**成立的这一半足以要求修**。可复算：① 前半句不成立 —— 迷你仓库实测已跟踪文件在加回通配后仍在 index（`git ls-files -- scripts/` 仍列出它们）；② 后半句成立 —— 没有任何机制阻止后人把通配加回来。⇒ 裁决 upheld（针对\"该有闸\"这一诉求），处置：新增 `scripts/check-gitignore-scripts.js`（G1–G4 四条断言）+ 10 例回归锁（含 3 条可证伪用例），并接进 `quality-gate.yml` 的 `changes` job。",
+        "externalReview": null
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "Proposal asserts 193 tracked .js unaffected but provides no git ls-files verification; any untracked listed file becomes ignored after removal.",
+        "verdict": "upheld",
+        "prosecution": "Critical。记录声称\"193 已跟踪不受影响\"，但只给了我自己算出的聚合数字，没有附 `git ls-files` 的原始输出。读者无法复算，等于把一个关键前提建立在作者的算术上。若其中任何一个未跟踪文件本该入仓，新口径会把它永久藏起来。",
+        "defense": "数字本身是实测的，命令也写在记录里，读者可以自己跑一遍。",
+        "rationale": "成立。评审要的不是\"你自己跑过\"，而是\"读者能原样复算\"。已在执行记录 §二 补原始读数：动手前 `git ls-files 'scripts/*.js'`=227 / `ls scripts/*.js`=194 / 未跟踪且被忽略=1；改动后 = 0 与 2。并说明「227 vs 194」是 glob 是否跨 `/` 的口径差，不是矛盾。",
+        "externalReview": null
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": ".ccg/reviews/807372...json sha=86e858... mismatches proposal head 0c3f97af...; review metadata points to wrong commit.",
+        "verdict": "dismissed",
+        "prosecution": "Warning。`.ccg/reviews/807372….json` 里 `sha` 指向 `86e858…`，而提案 head 是 `0c3f97af…`。评审元数据指向了错误的提交，事后无法确认这份记录到底评的是哪一版。",
+        "defense": "这是 pre-commit 的既定行为：判定记录在**提交之前**生成，此刻新 commit 还不存在，只能挂在父提交上。深审入口自己在输出里就打印了「pre-commit 时新 commit 尚未生成，判定记录写在父 sha 上——这是预期行为」。而被评差量并不是靠 sha 标识的，是靠 `stagedDiffHash`（= 记录文件名，内容寻址）。",
+        "rationale": "驳回，可复算：① `sha` 字段 == `git rev-parse <head>^`（父提交）；② 记录文件名 == 记录内 `stagedDiffHash` 字段，内容寻址才是\"评的是哪一版\"的真标识；③ 深审入口的既有输出明示这是预期行为。把它改成 head sha 反而做不到 —— 记录生成时那个 sha 尚未诞生。仓内 2200+ 份记录同形。",
+        "externalReview": null
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "New scripts/wait-pr-checks.js has no .test.js despite policy; timeoutMin/intervalSec not validated (parseInt allows NaN).",
+        "verdict": "upheld",
+        "prosecution": "Warning。`parseInt(process.argv[++i], 10)` 接受 `'60abc'`（→60）且不排除 `NaN`/非正数。`timeoutMin=NaN` ⇒ `deadline=NaN` ⇒ `Date.now() < NaN` 恒假 ⇒ 循环一次都不进，直接打印\"超时\"并 `exit 2` —— 把\"参数写错了\"伪装成\"事件投递超时\"，会误导排查方向。",
+        "defense": "这是工具脚本，不是门禁，参数写错本来就该失败退出。",
+        "rationale": "成立。\"失败退出\"没错，但**失败的理由必须真实**：报\"超时\"而实际是参数非法，等于用一个误导性的错误信息替换真实原因，与仓内\"零日志≠零错误\"是同一族。已改 `Number` + `Number.isFinite` + `Number.isInteger` + `>0` 四重校验，并对未知参数也报错。实测：`--timeout-min abc` → `--timeout-min 需要正整数，收到 \"abc\"`，rc=2。",
+        "externalReview": null
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "wait-pr-checks.js invokes powershell via execSync; non-portable and assumes binary path without fallback.",
+        "verdict": "upheld",
+        "prosecution": "Warning（security）。`execSync('powershell -NoProfile -Command \"Start-Sleep …\"')` 不可移植：Linux/macOS 上没有 powershell，CI 换成 ubuntu runner 就直接失败；且每次睡眠都要起一整个 PowerShell 进程，代价远大于睡眠本身。",
+        "defense": "本仓 CI 目前是 windows-latest，且本机是 Windows，够用。",
+        "rationale": "成立。\"目前够用\"不是可移植性 —— 这个脚本刚被**入库**（成了通用工具），而仓内已有 ubuntu-latest 的 job（business-api-postgres）。已改 `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)`：纯 JS 同步阻塞、跨平台、零子进程。",
+        "externalReview": null
+      },
+      {
+        "id": "i8",
+        "severity": "Warning",
+        "finding": ".gitignore relies solely on new default for production script; no explicit allowlist for wait-pr-checks.js.",
+        "verdict": "dismissed",
+        "prosecution": "Warning。`.gitignore` 只靠\"新默认\"放行 `wait-pr-checks.js`，没有显式白名单。一旦有人加回通配，这个刚入库的工具又会隐形。",
+        "defense": "不需要白名单：`wait-pr-checks.js` 一旦入库就是**已跟踪**态，而 gitignore 只作用于未跟踪文件。加 `!scripts/wait-pr-checks.js` 等于把旧口径的逐文件登记再引回来，与本次根治的目标相反。而且\"有人加回通配\"这件事已由 `check-gitignore-scripts.js` 的 G1/G4 覆盖。",
+        "rationale": "驳回，可复算：迷你仓库实测「已跟踪文件在加回通配后仍在 index」。⇒ 已跟踪文件不需要显式白名单，这是 git 语义不是偏好。若按建议加白名单，反而会让每个新脚本都重新需要一条登记 —— 正是 i2 要根治的形态。",
+        "externalReview": null
+      },
+      {
+        "id": "i6",
+        "severity": "Info",
+        "finding": "Inserted comments contain split \\r\\n artifacts; formatting broken in .gitignore.",
+        "verdict": "info",
+        "prosecution": "Inserted comments contain split \\r\\n artifacts; formatting broken in .gitignore.",
+        "defense": "Normalize inserted block to single CRLF lines.",
+        "rationale": "Info 级，不进待裁模板；处置逐条写进执行记录 openspec/records/gitignore-scripts-root.md（Round 1 见 §七，Round 2 见 §七之二）。",
+        "externalReview": null
+      },
+      {
+        "id": "i7",
+        "severity": "Info",
+        "finding": "Flipped default not documented in AGENTS.md; team members may miss behavior change.",
+        "verdict": "info",
+        "prosecution": "Flipped default not documented in AGENTS.md; team members may miss behavior change.",
+        "defense": "Add one-line behavior note to AGENTS.md.",
+        "rationale": "Info 级，不进待裁模板；处置逐条写进执行记录 openspec/records/gitignore-scripts-root.md（Round 1 见 §七，Round 2 见 §七之二）。",
+        "externalReview": null
+      }
+    ],
+    "template": ".adversarial\\ccg-deep-0c3f97af",
+    "note": "裁决已填写：6 条逐条 verdict（upheld=4 / dismissed=2）；另 2 条 Info 级不列入待裁模板，处置一并写入 findings。高危域 0 条 ⇒ 无需外部复核三格。",
+    "at": "2026-10-27T10:03:28.835Z",
+    "tier": "external",
+    "evidence": "delivery@4604e2b781e1ab754c27ea6c533558b76149d0f48d869376e0b201beb113fd23",
+    "closureNote": "Round 1（SINGLE，critic=claude 8 条：6 条进待裁 + 2 条 Info）：逐条裁决完毕（upheld=4 / dismissed=2）。本轮高危域 0 条 ⇒ 无需外部复核三格。Round 1 之后按裁决补了回归锁与两处缺陷修复（见后续提交），因此本记录的裁决与被评差量（0c3f97af）一一对应，整改本身由 Round 2 复核。完整裁决、critic 原始输出逐字与可核取证坐标见公开 PR 评论 https://github.com/Colinchiu007/mulpub/pull/4549#issuecomment-6438916381 与仓内执行记录 openspec/records/gitignore-scripts-root.md §七 / §七之二 / §五之二。"
+  }
+}

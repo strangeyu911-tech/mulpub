@@ -145,15 +145,27 @@ test('三档退出码各自可达：零样本与自身故障都是非零，不�
   assert.deepEqual(audit.parseArgs(['--limit=4']), { runs: 4 });
 });
 
-test('接线：审计的回归锁必须点名在 changes job，且本体必须有 .gitignore 反选', () => {
+test('接线：审计的回归锁必须点名在 changes job，且本体必须能进 git', () => {
   const wf = fs.readFileSync(path.join(REPO, '.github', 'workflows', 'quality-gate.yml'), 'utf8');
   assert.ok(wf.includes('node --test scripts/electron-ci-shard-audit.test.js'),
     '未接线的判据等于没写（本仓无自动收集，逐条显式点名）');
-  const gi = fs.readFileSync(path.join(REPO, '.gitignore'), 'utf8');
-  assert.ok(gi.includes('!scripts/electron-ci-shard-audit.js'),
-    '第 106 行 scripts/*.js 会把本体静默忽略 ⇒ 本地全绿、CI 上 Cannot find module');
+  // ⚠ 2026-10-27（change: gitignore-scripts-root）：原件断言「.gitignore 必须有
+  // `!scripts/electron-ci-shard-audit.js` 反选」。那条 `scripts/*.js` 通配已根治删除
+  // （它让每个新判据本体默认不入仓，实测复发 7 次），negation 机制不复存在。
+  // 改为断言**行为**：git check-ignore 必须说它不被忽略 —— 这才是当初那句
+  // 「本地全绿、CI 上 Cannot find module」真正要防的事。
+  let hit = '';
+  try {
+    hit = cp.execFileSync('git', ['-C', REPO, 'check-ignore', '--no-index', '--', 'scripts/electron-ci-shard-audit.js'],
+      { encoding: 'utf8' });
+  } catch (e) {
+    hit = String(e.stdout || ''); // exit 1 = 不被忽略，正是期望
+  }
+  assert.equal(hit.trim(), '',
+    '本体被 .gitignore 忽略了 ⇒ 本地全绿、CI 上 Cannot find module（取证：git check-ignore -v scripts/electron-ci-shard-audit.js）');
   // 反选必须写成 gitignore 的 negation 模式（`!` 开头），**注释必须用 #**：
   // 把注释写成 `! 说明文字` 会得到三条永远匹配不到任何东西的坏模式（本 PR 实测踩过并修正）。
+  const gi = fs.readFileSync(path.join(REPO, '.gitignore'), 'utf8');
   const bangCommentLines = gi.split(/\r?\n/).filter((l) => /^! /.test(l));
   assert.deepEqual(bangCommentLines, [], '.gitignore 里 `!` 是 negation 不是注释，`! ` 开头的行是坏模式');
 });

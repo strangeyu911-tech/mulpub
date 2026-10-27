@@ -227,11 +227,10 @@ test('gitignore 反选真实生效：判据本体与 setup 本体都不得被静
     'scripts/check-clock-shift-oracle.test.js',
     'apps/desktop/test-setup-clock-shift.js',
   ];
-  for (const line of ['!scripts/check-clock-shift-oracle.js',
-    '!scripts/check-clock-shift-oracle.test.js',
-    '!apps/desktop/test-setup-clock-shift.js']) {
-    assert.ok(gi.split(/\r?\n/).includes(line), `.gitignore 缺反选 ${line}`);
-  }
+  // ⚠ 2026-10-27（change: gitignore-scripts-root）：此处原先还断言「.gitignore 里必须有这三条反选行」。
+  // scripts/ 下那两条 negation 随 `scripts/*.js` 通配一起被根治删除（通配让每个新判据本体默认不入仓，
+  // 实测复发 7 次），文本断言随之失效。**行为**断言（下面直接问 git）本就在，且是更强的那一半 ——
+  // 它原本的注释就写了「只看反选行在不在是记录性断言」，现在正好去掉那一半。
   for (const rel of targets) {
     let ignored = false;
     let status = null;

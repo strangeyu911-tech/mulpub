@@ -200,7 +200,11 @@ const GATE_COVERAGE_FOR_WHITELIST = [
       '该判据的输入命中本白名单 ⇒ 必须住在不被 docs-only 短路的 changes job（AGENTS.md 进白名单前提锁）' },
   { pattern: 'docs/**', commands: BRAND_CMDS, why: '同上：本仓新增机制说明落在这里' },
   { pattern: 'LICENSE', noGate: '许可证全文由发版流程与 GPL 媒体约束条目人工核对，无脚本门禁消费其内容' },
-  { pattern: '.gitignore', noGate: '忽略规则由 check-unwired-tests 与 git check-ignore 现场判据兜底，没有读这份文件的门禁' },
+  { pattern: '.gitignore',
+    commands: ['node --test scripts/check-gitignore-scripts.test.js', 'node scripts/check-gitignore-scripts.js'],
+    why: '.gitignore 本身就在白名单里，而它决定「scripts/ 下的新脚本能不能入仓」——' +
+      '本仓因 scripts/*.js 通配导致新判据本体静默不入仓，实测复发 7 次（#3011 / Gate 2c3 / …）；' +
+      'change gitignore-scripts-root 删掉了那条通配并加了回归锁，该锁必须住在不被 docs-only 短路的 changes job' },
   { pattern: '.editorconfig', noGate: '无门禁消费；行尾风险由 PR 流程层的两口径 numstat 对账拦' },
   { pattern: '.ccg/**', noGate: '评审工具产物，无仓内门禁消费' },
   { pattern: '.adversarial/**', noGate: '对抗评审产物（proposal/critique/rebuttal/summary），纯 .md + .json，无可执行代码，无仓内门禁消费其内容' },

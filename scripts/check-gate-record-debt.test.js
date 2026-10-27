@@ -795,7 +795,7 @@ test('跨源：真仓现场报得出配对数，且当前零未承认违例（�
 // 「不许手改基线」+「基线只能由该脚本生成」同时成立，等于把存档面焊在一个不存在的文件上。
 //
 // 三条各守一格：
-//   ① 在库且未被忽略 —— 本地漏 negation 即红，不必等 CI 那句 Cannot find module；
+//   ① 在库且未被忽略 —— 一旦被忽略即红，不必等 CI 那句 Cannot find module；
 //   ② 复用判据导出的 HEADING_RE / headingTitle —— 生成器曾自带 /^## / 与 slice(3)，
 //      两处各写一份时判据改口径会让基线静默对不上，症状是"没人违规却门禁红"；
 //   ③ 那条提取口径不得在生成器里再出现第二份（按去注释后的代码体判，注释里提它不算）。
@@ -821,10 +821,13 @@ test('基线重算器 freeze-gate-carrier.js 必须在库、不得被忽略、�
     decided = ''
   }
   if (decided) {
-    assert.match(
-      decided,
-      /![^\s]*freeze-gate-carrier\.js/,
-      `决定该文件命运的规则不是反选：「${decided}」—— 漏了 .gitignore 里那条 !scripts/freeze-gate-carrier.js 就会这样：本地全绿、CI 上 Cannot find module`,
+    // ⚠ 2026-10-27（change: gitignore-scripts-root）：原件此处断言「命中的规则必须是 negation」。
+    // 那条 `scripts/*.js` 通配已根治删除，现在**任何**规则命中这个本体都说明有人重新引入了忽略 ——
+    // 不管它长什么样都该红（negation 机制已废弃，不再有"命中 negation 属正常"这一格）。
+    assert.fail(
+      `不该有任何 .gitignore 规则命中 ${rel}，实际命中：「${decided}」—— ` +
+      '规则命中意味着它可能被挡在仓外：本地全绿、CI 上 Cannot find module。' +
+      '正解：删掉命中它的那条规则（scripts/ 下只保留 scripts/tmp-*.js 一条定向忽略）',
     )
   }
 

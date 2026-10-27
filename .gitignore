@@ -31,7 +31,7 @@ latest.yml
 # Playwright browsers (bundled in installer)
 .playwright-browsers/
 
-# 涓存椂鏂囦欢
+# 临时文件（下载中的分片等）
 *.part
 # Test artifacts
 gen_frames.py
@@ -104,201 +104,32 @@ apps/desktop/tests/e2e/reports/routes-scan.json
 apps/desktop/tests/e2e/reports/screenshots/
 apps/desktop/tests/e2e/reports/film-engineering-real/
 
-# 涓存椂鑴氭湰鍜屾埅鍥?
-scripts/*.js
-!scripts/ci-pr-changeset.js
-!scripts/ci-pr-changeset.test.js
-!scripts/accounts-startup-chain-contract-mutate.js
-# GUI 相关性判据本体：第 106 行 scripts/*.js 会把它静默忽略，而 gui-test.yml 的 changes 作业
-# 与 gui-ci-exit-contract.test.js 都按路径点名它 —— 漏这条 negation 的症状是本地全绿、CI 上
-# Cannot find module（#3011 / Gate 2c3 同族，第三次）。
-!scripts/ci-gui-relevance.js
-# 主规格基线零覆盖门禁本体（2026-10-24）：第 108 行 scripts/*.js 会把判据本体静默忽略。
-# 症状形态与上面几条同族：本地全绿（文件在工作区跑得通），但**文件没进仓** ⇒
-# CI 上 workflow 点名它时 Cannot find module。测试文件不单独反选 ——
-# `!scripts/*.test.js` 的通用例外已兜住（同上方各条注释口径）。
-!scripts/check-spec-delta-coverage.js
-# pre-commit 进程创建预算锁本体：第 106 行 scripts/*.js 会把判据本体静默忽略（CI 上 Cannot find module）。
-# 测试文件不单独反选 —— 第 204 行 !scripts/*.test.js 的通用例外已兜住（同上方各条注释口径）。
-!scripts/check-precommit-spawn-budget.js
-# main-red 合并闸门 CLI 本体：第 106 行 scripts/*.js 会把新建的 .js 静默忽略，
-# 而 merge-when-green.{sh,ps1} 与 Gate 2b8 都按路径点名它 —— 不反选就会出现
-# 「闸门源码存在、git 里没有、CI 上 Cannot find module」（同 #3011 一族）。
-# 测试文件与 scripts/lib/ 下的判据本体不受该行影响（前者有 !scripts/*.test.js，
-# 后者不在 scripts/*.js 的匹配域内），故此处只需反选 CLI 本身。
-!scripts/check-main-red.js
-# electron-ci 桌面全量步骤本体：第 106 行 scripts/*.js 会把它静默忽略，
-# 而 electron-ci.yml 的那一步直接 node 它 —— 被忽略即 CI 上 Cannot find module。
-# （测试文件由 !scripts/*.test.js 通用例外兜住，见上方各条注释口径。）
-!scripts/electron-ci-desktop-step.js
-# 逐片墙钟复测入口本体：它是 STEP_BUDGET_PROVENANCE 的「可重跑路径」，
-# 被 scripts/electron-ci-shard-audit.test.js 与 changes job 按路径点名 —— 漏反选同上族（Cannot find module）。
-!scripts/electron-ci-shard-audit.js
-# 同型风险四锁 CLI 本体：第 106 行 scripts/*.js 会把它静默忽略，而 Gate 2c6 与
-# scripts/same-type-risk-locks.test.js 都按路径点名它 —— 漏这条 negation 的症状是
-# 本地全绿、CI 上 Cannot find module（#3011 / Gate 2c3 / precommit-spawn-budget 同族，第 4 次）。
-!scripts/check-same-type-risk-locks.js
-# 掩码覆盖 A/B 判据 CLI 本体（2026-10-18）：第 106 行 scripts/*.js 会把它静默忽略。
-# 它是 `scripts/lib/mask-coverage-ab.js` 的入口，改动 code-mask 的 PR 靠它跑「可见字符减少必须为 0」；
-# 被忽略的症状与上面几族完全同形 —— 本地全绿、CI 上 Cannot find module（#3011 / Gate 2c3 /
-# precommit-spawn-budget / same-type-risk-locks / 引导按钮名同族，第 6 次）。
-!scripts/check-mask-coverage.js
-# 引导文案按钮名同步锁本体：第 106 行 scripts/*.js 会把它静默忽略，而 quality-gate.yml
-# 的 changes job 按路径点名它 —— 漏这条 negation 的症状是本地全绿、CI 上 Cannot find
-# module（#3011 / Gate 2c3 / precommit-spawn-budget / same-type-risk-locks 同族，第 5 次）。
-!scripts/check-locale-button-name-sync.js
-!scripts/quality-rhythm-wrapper.js
-!scripts/ccg-artifact-shape-survey.js
-!scripts/ccg-gate.js
-!scripts/ccg-deep-review.js
-!scripts/ccg-review-decider.js
-# 驱动侧写回器本体（change: qm6-closure-writeback）。同 #3011 同族：第 106 行 `scripts/*.js`
-# 会把入口唯一调用的这个文件静默忽略 —— 漏 negation 的症状是本地全绿、真跑 deep-review.sh
-# 时 node 报 Cannot find module，而它被 `|| say` 兜成一句告警，评审照样"成功"。
-!scripts/ccg-review-writeback.js
+# ── scripts/ 下 .js 的忽略口径（change: gitignore-scripts-root，2026-10-27）──
+#
+# 这里刻意没有 `scripts/*.js` 这种整目录通配。历史上有过一条，后果是新写的判据本体
+# 默认不入仓：本机在盘、`node --test` 跑得通、`git status` 里它根本不存在，直到 CI 以
+# MODULE_NOT_FOUND 红在别人的文件上。实测反复踩了 7 次，因此把默认值翻过来：
+#
+#   脚本默认可入库；只有一次性脚本需要挡，命名成 tmp-*.js 即可（下一条）。
+#
+# 为什么 / 踩过什么 / 当年那 120 条反选清单，见 openspec/records/gitignore-scripts-root.md。
+# 回归锁：scripts/check-gitignore-scripts.js（接在 quality-gate.yml 的 changes job）。
+scripts/tmp-*.js
+# 防御性例外：测试文件必须恒可跟踪（若将来有人重新引入 scripts/ 的忽略规则，这条保住 *.test.js）。
+# ⚠ 读法：没有前置忽略规则时它是空操作，但 `git check-ignore -v <某.test.js>` 仍会把这一行
+# 打出来（命中 negation 也会显示）—— 别把那个输出误读成「该文件被忽略」，以退出码为准。
+!scripts/*.test.js
 !scripts/plan-review.sh
 !scripts/deep-review.sh
-!scripts/openspec-sync-check.js
-# 未接线组件门禁本体（阶段 5.3）：第 108 行 `scripts/*.js` 会把判据本体静默忽略，
-# 而 Gate 2b15 按路径点名它 —— 漏 negation 的症状是 CI 上 Cannot find module。
-# 测试文件由第 271 行 `!scripts/*.test.js` 兜住；基线 JSON 不受该行影响（非 .js）。
-!scripts/check-unwired-components.js
-# 它的反证驱动同理：Gate 2b15 现在**真跑**这个文件（"只手动跑的反证会随下一次改判据过期"），
-# 漏 negation 的症状是 CI 上 Cannot find module，而那正好把"锁有牙"的唯一证据变成不可用。
-!scripts/unwired-components-mutate.js
-# 横幅按钮配色对比度本地校验本体（2026-10-17）。⚠ 同 #3011 同族：第 106 行
-# `scripts/*.js` 会把判据本体静默忽略（本地全绿、CI 上 Cannot find module）。
-# 它是 Gate 7c（暗色文本对比度）的本地前置判据 —— 少了它，改色只能等 4 分钟的
-# CI 才知道达标与否；该按钮配色实测改了三轮才定稿，判据必须随代码入库。
-!scripts/check-trial-banner-contrast.js
-# 像素 diff 分布分析本体（2026-10-17）。用途：视觉回归报 N% 时，用**差异铺在哪儿**
-# 替代"肉眼看截图"来判断是否可接受 —— 本项目实测过「两张 PNG 差 127 字节、
-# 像素差 9.41%」，肉眼不可靠。同 #3011 同族：第 106 行 scripts/*.js 会静默忽略它。
-!scripts/analyze-pixel-diff.js
-# Gate 9 覆盖审计的 PR 画像判据（2026-10-12，change: gate9-scope-fix）。
-# ⚠ 同 #3011 同族：`scripts/*.js` 会把门禁本体静默忽略掉 —— 实测三个 commit 反复 CI 红，
-# 根因是判据模块没入库（.test.js 后缀不同逃过忽略，被测模块没有），CI 上
-# MODULE_NOT_FOUND 而本机全绿。新增 scripts/ 下的门禁模块必须在此放行。
-!scripts/gate9-classify.js
-!scripts/gate9-prd-status.js
-# 渲染层跨包导入边界门禁（PR #3011 事故预防措施）。
-# ⚠ 本条反选是必需的：`scripts/*.js` 会把门禁本体静默忽略掉，而 `*.test.js` 有通用例外，
-# 于是「测试进了仓库、被测门禁没进」——CI 上表现为 `Cannot find module`，
-# 本地却全绿（文件在磁盘上）。2026-10-07 实测踩过一次。
-!scripts/check-renderer-cjs-boundary.js
-!scripts/check-renderer-cjs-boundary.test.js
-# CHANGELOG 重复条目门禁（2026-10-07 事故：main 上 277→1157 条目、最坏同一标题重复 16 次）。
-# 同上一条理由：`scripts/*.js` 会把门禁本体静默忽略，本地在盘上、CI 上 Cannot find module。
-!scripts/check-changelog-duplicate-entries.js
-!scripts/check-changelog-duplicate-entries.test.js
-# Gate 4 选择集自检（2026-10-11：desktop 混进 30 分钟预算那条根因的判据本体）。
-# 同上一条理由：第 106 行的 scripts/*.js 会**静默忽略门禁本体**，而 *.test.js 有通用例外，
-# 于是「锁进了仓库、锁要读的那个门禁没进」—— CI 上 `Cannot find module`，本地全绿。
-# 而且 quality-gate.yml 的 Gate 4 会在 Start-Process 之前直接 `node scripts/check-gate4-selection.js`，
-# 文件缺席会把整条 QG Unit Tests 判红，不是"少跑一个可选检查"。
-!scripts/check-gate4-selection.js
-!scripts/check-gate4-selection.test.js
-# 视觉判定域对账（2026-10-11：注册 37+19 个视图却只比对 20 个，且没有任何门禁能看见）。
-# 同上一条理由：第 106 行 scripts/*.js 会静默忽略门禁本体，而 Gate 2b 是点名执行它的，
-# 文件缺席 ⇒ CI 上 Cannot find module。登记表是 JSON，不在 *.js 忽略域内，但一并显式反选，
-# 免得下一次有人往 scripts/ 里加 .js 时把它连带影响。
-!scripts/check-visual-coverage.js
-!scripts/check-visual-coverage.test.js
 !scripts/visual-coverage-debt.json
-# 删除守卫（AGENTS.md R0）。同上一条理由：scripts/*.js 会把守卫本体静默忽略，
-# 本地在盘上、CI 上 Cannot find module —— 而守卫一旦缺席，删除就退回裸 mavis-trash，
-# 2026-10-07 单日误删 .ccg/ 1161 个受管文件 5 次正是这么发生的。
-!scripts/safe-delete.js
-!scripts/safe-delete.test.js
-# 条目模型的单一实现（被上面两个门禁 require）；漏这条会让"判据本体"不进仓库，
-# 于是 CI 与本地跑的是两份不同东西（第 106 行 scripts/*.js 会静默忽略新建脚本）。
-!scripts/changelog-entries.js
-# 清理结果的独立对账器（QM-6 F-A）；漏这条同样是把工具挡在仓库外，CI 与本仓各跑一份
-!scripts/changelog-dedup-reconcile.js
-# re-sync 后重新生成"清理结果 + 授权文件"的可复跑命令（不留在某人脑子里）
-!scripts/changelog-dedup-regen.js
-!scripts/openspec-sync-check.test.js
-!scripts/affected-report.js
-!scripts/verify-worktree-deps.js
-!scripts/run-package-install.js
-!scripts/launch-worktree.js
-!scripts/ensure-electron.js
-!scripts/check-dep-audit.js
-!scripts/check-dep-audit.test.js
-!scripts/check-blanket-fs-mock.js
-!scripts/check-test-egress-ledger.js
-!scripts/nx-affected-probe.js
-!scripts/ensure-desktop-deps.js
-!scripts/ensure-desktop-deps.test.js
-!scripts/start-desktop-identity.js
-!scripts/check-no-brand-residue.js
-!scripts/check-no-brand-residue.test.js
-!scripts/detect-unwired-exports.js
-!scripts/detect-unwired-exports.test.js
-!scripts/sync-platform-config.js
-!scripts/sync-platform-config.test.js
-!scripts/check-unwired-tests.js
-!scripts/check-step-failfast.js
-!scripts/check-gate-record-debt.js
-# 同一族第三次：判据本体若被 scripts/*.js 静默忽略，CI 会以 MODULE_NOT_FOUND 红在别人身上，而不是"这条门禁没跑"。
-!scripts/check-no-conflict-markers.js
-!scripts/check-baseline-freshness.js
-!scripts/classify-docs-only.js
-!scripts/lock-timing-audit.js
-# 用例级预算的 CI 复测入口（change: gui-cli-e2e-case-timeout）；被忽略则 provenance 变成"量过一次没人能再量"
-!scripts/case-timeout-audit.js
 # 执行记录存在性判据（change: enforce-gate-record-presence）；其 .test.js 由下面
 # !scripts/*.test.js
-!scripts/lib/ 兜住，但脚本本体必须逐条放行，否则 git add 当场报错、CI 永远看不见它
-!scripts/check-pr-exec-record.js
-!scripts/check-changelog-growth.js
-# 主规格 Purpose 去 TBD 门禁（change: spec-purpose-tbd-gate）；测试文件由下面 !scripts/*.test.js 兜住
-!scripts/check-spec-purpose.js
-# QM-5 行集棘轮（qm5-row-ratchet）。第 106 行 `scripts/*.js` 会把判据**本体**静默忽略 ——
-# 漏这条 negation 的后果不是报错，而是 `git status` 里它根本不存在：本地在盘、跑得通，
-# 而 Gate 2c3 在 CI 上 Cannot find module。判据一律用 `git check-ignore --no-index` 量，不用 status。
-!scripts/check-record-qm5-rows.js
-# 「分支内容已进主干」的机械判据本体（PR #3741 那条 AGENTS 散文的执行体）。
-# 第 106 行 `scripts/*.js` 同样会把它静默忽略 —— 漏 negation 时 `git status` 里它根本不存在，
-# 本地在盘跑得通，而 changes 作业的 Gate 2b5 在 CI 上 Cannot find module。
-!scripts/check-branch-merged.js
-# 跨仓 sidecar 对账判据本体（change: subtitle-sidecar-parity-lock）。第 106 行 `scripts/*.js`
-# 会把它静默忽略：漏这条 negation 时 `git status` 里它根本不存在，本地 `node --test` 跑得通，
-# 而 Gate 12f 在 CI 上以 MODULE_NOT_FOUND 红 —— 且红点看起来像"判据坏了"而不是"判据没被跟踪"。
-!scripts/check-sidecar-parity.js
-# CCG 收敛出口探针本体（change: ccg-convergence-exit）。上方那条 `scripts/*.js` 通配规则同样
-# 会把它静默忽略 —— 漏 negation 时 `git status` 里它根本不存在：本地在盘、`node --test` 跑得通，
-# 而 Gate 2b6 在 CI 上以 MODULE_NOT_FOUND 红在**别人的**文件上，读起来像"探针坏了"。
-!scripts/ccg-convergence-probe.js
-!scripts/qm6-exit-capabilities.js
-!scripts/qm6-exit-capabilities.test.js
-!scripts/qm6-exit-capabilities.mutation.js
-# 设计稿导航契约判据本体（2026-10-26，change: ui-design-nav-gate）。上面 `scripts/*.js` 通配规则
-# 会把它静默忽略 —— 漏 negation 时 `git status` 里它根本不存在：本机在盘、`node --test` 跑得通，
-# 而 quality-gate.yml 的 changes job 在 CI 上以 MODULE_NOT_FOUND 红，读起来像"判据坏了"而不是
-# "判据没被跟踪"（#3011 / Gate 2c3 / precommit-spawn-budget / same-type-risk-locks / 掩码覆盖 /
-# 引导按钮名 / 未接线组件 同族，这是第 7 次）。测试文件由下方 `!scripts/*.test.js` 通用例外兜住。
-!scripts/check-design-nav.js
+# （历史）上面 .sh / .json 两条反选与下方 !scripts/*.test.js 的出处：测试文件必须恒可跟踪，
+# 脚本本体必须逐条放行，否则 git add 当场报错、CI 永远看不见它。
 # scripts/*.js is ignored wholesale above, so every tracked script needs its own
 # negation. That per-file allowlist silently loses NEW test files (git add won't
 # warn). Test files must always be tracked, so un-ignore them by pattern instead.
 !scripts/*.test.js
-!scripts/compare-scheduler-models.js
-!scripts/gate-budget.js
-!scripts/gate-budget-probe.js
-!scripts/check-desktop-shard-forwarding.js
-!scripts/check-desktop-shard-forwarding.test.js
-# QG Coverage 预算常量的取证对账（change: coverage-timeout-provenance，2026-10-18）：需入库，非临时脚本
-!scripts/check-coverage-budget.js
-!scripts/coverage-budget-sample.js
-# P0-1 平台分类 ID 转换器（ARCH-REUSE-INTEGRATION R-1）：需入库，非临时脚本
-!scripts/import-platform-taxonomy.js
-!scripts/import-platform-taxonomy.test.js
-# P1-1 平台指标矩阵转换器（ARCH-REUSE-INTEGRATION §4.2/§4.3）：需入库，非临时脚本
-!scripts/import-platform-metric-matrix.js
-# P3-1 分片覆盖率合并判定器（change: gate-coverage-shard-merge）：需入库，非临时脚本。
-# ⚠ 上面的 `scripts/*.js` 会把它静默忽略 ⇒ 漏这条 negation 的症状是「本地跑得通、提交里没有它」。
-!scripts/merge-coverage-shards.js
 screenshot_script*.js
 temp_debug.txt
 coverage/
@@ -429,8 +260,6 @@ deploy-temp/
 # E2E runtime artifacts (reports/screenshots, never committed)
 apps/desktop/tests/e2e-output/
 
-
-
 # Shared user data dir (WSL/Windows 共享运行时数据，锚点文件用于自动检测)
 shared-user-data/
 shared-user-data.backups/
@@ -467,78 +296,7 @@ shared-user-data.backups/
 
 # Git worktree 隔离目录（会话工作区，不入库）
 .worktrees/
-# P3-1 扩平台自检脚本（scripts/*.js 默认忽略，需显式白名单）
-!scripts/verify-platform-onboarding.js
-!scripts/verify-platform-onboarding.test.js
-!scripts/gen-prd-copy-table.js
-!scripts/gen-prd-copy-table.test.js
-# 时钟位移 oracle（2026-10-13，clock-shift-oracle）。同族两条静默忽略坑都要显式反选：
-# ① 第 106 行 scripts/*.js 会忽略判据本体（本地在盘上、CI 上 Cannot find module，先例 #3011/#3308）。
-# ② 第 59 行 test-*.js 未锚定目录，会连 **vitest setupFiles 点名的那个 setup 文件**一起忽略掉 ——
-#    它是 apps/desktop/test-setup-clock-shift.js，缺席时 vitest 会大声失败，但根因仍是这条忽略规则。
-!scripts/check-clock-shift-oracle.js
-!scripts/check-clock-shift-oracle.test.js
 !apps/desktop/test-setup-clock-shift.js
-
-# oss-b1-rpa-hardening: evasions 提取脚本被 106 行 scripts/*.js 默认忽略, 不 negation 则 CI 与本地 require 不到 (同 #3011 家族)
-!scripts/extract-evasions.js
-# 旧载体冻结基线的重取工具（2026-10-15，change: freeze-legacy-gate-carrier）。第 106 行 scripts/*.js
-# 会把脚本本体静默忽略：漏这条 negation 时 git status 里它根本不存在，本地在盘、跑得通，
-# 而 Gate 2c 在 CI 上 Cannot find module（同 #3011 家族）。基线 JSON 不在该 glob 内，无需放行。
-!scripts/freeze-gate-carrier.js
-
-# 阶段 5.3/5.4 新门禁（ux-audit-phase34，2026-10-19）。第 106 行 scripts/*.js 会把判据本体与
-# 其自测一并静默忽略：漏 negation 时本地在盘、跑得通，而 Gate 2b 在 CI 上 Cannot find module
-# （同 #3011 家族）。欠账 JSON 不在该 glob 内，无需放行，但**必须**被 Gate 2b 读到，
-# 所以两份清单也在这里显式反选以防后续 glob 变化。
-!scripts/check-ui-wired.js
-!scripts/check-ui-wired.test.js
-!scripts/check-field-consumed.js
-!scripts/check-field-consumed.test.js
-# compose 稳定错误码 ↔ locale 文案一致性门禁（2026-10-20，change: error-message-user-friendly-audit）。
-# 第 106 行 scripts/*.js 会把判据本体静默忽略：漏 negation 时本地在盘、跑得通，
-# 而 quality-gate.yml 的 Gate 12g 在 CI 上 Cannot find module（同 #3011 家族）。
-# 自测由第 244 行 !scripts/*.test.js 通用例外兜住，此处只放行本体。
-!scripts/check-compose-error-codes.js
-# 台账聚合器本体（2026-10-20，change: changelog-record-carrier）。第 106 行 scripts/*.js 同样会把它
-# 静默忽略 —— 漏这条 negation 的症状不是"少跑一个测试"，而是 Gate 2b8 在 CI 上 Cannot find module，
-# 以及发版侧 release-gate 找不到聚合器（同 #3011 家族）。自测由第 244 行 !scripts/*.test.js 兜住。
-!scripts/aggregate-changelog.js
-# artifact 清理脚本本体（2026-10-21）。同一行 106 的 scripts/*.js 会把它静默忽略，而它是被
-# cleanup-artifacts.yml 真调用的生产脚本 —— 漏 negation 的症状不是"测试少跑"，是定时作业
-# 每跑一次就 Cannot find module 一次（那条 workflow 只由 schedule 触发，红在 PR 侧不可见）。
-# 自测由 !scripts/*.test.js 通用例外兜住，此处只放行本体。
-!scripts/cleanup-artifacts.js
-# artifact 清理的变异反证驱动本体（2026-10-22，QM-6 i3）：取证工具必须入仓，
-# 否则"9/9 CAUGHT"只是别人复跑不了的一句话。它不是门禁、CI 不点名跑（要改被测源）。
-# 文件名不以 .test.js 结尾是刻意的：check-unwired-tests 的域按该后缀收，收进来就成了一条
-# "必须接进 CI 却永远不该接"的假欠账。
-!scripts/cleanup-artifacts.mutation.js
-# 热写面禁改门禁本体（2026-10-21，change: changelog-record-carrier 片3）。第 106 行 scripts/*.js
-# 同样会静默忽略判据本体：漏 negation 时本地在盘、跑得通，而 Gate 2b9 在 CI 上
-# Cannot find module（同 #3011 家族）。自测由第 244 行 !scripts/*.test.js 兜住，此处只放行本体。
-!scripts/check-no-hot-carrier-edit.js
-
-# 债务基线重算判据本体（2026-10-20，change: debt-baseline-recheck）。第 106 行 scripts/*.js 同样会把它
-# 静默忽略：而它的自测由第 244 行 !scripts/*.test.js 通用例外进了仓 ⇒ 漏这条 negation 的后果是
-# "测试在盘、判据不在盘"，CI 上以 Cannot find module 的形式红，本地全绿（同 #3011 家族）。
-!scripts/check-debt-recheck.js
-# 定时作业报警覆盖面判据（2026-10-22，change: schedule-failure-watch）：
-# 它要防的是"手抄的名单漂了没人知道"，所以本体与行为锁都必须入库、都必须被 Gate 2b13 点名跑。
-!scripts/check-schedule-failure-watch.js
-!scripts/check-schedule-failure-watch.test.js
-!scripts/check-schedule-failure-watch.mutation.js
-!scripts/check-schedule-heartbeat.js
-!scripts/check-schedule-heartbeat.test.js
-!scripts/check-schedule-heartbeat.mutation.js
-# QM-6 外部出处覆盖率水位 + 假想 enforce 扫描的本体（2026-10-23，change: qm6-tier-watermark）。
-# 同一个坑第三次兑现：规则 scripts/*.js 静默忽略新建脚本，而 !scripts/*.test.js 那条通用例外把
-# 测试文件兜住 ⇒ 只补本体这两条 negation，否则"测试在盘、判据不在盘"，
-# 本地全绿而 CI 以 Cannot find module 红（#3011 家族）。本刀实测踩过：前三笔提交只带了测试。
-# 刻意不写行号：本仓这份文件很长、行号会漂；判据在 scripts/qm6-tier-watermark.test.js 的
-#   「negation 必须各自存在」那条锁里，它按模式匹配 negation 清单，不依赖任何行位置。
-!scripts/qm6-tier-watermark.js
-!scripts/qm6-enforce-preview.js
 # CCG 深度审查的工作产物（提案/评审/裁决），不进主干；判定记录 .ccg/reviews/*.json 才是留痕
 .adversarial/
 # 构建产物（由 build:preload / build:paginator 生成，不进版本控制）
@@ -552,16 +310,3 @@ apps/desktop/electron/home-shell-preload.bundle.js
 apps/desktop/electron/monitor-preload.bundle.js
 apps/desktop/electron/services/generated/card-paginator.iife.js
 apps/desktop/electron/services/stealth/stealth-preload-enhanced.bundle.js
-!scripts/offline-live-contract-mutate.js
-
-# UX 审计 1.6：快捷键显示面反证驱动（scripts/*.js 的默认忽略会把它静默排除在 git 之外 ⇒ CI 永远不跑）
-!scripts/hotkey-labels-contract-mutate.js
-
-# UX 审计 1.3：防复活锁的反证驱动（scripts/*.js 默认忽略会把它静默排除在 git 之外 ⇒ CI 永远不跑）
-!scripts/dead-components-contract-mutate.js
-# UX 审计 1.10b：错误卡动作位的反证驱动（scripts/*.js 默认忽略会把它静默排除在 git 之外 ⇒ CI 永远不跑）
-!scripts/error-action-mutate.js
-
-# 判据闭包清点判据本体：第 108 行 scripts/*.js 会把新建的判据静默忽略（CI 上 Cannot find module）。
-# 测试文件由 !scripts/*.test.js 通用例外兜住，此处只需反选判据本体。
-!scripts/check-judge-surface-coverage.js

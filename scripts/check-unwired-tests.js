@@ -136,6 +136,16 @@ const MUST_LIVE_IN_UNGATED_JOB = {
     resolveWhen:
       "它被点名进 changes job（本次已接，无 job 级 if 的那类面），或 01-docs/** 移出 CI_IGNORED_PATHS，或本锁被删",
   },
+
+  "scripts/check-gitignore-scripts.test.js": {
+    reason:
+      "它守的输入就是 .gitignore 本身，而 '.gitignore' 在 CI_IGNORED_PATHS 里 ⇒ 只改 .gitignore 的 PR " +
+      "会被判 docs-only；若这条锁只住在带 job 级 if 的 job 里，「有人把 scripts/*.js 通配加回去」的 PR " +
+      "会全绿合入，而那种改动会让之后每一个新写的判据本体静默不入仓（本仓实测复发 7 次）" +
+      "（同 Gate 2b2/#3114 实测形态：PR 侧 Changes 绿、Static skipping，main push 才红）",
+    resolveWhen:
+      "它被点名进 changes job（本次已接，无 job 级 if 的那类面），或 '.gitignore' 移出 CI_IGNORED_PATHS，或本锁被删",
+  },
 }
 
 // 嵌套 workflow 承认清单：path -> 为什么允许它存在但永不执行。只能缩小，新增即红。

@@ -368,15 +368,25 @@ test('T8 反失明正控：改动集为空（ref 与 base 同指一处）必须�
   r.rm();
 });
 
-test('T9 接线锁：判据本体必须被 git 跟踪（.gitignore 第 106 行 scripts/*.js 会静默吞掉它）', () => {
+test('T9 接线锁：判据本体不得被 .gitignore 吞掉，且必须被 git 跟踪', () => {
   const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: __dirname, encoding: 'utf8' }).trim();
   const rel = path.relative(repoRoot, SELF).split(path.sep).join('/');
-  const hit = execFileSync('git', ['check-ignore', '--no-index', '-v', rel],
-    { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  if (hit !== '') {
-    assert.match(hit, /!\s*scripts\/(\*\.js|check-branch-merged\.js)/,
-      '本体被 scripts/*.js 命中却没有 negation ⇒ CI 上 Cannot find module');
+  // ⚠ 2026-10-27（change: gitignore-scripts-root）：原件先跑 `git check-ignore -v` 拿输出，
+  // 若命中则断言「命中的必须是 negation」。那条 `scripts/*.js` 通配已被根治删除，
+  // 现在本体的 check-ignore 退出码从 0（命中 negation）变成 **1（不被忽略）** ——
+  // 原写法用 execFileSync 会在退出码 1 时直接抛异常，测的是"异常"而不是"契约"。
+  // 改为显式判退出码：0=被忽略（红）/ 1=不被忽略（正是我们要的）/ 其它=判据读不到（抛错）。
+  let ignored = false;
+  try {
+    execFileSync('git', ['check-ignore', '--no-index', '-q', rel],
+      { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+    ignored = true;
+  } catch (e) {
+    assert.equal(e && e.status, 1,
+      'git check-ignore 对 ' + rel + ' 返回意外退出码 ' + (e && e.status) + '（不是"未忽略"的 1）⇒ 判据读不到结论');
   }
+  assert.equal(ignored, false,
+    '本体被 .gitignore 忽略了 ⇒ 本地全绿、CI 上 Cannot find module（取证：git check-ignore -v ' + rel + '）');
   assert.equal(execFileSync('git', ['ls-files', '--error-unmatch', rel], { cwd: repoRoot, encoding: 'utf8' }).trim(), rel);
 });
 

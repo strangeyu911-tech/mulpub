@@ -438,7 +438,12 @@ function collectProblems (options) {
     for (const rel of [path.relative(root, __filename), path.relative(root, __filename).replace(/\.js$/, '.test.js')]) {
       const st = checkIgnoreStatus(rel.replace(/\\/g, '/'), root);
       if (st === 0) {
-        problems.push('门禁自身被 .gitignore 吞掉（scripts/*.js 那条默认忽略，须补 negation），CI 永远不会跑它：' + rel);
+        // ⚠ 2026-10-27（change: gitignore-scripts-root）：提示语原为「须补 negation」。
+        // scripts/*.js 通配已根治删除，现在被忽略只可能是有人**重新引入**了整目录/宽域规则 ——
+        // 正解是删掉那条规则（并保留 scripts/tmp-*.js 作一次性脚本的唯一忽略），不是把 negation 逐条加回来。
+        problems.push(
+          '门禁自身被 .gitignore 吞掉，CI 永远不会跑它：' + rel +
+          '（正解：删掉命中它的那条忽略规则；全局口径由 scripts/check-gitignore-scripts.js 守）');
       } else if (st >= 2) {
         problems.push('check-ignore 自身失败（rc=' + st + '）⇒ "没被忽略"这个结论不可信，不得当作通过：' + rel);
       }

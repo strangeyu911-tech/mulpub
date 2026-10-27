@@ -243,29 +243,40 @@ test('qm6-tier-watermark.test.js 必须接进 quality-gate.yml 的 bash 步骤�
     '测试文件未接进 CI 可执行正文 ⇒ 它永远不会执行，也没有任何东西会因此变红')
 })
 
-// ── 1.1.11 评审 i4：被 CI 点名的测试，其实现必须真的在版本库里（改名即红） ────
+// ── 1.1.11 评审 i4：被 CI 点名的测试，其实现必须真的能被 git 收进来（改名即红） ────
 // 本机实测踩过的坑：.gitignore 里 `scripts/*.js` 那条默认忽略静默吞掉新脚本，而通用例外
 // `!scripts/*.test.js` 把测试兜住 ⇒ "测试入库、判据不入库"在本地完全不可见（文件在盘上），只有 CI 会红。
-// 这条锁把那个不可见变成红：它读的正是 .gitignore 的 negation 与 workflow 的点名清单。
-// 文案刻意只引**模式名**不引行号：这份文件很长、行号会漂，漂了以后红文案会指错地方。
-// 被吞掉时当场可复现的取证命令是 `git check-ignore -v scripts/<名>.js`，它自己会回显命中的模式与行位置。
-test('本刀两个判据本体必须各自有 .gitignore negation（改名或漏登记当场红）', () => {
-  const gitignore = fs.readFileSync(path.join(__dirname, '..', '.gitignore'), 'utf8').split(/\r?\n/)
-  const negations = gitignore.filter((l) => l.startsWith('!scripts/')).map((l) => l.trim())
+// 这条锁把那个不可见变成红。
+//
+// ⚠ 2026-10-27（change: gitignore-scripts-root）——判据口径已改：
+//   本条原先断言「.gitignore 里必须有 `!scripts/<impl>` 这条 negation」。那条通配已被根治删除
+//   （它让**每一个**新判据本体默认不入仓，实测复发 7 次），negation 机制随之不复存在 ⇒
+//   若继续断言"有 negation"，这条锁会红在所有**正确**的现状上（本 PR 在 CI 上当场红过：
+//   qm6-tier-watermark.js 缺 .gitignore negation）。
+//   现改为断言**行为**：`git check-ignore` 说它不被忽略即可 —— 不管将来机制怎么变，
+//   "本体能不能进仓"始终是这条锁真正关心的事。全局口径由 scripts/check-gitignore-scripts.js 守。
+test('本刀两个判据本体必须能进 git（不被 .gitignore 吞掉；改名或漏登记当场红）', () => {
+  const root = path.join(__dirname, '..')
   const pairs = [
     ['scripts/qm6-tier-watermark.test.js', 'scripts/qm6-tier-watermark.js'],
     ['scripts/qm6-enforce-preview.test.js', 'scripts/qm6-enforce-preview.js'],
   ]
-  const wf = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'quality-gate.yml'), 'utf8')
+  const wf = fs.readFileSync(path.join(root, '.github', 'workflows', 'quality-gate.yml'), 'utf8')
   for (const [testFile, implFile] of pairs) {
     assert.ok(wf.includes(testFile), testFile + ' 没被 CI 点名 ⇒ 实现登记得再对也不会跑')
-    assert.ok(negations.includes('!' + implFile),
-      implFile + ' 缺 .gitignore negation ⇒ 它会被 `scripts/*.js` 那条默认忽略静默吞掉：本地全绿、CI Cannot find module')
-    assert.ok(fs.existsSync(path.join(__dirname, path.basename(implFile))), implFile + ' 不在盘上')
+    assert.ok(fs.existsSync(path.join(root, implFile)), implFile + ' 不在盘上')
+    // `git check-ignore` 退出码语义：0=被忽略 / 1=不被忽略 / 其它=判据读不到
+    const r = spawnSync('git', ['check-ignore', '-q', '--no-index', implFile],
+      { cwd: root, encoding: 'utf8', env: gitSafeEnv().env })
+    assert.equal(r.status, 1,
+      implFile + ' 被 .gitignore 忽略了（git check-ignore 退出码应为 1=不忽略，实得 ' + r.status +
+      '）⇒ 本机会全绿而 CI Cannot find module。取证：git check-ignore -v ' + implFile)
   }
-  // 反向自证：把实现名改掉，这条锁必须红（不是靠 fs.existsSync 兜住，negation 才是判据）
-  const renamed = negations.filter((l) => l === '!scripts/qm6-XXX.js')
-  assert.equal(renamed.length, 0, '夹具自证失效')
+  // 反向自证：拿一个必然被忽略的路径，确认上面那条判断真的会咬（而不是恒绿）
+  const bogus = spawnSync('git', ['check-ignore', '-q', '--no-index', 'scripts/tmp-__probe_never_exists.js'],
+    { cwd: root, encoding: 'utf8', env: gitSafeEnv().env })
+  assert.equal(bogus.status, 0,
+    '反向自证失效：tmp-* 定向忽略没生效 ⇒ 上面那条"必须不被忽略"的断言等于没在判定')
 })
 
 // ── 1.1.12 评审 i3：把上一条从"我自己这两个文件"推广成"CI 点名的全部实现" ──────

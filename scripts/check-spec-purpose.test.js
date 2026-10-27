@@ -509,12 +509,12 @@ test('真实仓库：Purpose 已写好的规格不得被判 EMPTY（防"多行 $
   assert.deepEqual(emptied.map((b) => b.file), [], '真实仓库里不得有任何 EMPTY/MISSING_SECTION 违规；一旦出现就必须点名，不得只断言"它是个数组"');
 });
 
-test('新增门禁脚本必须被 .gitignore 的 negation 放行（scripts/*.js 默认忽略新建脚本）', () => {
+test('新增门禁脚本必须能进 git（不被 .gitignore 吞掉）', () => {
   const root = path.join(__dirname, '..');
-  const ignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
-  assert.ok(ignore.includes('!scripts/check-spec-purpose.js'), '缺 negation ⇒ 本地有、CI 没有，判据会在 CI 上 MODULE_NOT_FOUND');
-  // 测试文件不要求逐条 negation：第 166 行的 `!scripts/*.test.js` 已按模式放行（要求逐条反而是不可实现的空话）
-  assert.ok(ignore.includes('!scripts/*.test.js'), '测试文件必须按模式放行，否则新用例静默不入仓库');
+  // ⚠ 2026-10-27（change: gitignore-scripts-root）：本条原先还断言「.gitignore 里必须有
+  // `!scripts/check-spec-purpose.js` 与 `!scripts/*.test.js`」。那条 `scripts/*.js` 通配已被根治删除
+  // （它让每个新判据本体默认不入仓，实测复发 7 次），negation 机制随之不复存在。
+  // 现在只看**行为**：git check-ignore 对这两个文件必须零命中 —— 机制怎么变都不影响这个目标。
   let out = '';
   try {
     out = cp.execFileSync('git', ['-C', root, 'check-ignore', '--no-index', '--',
@@ -522,5 +522,5 @@ test('新增门禁脚本必须被 .gitignore 的 negation 放行（scripts/*.js 
   } catch (e) {
     out = String(e.stdout || '');
   }
-  assert.equal(out.trim(), '', 'git check-ignore 必须对两个新文件零命中：' + out.trim());
+  assert.equal(out.trim(), '', 'git check-ignore 必须对两个文件零命中（本体与测试都必须能入仓）：' + out.trim());
 });

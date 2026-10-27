@@ -470,7 +470,8 @@ test('本地锁：工作区里被 gitignore 吞掉的 scripts/*.js ⇒ 红（新
     .filter(f => /\.js$/.test(f) && !/\.test\.js$/.test(f));
   assert.deepEqual(ignored, [],
     '工作区里这些 scripts/*.js 被 .gitignore 静默忽略了 ⇒ 它们不会进仓，'
-    + 'CI 上 workflow 点名时会 Cannot find module。请在 .gitignore 加 `!scripts/<name>.js` 反选：\n  '
+    + 'CI 上 workflow 点名时会 Cannot find module。正解是删掉命中它们的那条忽略规则'
+    + '（scripts/ 下只保留 scripts/tmp-*.js 一条定向忽略）：\n  '
     + ignored.join('\n  '));
 });
 

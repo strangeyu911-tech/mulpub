@@ -658,6 +658,7 @@ test("真实仓库：接线资格清单只能缩小，且登记的锁确实住�
       "scripts/aggregate-changelog.test.js",
       "scripts/check-compose-error-codes.test.js",
       "scripts/check-design-nav.test.js",
+      "scripts/check-gitignore-scripts.test.js",
       "scripts/check-no-hot-carrier-edit.test.js",
       "scripts/openspec-sync-check.test.js",
       "scripts/quality-rhythm-spec-mirror.test.js",

@@ -1,0 +1,144 @@
+{
+  "sha": "0c3f97af12dde5694901a31892e08f945731469a",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 361 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 361,
+    "fileCount": 10,
+    "codeFileCount": 7,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "4943c43ef741bfb8673f18e6420b177f2571d4824587f55fec9da0870e498288",
+  "decidedAt": "2026-10-27T09:15:22.420Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "claude",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "删除 120 条 !scripts/*.js 反选仅依赖 git ls-files 聚合计数（193 已跟踪 / 1 未跟踪）；若任一未跟踪文件实际需要入仓，新口径将永久隐藏它，且无逐条记录。",
+        "verdict": "upheld",
+        "prosecution": "Critical。删除 120 条反选只依赖聚合计数；若任一未跟踪文件实际需要入仓，新口径会永久隐藏它，且无逐条记录。建议在提交前逐条列出被删反选对应文件名及 git 状态。",
+        "defense": "聚合计数的口径已经能证明\"没有遗漏\"：磁盘 194 = 已跟踪 193 + 未跟踪 1，那个 1 正是本 PR 入库的。逐条列 120 条反选是重复劳动 —— 它们的共同点是\"都已被跟踪\"，逐条列只会把同一句话重复 120 遍。",
+        "rationale": "成立（补强）。虽然口径上已足够，但\"能证明\"和\"读者能复算\"是两件事 —— 这正是 Round 1 的 i2 教过的。已在执行记录 §二 补 `git ls-files` 原始读数（动手前 227/194/1、改动后 0/2），并说明 glob 是否跨 `/` 造成的口径差。",
+        "externalReview": null
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": ".gitignore 新增说明块首行存在 GBK 乱码残留（涓存椂鑴氭湉鍜屾埅鍥?），表明编码/复制错误未清理。",
+        "verdict": "upheld",
+        "prosecution": "Warning。`.gitignore` 新增说明块首行存在 GBK 乱码残留（`涓存椂鑴氭湉鍜屾埅鍥?`），说明编码/复制错误未清理。",
+        "defense": "我确实清掉了那一条（第 107 行的「临时脚本和截图」乱码标题）。",
+        "rationale": "成立，但我清的不止一处不够 —— 实测文件第 34 行还有一行 `# 涓存椂鏂囦欢`（=「临时文件」，对应 `*.part`），是历史遗留、不是我引入的，但它在**我改的文件**里且确实误导。已修成 `# 临时文件（下载中的分片等）`，复核全文件 0 处乱码。",
+        "externalReview": null
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "新判据 check-gitignore-scripts.js 只用合成路径探测 git check-ignore 行为，不检查 .gitignore 文本内容，若规则名被误改但行为巧合符合，判据仍绿。",
+        "verdict": "upheld",
+        "prosecution": "Warning。新判据只用合成路径探测 `git check-ignore` 的行为，不检查 `.gitignore` 文本。若规则名被误改但行为巧合符合（例如加了通配又用一条能覆盖所有探测名的 negation），判据仍绿。",
+        "defense": "行为探测比文本匹配更强：文本对了行为不一定对，行为对了说明真的生效。",
+        "rationale": "成立。辩护只对了一半 —— 行为探测确实更强，但\"通配 + 精准 negation\"这个构造能让**三条行为断言全过而文本已坏**，下一次有人加个别的后缀就漏。已加 **G4 文本面断言**（非注释规则行不得有 scripts 整目录通配、必须有 `tmp-*` 规则），并专门写了一条可证伪用例构造该场景（`scripts/*.js` + `!scripts/__probe*`）证明只有 G4 能抓到。现为行为 + 文本双重验证。",
+        "externalReview": null
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "wait-pr-checks.js 仍用 execSync('gh ' + args) 字符串拼接执行外部命令，虽已做 /^\\d+$/ 校验，但应优先用 execFile 避免 shell 注入风险。",
+        "verdict": "upheld",
+        "prosecution": "Warning（security）。`execSync('gh ' + args)` 仍是字符串拼接执行外部命令，虽已做 `/^\\d+$/` 校验，但应优先 `execFile` 避免 shell 注入。",
+        "defense": "参数全部是内部构造的常量加一个已严格校验为纯数字的 PR 号，实际注入面为零。",
+        "rationale": "成立。\"当前无注入面\"依赖的是调用方纪律，而 `execFile` 让这件事不依赖纪律 —— 凡拼接就迟早遇上含空格/引号的参数。已改 `execFileSync('gh', argsArray)`，不经 shell。",
+        "externalReview": null
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "新锁被接入 .github/workflows/quality-gate.yml 无条件执行，每次构建额外触发 git check-ignore 及测试，增加 CI 耗时。",
+        "verdict": "upheld",
+        "prosecution": "Warning（performance）。新锁被接入 workflow 无条件执行，每次构建额外触发 `git check-ignore` 及测试，增加 CI 耗时。",
+        "defense": "这条锁很便宜：10 例里多数在一次性临时仓库里跑，单次 git init/commit 各几十毫秒。",
+        "rationale": "成立（接受成本）。本地实测 10 例约 13s，主要在临时仓库的 git init/commit；CI 上 `QG Changes` 从 2m41s 的读数看增量在可接受范围。这条成本买的是\"通配不被悄悄加回来\"，且它是唯一能挡住\"新判据本体静默不入仓\"的闸 ⇒ 接受。已在 workflow 注释里写明落点理由。",
+        "externalReview": null
+      },
+      {
+        "id": "i8",
+        "severity": "Warning",
+        "finding": "wait-pr-checks.js 的 parseInt 修复引入 Number.isInteger 校验，但 poll() 中捕获空输出时直接赋 []，若 gh 实际失败（非 0 退出且无有效 JSON），会被静默处理成无检查。",
+        "verdict": "upheld",
+        "prosecution": "Warning。`poll()` 在捕获空输出时直接赋 `[]`：若 gh 实际失败（非 0 退出且无有效 JSON），会被静默处理成\"无检查\"，于是继续轮询直到超时 —— 把工具故障伪装成被观测对象的现象。",
+        "defense": "原实现对\"gh 返回非 0\"是当作正常情况处理的，因为 `gh pr checks` 在**没有任何 checks** 时确实以非 0 退出。",
+        "rationale": "成立，且这是本轮最实质的一条。辩护说的那部分是真的（无 checks 时 gh 确实非 0 退出），但正因如此才必须**再分一层**：gh 明说 `no checks reported` 才是\"事件未投递\"，其它非 0 都是判据故障。已改三态：① 解析出数组 → 用它 ② `no checks reported` → 继续等 ③ 其它 → 判据故障 `exit 2`。实测：PR #999999 现在**立刻**报「gh 没能给出可解析的 checks 列表」并退出 2，不再空转到超时。",
+        "externalReview": null
+      },
+      {
+        "id": "i5",
+        "severity": "Info",
+        "finding": ".gitignore 内嵌了长达数十行的说明（与 .md 记录重复），使规则文件膨胀至 340 行，增加维护与合并冲突风险。",
+        "verdict": "info",
+        "prosecution": ".gitignore 内嵌了长达数十行的说明（与 .md 记录重复），使规则文件膨胀至 340 行，增加维护与合并冲突风险。",
+        "defense": "将详细说明保留在 .md 记录中，.gitignore 只保留简洁规则与一行指向记录的注释。",
+        "rationale": "Info 级，不进待裁模板；处置逐条写进执行记录 openspec/records/gitignore-scripts-root.md（Round 1 见 §七，Round 2 见 §七之二）。",
+        "externalReview": null
+      },
+      {
+        "id": "i7",
+        "severity": "Info",
+        "finding": "删除旧反选后，!scripts/lib/ 的畸形规则（含中文说明混入规则行）被修正为注释，但周边注释仍指向已删除规则，形成孤儿注释。",
+        "verdict": "info",
+        "prosecution": "删除旧反选后，!scripts/lib/ 的畸形规则（含中文说明混入规则行）被修正为注释，但周边注释仍指向已删除规则，形成孤儿注释。",
+        "defense": "清理所有指向已删除规则的孤儿注释，确保每条保留注释都有对应的有效规则。",
+        "rationale": "Info 级，不进待裁模板；处置逐条写进执行记录 openspec/records/gitignore-scripts-root.md（Round 1 见 §七，Round 2 见 §七之二）。",
+        "externalReview": null
+      }
+    ],
+    "template": ".adversarial\\ccg-deep-1cfc33d5",
+    "note": "裁决已填写：6 条逐条 verdict（upheld=6 / dismissed=0）；另 2 条 Info 级不列入待裁模板，处置一并写入 findings。高危域 0 条 ⇒ 无需外部复核三格。",
+    "at": "2026-10-27T10:03:28.847Z",
+    "tier": "external",
+    "evidence": "delivery@f5f9fc6fdb05b1546c5441c9ec51e0cf21792f9dde365a1cde2c801982d902f1",
+    "closureNote": "Round 2（DUAL，critic=claude 8 条：6 条进待裁 + 2 条 Info）：逐条裁决完毕（upheld=6 / dismissed=0）。本轮高危域 0 条 ⇒ 无需外部复核三格。Round 2 指出的 6 条全部在本 PR 内整改（G4 文本断言 / execFileSync / gh 三态 / 乱码行 / 说明压缩 / 接受 CI 成本），另驳回 1 条 Info（孤儿注释，脚本核查不存在）。整改后 CI 的 QG Changes 由红转绿（首版因 qm6 的 negation 旧锁红过）。完整裁决、critic 原始输出逐字与可核取证坐标见公开 PR 评论 https://github.com/Colinchiu007/mulpub/pull/4549#issuecomment-6438916381 与仓内执行记录 openspec/records/gitignore-scripts-root.md §七 / §七之二 / §五之二。"
+  }
+}

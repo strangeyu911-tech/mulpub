@@ -132,6 +132,13 @@ jobs:
           # 判据本体只 require node 内置模块，本 job 不装依赖也能跑。
           node --test scripts/check-design-nav.test.js
           node scripts/check-design-nav.js
+          # .gitignore 不得把 scripts/ 下的 .js 整体吞掉（change: gitignore-scripts-root 的回归锁）。
+          # 它守的正是「新写的判据本体静默不入仓」这个失败形态 —— 本仓实测复发 7 次。
+          # 输入 .gitignore 在 docs-only 白名单内 ⇒ 必须住在本 job（无 job 级 if），否则
+          # 「有人把 scripts/*.js 加回去」的 PR 会被判 docs-only 而整片跳过这条锁（#3114 同形）。
+          # 判据只 require node 内置模块 + 调 git，本 job 不装依赖也能跑。
+          node --test scripts/check-gitignore-scripts.test.js
+          node scripts/check-gitignore-scripts.js
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "docs-only=false" >> "$GITHUB_OUTPUT"
             echo "docs-only=false (non-PR event: full run)"

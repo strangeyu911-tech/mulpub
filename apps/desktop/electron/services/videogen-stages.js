@@ -338,7 +338,13 @@ function buildVideoOptimizeContext (concept, paragraphs) {
 }
 
 function buildStoryboardPrompt (concept, kind, options = {}) {
-  const style = typeof concept === 'string' ? concept : (concept && concept.visual_style) || '动态视觉'
+  const topic = concept && typeof concept === 'object' && typeof concept.topic === 'string'
+    ? concept.topic.trim()
+    : ''
+  const style = typeof concept === 'string'
+    ? concept
+    : (concept && (concept.visual_style || concept.visual || concept.role_design)) || '动态视觉'
+  const conceptText = [topic, style].filter(Boolean).join('；') || '动态视觉'
   const mode = FIDELITY_MODES.includes(options.mode) ? options.mode : 'creative'
   if (mode === 'creative') {
     return {
@@ -349,7 +355,7 @@ function buildStoryboardPrompt (concept, kind, options = {}) {
 【多角色视觉锚定】当场景中出现多个角色时，每个角色的 prompt 必须包含其独立视觉特征标签（来自概念阶段的 characters 数组）。格式示例: "Character A: [老者，白须，红袍] standing next to Character B: [年轻将领，黑发短寸，蓝甲]"。禁止省略角色视觉标签——这是视频模型区分不同角色的唯一依据。
 
 【文化锚定·最高优先级】每个场景的 prompt 必须显式包含时代背景、文化地域与人种锚定（来自概念阶段的 era/culture/visual_style），例如中国古代题材必须写 "ancient Chinese (Eastern Han dynasty), East Asian Han Chinese faces, period-appropriate Hanfu and armor"。禁止金发碧眼、西方面孔、西方服饰出现在画面中。`,
-      user: '创意概念与视觉风格：' + String(style || concept || '').slice(0, 2000),
+      user: '创意概念与视觉风格：' + String(conceptText || concept || '').slice(0, 2000),
     }
   }
   // fidelity / hybrid：注入分段文案全文 + key_facts/entities，要求 source_paras 绑定
@@ -358,7 +364,7 @@ function buildStoryboardPrompt (concept, kind, options = {}) {
   const entities = Array.isArray(options.entities) ? options.entities : []
   const paragraphText = paragraphs.map(p => '[' + p.index + '] ' + String(p.text || '').slice(0, MAX_STORYBOARD_INJECT_CHARS)).join('\n')
   const user = [
-    '创意概念与视觉风格：' + String(style || concept || '').slice(0, 2000),
+    '创意概念与视觉风格：' + String(conceptText || concept || '').slice(0, 2000),
     '原文分段（共 ' + paragraphs.length + ' 段）：',
     paragraphText.slice(0, MAX_STORYBOARD_INJECT_CHARS),
     keyFacts.length > 0 ? '关键事实：' + keyFacts.join('；').slice(0, 1500) : '',
@@ -449,8 +455,16 @@ function resolveVideogenConcept (context) {
   if (value && typeof value === 'object') {
     const extracted = value.concept || value.script || value.topic
     if (typeof extracted === 'string') return extracted.trim()
-    // 概念可能是对象（如 { visual_style, hook }），storyboard 提示词构建兼容对象
-    if (extracted && typeof extracted === 'object') return extracted
+    // 概念可能是对象（如 { visual_style, hook }），storyboard 提示词构建兼容对象。
+    // 必须把外层 topic 一并带入：它是原始文案关键词，storyboard 对齐门禁依赖它。
+    if (extracted && typeof extracted === 'object') {
+      return {
+        ...extracted,
+        ...(!extracted.topic && typeof value.topic === 'string' && value.topic.trim()
+          ? { topic: value.topic.trim() }
+          : {}),
+      }
+    }
     return ''
   }
   return ''
@@ -599,7 +613,9 @@ function registerVideoGenStages (pipelineEngine) {
       const paragraphs = mode === 'creative' ? [] : (fullText ? segmentScript(fullText).paragraphs : [])
 
       const alignmentConfig = {
-        enabled: true,
+        // creative 模式是「一句话自由拓展」，不要求逐字覆盖主题实体；
+        // 强制实体覆盖会把「机器人城市行走」这类短创意卡成空分镜。
+        enabled: mode === 'fidelity' || mode === 'hybrid',
         minCoverage: STORYBOARD_ALIGNMENT_MIN_COVERAGE,
         maxRetries: STORYBOARD_ALIGNMENT_MAX_RETRIES,
         llmExtractFallback: true,
@@ -650,7 +666,8 @@ function registerVideoGenStages (pipelineEngine) {
         let raw
         try {
           // fidelity/hybrid 注入分段全文 + source_paras，输出体积显著大于 creative：显式放大输出预算
-          const storyboardMaxTokens = mode === 'creative' ? undefined : 8000
+          // 分镜 JSON 可能包含 12 个场景的长 prompt；creative 也需要足够预算，1600 会截断成非法 JSON。
+          const storyboardMaxTokens = 8000
           raw = await callDefaultLlm(aiGenerator, system, user, storyboardMaxTokens, { providerRunContext })
         } catch (error) {
           lastError = error && error.message ? error.message : String(error)
@@ -705,6 +722,28 @@ function registerVideoGenStages (pipelineEngine) {
         }
         lastError = '视频分镜未覆盖文案关键内容：' + check.missing.join('、') + '（已重试 ' + (attempt - 1) + ' 次）'
         break
+      }
+
+      // creative 模式兜底：短创意（如「机器人城市行走」）模型偶尔返回 []/非 JSON。
+      // 只要有原文，就用原文拆场景，保证流水线可继续；fidelity/hybrid 仍 fail closed。
+      const fallbackSource = fullText || (typeof concept === 'string' ? concept.trim() : '')
+      if (!scenes && mode === 'creative' && fallbackSource) {
+        const parts = fallbackSource
+          .split(/[。！？；\n]/)
+          .map((part) => part.trim())
+          .filter(Boolean)
+        const texts = parts.length > 0 ? parts : [fullText]
+        const visual = concept && typeof concept === 'object' && typeof concept.visual === 'string'
+          ? concept.visual
+          : String(concept || '')
+        scenes = texts.slice(0, 4).map((text, index) => ({
+          index,
+          prompt: [fallbackSource, visual, 'clean frame, no text, no subtitles, no watermarks, no logos'].filter(Boolean).join('，'),
+          text,
+          duration: DEFAULT_SCENE_SECONDS,
+        }))
+        report = { ...report, fallback: true, retries: attempt, truncated: false }
+        log.warn('VideoGenStages', 'storyboard 使用原文兜底场景（' + scenes.length + ' 个）：' + (lastError || 'LLM 输出无效'))
       }
 
       if (!scenes) {

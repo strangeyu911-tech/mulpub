@@ -350,3 +350,47 @@ hybrid 真实执行 mvqk4n8q_fbto：156s 后失败，错误为「排队等待超
 - 只对「空 content + length/推理占满」升级，不把所有调用放大。
 - 未验证 MiniMax-M2.7/M3、kimi 等其他推理模型在 16000 下的表现。
 - 当前运行中的应用加载的是旧代码，本增量不自动重启用户应用。
+
+
+## 十五、增量 6：creative storyboard 多层修复（2026-10-28）
+
+### 15.1 五层根因
+
+`animation` / `hybrid` 在 storyboard 反复失败，逐层取证后确认是五层叠加：
+
+1. creative 分镜仍用 `DEFAULT_LLM_MAX_TOKENS=1600`，12 场景长 prompt JSON 被截断；
+2. `buildStoryboardPrompt` 只读 `concept.visual_style`，而 concept 阶段实际输出 `{name, visual}`，prompt 只剩「动态视觉」；
+3. `resolveVideogenConcept` 只返回 `value.concept` 对象，外层 `context.concept.topic` 没进入 prompt；
+4. creative 模式仍执行 `alignmentConfig.enabled=true`，短创意被要求逐字覆盖「机器人/城市/行走」；
+5. 模型偶发返回 `[]` / 非 JSON，creative 没有兜底，整条流水线失败。
+
+另有 CDP 默认 20min 与清单 `animation.timeoutSec=1800` 不一致。
+
+### 15.2 修复
+
+- storyboard 统一 `storyboardMaxTokens=8000`；
+- `buildStoryboardPrompt` 从 `visual_style || visual || role_design` 提取视觉，并把 `topic` 拼进 user；
+- `resolveVideogenConcept` 对象分支合并外层 `topic`；
+- creative `alignmentConfig.enabled=false`（自由拓展不强制逐字覆盖）；
+- creative 空/非法输出 → 用原文拆 1-4 个兜底场景，`report.fallback=true`；fidelity/hybrid 仍 fail closed；
+- CDP 默认超时 30min。
+
+### 15.3 真实执行
+
+| 流水线 | 结果 | runId | 耗时 | 产物 |
+|--------|------|-------|------|------|
+| `animation` | **PASS** | `mvqw26rm_jdeu` | 1434s | duration=21.2s，h264+aac |
+| `hybrid` | **PASS** | `mvqx5xae_7giv` | 621s | duration=5.2s，h264+aac |
+
+审计（`shared-user-data` provider DB）：
+
+```
+PROVIDERS usable=9 caps=image,llm,multimodal,video,tts
+SUMMARY total=15 ready=14 blocked=0 broken=0 excluded=1
+```
+
+### 15.4 边界
+
+- creative 兜底只保证有场景可生成，不保证 LLM 级分镜质量；
+- 8 条 READY 共享驱动流水线本次未全部重跑，READY 仍只代表静态条件；
+- animation 23.9min / hybrid 10.3min 属高成本任务，应在发布前单独排期。

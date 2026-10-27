@@ -115,9 +115,40 @@ describe('videogen 共享阶段执行器', () => {
       const ai = makeAi('不是 JSON')
       const { get } = makePipeline(ai)
       const result = await get(VIDEOGEN_STAGE_TYPES.STORYBOARD)({
-        stage: {}, params: {}, context: { concept: { concept: 'x' } },
+        stage: {}, params: {}, context: { concept: { concept: { name: 'x', visual: 'y' } } },
       })
       expect(result.success).toBe(false)
+    })
+
+    it('creative 模式 LLM 返回 [] 时用原文兜底场景', async () => {
+      const ai = makeAi('[]')
+      const { get } = makePipeline(ai)
+      const result = await get(VIDEOGEN_STAGE_TYPES.STORYBOARD)({
+        stage: { kind: 'animation' }, params: { text: '机器人城市行走' },
+        context: { concept: { concept: { name: '主角', visual: '银白色机器人' }, topic: '机器人城市行走' } },
+      })
+      expect(result.success).toBe(true)
+      expect(result.output.length).toBeGreaterThan(0)
+      expect(result.output[0].text).toContain('机器人')
+    })
+
+    it('fidelity/hybrid 非法 JSON 仍 fail closed', async () => {
+      for (const mode of ['fidelity', 'hybrid']) {
+        const ai = makeAi('不是 JSON')
+        const { get } = makePipeline(ai)
+        const result = await get(VIDEOGEN_STAGE_TYPES.STORYBOARD)({
+          stage: { kind: 'animation' },
+          params: { text: '机器人城市行走' },
+          context: {
+            concept: {
+              concept: { name: '主角', visual: '银白色机器人' },
+              topic: '机器人城市行走',
+              storyboardMode: mode,
+            },
+          },
+        })
+        expect(result.success).toBe(false)
+      }
     })
 
     it('从 character-animation 的 character_design 阶段输出解析概念（E2E 回归）', async () => {
@@ -549,7 +580,19 @@ describe('videogen 共享阶段执行器', () => {
       expect(buildConceptPrompt('x', 'character-animation').system).toContain('角色动画')
     })
 
-    it('storyboard 提示词要求 JSON', () => {
+    it('storyboard 把 topic 注入提示词，保留原始文案关键词', () => {
+    const prompt = buildStoryboardPrompt({ name: 'Unit-07', topic: '机器人城市行走', visual: '深灰银色重型工业装甲' }, 'animation', { mode: 'creative' })
+    expect(prompt.user).toContain('机器人城市行走')
+    expect(prompt.user).toContain('深灰银色重型工业装甲')
+  })
+
+  it('storyboard 从 concept.visual 提取视觉风格，不丢成“动态视觉”', () => {
+    const prompt = buildStoryboardPrompt({ name: 'Unit-07', visual: '深灰银色重型工业装甲' }, 'animation', { mode: 'creative' })
+    expect(prompt.user).toContain('深灰银色重型工业装甲')
+    expect(prompt.user).not.toBe('创意概念与视觉风格：动态视觉')
+  })
+
+  it('storyboard 提示词要求 JSON', () => {
       expect(buildStoryboardPrompt('概念', 'animation').system).toContain('JSON')
     })
 
@@ -581,7 +624,7 @@ describe('推理型 LLM 的默认 max_tokens 预算', () => {
     expect(isReasoningLlmModel('')).toBe(false)
   })
 
-  it('默认 LLM 为推理型时 storyboard 自动放大 max_tokens 到 5000（防思考块截断 JSON）', async () => {
+  it('storyboard 对推理型 LLM 也使用 8000 预算（防 12 场景截断）', async () => {
     const content = JSON.stringify([{ prompt: '机器人城市全景', text: '开场', duration: 5 }])
     const ai = makeAiWithLlmModel('MiniMax-M3', content)
     const { get } = makePipeline(ai)
@@ -589,10 +632,10 @@ describe('推理型 LLM 的默认 max_tokens 预算', () => {
       stage: { kind: 'animation' }, params: {}, context: { concept: { concept: 'x' } },
     })
     expect(result.success).toBe(true)
-    expect(ai.generateWithDefault.mock.calls[0][1].max_tokens).toBe(REASONING_LLM_MAX_TOKENS)
+    expect(ai.generateWithDefault.mock.calls[0][1].max_tokens).toBe(8000)
   })
 
-  it('默认 LLM 为非推理型时保持 1600', async () => {
+  it('storyboard 使用 8000 预算（避免 12 场景 JSON 被截断）', async () => {
     const content = JSON.stringify([{ prompt: 'p', text: 't', duration: 5 }])
     const ai = makeAiWithLlmModel('agnes-2.0-flash', content)
     const { get } = makePipeline(ai)
@@ -600,7 +643,7 @@ describe('推理型 LLM 的默认 max_tokens 预算', () => {
       stage: { kind: 'animation' }, params: {}, context: { concept: { concept: 'x' } },
     })
     expect(result.success).toBe(true)
-    expect(ai.generateWithDefault.mock.calls[0][1].max_tokens).toBe(DEFAULT_LLM_MAX_TOKENS)
+    expect(ai.generateWithDefault.mock.calls[0][1].max_tokens).toBe(8000)
   })
 
   it('显式 maxTokens 覆盖推理型默认预算', async () => {

@@ -1,0 +1,109 @@
+{
+  "sha": "9f94e08fb72142f5c003c70fbd6bb33eab3033eb",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 150 行（≤ 200）但命中 auth/数据库/加密：敏感内容 2 处",
+  "stats": {
+    "changedLines": 150,
+    "fileCount": 10,
+    "codeFileCount": 5,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 5,
+    "docSensitiveContentSample": [
+      "1. creative 分镜仍用 `DEFAULT_LLM_MAX_TOKENS=1600`，12 场景长 prompt JSON 被截断；",
+      "- storyboard 统一 `storyboardMaxTokens=8000`；",
+      "| provider 就绪 | `apps/desktop/scripts/pipeline-smoke/provider-readiness.js` | 只读应用 SQLite，能力判定，不解密 key |"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "0809d20dc4f8f1d37babf8a0e3c6d39a33dba516ce6649d94f130a07b6591af2",
+  "decidedAt": "2026-10-27T18:12:11.107Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "`!scenes` is false for truthy `[]`, so fallback never triggers when LLM returns empty array; test expects `success=true` for `[]` but condition skips it.",
+        "highRiskDomains": [],
+        "prosecution": "`!scenes` 对 `[]` 为 false，空数组不会触发兜底，测试会失败。",
+        "defense": "代码路径中 `parseJsonArray` 返回 `[]` 时走 `parsed.length===0` 分支，**不会把 `scenes` 赋值为 `[]`**；循环结束后 `scenes` 仍是 null，`!scenes` 为 true，兜底触发。新增测试 `creative 模式 LLM 返回 [] 时用原文兜底场景` 实测 success=true，直接否证该指控。",
+        "verdict": "dismissed",
+        "rationale": "空数组不会成为 scenes 的赋值；测试已覆盖并通过。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "`storyboardMaxTokens = 8000` unconditionally removes previous `undefined` for creative; if `callDefaultLlm` treats `undefined` as model default, behavior changes unexpectedly.",
+        "highRiskDomains": [],
+        "prosecution": "storyboardMaxTokens=8000 去掉 undefined，可能改变 creative 默认行为。",
+        "defense": "原代码 creative 传 `undefined`，callDefaultLlm 会按模型类型取 1600/5000；实测 1600 会截断 12 场景 JSON。8000 是显式上限（cap），不是必花成本；实际模型 stop 后不会继续消耗。推理模型空 content 仍会 8000→16000 升级。",
+        "verdict": "dismissed",
+        "rationale": "8000 是必要的下限/上限保护；实际执行已 PASS，成本由模型 stop 控制。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "`alignmentConfig.enabled` hardcoded `mode === 'fidelity' || mode === 'hybrid'`; no granular override for creative sub-variants.",
+        "highRiskDomains": [],
+        "prosecution": "alignmentConfig.enabled 内联 mode 判断，creative 子类型无粒度覆盖。",
+        "defense": "当前只有 creative/fidelity/hybrid 三种模式，语义明确：creative 自由拓展不强制实体覆盖，fidelity/hybrid 必须覆盖。后续需要粒度配置时可从 `context.config.videoContentFidelity` 扩展；当前无子类型需求。",
+        "verdict": "dismissed",
+        "rationale": "三模式语义清晰，现有 config 已可覆盖 enabled；无实际子类型。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "`resolveVideogenConcept` suppresses `value.topic` when `extracted.topic` truthy; wrong/stale `extracted.topic` hides correct `value.topic`.",
+        "highRiskDomains": [],
+        "prosecution": "extracted.topic 优先会掩盖外层 value.topic。",
+        "defense": "`videogen_concept` 输出对象是 `{name, visual}`，没有 topic；外层 topic 才是原始文案。若未来 extracted 自己有 topic，它更贴近 concept，优先是合理契约。",
+        "verdict": "dismissed",
+        "rationale": "当前 concept 对象无 topic；外层 topic 正常注入，已由 topic 测试验证。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T18:18:32.474Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4574#issuecomment-6449980831",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@7782ddd9f6b65906563202b89822e93fdb20add14222d82466613e55809b2d57"
+  }
+}

@@ -28,6 +28,7 @@ const APP_DESKTOP_DIR = path.resolve(__dirname, '..', '..')
 const DEFAULT_INPUT_DIR = path.join(os.tmpdir(), 'story2video', 'e2e-inputs')
 
 const ALLOWED_BUILTIN_DRIVERS = new Set(['builtin:framework-smoke', 'builtin:local-executor'])
+const VERIFIED_DRIVER_PATHS = new Set(['tests/e2e/pipeline-smoke-cdp.js'])
 
 const STATUS = Object.freeze({
   READY: 'READY',
@@ -75,6 +76,7 @@ function reasonText (code, detail) {
     case 'MISSING_MEDIA_TOOL': return '未找到 ffmpeg/ffprobe' + suffix
     case 'MISSING_ENV': return '缺少必需环境变量' + suffix
     case 'MISSING_PROVIDER': return '缺少可用模型能力（请到应用「模型设置」配置并启用）' + suffix
+    case 'UNVERIFIED_DRIVER': return '驱动文件存在但无真实 PASS 记录（verifiedRunId 缺失）' + suffix
     case 'UNWIRED_STAGE': return '存在未接线的阶段类型' + suffix
     case 'MANIFEST_UNKNOWN_PIPELINE': return '清单登记了 PIPELINE_DEFINITIONS 中不存在的流水线' + suffix
     case 'MANIFEST_COVERAGE_GAP': return '带 stageDefs 的流水线未登记到冒烟清单' + suffix
@@ -161,6 +163,9 @@ function auditEntry (entry, ctx) {
   }
   if (!entry.driver.startsWith('builtin:') && !ctx.driverExists(entry.driver)) {
     return makeItem(entry.pipeline, STATUS.BROKEN, 'DRIVER_MISSING', entry.driver, base)
+  }
+  if (VERIFIED_DRIVER_PATHS.has(entry.driver) && !entry.verifiedRunId) {
+    return makeItem(entry.pipeline, STATUS.BLOCKED, 'UNVERIFIED_DRIVER', entry.driver, base)
   }
 
   const missingTools = (entry.requiredTools || []).filter((tool) => !ctx.toolExists(tool))

@@ -73,13 +73,20 @@ describe('pipeline-smoke 审计状态机', () => {
     expect(framework.status).toBe('READY')
   })
 
-  it('真实清单中 animation/hybrid 仍为 NO_DRIVER（防止把未验证驱动算 READY）', () => {
+  it('CDP driver 缺少 verifiedRunId 时判 BLOCKED(UNVERIFIED_DRIVER)', () => {
+    const manifest = PIPELINE_SMOKE_MANIFEST.map((entry) => entry.pipeline === 'podcast-repurpose'
+      ? { ...entry, verifiedRunId: undefined }
+      : entry)
+    const report = auditAll(baseOptions({ manifest }))
+    const item = report.items.find((entry) => entry.pipeline === 'podcast-repurpose')
+    expect(item.status).toBe('BLOCKED')
+    expect(item.reasonCode).toBe('UNVERIFIED_DRIVER')
+  })
+
+  it('真实清单中不再有 NO_DRIVER（所有 14 条都有已验证驱动）', () => {
     const report = auditAll(baseOptions())
-    for (const pipeline of ['animation', 'hybrid']) {
-      const item = report.items.find((entry) => entry.pipeline === pipeline)
-      expect(item.status).toBe('BLOCKED')
-      expect(item.reasonCode).toBe('NO_DRIVER')
-    }
+    const noDriver = report.items.filter((entry) => entry.reasonCode === 'NO_DRIVER')
+    expect(noDriver).toEqual([])
   })
 
   it('阶段未接线时判 BROKEN(UNWIRED_STAGE)', () => {
@@ -188,7 +195,7 @@ describe('pipeline-smoke 报告与退出码', () => {
   })
 
   it('默认模式只有 BROKEN 才退出 1，BLOCKED 不阻断', () => {
-    const blockedOnly = auditAll(baseOptions())
+    const blockedOnly = { summary: { total: 1, ready: 0, blocked: 1, broken: 0, excluded: 0 }, items: [] }
     expect(computeExitCode(blockedOnly, { strict: false })).toBe(0)
     expect(computeExitCode(blockedOnly, { strict: true })).toBe(1)
 

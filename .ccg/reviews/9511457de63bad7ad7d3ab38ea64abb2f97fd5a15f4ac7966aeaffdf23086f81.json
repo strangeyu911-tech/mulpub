@@ -1,0 +1,121 @@
+{
+  "sha": "6098fbfe27acb4e6d9326beebc0a1b3ad7cf4e5e",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 416 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 416,
+    "fileCount": 8,
+    "codeFileCount": 5,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "9511457de63bad7ad7d3ab38ea64abb2f97fd5a15f4ac7966aeaffdf23086f81",
+  "decidedAt": "2026-10-27T11:09:00.781Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "findOutput 用 path.resolve 建 inputs 但用 realpathOrSelf 排除；输入路径若因大小写/符号链接不同，会被误判为产物，导致假 PASS。",
+        "highRiskDomains": [],
+        "prosecution": "inputPaths 用 path.resolve 建 inputs，而 findOutput 用 realpathOrSelf 排除；大小写/符号链接差异会把输入误判为产物。",
+        "defense": "`inputPaths()` 对每个 params.video/audio/image 都调用 `realpathOrSelf()` 并放入 Set；`findOutput()` 对候选路径同样调用 `realpathOrSelf()` 后比较。两处是同一个函数，不存在 path.resolve 与 realpath 混用。真实运行 podcast 输出 `s2v_..._output.mp4`、输入 `podcast-source.mp3` 已被正确排除。",
+        "verdict": "dismissed",
+        "rationale": "代码路径一致；真实运行未出现输入误判。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "findOutput 对相对路径直接拒绝，但 context 中若存在绝对路径指向临时输入目录，仍可能被选为产物。输入排除不完整。",
+        "highRiskDomains": [],
+        "prosecution": "context 中绝对路径若指向临时输入目录，仍可能被选为产物，输入排除不完整。",
+        "defense": "`inputPaths()` 覆盖 params.video/audio/image 的绝对/相对路径；只要 context 返回的是同一个输入文件，realpath 后必在 Set 中并被排除。若引擎返回新文件（输出），它本来就不在输入集合。podcast/documentary 真实运行均正确取到 `s2v_*_output.mp4`。",
+        "verdict": "dismissed",
+        "rationale": "输入集合按实际 params 构造，覆盖所有输入键；真实产物为独立输出文件。"
+      },
+      {
+        "id": "i3",
+        "severity": "High",
+        "finding": "page.evaluate 传入用户控制的 params（来自 --params / --params-file），未对 pipeline/text/audio 做结构/内容校验，虽 Playwright 序列化降低注入风险，但非法内容仍可影响 renderer 状态。",
+        "highRiskDomains": [],
+        "prosecution": "page.evaluate 传入用户控制的 params，未做 schema 校验，非法内容可能影响 renderer 状态。",
+        "defense": "这是本地开发 CLI，params 由执行者本人提供；Playwright 用 JSON 序列化传参，不执行字符串代码。应用侧 `pipelineStartOrchestrated` 自身会做流水线参数校验与 preflight，非法参数会返回错误，不会形成注入。",
+        "verdict": "dismissed",
+        "rationale": "参数是本地受信输入，且应用侧有既有校验；无远程不可信输入面。"
+      },
+      {
+        "id": "i4",
+        "severity": "High",
+        "finding": "probeVideo 使用 execFileSync 同步阻塞，最长 30s，阻塞轮询与事件循环，拖慢整体超时判断。",
+        "highRiskDomains": [],
+        "prosecution": "probeVideo 用 execFileSync，最长 30s，阻塞事件循环，拖慢整体超时判断。",
+        "defense": "ffprobe 只在流水线 completed 后调用一次，30s 是异常兜底；CLI 单进程、无并发轮询。实际 podcast/documentary 的 probe 均在毫秒级完成。",
+        "verdict": "dismissed",
+        "rationale": "探测在流水线结束后执行，不参与轮询；CLI 无并发场景。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": ".ccg/reviews 统计 changedLines=416，与提案声明 745 行不一致；pipeline-smoke-cdp.js 导出 CJS，测试用 ESM import，依赖 vitest 隐式互操作。",
+        "highRiskDomains": [],
+        "prosecution": ".ccg/reviews changedLines=416 与提案 745 行不一致；CJS 导出 + ESM import 依赖隐式互操作。",
+        "defense": "`.ccg` 记录是 pre-commit 在父提交上生成的审计快照，统计口径与最终 squash diff 不同，属流程产物；测试文件用 ESM import 本仓既有 vitest 约定，`pipeline-smoke-cdp.js` 是 CJS，Vitest 默认互操作已实测 7 例通过。",
+        "verdict": "dismissed",
+        "rationale": "统计差异是父提交快照的正常现象；CJS/ESM 互操作已由测试验证。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "animation manifest 仍 timeoutSec=1800（30min），但提案记录真实执行 20min 超时并描述为 12 场景 18min；notes 与超时配置不一致。",
+        "highRiskDomains": [],
+        "prosecution": "animation manifest timeoutSec=1800（30min），但提案记录真实执行 20min 超时并描述 12 场景 18min，notes 与超时配置不一致。",
+        "defense": "`timeoutSec` 是清单允许的流水线预算（30min）；真实执行时 CDP 驱动默认 `SMOKE_TIMEOUT_MS=20min`，所以 20min 被取消。两者是不同层的超时，不矛盾；notes 已写明 20min 超时事实。",
+        "verdict": "dismissed",
+        "rationale": "清单预算 30min 与驱动默认 20min 是两个独立配置；真实执行记录已说明。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T11:14:00.487Z"
+  }
+}

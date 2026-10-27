@@ -266,3 +266,54 @@ SUMMARY total=15 ready=5 blocked=9 broken=0 excluded=1
 - EXCLUDED：`screen-demo`
 
 说明：本机只有 image 能力，因此 5 条含 LLM/VIDEO 依赖的流水线被正确降级为 BLOCKED；这正是「provider 未就绪」的真实读数。
+
+
+## 十三、增量 4：CDP provider 流水线驱动（2026-10-27）
+
+### 13.1 背景
+
+`podcast-repurpose` / `documentary-montage` 需要真实图片/LLM/视频/TTS provider，不能在纯 Node 进程里用 `execute.js` 跑。应用已在 `shared-user-data` 配置 LLM/VIDEO/IMAGE/TTS provider，并在 9279 端口暴露 CDP；最真实的 E2E 是**连接已启动的应用**，复用它的 provider、登录态、模型设置与产物目录。
+
+### 13.2 驱动契约
+
+```bash
+node apps/desktop/tests/e2e/pipeline-smoke-cdp.js --pipeline podcast-repurpose
+node apps/desktop/tests/e2e/pipeline-smoke-cdp.js --pipeline documentary-montage --json artifacts/pipeline-smoke/documentary.json
+```
+
+- 连接 `http://127.0.0.1:9279`（`--cdp-port` 可覆盖）；
+- 找到含 `window.electronAPI.pipelineStartOrchestrated` 的页面；
+- 调 `pipelineStartOrchestrated(pipeline, params)`，轮询 `pipelineGetRunContext(runId)`；
+- 产物提取优先 `render/report/compose/finalize/export`，排除输入 `video/audio/image`；
+- `ffprobe` 校验 duration>0 + codec；超时调用 `pipelineCancelRun`；
+- 退出码 0 PASS / 1 FAIL / 2 参数/连接/装配错误；报告落 `--json`。
+
+### 13.3 本机实测
+
+| 流水线 | 结果 | runId | 耗时 | 产物 |
+|--------|------|-------|------|------|
+| `podcast-repurpose` | **PASS** | `mvqj1cld_e1kt` | 39.7s | duration=5s，h264+aac |
+| `documentary-montage` | **PASS** | `mvqk0zj5_7v8p` | 142.8s | duration=67.37s，h264+aac |
+
+审计（`shared-user-data` provider DB）：
+
+```
+PROVIDERS usable=9 caps=image,llm,multimodal,video,tts
+SUMMARY total=15 ready=12 blocked=2 broken=0 excluded=1
+```
+
+剩余 `NO_DRIVER`：`animation`、`hybrid`。
+
+### 13.4 animation 超时（未纳入 READY）
+
+`animation` 真实执行 `mvqj2hff_1bpm`：concept/storyboard 完成，`animate` 阶段 12/12 场景提交后停在 35%（约 18 分钟），20 分钟总超时后取消。**未把 `animation` 标为 READY**；CDP 驱动文件已实现，但清单保持 `driver:null`，待场景数/并发/超时优化后再纳入。
+
+### 13.5 hybrid 队列失败（未纳入 READY）
+
+hybrid 真实执行 mvqk4n8q_fbto：156s 后失败，错误为「排队等待超时，请稍后重试。」（视频 provider 队列）。清单保持 driver:null，不纳入 READY。
+
+### 13.6 边界
+
+- 需要应用已启动、已登录、已配置 provider，且 9279 端口可连；CI 不自动跑。
+- 不验证 key 有效性、额度、base_url、模型名；这些由应用内 `pipeline-model-preflight` 与真实执行负责。
+- 产物在应用临时目录，报告只记录路径，不复制大文件。

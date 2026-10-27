@@ -73,11 +73,13 @@ describe('pipeline-smoke 审计状态机', () => {
     expect(framework.status).toBe('READY')
   })
 
-  it('无驱动时判 BLOCKED(NO_DRIVER)，不是 BROKEN', () => {
+  it('真实清单中 animation/hybrid 仍为 NO_DRIVER（防止把未验证驱动算 READY）', () => {
     const report = auditAll(baseOptions())
-    const item = report.items.find((entry) => entry.pipeline === 'animation')
-    expect(item.status).toBe('BLOCKED')
-    expect(item.reasonCode).toBe('NO_DRIVER')
+    for (const pipeline of ['animation', 'hybrid']) {
+      const item = report.items.find((entry) => entry.pipeline === pipeline)
+      expect(item.status).toBe('BLOCKED')
+      expect(item.reasonCode).toBe('NO_DRIVER')
+    }
   })
 
   it('阶段未接线时判 BROKEN(UNWIRED_STAGE)', () => {

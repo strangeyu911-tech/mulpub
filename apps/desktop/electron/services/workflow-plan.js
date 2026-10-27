@@ -14,6 +14,7 @@
  */
 
 const { fingerprintContent } = require('./workflow-schema')
+const { nextAllowedSlot } = require('./workflow-schedule-rules')
 
 const MIN_MINUTES = 5
 const MAX_MINUTES = 1440
@@ -46,6 +47,7 @@ function createPacer (opts = {}) {
   assertCadence(minMinutes, maxMinutes)
   const startAtMs = Number.isFinite(opts.startAtMs) ? opts.startAtMs : Date.now()
   const random = typeof opts.random === 'function' ? opts.random : Math.random
+  const scheduleRules = opts.scheduleRules || null
   /** @type {Map<string, number>} */
   const lastByTarget = new Map()
 
@@ -54,6 +56,12 @@ function createPacer (opts = {}) {
     const raw = Math.floor(random() * span)
     const offset = Math.max(0, Math.min(span - 1, raw))
     return minMinutes + offset
+  }
+
+  function allowedSlot (raw) {
+    const at = nextAllowedSlot(raw, scheduleRules)
+    if (at == null) throw new RangeError('排期规则在 14 天内找不到可用时段')
+    return at
   }
 
   return {
@@ -68,12 +76,14 @@ function createPacer (opts = {}) {
       const key = String(targetKey || '')
       const last = lastByTarget.get(key)
       if (last == null) {
-        const at = Math.max(startAtMs, now)
+        const raw = Math.max(startAtMs, now)
+        const at = allowedSlot(raw)
         lastByTarget.set(key, at)
         return { atMs: at, gapMinutes: 0 }
       }
       const gapMinutes = randomGapMinutes()
-      const at = Math.max(last + gapMinutes * 60 * 1000, now)
+      const raw = Math.max(last + gapMinutes * 60 * 1000, now)
+      const at = allowedSlot(raw)
       lastByTarget.set(key, at)
       return { atMs: at, gapMinutes }
     },
@@ -150,6 +160,7 @@ function estimatePlan (input) {
     minMinutes: Number(cadence.minMinutes) || 35,
     maxMinutes: Number(cadence.maxMinutes) || 40,
     random: input.random,
+    scheduleRules: config.scheduleRules,
   })
   /** @type {Record<string, number[]>} */
   const slotsByTarget = {}

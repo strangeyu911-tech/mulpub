@@ -7,15 +7,11 @@
  * 任何一段非法都不该被保存——否则任务会在凌晨三点以一条看不懂的报错失败。
  * 校验必须是纯函数：可被 IPC、调度器、渲染层预览三处共用，且能注入固定时钟做边界测试。
  *
- * 三条硬约束（对应 PRD §4）：
- * ① 播客不是平台内容类型，走独立频道（RSS），因此不要求平台目标；
- * ② 视频只能选「文案可直接启动」的流水线——素材型流水线（口播/电影感/剪辑工厂）
- *    需要先导入素材，放进下拉框只会让用户在运行期才发现跑不起来；
- * ③ 抖音爆款本期不实现（无数据源、无行业枚举），来源白名单里没有它，不是灰显。
+ * 三条硬约束（PRD §4）：播客走 RSS；视频只能选文案可直接启动的流水线；抖音爆款读取爆款库（P1-6）。
  */
-
 const crypto = require('crypto')
 const { normalizeAdaptation, validateAdaptation, ADAPTATION_LIMITS } = require('./workflow-adaptation')
+const { normalizeScheduleRules, validateScheduleRules } = require('./workflow-schedule-rules')
 
 /** 来源类型白名单（douyinViral = 已采集到爆款库的抖音内容） */
 const SOURCE_TYPES = Object.freeze(['hotTopics', 'creatorMonitor', 'zhihuFavlist', 'douyinViral'])
@@ -306,13 +302,16 @@ function validateWorkflowConfig (raw, opts = {}) {
   }
   errors.push(...errorsForGuardrails(guardrails))
 
+  const scheduleRules = normalizeScheduleRules(src.scheduleRules)
+  errors.push(...validateScheduleRules(scheduleRules))
+
   const review = { requireApproval: !!(isPlainObject(src.review) && src.review.requireApproval === true) }
   const dedupe = { enabled: !(isPlainObject(src.dedupe) && src.dedupe.enabled === false) }
 
   return {
     ok: errors.length === 0,
     errors,
-    config: { source, rewrite, content, publish, cadence, guardrails, review, dedupe },
+    config: { source, rewrite, content, publish, cadence, guardrails, scheduleRules, review, dedupe },
   }
 }
 
@@ -325,6 +324,7 @@ function buildDefaultWorkflowConfig () {
     publish: { targets: [], mode: 'immediate', startAt: '' },
     cadence: { ...CADENCE_DEFAULTS },
     guardrails: { ...GUARDRAIL_DEFAULTS },
+    scheduleRules: normalizeScheduleRules(),
     review: { requireApproval: false },
     dedupe: { enabled: true },
   }

@@ -11,6 +11,7 @@ const {
   buildDedupeKeys,
   estimatePlan,
 } = require('./workflow-plan')
+const { normalizeScheduleRules } = require('./workflow-schedule-rules')
 
 const NOW = Date.parse('2026-10-26T09:00:00.000Z')
 const MIN = 35
@@ -22,6 +23,15 @@ function seq (values) {
 }
 
 describe('workflow-plan · 节奏规划', () => {
+  it('静默时段内的首条会顺延到窗口结束', () => {
+    const rules = normalizeScheduleRules({ enabled: true, timezone: 'UTC', weekdays: [1], quietHours: { start: '09:00', end: '10:00' } })
+    const pacer = createPacer({
+      startAtMs: NOW, minMinutes: MIN, maxMinutes: MAX, random: seq([0]),
+      scheduleRules: rules,
+    })
+    expect(new Date(pacer.next('bilibili:acc-1', NOW).atMs).toISOString()).toBe('2026-10-26T10:00:00.000Z')
+  })
+
   it('首条按起发时间，后续每条间隔落在 [min,max] 分钟内', () => {
     const pacer = createPacer({ startAtMs: NOW + 60 * 60 * 1000, minMinutes: MIN, maxMinutes: MAX, random: seq([0, 0.999, 0.5]) })
     const a = pacer.next('bilibili:acc-1', NOW)

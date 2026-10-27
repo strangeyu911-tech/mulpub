@@ -156,64 +156,7 @@
     <section class="wf-section" v-if="model.content.type !== 'podcast'">
       <div class="wf-title">{{ t('automation.wfPublishTitle') }}</div>
       <div class="wf-row wf-row--block">
-        <div v-if="!accounts.length" class="wf-hint wf-hint--warn" data-testid="wf-accounts-empty">
-          {{ t('automation.wfAccountsEmpty') }}
-        </div>
-        <div v-else class="wf-account-groups">
-          <div class="wf-account-toolbar">
-            <input
-              v-model="accountSearch"
-              class="wf-input wf-input--full"
-              :placeholder="t('automation.wfAccountSearchPlaceholder')"
-              data-testid="wf-account-search"
-            />
-            <button type="button" class="cohere-btn-text" data-testid="wf-account-select-all" @click="selectAllVisible">
-              {{ t('automation.wfAccountSelectAll') }}
-            </button>
-            <button type="button" class="cohere-btn-text" data-testid="wf-account-clear" @click="clearAccounts">
-              {{ t('automation.wfAccountClear') }}
-            </button>
-            <span class="wf-hint" data-testid="wf-account-health">
-              {{ t('automation.wfAccountHealth', { usable: usableCount, unusable: unusableCount }) }}
-            </span>
-          </div>
-          <div v-if="recentAccounts.length" class="wf-recent" data-testid="wf-recent-accounts">
-            <span class="wf-label">{{ t('automation.wfRecentAccounts') }}</span>
-            <button
-              v-for="acc in recentAccounts"
-              :key="'recent-' + acc.id"
-              type="button"
-              class="wf-chip wf-recent-chip"
-              :class="{ 'wf-chip--on': hasAccount(acc) }"
-              @click="toggleAccount(acc)"
-            >
-              {{ accountLabel(acc) }}
-            </button>
-          </div>
-          <div v-if="!filteredAccountGroups.length" class="wf-hint" data-testid="wf-account-no-result">
-            {{ t('automation.wfAccountNoResult') }}
-          </div>
-          <div v-for="group in filteredAccountGroups" :key="group.platform" class="wf-account-group">
-            <div class="wf-account-group__title">{{ group.label }}</div>
-            <div class="wf-chips">
-              <label
-                v-for="acc in group.accounts"
-                :key="acc.id"
-                class="wf-chip"
-                :class="{ 'wf-chip--on': hasAccount(acc), 'wf-chip--off': !isAccountUsable(acc) }"
-                :data-testid="'wf-account-' + acc.id"
-              >
-                <input type="checkbox" :checked="hasAccount(acc)" :disabled="!isAccountUsable(acc)" @change="toggleAccount(acc)" />
-                {{ accountLabel(acc) }}
-                <span v-if="accountStatus(acc)" class="wf-account-status">{{ accountStatus(acc) }}</span>
-              </label>
-            </div>
-          </div>
-        </div>
-        <div class="wf-hint">{{ t('automation.wfAccountsHint') }}</div>
-        <div class="wf-hint" data-testid="wf-accounts-selected">
-          {{ t('automation.wfAccountsSelected', { count: selectedTargets.length }) }}
-        </div>
+        <WorkflowAccountPicker :accounts="accounts" :meta="meta" v-model="model.publish.targets" />
       </div>
       <div class="wf-row">
         <label class="wf-label" :for="fid('publishMode')">{{ t('automation.wfPublishMode') }}</label>
@@ -236,6 +179,13 @@
         <input v-model.number="model.cadence.maxMinutes" type="number" min="5" max="1440" class="wf-input wf-input--sm" />
         <span class="wf-hint">{{ t('automation.wfCadenceHint') }}</span>
       </div>
+      <div class="wf-row wf-row--block">
+        <label class="wf-check">
+          <input v-model="scheduleRulesEnabled" type="checkbox" data-testid="wf-schedule-rules-enabled" />
+          {{ t('automation.wfScheduleRules') }}
+        </label>
+        <WorkflowScheduleRules v-if="scheduleRulesEnabled" v-model="model.scheduleRules" />
+      </div>
       <div class="wf-row">
         <label class="wf-label">{{ t('automation.wfGuard') }}</label>
         <input v-model.number="model.guardrails.maxItemsPerRun" type="number" min="1" :max="meta.limits.maxItemsPerRun" class="wf-input wf-input--sm" />
@@ -253,9 +203,10 @@
 </template>
 
 <script setup>
-import { computed, ref, useId } from 'vue'
+import { computed, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import ACCOUNT_STATUS from '../../../shared/workflow-account-status.json'
+import WorkflowScheduleRules from './WorkflowScheduleRules.vue'
+import WorkflowAccountPicker from './WorkflowAccountPicker.vue'
 
 const props = defineProps({
   meta: { type: Object, required: true },
@@ -326,122 +277,24 @@ function platformLabel (id) {
   return found ? found.label : id
 }
 
-function hasAccountId (acc) {
-  return Boolean(acc) && acc.id !== undefined && acc.id !== null && acc.id !== ''
-}
-
-const accountGroups = computed(() => {
-  const groups = new Map()
-  for (const acc of props.accounts || []) {
-    if (!hasAccountId(acc) || !acc.platform) continue
-    if (!groups.has(acc.platform)) {
-      groups.set(acc.platform, { platform: acc.platform, label: platformLabel(acc.platform), accounts: [] })
-    }
-    groups.get(acc.platform).accounts.push(acc)
-  }
-  return Array.from(groups.values())
-})
-
-const accountSearch = ref('')
-const recentAccountIds = ref(readRecentAccounts())
-const filteredAccountGroups = computed(() => {
-  const q = accountSearch.value.trim().toLowerCase()
-  if (!q) return accountGroups.value
-  return accountGroups.value
-    .map((g) => ({
-      ...g,
-      accounts: g.accounts.filter((acc) => {
-        const hay = [accountLabel(acc), acc.platform, g.label, acc.status || '', acc.remark || '', acc.id]
-          .join(' ').toLowerCase()
-        return hay.includes(q)
-      }),
-    }))
-    .filter((g) => g.accounts.length > 0)
-})
-const visibleAccounts = computed(() => filteredAccountGroups.value.flatMap((g) => g.accounts))
-const unusableCount = computed(() => (props.accounts || []).filter((a) => hasAccountId(a) && !isAccountUsable(a)).length)
-const usableCount = computed(() => (props.accounts || []).filter((a) => hasAccountId(a) && isAccountUsable(a)).length)
-const recentAccounts = computed(() => {
-  const byId = new Map((props.accounts || []).filter(hasAccountId).map((a) => [String(a.id), a]))
-  return recentAccountIds.value.map((id) => byId.get(String(id))).filter((a) => a && isAccountUsable(a)).slice(0, 5)
-})
-
-function readRecentAccounts () {
-  try {
-    const raw = window.localStorage.getItem('workflow_recent_accounts')
-    const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed.map(String) : []
-  } catch (_) {
-    return []
-  }
-}
-
-function rememberAccount (acc) {
-  const id = String(acc.id)
-  const next = [id, ...recentAccountIds.value.filter((x) => x !== id)].slice(0, 10)
-  recentAccountIds.value = next
-  try { window.localStorage.setItem('workflow_recent_accounts', JSON.stringify(next)) } catch (_) { /* 隐私模式忽略 */ }
-}
-
-function readTargets () {
-  const publish = model.value && model.value.publish
-  return publish && Array.isArray(publish.targets) ? publish.targets : []
-}
-
-function targetList () {
-  if (!model.value) return []
-  if (!model.value.publish || typeof model.value.publish !== 'object') model.value.publish = { targets: [] }
-  if (!Array.isArray(model.value.publish.targets)) model.value.publish.targets = []
-  return model.value.publish.targets
-}
-
-function selectAllVisible () {
-  const targets = targetList()
-  for (const acc of visibleAccounts.value) {
-    if (isAccountUsable(acc) && !hasAccount(acc)) {
-      targets.push({ platform: acc.platform, accountId: String(acc.id) })
+function ensureScheduleRules () {
+  if (!model.value.scheduleRules || typeof model.value.scheduleRules !== 'object') {
+    model.value.scheduleRules = {
+      enabled: false,
+      timezone: 'Asia/Shanghai',
+      weekdays: [1, 2, 3, 4, 5],
+      quietHours: { start: '23:00', end: '07:00' },
     }
   }
+  const r = model.value.scheduleRules
+  if (!Array.isArray(r.weekdays)) r.weekdays = [1, 2, 3, 4, 5]
+  if (!r.quietHours || typeof r.quietHours !== 'object') r.quietHours = { start: '23:00', end: '07:00' }
+  return r
 }
-
-function clearAccounts () {
-  targetList().splice(0)
-}
-
-const UNUSABLE_ACCOUNT_STATUS = new Set(Array.isArray(ACCOUNT_STATUS.unusable) ? ACCOUNT_STATUS.unusable : [])
-
-function isAccountUsable (acc) {
-  return !UNUSABLE_ACCOUNT_STATUS.has(String((acc && acc.status) || ''))
-}
-
-function hasAccount (acc) {
-  return readTargets().some(
-    (t) => t.platform === acc.platform && String(t.accountId) === String(acc.id),
-  )
-}
-
-function toggleAccount (acc) {
-  if (!isAccountUsable(acc)) return
-  rememberAccount(acc)
-  const list = targetList()
-  const idx = list.findIndex((t) => t.platform === acc.platform && String(t.accountId) === String(acc.id))
-  if (idx >= 0) list.splice(idx, 1)
-  else list.push({ platform: acc.platform, accountId: String(acc.id) })
-}
-
-function accountLabel (acc) {
-  return acc.name || acc.nickname || acc.remark || String(acc.id)
-}
-
-function accountStatus (acc) {
-  const status = String(acc.status || '')
-  if (!status || status === 'active' || status === 'online') return ''
-  if (status === 'expired') return t('automation.wfAccountExpired')
-  if (status === 'inactive') return t('automation.wfAccountInactive')
-  return status
-}
-
-const selectedTargets = computed(() => readTargets().filter((t) => t.accountId))
+const scheduleRulesEnabled = computed({
+  get: () => Boolean(ensureScheduleRules().enabled),
+  set: (v) => { ensureScheduleRules().enabled = Boolean(v) },
+})
 
 function toLocalInput (iso) {
   if (!iso) return ''
@@ -476,7 +329,7 @@ const startAtLocal = computed({
 .wf-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid var(--color-border, #dcdfe6); border-radius: 999px; font-size: var(--font-size-xs, 12px); cursor: pointer; }
 .wf-account-groups { display: flex; flex-direction: column; gap: 10px; }
 .wf-adaptation { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--color-border, #d9d9e0); }
-.wf-adaptation-body { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.wf-schedule-rules { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 10px; border: 1px solid var(--color-border, #d9d9e0); border-radius: 8px; }.wf-adaptation-body { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .wf-adapt-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .wf-adapt-name { min-width: 64px; color: var(--color-text-secondary, #85858f); font-size: var(--font-size-xs, 12px); }
 .wf-account-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

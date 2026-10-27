@@ -386,6 +386,15 @@
 - UI 只展示已选账号出现过的平台；无目标时提示先选账号；字段为标题上限、正文上限、标题后缀、追加标签。
 - 边界：本期只做文本适配，**不伪实现封面/视频比例**；媒体变体裁剪需发布器/流水线支持，UI 与文档明确写「只改文本，不改封面/视频比例」。
 
+### 7.16 排期规则（静默时段 / 工作日 / 时区）
+
+- `scheduleRules.enabled` 默认 false；启用后才参与顺延，升级不改变既有任务行为。
+- 字段：`timezone`（IANA，默认 Asia/Shanghai）、`weekdays`（1=周一…7=周日，默认周一至周五）、`quietHours.start/end`（HH:mm，支持跨午夜）。
+- 顺延：`nextAllowedSlot` 按 IANA 时区逐分钟找第一个「工作日且不在静默时段」的时刻，最多 14 天；首条与后续每条都顺延，候选基于实际排期时刻。
+- `quietHours.start === end` 在启用时拒绝（不解释为 24 小时静默）；非法时区/空工作日/非法 HH:mm 拒绝保存；14 天找不到可用时段时 fail-closed，不静默绕过规则。
+- 与 `guardrails.dailyItemLimit` 合并使用，不另造每日上限。
+- 只影响新排期；已入队条目的 publishAt 不回改。预览与运行共用 pacer/规则。
+
 ### 7.7 护栏
 
 - 单次上限：采集后截断，`summary.truncated=true`、`truncateReason=maxItemsPerRun`。

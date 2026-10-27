@@ -25,6 +25,8 @@ const i18n = createI18n({
         wfAccountInactive: '未启用',
         wfPublishMode: '发布方式', wfModeImmediate: '立即', wfModeScheduled: '定时', wfScheduleWarn: 'warn',
         wfCadenceTitle: '节奏', wfCadence: '间隔', wfCadenceHint: 'hint', wfGuard: '护栏',
+        wfScheduleRules: '排期规则', wfTimezone: '时区', wfWeekdays: '工作日', wfQuietHours: '静默',
+        wfQuietHoursHint: 'hint', wfScheduleRulesHint: 'hint', wfWeekdayShort: { 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六', 7: '周日' },
         wfGuardPerRun: '每次', wfGuardDaily: '每天', wfReview: '审核', wfDedupe: '去重', wfReviewHint: 'hint',
         wfCategory: { general: '综合', society: '社会', finance: '财经', tech: '科技', ai: 'AI' },
         wfViralIndustry: '行业', wfViralIndustryPlaceholder: '请选择行业', wfViralIndustryHint: 'hint',
@@ -90,6 +92,17 @@ describe('WorkflowEditor · 抖音爆款来源', () => {
 })
 
 describe('WorkflowEditor · 平台内容适配', () => {
+  it('排期规则启用后写入时区与静默时段', async () => {
+    const w = mountEditor()
+    await w.find('[data-testid="wf-schedule-rules-enabled"]').setValue(true)
+    await w.find('[data-testid="wf-schedule-timezone"]').setValue('UTC')
+    await w.find('[data-testid="wf-quiet-start"]').setValue('22:00')
+    await w.find('[data-testid="wf-quiet-end"]').setValue('06:00')
+    const rules = w.props('modelValue').scheduleRules
+    expect(rules).toMatchObject({ enabled: true, timezone: 'UTC' })
+    expect(rules.quietHours).toEqual({ start: '22:00', end: '06:00' })
+  })
+
   it('选中账号后启用适配，显示该平台行并写入标题上限', async () => {
     const w = mountEditor()
     await w.find('[data-testid="wf-account-zhihu-1"] input').setValue(true)

@@ -1,0 +1,115 @@
+{
+  "sha": "fae2791f6f2b09beeade9dc4c4616e42a36530b6",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 101 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 101,
+    "fileCount": 5,
+    "codeFileCount": 4,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "27957b3a342ee09776ab2ed0d6f0f75840f9339aa28c5d5e19ec29fb8ce00ddb",
+  "decidedAt": "2026-10-27T15:46:47.884Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "normalizeTime('25:00', '23:00') 返回 '25:00' 而非回退默认值；design.md 明确要求非法 HH:mm 归一化回退 23:00/07:00，代码只对 null/undefined/'' 回退。",
+        "highRiskDomains": [],
+        "prosecution": "非法 HH:mm 未回退默认值，文档与代码不一致。",
+        "defense": "已改为保留原值并新增 invalidTime 校验；PRD/design/proposal 同步为拒绝。",
+        "verdict": "dismissed",
+        "rationale": "非法时间在保存时明确拒绝，不再静默修改。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "nextAllowedSlot 14 天无可用时段返回 null，allowedSlot 随即 throw RangeError（fail-closed）；但 design.md 与 proposal.md 均描述 fail-open（返回原 candidate），代码与文档不一致。",
+        "highRiskDomains": [],
+        "prosecution": "14 天无可用时段时抛错，但文档写 fail-open。",
+        "defense": "已把文档改为 fail-closed；pacer 抛 RangeError，不绕过规则。",
+        "verdict": "dismissed",
+        "rationale": "实现与文档一致，且安全方向是 fail-closed。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "nextAllowedSlot 在 start === end（非法状态）时 delta=0，at += Math.max(1, 0) * step - step 仍会向后跳 1 分钟而非原地，但后续循环会继续计算；若 delta 为负数则 at 会倒退。",
+        "highRiskDomains": [],
+        "prosecution": "静默 delta 可能为 0/负导致跳转倒退。",
+        "defense": "delta 非正/非有限时 continue 逐分钟检查；新增保护。",
+        "verdict": "dismissed",
+        "rationale": "不会倒退，最坏退化为逐分钟。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "workflow-schedule-rules.test.js 测试 '周末顺延到周一' 使用 quietHours: { start: '00:00', end: '00:00' }，该配置会被 validateScheduleRules 拒绝（sameTime），测试混合了非法与合法行为。",
+        "highRiskDomains": [],
+        "prosecution": "周末测试使用 sameTime 非法配置，混合合法/非法行为。",
+        "defense": "改为 23:00–23:01 合法静默；测试只验证工作日顺延。",
+        "verdict": "dismissed",
+        "rationale": "测试夹具合法，断言稳定。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "formatterCache 为模块级全局 Map 无上限；虽然 UI 只暴露 5 个时区，但用户可输入任意 IANA 字符串，长期运行可能无限增长。",
+        "highRiskDomains": [],
+        "prosecution": "formatterCache 模块级 Map 无上限。",
+        "defense": "上限 50，超限 clear 后重建。",
+        "verdict": "dismissed",
+        "rationale": "任意 IANA 输入下内存有界。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T15:51:42.885Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4568#issuecomment-6446633925",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@715bb6951dbdd0fc8e72bf23dc06934f6a24a7822e534e6bdde526e183354260"
+  }
+}

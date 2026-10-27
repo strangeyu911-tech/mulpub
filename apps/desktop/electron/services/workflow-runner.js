@@ -184,6 +184,7 @@ function createWorkflowRunner (deps = {}) {
       minMinutes: config.cadence.minMinutes,
       maxMinutes: config.cadence.maxMinutes,
       random,
+      scheduleRules: config.scheduleRules,
     })
 
     // 先落一份可续跑的运行快照：进程崩溃/超时后，启动时可按 _sources 继续未完成条目。

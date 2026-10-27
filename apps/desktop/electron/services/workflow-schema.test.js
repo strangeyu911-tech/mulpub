@@ -134,6 +134,27 @@ describe('workflow-schema · 来源校验', () => {
 })
 
 describe('workflow-schema · 改写/内容/发布校验', () => {
+  it('排期规则：默认关闭；启用后校验时区/工作日/静默时段', () => {
+    const def = validateWorkflowConfig(validConfig())
+    expect(def.config.scheduleRules.enabled).toBe(false)
+
+    const ok = validateWorkflowConfig(validConfig({
+      scheduleRules: { enabled: true, timezone: 'Asia/Shanghai', weekdays: [1, 2, 3], quietHours: { start: '23:00', end: '07:00' } },
+    }))
+    expect(ok.ok).toBe(true)
+    expect(ok.config.scheduleRules.weekdays).toEqual([1, 2, 3])
+
+    const badTz = validateWorkflowConfig(validConfig({
+      scheduleRules: { enabled: true, timezone: 'Not/AZone', weekdays: [1], quietHours: { start: '23:00', end: '07:00' } },
+    }))
+    expect(badTz.errors.some((e) => e.field === 'scheduleRules.timezone')).toBe(true)
+
+    const noDays = validateWorkflowConfig(validConfig({
+      scheduleRules: { enabled: true, timezone: 'UTC', weekdays: [], quietHours: { start: '23:00', end: '07:00' } },
+    }))
+    expect(noDays.errors.some((e) => e.field === 'scheduleRules.weekdays')).toBe(true)
+  })
+
   it('平台适配启用时要求至少一个 profile，未知平台被拒绝', () => {
     const ok = validateWorkflowConfig(validConfig({
       content: { type: 'article', adaptation: { enabled: true, byPlatform: { zhihu: { titleMaxLength: 20 } } } },

@@ -20,6 +20,7 @@ const { createPacer, resolveTargetKey, checkGuardrails, buildDedupeKeys } = requ
 const { createAccountGuard } = require('./workflow-account-guard')
 const { applyQueueEventRecord } = require('./workflow-queue-event')
 const { buildArticle, itemKeyOf } = require('./workflow-article')
+const { adaptArticle } = require('./workflow-adaptation')
 const { newRunId, iso, newSummary, withRetry } = require('./workflow-run-utils')
 const { snapshotRun } = require('./workflow-run-snapshot')
 const { resumePersistedRun } = require('./workflow-resume')
@@ -314,6 +315,7 @@ function createWorkflowRunner (deps = {}) {
       for (const target of targets) {
         const key = resolveTargetKey(target)
         const slot = pacer.next(key, now())
+        const targetArticle = adaptArticle(article, target, config.content && config.content.adaptation)
         const result = await withRetry(() => deps.schedulePublish({
           runId: run.id,
           workflowId: run.workflowId,
@@ -321,7 +323,7 @@ function createWorkflowRunner (deps = {}) {
           itemKey: record.itemKey,
           target,
           publishAt: iso(slot.atMs),
-          article,
+          article: targetArticle,
         }), config.guardrails.retryPerItem)
         if (!result || !result.ok) {
           throw new Error((result && result.error) || ('排期失败：' + key))

@@ -377,6 +377,15 @@
 - 最近使用：localStorage `workflow_recent_accounts` 保存最近 10 个账号 ID，展示最近 5 个可用账号；点击 chip 可直接勾选/取消；隐私模式读写失败静默降级。
 - 搜索/全选/清空均为纯渲染层操作，不改变发布前预检与账号状态判定。
 
+### 7.15 按平台/账号内容适配（文本层）
+
+- `content.adaptation`：`enabled`、`byPlatform[platform]`、`byAccount[accountId]`；账号 profile 优先于平台 profile。
+- profile 字段：`titleMaxLength`（0=不限，1–200）、`bodyMaxLength`（0=不限，100–100000）、`titleSuffix`（≤40）、`tags`（≤10 个，每个 ≤30 字）。
+- 启用时必须至少有一个 profile；未知平台、越界字数、超长后缀、过多标签均拒绝保存。
+- 排期时 runner 按 target 生成独立 `targetArticle`：标题截断后拼后缀、正文超长截断加 `…`、标签去重合并；队列 article 带 `adaptation` 元数据。
+- UI 只展示已选账号出现过的平台；无目标时提示先选账号；字段为标题上限、正文上限、标题后缀、追加标签。
+- 边界：本期只做文本适配，**不伪实现封面/视频比例**；媒体变体裁剪需发布器/流水线支持，UI 与文档明确写「只改文本，不改封面/视频比例」。
+
 ### 7.7 护栏
 
 - 单次上限：采集后截断，`summary.truncated=true`、`truncateReason=maxItemsPerRun`。

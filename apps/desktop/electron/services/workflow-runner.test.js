@@ -89,6 +89,25 @@ function task (cfg, patch = {}) {
 }
 
 describe('workflow-runner · 正常链路', () => {
+  it('按目标平台适配标题/正文/标签后再入队', async () => {
+    const { runner, calls } = makeRunner({ items: [{ ...item(1), content: 'x'.repeat(200) }] })
+    const cfg = config({
+      content: {
+        type: 'article',
+        adaptation: {
+          enabled: true,
+          byPlatform: { bilibili: { titleMaxLength: 8, bodyMaxLength: 100, titleSuffix: '#B', tags: ['B站'] } },
+        },
+      },
+    })
+    const r = await runner.startRun(task(cfg))
+    expect(r.ok).toBe(true)
+    expect(calls.schedule[0].article.title).toBe('选题1#B')
+    expect(calls.schedule[0].article.content).toHaveLength(100)
+    expect(calls.schedule[0].article.tags).toEqual(['B站'])
+    expect(calls.schedule[0].article.adaptation).toMatchObject({ platform: 'bilibili', titleMaxLength: 8 })
+  })
+
   it('两条图文：改写→排期，间隔 35 分钟，账本记录两条', async () => {
     const { runner, calls, ledger } = makeRunner()
     const r = await runner.startRun(task(config()))

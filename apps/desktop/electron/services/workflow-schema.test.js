@@ -134,6 +134,24 @@ describe('workflow-schema · 来源校验', () => {
 })
 
 describe('workflow-schema · 改写/内容/发布校验', () => {
+  it('平台适配启用时要求至少一个 profile，未知平台被拒绝', () => {
+    const ok = validateWorkflowConfig(validConfig({
+      content: { type: 'article', adaptation: { enabled: true, byPlatform: { zhihu: { titleMaxLength: 20 } } } },
+    }))
+    expect(ok.ok).toBe(true)
+    expect(ok.config.content.adaptation.byPlatform.zhihu.titleMaxLength).toBe(20)
+
+    const empty = validateWorkflowConfig(validConfig({
+      content: { type: 'article', adaptation: { enabled: true } },
+    }))
+    expect(empty.errors.some((e) => e.field === 'content.adaptation' && e.reason === 'empty')).toBe(true)
+
+    const unknown = validateWorkflowConfig(validConfig({
+      content: { type: 'article', adaptation: { enabled: true, byPlatform: { nope: { titleMaxLength: 20 } } } },
+    }))
+    expect(unknown.errors.some((e) => e.reason === 'unsupported')).toBe(true)
+  })
+
   it('指定策略必须带 strategyId；默认策略忽略 strategyId', () => {
     const bad = validateWorkflowConfig(validConfig({ rewrite: { mode: 'strategy' } }))
     expect(bad.errors[0]).toMatchObject({ field: 'rewrite.strategyId', reason: 'empty' })

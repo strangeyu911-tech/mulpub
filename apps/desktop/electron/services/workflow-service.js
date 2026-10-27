@@ -20,6 +20,7 @@ const {
   PLATFORMS,
   HOT_TOPIC_CATEGORIES,
   VIRAL_INDUSTRIES,
+  ADAPTATION_LIMITS,
   SOURCE_LABELS,
   CONTENT_LABELS,
   PLATFORM_LABELS,
@@ -229,6 +230,7 @@ function createWorkflowService (deps = {}) {
       platforms: PLATFORMS.map((id) => ({ id, label: PLATFORM_LABELS[id] })),
       categories: HOT_TOPIC_CATEGORIES.slice(),
       viralIndustries: VIRAL_INDUSTRIES.slice(),
+      adaptationLimits: { ...ADAPTATION_LIMITS },
       limits: { ...LIMITS },
     }
   }

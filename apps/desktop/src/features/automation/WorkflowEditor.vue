@@ -115,6 +115,41 @@
         <input :id="fid('channel')" v-model="model.content.podcastChannelId" class="wf-input" :placeholder="t('automation.wfChannelPlaceholder')" />
         <span class="wf-hint">{{ t('automation.wfChannelHint') }}</span>
       </div>
+      <div v-if="model.content.type !== 'podcast'" class="wf-adaptation">
+        <label class="wf-check">
+          <input v-model="adaptationEnabled" type="checkbox" data-testid="wf-adaptation-enabled" />
+          {{ t('automation.wfAdaptationEnabled') }}
+        </label>
+        <div v-if="adaptationEnabled" class="wf-adaptation-body">
+          <div v-if="!adaptationPlatforms.length" class="wf-hint wf-hint--warn" data-testid="wf-adaptation-no-targets">
+            {{ t('automation.wfAdaptationNoTargets') }}
+          </div>
+          <div v-for="platform in adaptationPlatforms" :key="'adapt-' + platform" class="wf-adapt-row" :data-testid="'wf-adapt-' + platform">
+            <span class="wf-adapt-name">{{ platformLabel(platform) }}</span>
+            <input
+              v-model.number="profileFor(platform).titleMaxLength"
+              type="number" min="0" :max="meta.adaptationLimits.titleMaxLength"
+              class="wf-input wf-input--sm" :title="t('automation.wfAdaptationTitleMax')"
+            />
+            <input
+              v-model.number="profileFor(platform).bodyMaxLength"
+              type="number" min="0" :max="meta.adaptationLimits.bodyMaxLength"
+              class="wf-input wf-input--sm" :title="t('automation.wfAdaptationBodyMax')"
+            />
+            <input
+              v-model="profileFor(platform).titleSuffix"
+              class="wf-input" :maxlength="meta.adaptationLimits.suffixMax"
+              :placeholder="t('automation.wfAdaptationSuffix')"
+            />
+            <input
+              :value="tagsTextFor(platform)"
+              class="wf-input" :placeholder="t('automation.wfAdaptationTags')"
+              @input="onAdaptationTags(platform, $event)"
+            />
+          </div>
+          <div class="wf-hint">{{ t('automation.wfAdaptationHint', { title: meta.adaptationLimits.titleMaxLength, body: meta.adaptationLimits.bodyMaxLength }) }}</div>
+        </div>
+      </div>
     </section>
 
     <!-- 4. 发布 -->
@@ -242,6 +277,42 @@ function onFollowIdsInput (e) {
 const folderTokensText = computed(() => (model.value.source.folderTokens || []).join(', '))
 function onFolderTokensInput (e) {
   model.value.source.folderTokens = String(e.target.value || '').split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean)
+}
+
+function ensureAdaptation () {
+  if (!model.value.content.adaptation || typeof model.value.content.adaptation !== 'object') {
+    model.value.content.adaptation = { enabled: false, byPlatform: {}, byAccount: {} }
+  }
+  const a = model.value.content.adaptation
+  if (!a.byPlatform || typeof a.byPlatform !== 'object') a.byPlatform = {}
+  if (!a.byAccount || typeof a.byAccount !== 'object') a.byAccount = {}
+  return a
+}
+
+const adaptationEnabled = computed({
+  get: () => Boolean(ensureAdaptation().enabled),
+  set: (v) => { ensureAdaptation().enabled = Boolean(v) },
+})
+const adaptationPlatforms = computed(() => {
+  const set = new Set((model.value.publish.targets || []).map((t) => t.platform).filter(Boolean))
+  return Array.from(set)
+})
+
+function profileFor (platform) {
+  const a = ensureAdaptation()
+  if (!a.byPlatform[platform]) {
+    a.byPlatform[platform] = { titleMaxLength: 0, bodyMaxLength: 0, titleSuffix: '', tags: [] }
+  }
+  return a.byPlatform[platform]
+}
+
+function tagsTextFor (platform) {
+  return (profileFor(platform).tags || []).join(', ')
+}
+
+function onAdaptationTags (platform, event) {
+  profileFor(platform).tags = String(event.target.value || '')
+    .split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean)
 }
 
 function toggleCategory (id) {
@@ -404,6 +475,10 @@ const startAtLocal = computed({
 .wf-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
 .wf-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid var(--color-border, #dcdfe6); border-radius: 999px; font-size: var(--font-size-xs, 12px); cursor: pointer; }
 .wf-account-groups { display: flex; flex-direction: column; gap: 10px; }
+.wf-adaptation { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--color-border, #d9d9e0); }
+.wf-adaptation-body { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.wf-adapt-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wf-adapt-name { min-width: 64px; color: var(--color-text-secondary, #85858f); font-size: var(--font-size-xs, 12px); }
 .wf-account-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .wf-recent { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .wf-recent-chip { border: 1px solid var(--color-border, #d9d9e0); background: transparent; cursor: pointer; }

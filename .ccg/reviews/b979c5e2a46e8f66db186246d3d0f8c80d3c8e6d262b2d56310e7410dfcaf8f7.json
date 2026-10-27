@@ -1,0 +1,105 @@
+{
+  "sha": "fa6200d6840966dad73eca43bbc4d81fa1ec9c49",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 357 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 357,
+    "fileCount": 19,
+    "codeFileCount": 11,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "b979c5e2a46e8f66db186246d3d0f8c80d3c8e6d262b2d56310e7410dfcaf8f7",
+  "decidedAt": "2026-10-27T14:42:04.384Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "normalizeProfile 在 validateAdaptation 之前静默截断 titleSuffix（≤40）和 tags（≤10/≤30），使 validateAdaptation 中 tooLong/tooMany 永远无法触发，违反“超限拒绝保存”要求。",
+        "highRiskDomains": [],
+        "prosecution": "normalizeProfile 先截断 suffix/tags，使校验 tooLong 永不触发。",
+        "defense": "已保留原值，由 validateAdaptation 检查并拒绝；新增超长标签测试。",
+        "verdict": "dismissed",
+        "rationale": "归一化不再静默修复；超限输入会得到 tooLong/tooMany。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "normalizeProfile 对非整数 titleMaxLength/bodyMaxLength 直接归零（当做 0=不限），而非拒绝，导致非法输入（如 10.5、字符串数值）静默通过。",
+        "highRiskDomains": [],
+        "prosecution": "非整数 titleMaxLength 被归零当成不限。",
+        "defense": "已改为原值保留，校验要求 Number.isInteger；新增 10.5/字符串测试。",
+        "verdict": "dismissed",
+        "rationale": "非整数/字符串现在直接 outOfRange。"
+      },
+      {
+        "id": "i3",
+        "severity": "High",
+        "finding": "adaptArticle 当 titleMaxLength < suffix.length 时，Math.max(0, max - suffix.length) = 0，最终标题仅为 suffix，其长度可能超过 titleMaxLength（如 max=5、suffix=10）。",
+        "highRiskDomains": [],
+        "prosecution": "titleMaxLength 小于 suffix 长度时最终标题可能超上限。",
+        "defense": "先把 suffix 截到 titleMaxLength 内再拼；新增 max=5/suffix=10 测试。",
+        "verdict": "dismissed",
+        "rationale": "最终标题长度严格 ≤ titleMaxLength。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "normalizeProfile 同时承担“归一化”和“静默修复”职责，导致 validateAdaptation 的 error 规则部分成为死代码，维护时难以确认哪些规则实际生效。",
+        "highRiskDomains": [],
+        "prosecution": "normalizeProfile 同时归一化与静默修复，校验规则成死代码。",
+        "defense": "职责拆开：归一化只保留原值，校验负责拒绝；测试覆盖。",
+        "verdict": "dismissed",
+        "rationale": "校验规则现已可达且被测试触发。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T14:47:32.544Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4565#issuecomment-6445069483",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@b285c5705ba520dd1a6efd32a2d3482c7562ffd8d0b574a2b284a2557f5a9873"
+  }
+}

@@ -15,6 +15,7 @@
  */
 
 const crypto = require('crypto')
+const { normalizeAdaptation, validateAdaptation, ADAPTATION_LIMITS } = require('./workflow-adaptation')
 
 /** 来源类型白名单（douyinViral = 已采集到爆款库的抖音内容） */
 const SOURCE_TYPES = Object.freeze(['hotTopics', 'creatorMonitor', 'zhihuFavlist', 'douyinViral'])
@@ -258,6 +259,7 @@ function validateWorkflowConfig (raw, opts = {}) {
     type: CONTENT_TYPES.includes(rawContent.type) ? rawContent.type : '',
     videoPipeline: typeof rawContent.videoPipeline === 'string' ? rawContent.videoPipeline.trim() : '',
     podcastChannelId: typeof rawContent.podcastChannelId === 'string' ? rawContent.podcastChannelId.trim() : '',
+    adaptation: normalizeAdaptation(rawContent.adaptation),
   }
   if (!content.type) {
     errors.push({ field: 'content.type', reason: 'unknown' })
@@ -270,6 +272,7 @@ function validateWorkflowConfig (raw, opts = {}) {
   } else if (content.type === 'podcast' && !content.podcastChannelId) {
     errors.push({ field: 'content.podcastChannelId', reason: 'empty' })
   }
+  errors.push(...validateAdaptation(content.adaptation, PLATFORMS))
 
   const rawPublish = isPlainObject(src.publish) ? src.publish : {}
   const publish = {
@@ -318,7 +321,7 @@ function buildDefaultWorkflowConfig () {
   return {
     source: { type: 'hotTopics', categories: ['ai'], limit: 10, sort: 'latest', followIds: [], perCreatorLimit: 3, folderTokens: [], industry: '', minLikes: 0 },
     rewrite: { mode: 'default', strategyId: '', length: 'keep' },
-    content: { type: 'article', videoPipeline: '', podcastChannelId: '' },
+    content: { type: 'article', videoPipeline: '', podcastChannelId: '', adaptation: normalizeAdaptation() },
     publish: { targets: [], mode: 'immediate', startAt: '' },
     cadence: { ...CADENCE_DEFAULTS },
     guardrails: { ...GUARDRAIL_DEFAULTS },
@@ -393,7 +396,7 @@ const BUILTIN_TEMPLATES = Object.freeze([
     config: {
       source: { type: 'creatorMonitor', followIds: ['__pick_follow__'], perCreatorLimit: 3, categories: [], limit: 10, sort: 'latest', folderTokens: [] },
       rewrite: { mode: 'default', strategyId: '', length: 'keep' },
-      content: { type: 'article', videoPipeline: '', podcastChannelId: '' },
+      content: { type: 'article', videoPipeline: '', podcastChannelId: '', adaptation: normalizeAdaptation() },
       publish: {
         targets: [
           { platform: 'zhihu', accountId: '' },
@@ -416,7 +419,7 @@ const BUILTIN_TEMPLATES = Object.freeze([
     config: {
       source: { type: 'hotTopics', categories: ['ai', 'tech'], limit: 10, sort: 'latest', followIds: [], perCreatorLimit: 3, folderTokens: [] },
       rewrite: { mode: 'default', strategyId: '', length: 'keep' },
-      content: { type: 'article', videoPipeline: '', podcastChannelId: '' },
+      content: { type: 'article', videoPipeline: '', podcastChannelId: '', adaptation: normalizeAdaptation() },
       publish: {
         targets: [
           { platform: 'toutiao', accountId: '' },
@@ -480,6 +483,7 @@ module.exports = {
   PLATFORMS,
   HOT_TOPIC_CATEGORIES,
   VIRAL_INDUSTRIES,
+  ADAPTATION_LIMITS,
   PLATFORM_LABELS,
   SOURCE_LABELS,
   CONTENT_LABELS,

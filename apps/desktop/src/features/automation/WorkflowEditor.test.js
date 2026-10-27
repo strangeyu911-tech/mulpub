@@ -29,6 +29,8 @@ const i18n = createI18n({
         wfCategory: { general: '综合', society: '社会', finance: '财经', tech: '科技', ai: 'AI' },
         wfViralIndustry: '行业', wfViralIndustryPlaceholder: '请选择行业', wfViralIndustryHint: 'hint',
         wfViralMinLikes: '最低点赞', wfViralLimitHint: 'hint', wfViralSourceHint: 'hint',
+        wfAdaptationEnabled: '平台适配', wfAdaptationNoTargets: '先选账号', wfAdaptationTitleMax: '标题',
+        wfAdaptationBodyMax: '正文', wfAdaptationSuffix: '后缀', wfAdaptationTags: '标签', wfAdaptationHint: '提示',
       },
     },
   },
@@ -61,6 +63,7 @@ const meta = {
     { id: 'bilibili', label: 'B站' },
   ],
   categories: ['ai'],
+  adaptationLimits: { titleMaxLength: 200, bodyMaxLength: 100000, suffixMax: 40, tagsMax: 10, tagLengthMax: 30 },
   limits: { maxHotTopicsLimit: 30, maxFolderLimit: 50, maxItemsPerRun: 50, maxDailyItems: 200 },
 }
 
@@ -83,6 +86,20 @@ describe('WorkflowEditor · 抖音爆款来源', () => {
     await w.find('[data-testid="wf-source-type"]').setValue('douyinViral')
     expect(w.find('[data-testid="wf-viral-industry"]').exists()).toBe(true)
     expect(w.find('[data-testid="wf-viral-min-likes"]').exists()).toBe(true)
+  })
+})
+
+describe('WorkflowEditor · 平台内容适配', () => {
+  it('选中账号后启用适配，显示该平台行并写入标题上限', async () => {
+    const w = mountEditor()
+    await w.find('[data-testid="wf-account-zhihu-1"] input').setValue(true)
+    await w.find('[data-testid="wf-adaptation-enabled"]').setValue(true)
+    expect(w.find('[data-testid="wf-adapt-zhihu"]').exists()).toBe(true)
+    const numeric = w.find('[data-testid="wf-adapt-zhihu"] input[type="number"]')
+    await numeric.setValue(20)
+    const adaptation = w.props('modelValue').content.adaptation
+    expect(adaptation.enabled).toBe(true)
+    expect(adaptation.byPlatform.zhihu.titleMaxLength).toBe(20)
   })
 })
 

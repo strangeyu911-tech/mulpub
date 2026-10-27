@@ -729,18 +729,20 @@ describe('子模块 require 链可加载', () => {
 describe('影视工程 film-engineering preload API', () => {
   // 25 → 26（2026-10-10，新增 productionRetryShot：出片台账批次的单镜重试通道）。
   // 26 → 27（2026-10-23，PR-3b 新增 importKit：资产导入**写路径**）。
+  // 27 → 28（2026-10-27，kit-asset-health-report 新增 inspectKit：资产**体检**，只读）。
   // ⚠ 本文件此前**从未被 vitest 跑过**（`electron/preload.test.js` 在 `electron/` 根下，
   //   不被 `electron/preload/**/*.test.js` 覆盖）⇒ 26 → 27 这次红了却没人看见。
   //   已把该文件**登记进 vitest include**（见 vitest.config.js 的显式登记块）。
   // 计数断言的意图是「方法面不得无理由增减」，故同时钉住新增方法名——只改数字会让
   // 下一次误加方法时，人和 CI 都失去参照。
-  it('createFilmEngineeringApi 应为函数且返回 27 个方法', () => {
+  it('createFilmEngineeringApi 应为函数且返回 28 个方法', () => {
     const { createFilmEngineeringApi } = require('./preload/film-engineering')
     expect(typeof createFilmEngineeringApi).toBe('function')
     const api = createFilmEngineeringApi(ipcRenderer)
-    expect(Object.keys(api.filmEngineering).length).toBe(27)
+    expect(Object.keys(api.filmEngineering).length).toBe(28)
     expect(api.filmEngineering.productionRetryShot).toBeTypeOf('function')
     expect(api.filmEngineering.importKit).toBeTypeOf('function')
+    expect(api.filmEngineering.inspectKit).toBeTypeOf('function')
   })
 
   it.each([
@@ -805,6 +807,20 @@ describe('影视工程 film-engineering preload API', () => {
     expect(PUBLIC_METHODS).not.toContain('filmEngineering.importKit')
     expect(requiredLevelForMethod('filmEngineering.importKit')).toBe('authenticated')
     // 主进程侧同样不得公开
+    expect(requiredLevelForChannel('film-engineering:import-kit')).not.toBe('public')
+  })
+
+  // 资产**体检**是只读（不建锁 / 不写审计 / 不落盘）⇒ 与既有只读浏览同档（未登录可用）。
+  // 这条与上面那条成对：一个说「替换要登录」，一个说「看不用登录」。把两者混为一谈会让
+  // 「公开了一个破坏性写操作」这类错误再次以「反正都是资产功能」的名义溜过去。
+  it('资产**体检**可以登记为 public（只读），但不得与 importKit 混淆', () => {
+    const { PUBLIC_METHODS, requiredLevelForMethod } = require('./preload/access-control')
+    const { requiredLevelForChannel } = require('./ipc-handlers/license-access-control')
+    expect(PUBLIC_METHODS).toContain('filmEngineering.inspectKit')
+    expect(requiredLevelForMethod('filmEngineering.inspectKit')).toBe('public')
+    expect(PUBLIC_METHODS).not.toContain('filmEngineering.importKit')
+    // ⚠ 两侧档位必须一致：preload 放行而主进程默认 authenticated ⇒ 「只读可公开」是空话
+    expect(requiredLevelForChannel('film-engineering:inspect-kit')).toBe('public')
     expect(requiredLevelForChannel('film-engineering:import-kit')).not.toBe('public')
   })
 })

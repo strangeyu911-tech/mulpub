@@ -308,11 +308,16 @@ describe('FilmEngineeringView 全量出片 · 批次上下文（付费前核对�
   })
 })
 
-describe('FilmEngineeringView 资产导入（PR-3b · F-J）', () => {
-  it('顶部挂载了资产导入入口组件（非只读规划区）', async () => {
+// ── change: kit-asset-health-report ──────────────────────────────────────
+// 本视图 = Hub 的 classic「项目案例」标签。资产导入入口已**移出**这里（移到 Hub 页级资产区），
+// 因为导入改的是「自动」标签赖以规划的模板库，而本标签是「看专业分镜库 / 学方法论」的只读区。
+// ⚠ 这里原本有一条「顶部挂载了资产导入入口组件」的用例 —— 它锁的正是被推翻的旧设计
+//   （入口在「看案例」的只读区），已随改动删除；取而代之的是下面这条**反向**锁。
+describe('FilmEngineeringView · 不再承载资产导入入口（kit-asset-health-report）', () => {
+  it('挂载后既没有旧导入条，也没有资产区（入口只有 Hub 页级那一份）', async () => {
     const wrapper = mountView()
-    await nextTick()
-    expect(wrapper.findComponent({ name: 'FilmKitImportBar' }).exists()).toBe(true)
-    expect(wrapper.find('[data-testid="fe-kit-import-bar"]').exists()).toBe(true)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="fe-kit-import-bar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="fe-asset-manager"]').exists()).toBe(false)
   })
 })

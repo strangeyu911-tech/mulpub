@@ -497,3 +497,105 @@ python scripts/film-engineering/<上一步得到的脚本名> \
 - **v7 新增的四份资产不由该脚本生成**：它们是人工维护的方法论资产
   （`shot-grammar.json` / `compliance-checklist.json` / `palette.json` / `prompts/tasks/`），
   重建语料时**不得覆盖**它们。若脚本需清空输出目录，必须显式保留这四份。
+
+## 十三、资产体检契约（change: kit-asset-health-report）
+
+> 体检 = 导入的**前置预览**：读用户选定目录，产出「导入后会得到什么」的报告。
+> 实现：`services/film-engineering/kit-inspect.js`；通道：`film-engineering:inspect-kit`。
+> ⚠ 本文件不用于运行时解析（见首节声明）；本节是**人读契约**，代码侧闭集由
+> `kit-schema-contract.test.js` 逐值断言。
+
+### 13.1 ⛔ 只读承诺（可机械验证）
+
+| 承诺 | 判据（不是散文） |
+|------|------------------|
+| 不建锁 | `userData/.import-lock` 不被创建 |
+| 不写审计 | `userData/film-kit-import.log` 不被创建/追加 |
+| 不落盘 | 源目录递归快照（路径+size+mtime）逐字节不变 |
+| 不调写接口 | 以「记录写调用的 fs 替身」跑一遍，`writeFile/writeSync/mkdir/unlink/rm/rmdir/rename/copyFile/utimes` 调用数必须为 **0** |
+
+机械锁：`kit-inspect.test.js`「⛔ 只读铁律」两条 + `film-engineering-inspect.test.js`
+「不写审计」一条。⚠ 这三条的必要性来自「只读」是**承诺**而不是**结构**——
+「不写」这件事只有被测试盯着，才不是一句自我声明。
+
+### 13.2 报告字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `importable` | boolean | 严格模式（`requireAssets:true`）是否通过 ⇒ **能否导入** |
+| `blockingReason` | string\|null | 不可导入时的 `reason` 闭集值（见 13.3；渲染端据此本地化） |
+| `blockingMessage` | string\|null | 不可导入时的人话原因（含字段级校验原文，**不用于本地化**） |
+| `counts` | object\|**null** | 统计；`null` = **没量到**（目录读不到），**不是** 0 |
+| `counts.scenes` / `.shots` / `.shotsWithResult` | number\|null | 场景 / 分镜 / 已带成片链接的分镜 |
+| `counts.references` / `.referencesResolvable` | number\|null | 参考素材条目数 / 其中有可解析 `http(s)` 图片地址的条数 |
+| `counts.templateTasks` / `.templateFiles` | number\|null | 任务模板库的任务数 / 模板文件数（每任务×语种×{system,user}） |
+| `counts.fileCount` / `.totalBytes` | number\|null | 白名单内文件数与总字节 |
+| `langs` | string[] | 任务库语种并集（字典序） |
+| `requiredMissing` | string[] | 缺失的必填项（文件名；`prompts/tasks` 以 `prompts/tasks/` 形式点名） |
+| `ignoredTopLevel` | string[] | 顶层**白名单外**条目名（不会被拷入；`images` 属此列） |
+| `warnings` | `{code,count}`[] | 信息性告警（**不阻断**），见 13.4 |
+| `assetWarningTexts` | string[] | 平台侧告警原文（诊断用，**不本地化**） |
+
+⚠ **`null` 与 `0` 不是一回事**：`counts` 里的 `null` 表示「没有量到」（目录不合格/读不到），
+界面必须渲染成占位（如 `—`）而不是 `0`。把「没测」印成 `0` 会让用户以为资产是空的——
+这正是本仓反复禁止的**构造性零**。
+
+### 13.3 `ok` 与 `importable` 必须分开
+
+| 返回形态 | 含义 | 用户该做什么 |
+|----------|------|--------------|
+| `ok:false` + `reason` | **体检本身没跑成**（目录不存在/不可读） | 换一个目录 |
+| `ok:true` + `importable:false` | 体检跑通，但**资产不合格** | 按缺项清单补齐自己的资产包 |
+| `ok:true` + `importable:true` | 可以导入 | 确认替换 |
+
+合成一个字段会把「目录读不到」读成「资产不合格」，两种成因对应**完全不同的用户动作**，
+所以这两个概念在接口上就必须是两格。
+
+**`reason` 取值（体检自身失败）**：`NOT_A_DIRECTORY`（目录不可读/不是目录）、`VALIDATION_ERROR`（其它）。
+
+**`blockingReason`（不可导入）**：优先取扫描层更精确的 `reason`（如 `EXT_NOT_ALLOWED` /
+`SIZE_EXCEEDED` / `HIDDEN_NAME_REJECTED`，全部来自 §11.4 的 18 值闭集）；扫描通过但严格校验失败时
+取 `VALIDATION_ERROR`，字段级原文只进 `blockingMessage`。
+
+### 13.4 告警 `code` 闭集（5 值，**均不阻断**）
+
+| code | 含义 | `count` | 来源 |
+|------|------|---------|------|
+| `MISSING_V7_ASSET` | 缺 v7 增强资产（含 `prompts/tasks`） | 平台告警条数 | `loadFilmKit` 的 `assetWarnings` |
+| `EMPTY_TASK_LIBRARY` | `prompts/tasks` 存在但没有任务目录 | `null` | 同上（按告警文本判别） |
+| `UNRESOLVED_REFERENCE` | 参考素材无可解析 `http(s)` 图片地址 | 条数 | 体检统计 |
+| `IGNORED_TOP_LEVEL` | 顶层有白名单外条目（如 `images/`） | 条目数 | 体检统计 |
+| `SHOTS_WITH_RESULT` | 分镜已带成片链接（导入后仍视为「已生成」） | 镜数 | 体检统计 |
+
+⚠ 本轮**只聚合既有来源**，不新增内容级判据（占位符契约 / 枚举闭集 / 空壳检测属另一批，见 §十三.7）。
+
+### 13.5 与 §十一 导入契约的关系
+
+```
+① inspect-kit（只读）→ ② 报告 + 用户确认 → ③ import-kit（写路径，§十一 全部安全判据不变）
+```
+
+- 体检**不替代**导入时的任何判据：导入仍会**自己重新**做严格校验、建锁、写审计、做换入与对账；
+- 体检**不缓存**结果：用户改完资产包再点一次入口就会重新体检；
+- 体检**不传递路径**给写路径：`importKit()` 也是空参调用，路径在写路径里由用户**再选一次**。
+  这条看似多余，实为「前置步骤不能成为写路径的路径来源」——否则体检会把「用户选过一次」
+  当成「用户授权替换那个目录」，而这两个授权对象不同。
+
+### 13.6 授权档位（两侧必须一致）
+
+| 面 | `inspectKit`（只读体检） | `importKit`（写路径） |
+|----|--------------------------|------------------------|
+| preload `PUBLIC_METHODS` | **在**（未登录可用） | **不在**（需登录） |
+| 主进程 `license-access-control` | `public` | 非 public |
+| sender 断言 | 主框架 + 路由前缀 + 协议（硬） | 同左 |
+
+回归锁：`preload.test.js` 两条**成对**断言（一条说「替换要登录」，一条说「看不用登录」）。
+⚠ 只写其中一条时，「公开了一个破坏性写操作」会以「反正都是资产功能」的名义再次溜过去。
+
+### 13.7 本轮不做（写明以免被误读为遗漏）
+
+① **内容级判据**：提示词模板占位符契约、枚举值落闭集、空壳/残留（`TODO`/`lorem`）检测；
+② **标准骨架导出**：给用户一份可导入的标准资产包骨架；
+③ **本地自检命令**：导入前脱离 UI 自检。
+
+三者都改变「什么叫合格」或新增用户交付物，各自需要独立的兼容论证，不与本次「挪入口 + 只读报告」混批。

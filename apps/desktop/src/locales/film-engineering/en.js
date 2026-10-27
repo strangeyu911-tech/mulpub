@@ -249,6 +249,34 @@ export default {
         "UNAUTHORIZED": "the caller is not authorized"
       }
     },
+    "assetManager": {
+      "entry": "Import my film engineering assets…",
+      "hint": "Replaces the current film engineering assets wholesale (not merged); all three tabs share the same assets",
+      "reportTitle": "Asset health report",
+      "importable": "Ready to import",
+      "notImportable": "Cannot import",
+      "countsUnavailable": "Asset statistics unavailable (the directory does not meet the contract, or is unreadable)",
+      "scenes": "Scenes: {count}",
+      "shots": "Shots: {count}",
+      "templates": "Task templates: {count}",
+      "references": "References resolvable: {ok} / {total}",
+      "langs": "Languages: {langs}",
+      "blockingTitle": "Missing required items",
+      "ignoredTitle": "The following will not be imported",
+      "confirmImport": "Import now",
+      "inspectFailed": "Health check failed: {reason}",
+      "warn": {
+        "MISSING_V7_ASSET": "{count} enhanced asset(s) missing; related capabilities will be unavailable after import",
+        "EMPTY_TASK_LIBRARY": "The task template library exists but has no task directories",
+        "UNRESOLVED_REFERENCE": "{count} reference item(s) have no resolvable image URL",
+        "IGNORED_TOP_LEVEL": "{count} item(s) are outside the import scope",
+        "SHOTS_WITH_RESULT": "{count} shot(s) already carry a result link and will still count as generated after import"
+      },
+      "reason": {
+        "NOT_A_DIRECTORY": "the selected path is not a readable directory",
+        "VALIDATION": "the asset content does not meet the contract"
+      }
+    },
     "canvas": {
       "title": "Film Canvas",
       "subtitle": "Fill in the script, wire reference images, split into shots and drive to the final film in one click.",

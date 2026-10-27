@@ -437,6 +437,9 @@ export async function filmEngineeringProductionRetryShot(payload) { const res = 
 // 资产导入（PR-3b · F-J **写路径**）：**无参数** —— 路径只能由主进程的原生对话框返回
 // （renderer 不能指定替换内容）；失败时 errorCode = reason 闭集值，调用方据此本地化。
 export async function filmEngineeringImportKit() { const res = await invokeNamespace("filmEngineering", "importKit"); return res === undefined ? { code: -1, message: 'electronAPI not available' } : res }
+// 资产**体检**（change: kit-asset-health-report）：**无参数、只读** —— 读用户选定目录产出报告，
+// 不建锁、不写审计、不落盘；供「导入前预览」用（失败时 errorCode = 体检 reason 闭集值）。
+export async function filmEngineeringInspectKit() { const res = await invokeNamespace("filmEngineering", "inspectKit"); return res === undefined ? { code: -1, message: 'electronAPI not available' } : res }
 export async function pipelineGetRunContext(runId) { return invokeWithFallback("pipelineGetRunContext", null, runId) }
 
 // ─── Story2Video 本地交付 API ──────────────────────

@@ -39,6 +39,8 @@ function mountHub () {
         FilmAutoPanel: true,
         FilmCanvasView: true,
         FilmEngineeringView: true,
+        // 资产区按「带 testid 的替身」挂：结构锁要能定位它（见下方「资产区位置」用例）
+        FilmAssetManager: { template: '<div data-testid="fe-asset-manager" />' },
         ElCollapse: true,
         ElCollapseItem: true,
         ElInput: true,
@@ -160,5 +162,38 @@ describe('FilmEngineeringHubView 三标签导航', () => {
     expect(panelEl(w, 'auto').attributes('role')).toBe('tabpanel')
     expect(panelEl(w, 'auto').attributes('aria-labelledby')).toBe('fh-tab-auto')
     w.unmount()
+  })
+})
+
+// ── change: kit-asset-health-report ──────────────────────────────────────
+// 资产区（导入入口）的位置锁：资产被三个标签**共用**，所以它必须在页级（页头），
+// 而**不能**塞进任何一个 tabpanel。PR-3b 曾把它挂在 classic「项目案例」页面顶部 ——
+// 那是「看案例」的只读区，而导入改的是「自动」标签赖以规划的模板库。
+describe('FilmEngineeringHubView · 资产区位置（kit-asset-health-report）', () => {
+  it('页头有资产区', async () => {
+    const w = mountHub()
+    await flushPromises()
+    expect(w.find('.fh-header [data-testid="fe-asset-manager"]').exists()).toBe(true)
+  })
+
+  it('资产区**不在**任何 tabpanel 内（否则又会只在某一个标签里出现）', async () => {
+    const w = mountHub()
+    await flushPromises()
+    for (const id of ['auto', 'canvas', 'classic']) {
+      expect(
+        w.find('[data-testid="fh-panel-' + id + '"] [data-testid="fe-asset-manager"]').exists(),
+        id + ' 面板内不得出现资产区',
+      ).toBe(false)
+    }
+  })
+
+  it('切到任一标签，资产区都仍然只有一个（页级常驻）', async () => {
+    const w = mountHub()
+    await flushPromises()
+    for (const id of ['canvas', 'classic', 'auto']) {
+      await tabEl(w, id).trigger('click')
+      await nextTick()
+      expect(w.findAll('[data-testid="fe-asset-manager"]').length).toBe(1)
+    }
   })
 })

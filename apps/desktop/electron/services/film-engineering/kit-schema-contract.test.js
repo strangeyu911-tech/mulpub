@@ -98,3 +98,58 @@ describe('kit-schema-contract: SCHEMA.md 导入契约小节', () => {
     expect(sec).toContain('images/')
   })
 })
+
+// ── change: kit-asset-health-report（SCHEMA 十三、资产体检契约）─────────────
+// 体检契约同样是**人读镜像**：文档里的告警 code / report 字段 / reason 取值必须与代码逐值一致，
+// 否则「文档说会告警 X、代码从不告警 X」这类漂移无人发现。
+const { WARN_CODE: INSPECT_WARN_CODE, INSPECT_REASON } = require('./kit-inspect')
+
+function inspectSection () {
+  const i = text.indexOf('## 十三、资产体检契约')
+  expect(i, 'SCHEMA.md 缺少「资产体检契约」小节').toBeGreaterThan(-1)
+  return text.slice(i)
+}
+
+describe('kit-schema-contract: SCHEMA.md 十三、资产体检契约', () => {
+  it('小节存在且非空', () => {
+    expect(inspectSection().length).toBeGreaterThan(1000)
+  })
+
+  it('告警 code 闭集：代码与文档 13.4 表格逐值一致（不多不少）', () => {
+    const sec = inspectSection()
+    const i = sec.indexOf('### 13.4')
+    const j = sec.indexOf('### 13.5')
+    expect(i, '缺少 13.4 告警小节').toBeGreaterThan(-1)
+    expect(j).toBeGreaterThan(i)
+    // ⚠ 正则必须含数字：`MISSING_V7_ASSET` 里有 `7`，用 `[A-Z][A-Z_]` 会截断成 `MISSING_V`
+    const docCodes = [...new Set((sec.slice(i, j).match(/`[A-Z][A-Z0-9_]{3,}`/g) || []).map((x) => x.replace(/`/g, '')))]
+    expect(docCodes.sort()).toEqual(Object.values(INSPECT_WARN_CODE).sort())
+  })
+
+  it('体检失败 reason 闭集在 13.3 逐值在位', () => {
+    const sec = inspectSection()
+    const i = sec.indexOf('### 13.3')
+    const j = sec.indexOf('### 13.4')
+    expect(j).toBeGreaterThan(i)
+    for (const reason of Object.values(INSPECT_REASON)) {
+      expect(sec.slice(i, j), 'reason 未在 13.3 声明: ' + reason).toContain(reason)
+    }
+  })
+
+  it('报告字段逐个在位（13.2 表）', () => {
+    const sec = inspectSection()
+    for (const field of [
+      'importable', 'blockingReason', 'blockingMessage', 'counts', 'langs',
+      'requiredMissing', 'ignoredTopLevel', 'warnings', 'assetWarningTexts',
+    ]) {
+      expect(sec, '报告字段未声明: ' + field).toContain(field)
+    }
+  })
+
+  it('只读承诺与「null≠0」两条硬口径都写在文档里', () => {
+    const sec = inspectSection()
+    expect(sec).toContain('不建锁')
+    expect(sec).toContain('不写审计')
+    expect(sec).toContain('构造性零')
+  })
+})

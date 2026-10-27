@@ -15,6 +15,7 @@ import { useI18n } from 'vue-i18n'
 import FilmAutoPanel from './film-auto/FilmAutoPanel.vue'
 import FilmCanvasView from './FilmCanvasView.vue'
 import FilmEngineeringView from './FilmEngineeringView.vue'
+import FilmAssetManager from '@/components/FilmAssetManager.vue'
 
 const TABS = Object.freeze(['auto', 'canvas', 'classic'])
 const DEFAULT_TAB = 'auto'
@@ -70,6 +71,19 @@ watch(() => (route.query && route.query.tab), (value) => {
   activeTab.value = next
   mountedTabs.value = new Set([...mountedTabs.value, next])
 })
+
+/**
+ * 资产版本号（change: kit-asset-health-report）。
+ *
+ * 导入成功后，三个 panel 的**全部状态**都建立在旧资产上（分镜库 / 方法论 / 画布编排 / 生成进度），
+ * 而资产是整体替换 ⇒ 就地打补丁会让旧数据与新资产混在一起。故用 `:key` 让**已挂载**的 panel 重建：
+ * 重建是「换掉整套资产」这件事的正确语义，而导入本身是低频操作（不是每次切标签都发生）。
+ * ⚠ 只影响**已挂载**的 panel（`v-if="isMounted(...)"` 仍在）⇒ 懒挂载契约不变。
+ */
+const assetVersion = ref(0)
+function onAssetImported () {
+  assetVersion.value += 1
+}
 </script>
 
 <template>
@@ -77,6 +91,8 @@ watch(() => (route.query && route.query.tab), (value) => {
     <header class="fh-header">
       <h1 class="fh-title">{{ t('filmEngineering.hub.title') }}</h1>
       <p class="fh-subtitle">{{ t('filmEngineering.hub.subtitle') }}</p>
+      <!-- 资产区：**页级**（三个标签共用同一套资产 ⇒ 不属于任何一个 tabpanel） -->
+      <FilmAssetManager :on-imported="onAssetImported" />
     </header>
 
     <div class="fh-tabs" role="tablist" :aria-label="t('filmEngineering.hub.tabsLabel')">
@@ -105,7 +121,7 @@ watch(() => (route.query && route.query.tab), (value) => {
       v-show="activeTab === 'auto'"
       data-testid="fh-panel-auto"
     >
-      <FilmAutoPanel v-if="isMounted('auto')" />
+      <FilmAutoPanel v-if="isMounted('auto')" :key="'auto-' + assetVersion" />
     </div>
 
     <div
@@ -116,7 +132,7 @@ watch(() => (route.query && route.query.tab), (value) => {
       v-show="activeTab === 'canvas'"
       data-testid="fh-panel-canvas"
     >
-      <FilmCanvasView v-if="isMounted('canvas')" :embedded="true" @open-classic="selectTab('classic')" />
+      <FilmCanvasView v-if="isMounted('canvas')" :key="'canvas-' + assetVersion" :embedded="true" @open-classic="selectTab('classic')" />
     </div>
 
     <div
@@ -127,7 +143,7 @@ watch(() => (route.query && route.query.tab), (value) => {
       v-show="activeTab === 'classic'"
       data-testid="fh-panel-classic"
     >
-      <FilmEngineeringView v-if="isMounted('classic')" :embedded="true" />
+      <FilmEngineeringView v-if="isMounted('classic')" :key="'classic-' + assetVersion" :embedded="true" />
     </div>
   </div>
 </template>

@@ -64,6 +64,9 @@ const PUBLIC_CHANNELS = new Set([
   'film-engineering:adapt-script', 'film-engineering:export', 'film-engineering:generate-selected',
   'film-engineering:retry-shot', 'film-engineering:production-retry-shot',
   'film-engineering:download-recycled',
+  // 资产**体检**（change: kit-asset-health-report）：只读（不建锁/不写审计/不落盘）⇒ 与上面同档。
+  // ⚠ 与之成对的 `film-engineering:import-kit` **刻意不在本名单**（写路径，需登录）。
+  'film-engineering:inspect-kit',
   'film-engineering:production-plan', 'film-engineering:production-run-batch', 'film-engineering:production-status',
   // 自动模式（film-auto-mode）：与既有影视工程通道同级（本地规划/执行，provider 由用户自己的模型配置决定）
   'film-engineering:auto-plan', 'film-engineering:auto-start', 'film-engineering:auto-status',

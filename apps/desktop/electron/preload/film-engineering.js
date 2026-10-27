@@ -49,6 +49,10 @@ function createFilmEngineeringApi (ipcRendererRef = ipcRenderer) {
       // ⚠ **入参为空**：路径只能由主进程的原生对话框返回（renderer 无法指定替换内容）；
       //   失败时 errorCode = 方案 §五 的 reason 闭集值（渲染端据此本地化）。
       importKit: () => ipcRendererRef.invoke('film-engineering:import-kit'),
+      // ── 资产体检（change: kit-asset-health-report · **只读**）────────
+      // 导入前置预览：读用户选定目录产出「会得到什么」的报告，**不落盘、不建锁、不写审计**。
+      // 同样**入参为空**。
+      inspectKit: () => ipcRendererRef.invoke('film-engineering:inspect-kit'),
     },
   }
 }

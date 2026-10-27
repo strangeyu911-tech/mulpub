@@ -76,11 +76,14 @@ const PUBLIC_METHODS = [
   'filmEngineering.getShot', 'filmEngineering.doctrine',
   'filmEngineering.copyText', 'filmEngineering.copyTexts',
   'filmEngineering.adaptScript', 'filmEngineering.exportPrompts', 'filmEngineering.generateSelected',
-  'filmEngineering.retryShot', 'filmEngineering.downloadRecycled',
-  // 出片台账批次的单镜重试（productionRetryShot），与 retryShot 同族：批次身份由主进程
+  'filmEngineering.retryShot', 'filmEngineering.downloadRecycled',  // 出片台账批次的单镜重试（productionRetryShot），与 retryShot 同族：批次身份由主进程
   // 从台账解析，渲染端不参与；是否可用仍由主进程自校验（Provider 未配等）。
   'filmEngineering.productionRetryShot',
   'filmEngineering.productionPlan', 'filmEngineering.productionRunBatch', 'filmEngineering.productionStatus', 'filmEngineering.onProductionUpdate',
+  // 资产**体检**（change: kit-asset-health-report）：**只读**——读用户选定目录、产出统计报告，
+  // 不建锁、不写审计、不写任何文件 ⇒ 与上面这些只读浏览同档（未登录可用）。
+  // ⚠ 与紧邻下面的 importKit 是两件事：这里公开的是**看**，替换仍然需要登录 + 主进程授权断言。
+  'filmEngineering.inspectKit',
   // ⚠ 资产导入（PR-3b · F-J **写路径**，`filmEngineering.importKit`）**刻意不在本名单里**：
   //   它是**破坏性写操作**（整体替换 userData/film-kit）⇒ 落进「不在 PUBLIC_METHODS /
   //   ADMIN_ONLY_METHODS 名单内 ⇒ 默认 authenticated」那一档（未登录不可用）；

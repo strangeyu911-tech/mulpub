@@ -745,7 +745,7 @@ split → scene_context（已有）
 
 | 步 | 用户看到 | 系统做什么 | 失败时 |
 |----|----------|------------|--------|
-| 1 | 「项目案例」标签**顶部**的「导入我的影视工程资产」按钮 | — | 按钮不可用时（未登录）说明未授权 |
+| 1 | **Hub 页头**的「导入我的影视工程资产…」按钮（三个标签都能看到） | — | 体检通道公开（未登录可用）；替换仍需登录 |
 | 2 | **确认框**（说明「整体替换、不可撤销」） | 等用户点确认 | 用户点取消 ⇒ **不算失败**，无错误提示 |
 | 3 | 操作系统**目录选择框** | 取 `filePaths[0]` | 取消 ⇒ `cancelled`；非目录 / UNC ⇒ 拒 |
 | 4 | 「正在导入…」**不可中断模态** | 严格校验源目录 → 审计「开始」行 → 建锁 → 两遍扫描 + 拷贝（逐文件哈希对账）→ staging 再校验 | 失败 ⇒ 旧 kit **逐字未变** |
@@ -799,8 +799,8 @@ split → scene_context（已有）
 
 | 元素 | 行为 |
 |------|------|
-| 入口按钮 | 「项目案例」标签顶部；**导入中禁用**；`filmEngineering.filmKitImport.entry` |
-| 入口旁说明 | 一行灰字：`filmEngineering.filmKitImport.hint` |
+| 入口按钮 | **Hub 页头资产区**（三个标签共用同一套资产 ⇒ 入口在页级）；**导入中/体检中禁用**；`filmEngineering.assetManager.entry` |
+| 入口旁说明 | 一行灰字：`filmEngineering.assetManager.hint` |
 | 确认框 | 点入口 ⇒ 弹；**必须用户点「确认」才继续**（注入脚本无法代点）；「取消」关闭且**不触发**导入 |
 | 导入中模态 | **无关闭按钮 / 点遮罩不关 / ESC 不关 / 没有取消按钮**；文案「导入过程中不可中断，请勿关闭应用」 |
 | 失败 toast | 「导入失败：{原因}」；原因按 6 个桶本地化（VALIDATION / LOCK / AUDIT / SWAP / PERM / UNAUTHORIZED） |
@@ -880,6 +880,129 @@ split → scene_context（已有）
 ❌ 增量/合并/差分（整体替换）· ❌ 导入历史/多版本 · ❌ 导出 · ❌ 压缩包/网络来源/扫盘 ·
 ❌ 写 kit 之外的路径 · ❌ 导入 `images/` · ❌ `images-manifest.json` 契约 ·
 ❌ 自动清理陈旧锁（只按**进程存活**判定）· ❌ 窗口级/组件级授权 · ❌ 磁盘空间预检（失败形态已知且安全）。
+
+### 9.d 资产体检报告 + 入口归位（change: kit-asset-health-report）
+
+> 方案与决策：`openspec/changes/kit-asset-health-report/proposal.md`；
+> 契约：`apps/desktop/electron/film-kit/SCHEMA.md` §十三。
+
+#### 9.d.1 为什么改（第一性原因，两条）
+
+**① 入口位置与真实依赖方向相反。** 资产被三个标签**共用**：
+「自动」拿 `shot-library` 当规划模板（`planAutoShots({templateShots})`，空了直接报 `AUTO_NO_TEMPLATES`）、
+「画布」吃 `doctrine`/`shotGrammar`、「项目案例」吃 `shot-library`/任务模板库。
+而 PR-3b 把入口挂在「项目案例」（classic）页面顶部 —— 那是「看专业分镜库 / 学方法论」的**只读学习区**，
+却承载了**破坏性写路径**的入口；同时它替换的恰恰是「自动」标签的规划输入。
+⇒ 资产既然不是任何标签的私有物，入口就该在**三个标签共享的页级位置**。
+
+**② 用户导入前看不到「会得到什么」。** 既有校验只回答「合格 / 不合格」；
+用户无法预知「我的包有几个场景、几个分镜、几个任务模板、参考图能解析多少、哪些会被忽略」，
+只能「导了才知道」。这不是校验强度问题，是**可预期性**问题。
+
+#### 9.d.2 用户流程（六步，逐段可断言）
+
+| 步 | 用户看到 | 系统做什么 | 失败时 |
+|----|----------|------------|--------|
+| 1 | Hub 页头：`导入我的影视工程资产…` + 一行说明（整体替换，不是合并） | — | 未登录也可点（体检只读） |
+| 2 | 操作系统**目录选择框** | 取 `filePaths[0]` | 取消 ⇒ 无任何提示（不算失败）；非目录/UNC ⇒ 拒 |
+| 3 | **资产体检报告**对话框：可导入徽标 + 统计 + 缺项 + 将被忽略项 + 告警 | **只读**扫描（不建锁、不写审计、不落盘） | 读不到目录 ⇒ 弹「体检失败：…」，**不**弹空报告 |
+| 4 | 报告底部：整体替换提示 + `取消` / `确认导入` | `importable=false` ⇒ **确认按钮禁用**并列出缺项 | 缺项时用户只能先补齐自己的包 |
+| 5 | 「正在导入…」**不可中断**模态 | 走 PR-3b 的写路径（§9.c 全部安全判据不变） | 见 §9.c.3 |
+| 6 | 成功 toast / 失败 toast + 恢复指引 / 残留告警 / 审计不完整告警 | 导入成功后**重建**三个已挂载面板（资产整体换了） | 见 §9.c.6 |
+
+#### 9.d.3 数据校验与报告字段
+
+体检**聚合既有校验器**（不新增判据、不复制实现）：
+
+| 阶段 | 判据来源 | 作用 |
+|------|----------|------|
+| ① 形状/白名单/体积 | `kit-import-scan.js`（`skipHash:true`，跳过全量哈希） | 不可导入时的精确 `reason`（取自 §9.c.3 的闭集） |
+| ② 宽松读（`requireAssets:false`） | `kit-loader.js` | 拿**统计**与平台告警 ⇒ 资产不合格时用户仍能看到自己包里有什么 |
+| ③ 严格读（`requireAssets:true`） | 同上 | 判定 `importable` |
+
+**报告字段（逐条）**：
+
+| 字段 | 含义 | 关键口径 |
+|------|------|----------|
+| `importable` | 能否导入 | 与 `ok` **分开**：`ok`=体检跑通，`importable`=资产合格 |
+| `blockingReason` / `blockingMessage` | 不可导入的原因（闭集值 / 人话） | 闭集值供本地化；字段级原文只进 message |
+| `counts.scenes/shots/shotsWithResult` | 场景 / 分镜 / 已带成片链接的分镜 | `counts:null` = **没量到**，界面渲染占位而不是 0 |
+| `counts.references/referencesResolvable` | 参考素材条目数 / 有可解析 `http(s)` 地址的条数 | 只判 URL 形状，**不联网** |
+| `counts.templateTasks/templateFiles` | 任务模板任务数 / 模板文件数（每任务×语种×{system,user}） | — |
+| `counts.fileCount/totalBytes` | 白名单内文件数 / 总字节 | — |
+| `langs` | 任务库语种并集 | 字典序 |
+| `requiredMissing` | 缺失的必填项 | `prompts/tasks` 以 `prompts/tasks/` 形式点名 |
+| `ignoredTopLevel` | 顶层白名单外条目 | `images` 属此列，**不影响** `importable` |
+| `warnings` | 信息性告警（5 个 code，均不阻断） | 见 SCHEMA §13.4 |
+
+**⛔ 只读承诺**（可机械验证，不靠人读代码）：不建锁 / 不写审计 / 源目录逐字节不变 /
+以「记录写调用的 fs 替身」跑一遍时写接口调用数必须为 **0**。
+
+#### 9.d.4 交互逻辑
+
+| 元素 | 行为 |
+|------|------|
+| 页级入口 | Hub 页头；**体检中/导入中禁用**；`filmEngineering.assetManager.entry` |
+| 体检中 | 入口禁用（无模态：只读、毫秒级，长模态会让人以为在写盘） |
+| 报告对话框 | **报告与确认同一屏**（少一次点击，且用户看完即决）；按钮在**默认插槽**（`el-dialog` 的 `#footer` 在测试环境不渲染） |
+| 确认导入 | `importable=false` ⇒ **禁用**；点了也不触发导入（组件内再判一次） |
+| 取消 | 关对话框并**丢弃报告**（下次点入口重新体检，不缓存） |
+| 导入中 | 不可中断模态（无关闭/无遮罩关闭/无 ESC/无取消） |
+| 导入成功 | 三个已挂载面板**重建**（`:key` 跟 `assetVersion`）⇒ 旧资产派生的状态不会与新资产混在一起 |
+
+#### 9.d.5 显示项
+
+| 显示项 | 来源 | 备注 |
+|--------|------|------|
+| 入口按钮 + 说明 | 渲染端 | Hub 页头（`FilmAssetManager.vue`） |
+| 可导入徽标 | `data.importable` | 绿 `可导入` / 红 `不可导入` |
+| 统计列表 | `data.counts` | `null` ⇒ 显示「未能读取资产统计」而**不是**一排 0 |
+| 缺项清单 | `data.requiredMissing` | 等宽字体逐条列出 |
+| 不可导入说明 | `data.blockingMessage` | 人话（不本地化，供诊断） |
+| 将被忽略 | `data.ignoredTopLevel` | 顿号连接 |
+| 告警列表 | `data.warnings` | code → 本地化文案 + `count` 插值 |
+| 替换提示 | 静态 | 复用 `filmKitImport.confirm`（整体替换、不可自动找回） |
+
+#### 9.d.6 提示文字全量（`filmEngineering.assetManager.*`，zh/en 成对，**22 键**（15 条文案 + 5 条告警 + 2 条失败原因））
+
+| 键 | zh | en |
+|----|----|----|
+| `entry` | 导入我的影视工程资产… | Import my film engineering assets… |
+| `hint` | 整体替换当前影视工程资产（不是合并）；三个标签共用同一套资产 | Replaces the current film engineering assets wholesale (not merged); all three tabs share the same assets |
+| `reportTitle` | 资产体检报告 | Asset health report |
+| `importable` | 可导入 | Ready to import |
+| `notImportable` | 不可导入 | Cannot import |
+| `countsUnavailable` | 未能读取资产统计（目录内容不符合契约或不可读） | Asset statistics unavailable (the directory does not meet the contract, or is unreadable) |
+| `scenes` | 场景 {count} 个 | Scenes: {count} |
+| `shots` | 分镜 {count} 个 | Shots: {count} |
+| `templates` | 任务模板 {count} 个 | Task templates: {count} |
+| `references` | 参考素材 {ok} / {total} 条可解析 | References resolvable: {ok} / {total} |
+| `langs` | 语种 {langs} | Languages: {langs} |
+| `blockingTitle` | 缺少必填项 | Missing required items |
+| `ignoredTitle` | 以下内容不会被导入 | The following will not be imported |
+| `confirmImport` | 确认导入 | Import now |
+| `inspectFailed` | 体检失败：{reason} | Health check failed: {reason} |
+| `warn.MISSING_V7_ASSET` | 缺少 {count} 项增强资产，导入后相关能力不可用 | {count} enhanced asset(s) missing; related capabilities will be unavailable after import |
+| `warn.EMPTY_TASK_LIBRARY` | 任务模板库存在但没有任务目录 | The task template library exists but has no task directories |
+| `warn.UNRESOLVED_REFERENCE` | 有 {count} 条参考素材没有可解析的图片地址 | {count} reference item(s) have no resolvable image URL |
+| `warn.IGNORED_TOP_LEVEL` | 有 {count} 项内容不在导入范围内 | {count} item(s) are outside the import scope |
+| `warn.SHOTS_WITH_RESULT` | 有 {count} 个分镜已带成片链接，导入后仍视为已生成 | {count} shot(s) already carry a result link and will still count as generated after import |
+| `reason.NOT_A_DIRECTORY` / `reason.VALIDATION` | 所选路径不是可读目录 / 资产内容不符合契约 | the selected path is not a readable directory / the asset content does not meet the contract |
+
+（导入侧的 22 键见 §9.c.6，两者不合并：体检与替换是两件事，混在一张表里会让「哪句话属于哪一步」失去边界。）
+
+#### 9.d.7 验收判据（10 条）
+
+① **入口在页级**：Hub 页头渲染资产区；② **不在任何 tabpanel 内**（三个标签都断言 false）；
+③ 切任一标签后资产区仍**只有一个**；④ `FilmEngineeringView` 挂载后**既无**旧导入条**也无**资产区；
+⑤ 点入口**只**调 `inspectKit`，不调 `importKit`；⑥ `importable=false` ⇒ 确认按钮禁用且点了也不导入；
+⑦ `counts:null` ⇒ 渲染「未能读取」而**不是** 0；⑧ 取消目录 ⇒ 不弹报告、不算失败；
+⑨ 体检**零写入**（fs 替身 + 源目录快照双判据）；⑩ IPC 侧体检**不写审计、不建锁**。
+
+#### 9.d.8 明确不做（本轮）
+
+❌ 内容级判据（模板占位符契约 / 枚举落闭集 / 空壳检测）· ❌ 标准资产骨架导出 ·
+❌ 本地自检命令 · ❌ 改造 `importKit` 的任何安全语义 · ❌ 标签改名。
 
 ## 十、明确不做
 

@@ -250,6 +250,34 @@ export default {
         "UNAUTHORIZED": "调用来源未授权"
       }
     },
+    "assetManager": {
+      "entry": "导入我的影视工程资产…",
+      "hint": "整体替换当前影视工程资产（不是合并）；三个标签共用同一套资产",
+      "reportTitle": "资产体检报告",
+      "importable": "可导入",
+      "notImportable": "不可导入",
+      "countsUnavailable": "未能读取资产统计（目录内容不符合契约或不可读）",
+      "scenes": "场景 {count} 个",
+      "shots": "分镜 {count} 个",
+      "templates": "任务模板 {count} 个",
+      "references": "参考素材 {ok} / {total} 条可解析",
+      "langs": "语种 {langs}",
+      "blockingTitle": "缺少必填项",
+      "ignoredTitle": "以下内容不会被导入",
+      "confirmImport": "确认导入",
+      "inspectFailed": "体检失败：{reason}",
+      "warn": {
+        "MISSING_V7_ASSET": "缺少 {count} 项增强资产，导入后相关能力不可用",
+        "EMPTY_TASK_LIBRARY": "任务模板库存在但没有任务目录",
+        "UNRESOLVED_REFERENCE": "有 {count} 条参考素材没有可解析的图片地址",
+        "IGNORED_TOP_LEVEL": "有 {count} 项内容不在导入范围内",
+        "SHOTS_WITH_RESULT": "有 {count} 个分镜已带成片链接，导入后仍视为已生成"
+      },
+      "reason": {
+        "NOT_A_DIRECTORY": "所选路径不是可读目录",
+        "VALIDATION": "资产内容不符合契约"
+      }
+    },
     "canvas": {
       "title": "影视工程画布",
       "subtitle": "填写剧本、连参考图，一键拆分镜并驱动到成片。",

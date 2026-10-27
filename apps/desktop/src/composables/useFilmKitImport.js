@@ -57,6 +57,13 @@ export function useFilmKitImport (options) {
 
   /** 导入中（入口禁用 + 不可中断模态） */
   const importing = ref(false)
+  /** 体检中（入口禁用；**只读**，不涉及任何写路径状态） */
+  const inspecting = ref(false)
+  /**
+   * 最近一次体检报告（change: kit-asset-health-report）。
+   * `null` = 还没体检 / 已重置；字段契约见 `SCHEMA.md` 十二、资产体检契约。
+   */
+  const inspection = ref(null)
   /** 最近一次失败的原因（reason 闭集值） */
   const kitImportReason = ref('')
   /** 最近一次失败的恢复路径（主进程回传，可能为空） */
@@ -76,6 +83,59 @@ export function useFilmKitImport (options) {
     if (!key) return ''
     return t('filmEngineering.filmKitImport.' + key, { path: kitImportRecoveryPath.value || '' })
   })
+
+  /**
+   * 执行**资产体检**（只读）。导入前的预览：先看会得到什么，再决定要不要替换。
+   *
+   * 语义（与「导入」严格区分）：
+   *   - 只读：主进程不建锁、不写审计、不落盘 ⇒ 这里**不**触碰 `importing` / 恢复档位等写路径状态；
+   *   - 取消目录选择 ⇒ 返回 false 且**不弹任何提示**（与「导入取消」同口径）；
+   *   - 失败 ⇒ 弹提示并返回 false，`inspection` 保持 `null`（**不**把失败伪装成一份空报告）。
+   * @returns {Promise<boolean>} 是否拿到了报告
+   */
+  async function inspectAssets () {
+    const api = (getApi() || {}).filmEngineering
+    if (!api || typeof api.inspectKit !== 'function') {
+      notifyWarning('filmEngineering.assetManager.inspectFailed', {
+        message: t('filmEngineering.noDesktopWarning'),
+      })
+      return false
+    }
+    inspecting.value = true
+    try {
+      const res = await api.inspectKit()
+      if (res && res.code === 0) {
+        if (res.data && res.data.cancelled) return false // 取消不算失败
+        inspection.value = res.data || null
+        return !!inspection.value
+      }
+      const reason = (res && res.errorCode) || 'VALIDATION_ERROR'
+      notifyWarning('filmEngineering.assetManager.inspectFailed', {
+        message: t('filmEngineering.assetManager.inspectFailed', { reason: inspectReasonText(reason) }),
+      })
+      return false
+    } catch (e) {
+      notifyWarning('filmEngineering.assetManager.inspectFailed', {
+        message: formatUserError(e, {
+          fallback: t('filmEngineering.assetManager.inspectFailed', { reason: inspectReasonText('VALIDATION_ERROR') }),
+        }).message,
+      })
+      return false
+    } finally {
+      inspecting.value = false
+    }
+  }
+
+  /** 丢弃当前报告（关闭对话框 / 导入完成后） */
+  function resetInspection () {
+    inspection.value = null
+  }
+
+  /** 体检失败原因 → 本地化桶文案（只两个桶：不是目录 / 内容不符合） */
+  function inspectReasonText (reason) {
+    const bucket = reason === 'NOT_A_DIRECTORY' ? 'NOT_A_DIRECTORY' : 'VALIDATION'
+    return t('filmEngineering.assetManager.reason.' + bucket)
+  }
 
   /**
    * 执行导入。
@@ -153,6 +213,11 @@ export function useFilmKitImport (options) {
 
   return {
     importing,
+    inspecting,
+    inspection,
+    inspectAssets,
+    resetInspection,
+    inspectReasonText,
     kitImportReason,
     kitImportRecoveryPath,
     kitImportRecoveryState,

@@ -299,3 +299,35 @@ describe('kit-import-scan: 硬链范围与任务库形状（外部评审修）',
     expect(res.files.length).toBeGreaterThan(0)
   })
 })
+
+
+// ⚠ 2026-10-27（change: kit-asset-health-report）：体检走 skipHash 以避开「为看一眼付整包全量哈希」。
+//   这条锁守两件事：① skipHash 下不调 hashFile（性能承诺）；② 默认路径仍产出真实 sha256
+//   —— 后者是写路径两条对账的承重墙（copyToStaging 比对 src.sha256），误传 skipHash 会让对账恒假。
+describe('kit-import-scan: skipHash（只读体检专用，写路径不得用）', () => {
+  it('skipHash ⇒ 不调用 hashFile，firstPassStats 的 sha256 为 null', async () => {
+    const dir = makeKit({})
+    let called = 0
+    const res = await scanKit({
+      kitDir: dir,
+      hashFile: async () => { called += 1; return 'deadbeef' },
+      skipHash: true,
+    })
+    expect(res.ok).toBe(true)
+    expect(called).toBe(0)
+    for (const rel of Object.keys(res.firstPassStats)) {
+      expect(res.firstPassStats[rel].sha256).toBe(null)
+    }
+  })
+
+  it('默认（不传 skipHash）⇒ 仍然算出真实 SHA-256，写路径不受影响', async () => {
+    const dir = makeKit({})
+    const res = await scanKit({ kitDir: dir })
+    expect(res.ok).toBe(true)
+    for (const rel of Object.keys(res.firstPassStats)) {
+      expect(typeof res.firstPassStats[rel].sha256).toBe('string')
+      expect(res.firstPassStats[rel].sha256.length).toBe(64)
+    }
+    for (const x of res.files) expect(typeof x.sha256).toBe('string')
+  })
+})

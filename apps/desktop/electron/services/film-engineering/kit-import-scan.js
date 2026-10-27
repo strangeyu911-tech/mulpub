@@ -231,6 +231,16 @@ async function scanKit (opts) {
   const fsImpl = o.fs || nodeFs
   const hashFile = o.hashFile || defaultHashFile
   const kitDir = o.kitDir
+  /**
+   * 只读体检专用：跳过内容哈希。
+   *
+   * 动因（change: kit-asset-health-report）：体检只要「有多少文件 / 多大 / 形状对不对」这几个读数，
+   * 而全量 SHA-256 对 256MB 包是**为看一眼付整包 IO**。跳过哈希后体检只剩 stat + 读 8 字节魔数。
+   * ⚠ **写路径绝不传它**：`copyToStaging` 的两条对账依赖 `firstPassStats[rel].sha256`
+   * （见 `kit-import-swap.js`），skipHash 下该字段为 `null` ⇒ 误传会让对账恒假、全部导入被拒。
+   * 这一点由 `kit-import-scan.test.js` 的「skipHash 不得影响写路径」用例钉住。
+   */
+  const skipHash = o.skipHash === true
 
   let kitStat
   try {
@@ -354,8 +364,8 @@ async function scanKit (opts) {
       }
     }
 
-    // 内容哈希
-    const sha256 = await hashFile(fsImpl, abs)
+    // 内容哈希（体检传 skipHash ⇒ null；写路径不传 ⇒ 真实 SHA-256）
+    const sha256 = skipHash ? null : await hashFile(fsImpl, abs)
     firstPassStats[norm] = {
       dev: st.dev,
       ino: st.ino,

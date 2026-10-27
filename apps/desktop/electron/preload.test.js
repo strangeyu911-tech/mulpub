@@ -139,6 +139,7 @@ const SYSTEM_METHODS = [
   'modelProviderDelete', 'modelProviderSetDefault', 'modelProviderGetDefault',
   'modelProviderTest', 'modelProviderPresets', 'modelProviderIsConfigured',
   'modelProviderLogs', 'modelProviderCleanLogs',
+  'modelQuotaGetPolicy', 'modelQuotaSetPolicy', 'modelQuotaDecide', 'modelQuotaSwitchBack', 'onModelQuotaRequired',
   'logsGetInfo', 'logsClear', 'logError', 'notifyLog',
   'cacheGetStats', 'cacheClear',
   'promptLibraryGet', 'promptLibrarySave', 'promptLibraryActivate',
@@ -235,14 +236,15 @@ describe('preload 子模块方法数', () => {
     //      协作式，段边界生效，未带 runId 的旧调用方零影响）
     // + 1（2026-10-17：aiGenerateGenVideoTitle → ai:generate-gen-video-title，
     //      热门选题「生成视频 → 去发布」的爆款标题生成；无模型/失败时降级原始选题）
-    expect(Object.keys(r).length).toBe(142)
+    expect(Object.keys(r).length).toBe(147)
   })
 
   // 两处各自把总键数从 339 推到 340：#4202 加 onOfflineLost（离线横幅），
   // 本 PR 加 renderAiVideoCapabilities（视频能力查询）⇒ 合并后为 341。
   // 2026-10-26：+ identitySessionsRevokeOne（单设备下线）⇒ 342。
-  it('合并后 api 总键数应为 342（2026-10-26：= 341 + identitySessionsRevokeOne；341 = 2026-10-24 339 + onOfflineLost(#4202) + renderAiVideoCapabilities；339 = 2026-10-20 338 + aiRewriteCancel）', () => {
-    expect(Object.keys(api).length).toBe(342)
+  // 2026-10-27：+5 modelQuota*（P1b-2a）⇒ 347。
+  it('合并后 api 总键数应为 347（2026-10-27：= 342 + 5 modelQuota*；342 = 2026-10-26 341 + identitySessionsRevokeOne）', () => {
+    expect(Object.keys(api).length).toBe(347)
     // 新键必须真实存在于聚合入口，防止「改了数字但方法没接上」
     expect(Object.keys(api)).toContain('identityRedeemCode')
     expect(Object.keys(api)).toContain('historyGetRepublishSnapshot')
@@ -268,8 +270,8 @@ describe('preload 子模块方法数', () => {
     expect(ACCOUNT_METHODS.length).toBe(48)
   })
 
-  it('SYSTEM_METHODS 常量长度应为 134', () => {
-    expect(SYSTEM_METHODS.length).toBe(127)
+  it('SYSTEM_METHODS 常量长度应为 132（2026-10-27：+5 modelQuota*）', () => {
+    expect(SYSTEM_METHODS.length).toBe(132)
   })
 
   it('IDENTITY_METHODS 常量长度应为 5', () => {
@@ -371,6 +373,10 @@ describe('invoke 类方法转发到 ipcRenderer.invoke', () => {
     ['proxyAdd', 'proxy:add', [{ host: '127.0.0.1' }]],
     ['modelProviderLogs', 'model-provider:logs', [{ category: 'llm' }]],
     ['modelProviderCleanLogs', 'model-provider:clean-logs', [7]],
+    ['modelQuotaGetPolicy', 'model-quota:get-policy', []],
+    ['modelQuotaSetPolicy', 'model-quota:set-policy', [{ policy: 'ask', cap: 500 }]],
+    ['modelQuotaDecide', 'model-quota:decide', [{ requestId: 'r1', decision: 'cancel' }]],
+    ['modelQuotaSwitchBack', 'model-quota:switch-back', [{ runId: 'run-1', capability: 'image' }]],
     ['pipelineStartOrchestrated', 'pipeline:startOrchestrated', ['story2video-compose', { text: '测试' }]],
     ['pipelineExecuteStage', 'pipeline:executeStage', ['run-1']],
     ['pipelineAdvanceToNextCheckpoint', 'pipeline:advanceToNextCheckpoint', ['run-1']],
@@ -472,6 +478,7 @@ describe('监听器类方法返回 cancel 函数', () => {
     'onAuthViewOpened',
     'onQrCodeOpened',
     'onOpsCenterRuntimeUpdated',
+    'onModelQuotaRequired',
   ]
 
   it.each(LISTENER_CASES)('%s(callback) 应返回 cancel 函数', (method) => {

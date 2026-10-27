@@ -17,6 +17,9 @@
       {{ t('modelProviders.safeStorageWarning') }}
     </div>
 
+    <!-- 模型额度兜底策略：官方接入前默认隐藏（P2 前不空承诺） -->
+    <ModelQuotaPolicyCard />
+
 
     <!-- 视图模式 Tab + 分类筛选 -->
     <div class="view-mode-tabs" v-if="!loading">
@@ -520,6 +523,7 @@ import { useI18n } from 'vue-i18n'
 import { useModelProviderCrud } from '@/composables/useModelProviderCrud'
 import { presetManagedFields } from '@/utils/preset-managed-fields'
 import { PROVIDER_STATUS, providerStatus } from '@/utils/provider-status'
+import ModelQuotaPolicyCard from '@/components/model-quota/ModelQuotaPolicyCard.vue'
 
 const { t } = useI18n()
 

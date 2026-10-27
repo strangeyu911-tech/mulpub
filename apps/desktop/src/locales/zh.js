@@ -20,6 +20,7 @@ import homeZh from './home/zh'
 import publishPageZh from './publish-page/zh'
 import accountsPageZh from './accounts-page/zh'
 import modelProvidersZh from './model-providers/zh'
+import modelQuotaZh from './model-quota/zh'
 import stageProgressZh from './stage-progress/zh'
 import filmEngineeringZh from './film-engineering/zh'
 import rewritePageZh from './rewrite-page/zh'
@@ -86,6 +87,7 @@ export default {
   publishType: { ...publishTypeZh },
   videoClone: { ...videoCloneZh },
   modelProviders: { ...modelProvidersZh },
+  modelQuota: { ...modelQuotaZh },
   // i18n-sync-hardening（2026-08-13）：user-facing-error.js 文案单源收口，模块不再持有 zh/en 文案
   userErrors: { ...userErrorsZh },
   videoConfig: { ...videoConfigZh },

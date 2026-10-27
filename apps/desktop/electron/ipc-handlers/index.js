@@ -52,6 +52,9 @@ function registerAllHandlers(ipcMain, deps) {
   require('./notify')(ipcMain, deps)
   require('./onboarding')(ipcMain, deps)
   require('./model-provider')(ipcMain, deps)
+  // 模型额度兜底（P1b-2a）：策略读写 + 弹窗选择回传 + 任务级切回。
+  // Coordinator 未接线时 handler 内部返回「未就绪」，不阻断其它 IPC 注册。
+  require('./model-quota')(ipcMain, deps)
   require('./ops-center-sync').registerHandlers(ipcMain, deps)
   require('./rate-limit').registerHandlers(ipcMain, deps)
   require('./tts-voice-catalog')(ipcMain, deps)

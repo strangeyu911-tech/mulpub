@@ -29,6 +29,8 @@ const PUBLIC_CHANNELS = new Set([
   'model-provider:list', 'model-provider:get', 'model-provider:get-default',
   'model-provider:test', 'model-provider:presets',
   'model-provider:is-configured', 'model-provider:logs',
+  // 模型额度兜底：只读策略/官方状态未登录可用；set/decide/switch-back 不在 public 列表 → authenticated。
+  'model-quota:get-policy',
   'ops-center-sync:get', 'ops-center-sync:save', 'ops-center-sync:now', 'ops-center-sync:runtime', 'ops-center-sync:pipelineOptions',
   'logs:info', 'logs:clear', 'logs:error', 'feedback:submit',
   'cache:stats', 'cache:clear',

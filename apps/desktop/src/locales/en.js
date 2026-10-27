@@ -20,6 +20,7 @@ import homeEn from './home/en'
 import publishPageEn from './publish-page/en'
 import accountsPageEn from './accounts-page/en'
 import modelProvidersEn from './model-providers/en'
+import modelQuotaEn from './model-quota/en'
 import stageProgressEn from './stage-progress/en'
 import filmEngineeringEn from './film-engineering/en'
 import rewritePageEn from './rewrite-page/en'
@@ -86,6 +87,7 @@ export default {
   publishType: { ...publishTypeEn },
   videoClone: { ...videoCloneEn },
   modelProviders: { ...modelProvidersEn },
+  modelQuota: { ...modelQuotaEn },
   // i18n-sync-hardening (2026-08-13): single source for user-facing-error.js copy
   userErrors: { ...userErrorsEn },
   videoConfig: { ...videoConfigEn },

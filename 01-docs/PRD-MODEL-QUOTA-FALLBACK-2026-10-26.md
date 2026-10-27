@@ -1,7 +1,7 @@
 # PRD：模型额度用尽时的来源切换策略（model-quota-fallback）
 
 > **文档性质**：产品需求 + 决策记录（PRD）。本文件是「用户自带模型 Key（BYOK）」与「平台官方模型（消耗官方积分）」之间**优先级与切换控制**的单一真源。
-> **状态**：🚧 **P1a 已实现**（错误识别 + 精确提示 + 「前往模型设置」动作）；**P1b-1 后端决策层已实现**（纯函数决策器 + Coordinator + run context 覆盖），**P1b-2 IPC/设置卡片/弹窗/业务域接入未实现**；P2/P3 未实现。P1b-1 见 §13.2 与 `openspec/records/model-quota-p1b.md`。官方兜底仍受 D-11 约束（官方算力代理 D-① 未落地，设置项与「使用官方模型」按钮不上线）。
+> **状态**：🚧 **P1a 已实现**（错误识别 + 精确提示 + 「前往模型设置」动作）；**P1b-1 后端决策层已实现**（纯函数决策器 + Coordinator + run context 覆盖）；**P1b-2a 设置 IPC/preload + 策略卡片已实现**，**P1b-2b 弹窗/业务域接入未实现**；P2/P3 未实现。P1b-1 见 §13.2，P1b-2a 见 §13.3 与 `openspec/records/model-quota-p1b2.md`。官方兜底仍受 D-11 约束（官方算力代理 D-① 未落地，官方按钮禁用、卡片默认隐藏）。
 > **关联设计**：`01-docs/DESIGN-MODEL-QUOTA-FALLBACK-2026-10-26.md`
 > **上游依赖**：`01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（D-① 官方算力代理，**未落地**）、`01-docs/PRD-CREDIT-CONSUME-API-2026-10-25.md`（扣分端点，已实现）、`01-docs/PRD-OFFICIAL-COMPUTE-CHARGE-STATE-2026-10-25.md`（扣分状态机，已实现）
 > **日期**：2026-10-26
@@ -701,7 +701,8 @@ runContext.modelSourceOverrides = {
 | **P0** | 决策定案 + PRD + 设计 + 验收标准 | 无 | ✅ 已随 PR #4497 合并（仅文档） |
 | **P1a（本 PR）** | 统一错误分类器（`model-access-failure.js`）+ 产品级 `userErrorCode` + `httpStatus`/`providerCode` 分离 + 精确文案 + 「前往模型设置」动作 | 无（可先于官方算力） | ✅ 本 PR 实现 |
 | **P1b-1** | 纯函数决策器 + Coordinator + `modelSourceOverrides` + 检查点/埋点编排 | 无（可先于官方算力） | ✅ 本 PR 实现 |
-| **P1b-2** | IPC/preload + 设置卡片 + 弹窗 + 业务域接入；官方按钮按能力 gate 禁用 | P1b-1 | ❌ 下一 PR |
+| **P1b-2a** | IPC/preload + `ModelQuotaPolicyCard` + 标签/locales；官方按钮按能力 gate 禁用 | P1b-1 | ✅ 本 PR 实现 |
+| **P1b-2b** | `ModelQuotaFallbackDialog` + `useModelQuotaFallback` + App 根层挂载 + Coordinator 生产接线 + 业务域接入 | P1b-2a | ❌ 下一 PR |
 | **P2** | 官方算力代理 D-① + 余额读通道 U-13 + 价格卡 U-12 + 官方调用客户端 + `byok=0` + 扣分 | D-① / U-12 / U-13 | ❌ 与官方算力同批 |
 | **P3** | 自动档 `official` 全量开放 + 任务积分上限 + 埋点看板 + LLM 官方供给（若 U-1 决定做） | P2 + U-1 | ❌ |
 
@@ -743,6 +744,27 @@ runContext.modelSourceOverrides = {
 **测试**：`model-quota-policy.test.js` 16 例（12 条优先级 + 归一）；`model-quota-coordinator.test.js` 7 例（并发去重、requestId 一次性、超时、checkpoint 顺序、自动官方、credential 永远 ask、clearRun）；`provider-run-context.test.js` 18 例（新增 3 例覆盖 `modelSourceOverrides`）。P1b-1 定向 41 例全绿。
 
 **P1b-1 明确不做**：IPC/preload、设置卡片、弹窗、`App.vue` 根层挂载、Story2Video/图片轮播/数字人/Film Engineering 接入、模型设置「测试连接」分类展示。这些属 P1b-2；官方按钮在 P2 D-① 未落地前仍禁用。
+
+### 13.3 P1b-2a 设置 IPC + 策略卡片落地记录（2026-10-27）
+
+**范围**：只做「设置读写 + preload 桥 + ModelProviders 策略卡片」；不做弹窗、`App.vue` 根层挂载、Coordinator 生产实例化、业务域接入（P1b-2b）。
+
+| 层 | 实际实现 | 说明 |
+|---|---|---|
+| IPC | `apps/desktop/electron/ipc-handlers/model-quota.js`（新增） | 4 条渲染端通道：`get-policy` / `set-policy` / `decide` / `switch-back`；全部 `withSenderCheck`；`get-policy` 为 public 读，其余 authenticated |
+| 通道注册 | `ipc-handlers/index.js` | 注册 `model-quota`；Coordinator 未接线时 `decide/switch-back` 返回「未就绪」，不阻断其它 IPC |
+| 权限 | `license-access-control.js` + `preload/access-control.js` | 只把 `model-quota:get-policy` / `onModelQuotaRequired` 放 public；写通道默认 authenticated |
+| preload | `preload/system.js` | `modelQuotaGetPolicy` / `SetPolicy` / `Decide` / `SwitchBack` + `onModelQuotaRequired` 订阅，返回取消订阅函数 |
+| 渲染桥 | `src/api/model-quota.js`（新增） | 组件不直调 `window.electronAPI`；统一走 `invokeWithFallback`（参数脱壳 + fallback）；事件走 bridge 的 `on()` |
+| UI | `src/components/model-quota/ModelQuotaPolicyCard.vue`（新增） | 三档单选 + cap 输入 + 官方状态；官方不可用且 policy=ask 时整卡隐藏（P2 前不空承诺）；挂在 `ModelProviders.vue` 顶部 |
+| 标签 | `src/views/model-quota-labels.js` + `locales/model-quota/{zh,en}.js` | state/reason → i18n key；卡片全部文案走 locale，无中文硬编码 |
+| 校验 | `model-quota.test.js` 9 例 + `ModelQuotaPolicyCard.test.js` 5 例 + `model-quota-labels.test.js` 5 例 | 读写/非法值/权限降级/隐藏态/保存/cap 边界/标签回落/官方状态降级/写失败回滚/读取失败可见 |
+
+**数据校验（P1b-2a 已实现）**：`policy` 只接受 `ask|official|byok`；`cap` 只接受 1–100000 整数（字符串 `'500'` 可归一）；非法值返回 `VALIDATION_ERROR` 且不写；`get-policy` 的官方状态读取失败降级 `not_configured` / `balance_unavailable`，不抛。
+
+**测试**：P1b-2a 定向 7 文件 460 例全绿（IPC 9 + 渲染桥 5 + preload/access/card/labels/ModelProviders 既有+新增）。
+
+**P1b-2a 明确不做**：`ModelQuotaFallbackDialog.vue`、`useModelQuotaFallback.js`、`App.vue` 根层挂载、Coordinator 生产实例化与 run 生命周期、业务域接入、模型设置「测试连接」分类展示。官方按钮在 P2 D-① 未落地前仍禁用。
 
 ---
 

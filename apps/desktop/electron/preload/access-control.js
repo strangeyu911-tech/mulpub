@@ -33,6 +33,8 @@ const PUBLIC_METHODS = [
   'sensitiveCheck', 'sensitiveReplace',
   'syncAll', 'syncPlatform', 'syncCached',
   'modelProviderList', 'modelProviderGet',
+  // 模型额度兜底：只读策略/官方状态与事件订阅未登录可用；set/decide/switch-back 为 authenticated
+  'modelQuotaGetPolicy', 'onModelQuotaRequired',
   // 运营中心运行时策略（2026-10-15：get/save/now 三条已删，渲染端零调用）
   'opsCenterSyncRuntime',
   // 订阅本身只收到一个时间戳、不返回任何运营数据，故 public；

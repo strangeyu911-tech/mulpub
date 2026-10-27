@@ -278,6 +278,17 @@ function createSystemApi(ipcRenderer) {
     modelProviderLogs: (filter) => ipcRenderer.invoke('model-provider:logs', filter),
     modelProviderCleanLogs: (days) => ipcRenderer.invoke('model-provider:clean-logs', days),
 
+    // 模型额度兜底（P1b-2a）：策略读写 + 弹窗选择回传 + 任务级切回
+    modelQuotaGetPolicy: () => ipcRenderer.invoke('model-quota:get-policy'),
+    modelQuotaSetPolicy: (payload) => ipcRenderer.invoke('model-quota:set-policy', payload),
+    modelQuotaDecide: (payload) => ipcRenderer.invoke('model-quota:decide', payload),
+    modelQuotaSwitchBack: (payload) => ipcRenderer.invoke('model-quota:switch-back', payload),
+    onModelQuotaRequired: (cb) => {
+      const h = (_, d) => cb(d)
+      ipcRenderer.on('model-quota:required', h)
+      return () => ipcRenderer.removeListener('model-quota:required', h)
+    },
+
     // 应用日志 API（设置-通用设置：查看/清理/渲染进程错误上报）
     logsGetInfo: () => ipcRenderer.invoke('logs:info'),
     logsClear: () => ipcRenderer.invoke('logs:clear'),

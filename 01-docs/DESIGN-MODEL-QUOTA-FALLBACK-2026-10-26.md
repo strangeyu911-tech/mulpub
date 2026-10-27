@@ -1,7 +1,7 @@
 # DESIGN：模型额度用尽处理策略 —— 技术设计与落地形态（2026-10-26）
 
 > **文档性质**：技术设计（Design）。配套 PRD：`01-docs/PRD-MODEL-QUOTA-FALLBACK-2026-10-26.md`（下称 PRD）。
-> **状态**：🚧 **P1a 已实现**（`model-access-failure.js` + `userErrorCode` + 适配器 `httpStatus/providerCode` + 精确文案 + 动作）；**P1b-1 后端决策层已实现**（policy + coordinator + run context 覆盖），**P1b-2 IPC/设置/弹窗/业务域未实现**；P2/P3 未实现。实际落地见 §3.1「P1a 已落地」、§3.2/§3.3 与执行记录 `openspec/records/model-quota-p1b.md`。
+> **状态**：🚧 **P1a 已实现**（`model-access-failure.js` + `userErrorCode` + 适配器 `httpStatus/providerCode` + 精确文案 + 动作）；**P1b-1 后端决策层已实现**（policy + coordinator + run context 覆盖）；**P1b-2a 设置 IPC/preload + 策略卡片已实现**，**P1b-2b 弹窗/业务域未实现**；P2/P3 未实现。实际落地见 §3.1、§3.2/§3.3、§3.6 与执行记录 `openspec/records/model-quota-p1b2.md`。
 > **上游依赖**：`01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（D-① 官方算力代理 **未落地**）。
 > **日期**：2026-10-26
 
@@ -117,7 +117,8 @@ function parseRetryAfterMs(headers) : number|null
 - `callAdapter` 返回新增字段：`userErrorCode`（产品级精确码）、`messageParams.provider`、`accessState`、`quotaKind`、`providerCode`、`httpStatus`、`fallbackEligible`、`askOnly`；`errorCode` 仍为 `ProviderError.code`（历史枚举），保证 `story2video-notifications` 等旧消费方不回归。
 - `fromHttpStatus` 写 `statusCode` + `httpStatus` 两个字段；MiniMax 图片/TTS/视频写 `httpStatus:200` + `providerCode: base_resp.status_code`。
 - 渲染端 `formatUserError` 的候选顺序为 `userErrorCode → errorCode → 数值码 → pattern`；未知 `userErrorCode` 会回落到已知 `errorCode`，不吞错。
-- **P1b-1 已实现**：`model-quota-policy.js`、`model-quota-coordinator.js`、`ProviderRunContext.modelSourceOverrides`、检查点/埋点注入编排。**P1b-2 未实现**：IPC/preload、设置卡片、弹窗、业务域接入、模型设置「测试连接」分类展示。
+- **P1b-1 已实现**：`model-quota-policy.js`、`model-quota-coordinator.js`、`ProviderRunContext.modelSourceOverrides`、检查点/埋点注入编排。
+- **P1b-2a 已实现**：`ipc-handlers/model-quota.js` 四条通道、`preload/system.js` 五个桥接、`ModelQuotaPolicyCard.vue` + `model-quota-labels.js` + locales。**P1b-2b 未实现**：弹窗、`useModelQuotaFallback`、App 根层挂载、Coordinator 生产实例化、业务域接入、模型设置「测试连接」分类展示。
 
 ### 3.2 `model-quota-policy.js`（P1b，主进程纯函数）
 
@@ -277,6 +278,8 @@ Response:
 | `ModelQuotaFallbackDialog.vue` | 全局单例弹窗；监听 `model-quota:required`；按钮/禁用态/记住选择 |
 | `useModelQuotaFallback.js` | 订阅事件、维护 `currentRequest`、提交 decision、错误 toast |
 | `model-quota-labels.js` | `accessState` / `quotaKind` / reason → locale key 的纯函数映射（可单测） |
+
+**落地状态**：`ModelQuotaPolicyCard.vue` + `model-quota-labels.js` + locales 已在 P1b-2a 实现并挂在 `ModelProviders.vue` 顶部；`ModelQuotaFallbackDialog.vue` / `useModelQuotaFallback.js` / App 根层挂载留在 P1b-2b。
 
 **组件放置**：`ModelQuotaFallbackDialog` 挂在 `App.vue` 根层，确保任何页面都能弹；`ModelQuotaPolicyCard` 挂在 `ModelProviders.vue` 顶部。
 

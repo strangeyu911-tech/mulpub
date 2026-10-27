@@ -1,0 +1,61 @@
+{
+  "sha": "771c8bb3b3e31a7325341f9d0a243c1df6f6bd1f",
+  "layer": "diff",
+  "mode": "skip",
+  "reason": "改动全部命中文档白名单 → 走 §11.2b docs-only 快通道",
+  "stats": {
+    "changedLines": 0,
+    "fileCount": 2,
+    "codeFileCount": 0,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 13,
+    "docSensitiveContentSample": [
+      "`input/textarea/select/button/meter/output/progress` 这张表里」。**这张表是冗余的，而且有毒**：",
+      "  `/\\b(SELECT|INSERT INTO|UPDATE|DELETE FROM|DROP TABLE|ALTER TABLE)\\b/i`。因为 `<`、`-`、`\"` 都是非词字符，",
+      "  再带 `i` 标志，**HTML 标签名 `select` 与 `el-select` 逐字命中它**。于是锁里那张白名单——"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "867572ae7f4553ce24a65720f28bfe3d94a5c3f6f8a6c1d6472897f1a27f8670",
+  "decidedAt": "2026-10-27T07:08:38.294Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": false,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

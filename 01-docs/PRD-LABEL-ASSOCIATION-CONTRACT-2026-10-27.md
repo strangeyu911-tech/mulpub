@@ -112,6 +112,54 @@
 
 `Publish.vue` / `CreateView.vue` 是指名零增长文件（500 行熔断 + `TARGET_GREW`），接线必须写在既有行内。
 
+## 6A. 关联判据的正解：断 `label.control`，不要写标签名白名单（并避开一条结构性假阳性）
+
+§5 要求关联断言取 DOM 事实。最常被写成的形态是「取 `for` 指向的元素，再看它的标签名在不在
+`input/textarea/select/button/meter/output/progress` 这张表里」。**这张表是冗余的，而且有毒**：
+
+- 冗余：`HTMLLabelElement.control` 与 `control.labels` **本身就是浏览器给的 labelable 判定**——
+  指到 `<div>` 或不存在的元素时 `control` 为 `null`、`labels` 为空。所以
+  `expect(target.labels).toContain(label)` / `expect(label.control).toBe(target)` 已经同时证明了
+  「目标存在」「目标 labelable」「双向关联成立」三件事，比白名单更强（白名单只证标签名，证不出关联）。
+- 有毒：本仓 QM-6 判定器 `scripts/ccg-review-decider.js` 的 `RULES.sensitiveContents` 里有一条 SQL 形态
+  `/\b(SELECT|INSERT INTO|UPDATE|DELETE FROM|DROP TABLE|ALTER TABLE)\b/i`。因为 `<`、`-`、`"` 都是非词字符，
+  再带 `i` 标志，**HTML 标签名 `select` 与 `el-select` 逐字命中它**。于是锁里那张白名单——
+  以及任何在**被改动行**里出现 `select` 字样的写法——都会把「给下拉框补可访问名」这种纯无障碍修复
+  判成"改动涉及数据库"，触发 `内容命中 ≥1 ⇒ DUAL` 这条与行数无关的独立触发。
+
+2026-10-27 跨三条在飞切片的实测（探针先自证 diff 变更行数与正控；第一次用 `2>/dev/null` 时 git 在 cmd.exe
+下根本没跑、三档全报 0，那是**探针坏**不是"没命中"）：
+
+| 切片 | diff 变更行 | SQL 形态命中 | 其中纯粹是 `select` 字样 | 涉及真 SQL 语义 |
+| --- | --- | --- | --- | --- |
+| #4531 PromptEvalView | 232 | 2 | 2 | **0** |
+| #4529 PublishFrequencySettings | 606 | 22 | 22 | **0** |
+| #4539 WorkflowEditor | 352 | 14 | 14 | **0** |
+
+三条口径：
+
+1. **新写的关联锁一律用 `label.control` / `control.labels`，不再引入标签名白名单**；需要"非 labelable 即红"
+   的负控时，把负控目标写成 `<div id=...>` 并断言 `label.control === null`——这比在正控里枚举标签名更直接。
+2. **被接线的元素本身就是 `<select>` 时，这一族假阳性无法靠改写自己的写法规避**（那一行就是 `<select …>`）。
+   正确处置是走真外部评审（§6B），**不得**为了降档去动 `RULES`、拆测试或给判据加文件类型例外——
+   那是在改"谁来守门"，且 `scripts/ccg-review-` 自身在 `HIGH_RISK_SURFACES` 清单内。
+3. 判据按**语义位置**切而不是按字符串是否出现切（AGENTS.md 既有纪律）：要禁的是"某开标签上的某属性"，
+   判据就写成在该标签属性段内匹配；解释性文字里不要原样引用被禁字面量，否则锁会打红自己的注释。
+
+## 6B. 跑 QM-6 的两条链路现场（本仓 2026-10-27 实测，都会让人把"没跑"读成"过了"）
+
+1. **pre-commit 的 CCG 门禁会静默跳过**。若 `run_skill.js` 不在 `scripts/ccg-gate.js` 的默认候选目录里，
+   它打印 `[CCG] 未找到 CCG（run_skill.js），已跳过 CCG 门禁` 并**返回 0**，于是那条代码提交
+   **没有判定产物**；随后 `sh scripts/deep-review.sh` 因 fail-closed 报
+   `本提交有 N 行非 .ccg 改动却没有判定记录`（`DEEP_RC=1`）。本机 `run_skill.js` 实测落在
+   `<技能根>/ccg/run_skill.js` ⇒ 提交前需带 `CCG_SKILLS_DIR=<该目录>`。
+   **"门禁跳过了且 rc=0"不等于"门禁判过了"。**
+2. **`deep-review.sh` 按"父提交 sha"解析判定记录**（`--dry-run` 原文：`判定记录按父提交 sha 命中：9b3fff33（提交时 HEAD 即父提交）`）。
+   因此它必须**紧跟在代码提交之后**跑：先补一个纯文档/纯 `.ccg` 提交，HEAD 的父提交就变成那条低风险提交，
+   其记录为 `SKIP` ⇒ deep-review 打印"按决策矩阵跳过深度审查"并 rc=0，**看着像走完、实际什么都没审**。
+   顺序规则：`代码提交 → deep-review → 补充提交`；事后补救可用 `node scripts/ccg-review-decider.js --base=origin/main --sha <代码提交>`
+   补出 sha 键记录（判定由工具产出，人不写 `status`/`tier`），但那只解决"记录缺失"，不解决"评审没跑"。
+
 ## 7. 施工切片 SOP（每条都对应一次真实踩坑）
 
 1. 一片 ≤ 200 源码行（DUAL 规模会必然落到自扮演而无法合法闭合）。

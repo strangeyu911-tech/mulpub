@@ -47,6 +47,8 @@ const BASE_MATRIX = {
     videoMonthly: 0,
     scheduleBatch: false,
     dashboard: 'basic',
+    // v3.1：知识库只做功能开关（免费不提供，标准/专业提供），不设容量档
+    knowledgeBase: false,
     // 体验额度 30 积分 = ¥0.3（1 积分 = ¥0.01）。
     // ⚠️ 按 10-08 §3.2 挂牌价：¥0.3 ≈ **1 张**标准清晰度配图（¥0.2/张），
     //    **买不起最便宜的视频**（Hailuo-02 512P/6s = ¥0.6）⇒ 视频能力天然不可达，
@@ -81,6 +83,7 @@ const BASE_MATRIX = {
     videoMonthly: -1,
     scheduleBatch: true,
     dashboard: 'full',
+    knowledgeBase: true,
     // 成本占比 25.42%（¥59 × 25.42% ≈ ¥15.21）。年付按月等额发放，年付总量因此恒为 12×本值
     // ⇒ 年付 12×1500 = 18000 积分 = ¥180 = ¥590 的 **30.51%**，在年付守线 40% 内（余量 9.49 个点）。
     // ⚠️ 1500 是「在两条守线内、且让 H3 768P 10 秒（500 积分）正好整除」的整数：
@@ -110,6 +113,7 @@ const BASE_MATRIX = {
     videoMonthly: -1,
     scheduleBatch: true,
     dashboard: 'full',
+    knowledgeBase: true,
     // 成本占比 25.21%（¥119 × 25.21% ≈ ¥30）。年付按月等额发放 ⇒ 年付 12×3000 = 36000 积分
     // = ¥360 = ¥1190 的 **30.25%**，在年付守线 40% 内（余量 9.75 个点）。
     // ⚠️ 3330 曾是「月付目标 28%」与「年付守线 40%」在旧年付价 ¥999 下的**唯一交点**
@@ -222,6 +226,8 @@ function getPlanEntitlement(plan, overrides) {
   if (matrix.videoMonthly !== 0) features.push('video_create')
   if (matrix.scheduleBatch === true) features.push('schedule_batch')
   if (matrix.dashboard === 'full') features.push('dashboard_full')
+  // v3.1：知识库功能开关（免费不提供，标准/专业提供；不设容量档）
+  if (matrix.knowledgeBase === true) features.push('knowledge_base')
   // v2.0 机制 C6.1：账号数 > 0（或 -1 不限）才提供云凭证同步；0 表示本档不提供
   if (matrix.maxCloudAccounts !== 0) features.push('cloud_account_sync')
   // v2.0 机制 C7 A 批：单次批量上限 > 1（或 -1 不限）才提供批量发布

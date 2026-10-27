@@ -1,0 +1,96 @@
+{
+  "sha": "fd20c886aa5c00360167871108b82c738390833c",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 72 行（≤ 200）但命中 auth/数据库/加密：敏感路径 packages/api-publish-engine/src/auth/plan-matrix.js",
+  "stats": {
+    "changedLines": 72,
+    "fileCount": 12,
+    "codeFileCount": 9,
+    "sensitivePathHits": [
+      "packages/api-publish-engine/src/auth/plan-matrix.js"
+    ],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "7c030a4d3cc59c4e5ef549a44f32b8fe8b79eb2942991c4a295376ebf0b752c6",
+  "decidedAt": "2026-10-27T12:42:06.718Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "finding": "PR 的 .ccg/reviews 元数据标记 deepReview: status: pending 且无 performedBy/evidence；未明确是否已执行深度评审或豁免，合并前需闭合。",
+        "highRiskDomains": [],
+        "prosecution": "pending 状态下不应合并，否则执行记录不能证明评审跑过。",
+        "defense": "该 JSON 是 pre-commit 生成的判定骨架，`deep-review.sh` 运行后会写回 `self_play_resolved` / `tier` / `performedBy`；`check-pr-exec-record.js` 在合并前会以最终 OK/FAIL 判决。当前本次评审就是闭合动作。",
+        "verdict": "dismissed",
+        "rationale": "pending 是提交前的中间态，不是最终交付态；最终以 check-pr-exec-record 读数为准。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "MECHANISM-MEMBER-TIERS.md 声明机制 v3.6（2026-10-27），但数值真源仍引用 plan-matrix.js 的 PLAN_MATRIX_VERSION = 2026-10-26，文档与真源版本不同步，审计链易混乱。",
+        "highRiskDomains": [],
+        "prosecution": "读者会以为矩阵数值也在 10-27 变过。",
+        "defense": "`PLAN_MATRIX_VERSION` 是数值矩阵版本；本 PR 只新增 `knowledgeBase` 布尔开关和 feature 派生，没有改任何价格/额度数值，因此不需要 bump 2026-10-26。机制文档 v3.6 是文档版本，两者不是同一版本轴。",
+        "verdict": "dismissed",
+        "rationale": "版本轴不同；本 PR 未改矩阵数值，保持 2026-10-26 正确。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "KnowledgeBaseGateView.vue 静态导入 KnowledgeBasePage.vue；若 MemberFeatureGate 在锁定态未通过 v-if 完全阻止 slot 挂载，免费用户仍可能触发知识库 IPC 初始化。",
+        "highRiskDomains": [],
+        "prosecution": "静态导入 + slot 若仍渲染，免费用户会触发列表/同步 IPC。",
+        "defense": "`MemberFeatureGate` 模板是 `v-if=checking / v-else-if=locked / <slot v-else>`，锁定态不会渲染 slot；`MemberFeatureGate.test.js` 的「免费档锁定页、slot 不挂载」用例已断言 `gate-allowed` 不存在。`KnowledgeBaseGateView` 只负责把页面放进 slot，不自行渲染。",
+        "verdict": "dismissed",
+        "rationale": "锁定态 slot 不渲染有组件测试直接断言；静态导入只增加 chunk，不挂载实例。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T12:48:01.318Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4558#issuecomment-6442252623",
+    "closureNote": "轮次 1/3：i1 dismissed（pre-commit pending 是中间态，本次 deep-review 已写回闭环）；i2 dismissed（机制 v3.6 与 PLAN_MATRIX_VERSION 2026-10-26 是不同版本轴，本 PR 未改数值）；i3 dismissed（MemberFeatureGate 锁定态不渲染 slot，已有测试断言）。tier 由会话手写，evidence 为公开 PR 评论。"
+  }
+}

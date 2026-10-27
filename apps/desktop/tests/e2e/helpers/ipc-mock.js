@@ -746,7 +746,7 @@
       entitlement: {
         plan: 'pro',
         features: [
-          'cloud_publish', 'ai_writer', 'video_create', 'publish_history', 'pipeline_run',
+          'cloud_publish', 'ai_writer', 'video_create', 'knowledge_base', 'publish_history', 'pipeline_run',
           'video_process', 'story2video_write', 'model_provider_write',
         ],
         source: 'online',

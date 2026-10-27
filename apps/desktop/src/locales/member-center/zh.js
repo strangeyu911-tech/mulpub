@@ -12,6 +12,7 @@ export default {
     featureLockedHint: '升级标准版或专业版后自动解锁，无需重新登录。',
     featureLockedCta: '查看套餐',
     videoCreateTitle: '视频创作',
+    knowledgeBaseTitle: '知识库',
     redeemTitle: '激活码兑换',
     redeemHint: '输入 12 位激活码（形如 ABCD-EFGH-JKMN）兑换会员权益。激活码与账号绑定，一码仅可核销一次。',
     redeemPlaceholder: 'ABCD-EFGH-JKMN',

@@ -1,6 +1,6 @@
 # 会员档位机制（MEMBER TIERS MECHANISM）
 
-> **状态**：🟢 现行（v3.5，2026-10-27）
+> **状态**：🟢 现行（v3.6，2026-10-27）
 > **数值真源**：`packages/api-publish-engine/src/auth/plan-matrix.js`（`PLAN_MATRIX_VERSION = 2026-10-26`）
 > **价格与积分推导**：`01-docs/PRD-CREDIT-PRICING-2026-10-25.md`
 > **价格解释**：`01-docs/pricing-strategy.md` §1–§2
@@ -243,7 +243,7 @@
 | **定时任务** | — | 100 个 | 不限 | 规划（P1） |
 | **自定义自动化** | — | 10 条工作流 / 50 条·日 | 50 条 / 500 条·日 | 规划（P1） |
 | **视频创作** | — | ✓ | ✓ | 已交付（P1-1，客户端入口） |
-| **知识库** | — | ✓ | ✓ | 规划（P1） |
+| **知识库** | — | ✓ | ✓ | 已交付（P1-2，客户端入口） |
 | **AI 写稿** | 不限（积分/BYOK） | 不限（积分/BYOK） | 不限（积分/BYOK） | 待接线（当前无消费点，实际不限） |
 | **官方积分** | 30/月 | 1,500/月 | 3,000/月 | 待接线（P1） |
 | **数据看板** | 基础（3 面板） | 完整 | 完整 | 已拦截（软） |
@@ -314,7 +314,7 @@
 | 定时任务 | `features.schedule_batch` | 无 | 无 | **展示** | 免费可建；无数量上限 |
 | 自定义自动化 | 待新增 `maxWorkflows` / `automationDailyItems` | 无 | 无 | **展示** | 全局 `MAX_CUSTOM=50`，无档位门禁 |
 | 视频创作 | `features.video_create` | 无 | 无 | **硬（客户端入口 + IPC 启动通道）** | `/create` + 采集/热门选题就地入口（P1-1）；`pipeline:start`/`startOrchestrated`/`render:start*`/`story2video:batch:create` 强制（P1-1b） |
-| 知识库 | 待新增 `knowledge_base` feature | 无 | 无 | **未实现** | 免费可用；无 feature |
+| 知识库 | `features.knowledge_base` | 无 | 无 | **硬（客户端入口）** | `/knowledge-base` 整页门禁；P1-2 |
 | AI 写稿 | `quota.ai_write_monthly` | 无 | 无 | **展示** | 无 consume；建议改为 -1 全档 |
 | 官方积分 | `quota.official_credit_monthly` | 无 | 无 | **展示** | 无 grant/consume |
 | 看板 | `features.dashboard_full` | 无 | Dashboard 3 面板软锁 | **软** | 数据 IPC 仍可直取 |
@@ -356,7 +356,7 @@
 | 定时任务 | 免费不可建；标准 100 个；专业不限 | 免费可建 | P1 feature + 计数 |
 | 自定义自动化 | 免费不可用；标准 10 条/50 条·日；专业 50 条/500 条·日 | 仅全局 50 | P1 feature + 配额 |
 | 视频创作 | 免费入口关闭；标准/专业可用 | ✅ 已交付（P1-1 + P1-1b） | 客户端入口 + IPC 启动通道；见 `PRD-MEMBER-TIER-VIDEO-GATE-2026-10-27.md` / `PRD-MEMBER-TIER-VIDEO-IPC-GATE-2026-10-27.md` |
-| 知识库 | 免费入口关闭；标准/专业可用 | 免费可用 | P1 feature |
+| 知识库 | 免费入口关闭；标准/专业可用 | ✅ 已交付（P1-2） | 客户端入口层；见 `PRD-MEMBER-TIER-KNOWLEDGE-BASE-2026-10-27.md` |
 | 官方积分 | 耗尽后引导 BYOK / 积分包；不锁发布 | 无扣减 | P1 consume + 引导 |
 | 登录设备 | 超限提示注销最旧设备，不静默踢线 | 无 cap | P1 |
 | 每日发布 | 不设上限；50 条/日软提醒（防滥用） | 无 | 可选 |
@@ -451,7 +451,7 @@
 |---|---|---|
 | P1-1 | `video_create` 门禁：免费入口关闭 | ✅ 已交付（2026-10-27）：免费点视频创作被拒；标准/专业可用 |
 | P1-1b | 视频创作 IPC 启动通道强制 `video_create` | ✅ 已交付（2026-10-27）：`pipeline:start`/`startOrchestrated`/`render:start*`/`story2video:batch:create` 无权益返回 -3；收尾/取消通道保持登录即可 |
-| P1-2 | `knowledge_base` feature：免费入口关闭 | 免费点知识库被拒；标准/专业可用 |
+| P1-2 | `knowledge_base` feature：免费入口关闭 | ✅ 已交付（2026-10-27）：免费点知识库被拒；标准/专业可用 |
 | P1-3 | `schedule_batch` + 定时任务计数：免费 0、标准 100、专业不限 | 免费创建被拒；标准第 101 个被拒 |
 | P1-4 | 自定义自动化：免费 0；标准 10 条/50 条·日；专业 50 条/500 条·日 | 工作流创建/执行均有配额；超限有提示 |
 | P1-5 | `official_credit` grant/consume + `ai_write` 全档 -1 | 积分发放/扣减/余额可查；AI 写稿不按次数拦 |
@@ -510,7 +510,7 @@
 |---|---|---|---|
 | R1 | 账号上限可被绕过（换设备/改本地库） | 免费用户可超限 | 接受为商业约束；不做防破解；监控异常账号数 |
 | R2 | 免费 5 账号 + AI 写稿不限（BYOK） | 免费档价值偏高，转化可能变弱 | 靠视频/知识库/自动化/定时四个功能闸门拉开；观察转化 |
-| R3 | 视频/知识库是本地功能，关闭只是 UI 拦截 | 技术用户可绕过 | 接受；若未来上云，改为服务端门禁 |
+| R3 | 视频/知识库是本地功能，关闭只是 UI 拦截 | 技术用户可绕过 | 视频已补 IPC 启动通道（P1-1b）；知识库仍 UI 拦截；若未来上云，改为服务端门禁 |
 | R4 | 不做每日发布限制 | 极端用户可能刷量 | 50 条/日软提醒 + 平台风控；不做硬限 |
 | R5 | 支付未接通 | 无法验证真实转化；试用/proration 无法做 | P3 前置；先用兑换码/后台开通跑闭环 |
 | R6 | 竞品数据时效 | 剪映/即梦频繁调价 | 定稿前复核 App 内购买页；标日期与可信度 |
@@ -556,6 +556,7 @@
 | 2026-10-27 | 机制 v3.3 | P0-4 落地：批量 UI 改读 `batch_size_per_run`（纯订阅可批量）；本地批量按文章数、云 `/batch-publish` 先判后扣；修复 B/C 两项历史缺陷 |
 | 2026-10-27 | 机制 v3.4 | P1-1 落地：`features.video_create` 客户端门禁；`/create` 整页锁定 + 采集/热门选题就地入口拦截；缺失/空 features 仍 fail-open |
 | 2026-10-27 | 机制 v3.5 | P1-1b 落地：视频创作 IPC 启动通道强制 `video_create`（`pipeline:start`/`startOrchestrated`/`render:start*`/`story2video:batch:create`）；收尾/取消仍登录即可；QM-1 打包验证 |
+| 2026-10-27 | 机制 v3.6 | P1-2 落地：`knowledgeBase` 矩阵开关 → `features.knowledge_base`；`/knowledge-base` 整页门禁；缺失/空 features 仍 fail-open |
 
 ## 附录 C：证据索引
 

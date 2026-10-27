@@ -340,7 +340,7 @@ export const ROUTE_REGISTRY = Object.freeze([
   {
     path: '/knowledge-base',
     name: 'KnowledgeBase',
-    view: 'KnowledgeBasePage.vue',
+    view: 'KnowledgeBaseGateView.vue',
     navEntry: { key: 'knowledge-base', group: SIDEBAR_GROUP_MORE, labelI18nKey: 'knowledgeBase.title', to: '/knowledge-base', icon: Collection },
     internal: false,
     entryFrom: null,

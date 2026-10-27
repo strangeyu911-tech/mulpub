@@ -33,6 +33,16 @@ function beginModelQuotaRun (engine, run) {
   }
 }
 
+function modelQuotaOverridesFor (engine, run) {
+  if (!engine || !run || !engine.modelQuotaRuntime) return null
+  if (typeof engine.modelQuotaRuntime.getContext !== 'function') return null
+  const ctx = engine.modelQuotaRuntime.getContext(run.id)
+  if (!ctx || typeof ctx.getModelSourceOverrides !== 'function') return null
+  const overrides = ctx.getModelSourceOverrides()
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) return null
+  return Object.keys(overrides).length > 0 ? overrides : null
+}
+
 function pauseModelQuotaRun (engine, run, result) {
   if (!engine || !run) return result
   const stage = Array.isArray(run.stages) ? run.stages[run.currentStage] : null
@@ -82,4 +92,4 @@ function endModelQuotaRun (engine, run) {
   }
 }
 
-module.exports = { beginModelQuotaRun, endModelQuotaRun, pauseModelQuotaRun }
+module.exports = { beginModelQuotaRun, endModelQuotaRun, pauseModelQuotaRun, modelQuotaOverridesFor }

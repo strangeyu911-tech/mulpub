@@ -1,7 +1,7 @@
 # PRD：模型额度用尽时的来源切换策略（model-quota-fallback）
 
 > **文档性质**：产品需求 + 决策记录（PRD）。本文件是「用户自带模型 Key（BYOK）」与「平台官方模型（消耗官方积分）」之间**优先级与切换控制**的单一真源。
-> **状态**：🚧 **P1a 已实现**；**P1b-1 后端决策层已实现**；**P1b-2a 设置 IPC/preload + 策略卡片已实现**；**P1b-2b 兜底弹窗 + App 根层 + composable 已实现**；**P1b-2c1 生产运行时 + IPC 接线 + run 生命周期已实现**，**P1b-2c2a 统一调用边界 + 额度暂停已实现**，**P1b-2c2b 任务详情横幅/切回按钮未实现**；P2/P3 未实现。P1b-1 见 §13.2，P1b-2a 见 §13.3，P1b-2b 见 §13.4，P1b-2c1 见 §13.5，P1b-2c2a 见 §13.6 与 `openspec/records/model-quota-p1b2c2a.md`。官方兜底仍受 D-11 约束（官方算力代理 D-① 未落地，官方按钮禁用、卡片默认隐藏）。
+> **状态**：🚧 **P1a 已实现**；**P1b-1 后端决策层已实现**；**P1b-2a 设置 IPC/preload + 策略卡片已实现**；**P1b-2b 兜底弹窗 + App 根层 + composable 已实现**；**P1b-2c1 生产运行时 + IPC 接线 + run 生命周期已实现**，**P1b-2c2a 统一调用边界 + 额度暂停已实现**，**P1b-2c2b 任务详情官方横幅/切回按钮已实现**，**P1b-2c2c 测试连接分类展示未实现**；P2/P3 未实现。P1b-1 见 §13.2，P1b-2a 见 §13.3，P1b-2b 见 §13.4，P1b-2c1 见 §13.5，P1b-2c2a 见 §13.6，P1b-2c2b 见 §13.7 与 `openspec/records/model-quota-p1b2c2b.md`。官方兜底仍受 D-11 约束（官方算力代理 D-① 未落地，官方按钮禁用、卡片默认隐藏）。
 > **关联设计**：`01-docs/DESIGN-MODEL-QUOTA-FALLBACK-2026-10-26.md`
 > **上游依赖**：`01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（D-① 官方算力代理，**未落地**）、`01-docs/PRD-CREDIT-CONSUME-API-2026-10-25.md`（扣分端点，已实现）、`01-docs/PRD-OFFICIAL-COMPUTE-CHARGE-STATE-2026-10-25.md`（扣分状态机，已实现）
 > **日期**：2026-10-26
@@ -704,7 +704,7 @@ runContext.modelSourceOverrides = {
 | **P1b-2a** | IPC/preload + `ModelQuotaPolicyCard` + 标签/locales；官方按钮按能力 gate 禁用 | P1b-1 | ✅ 本 PR 实现 |
 | **P1b-2b** | `ModelQuotaFallbackDialog` + `useModelQuotaFallback` + App 根层挂载 | P1b-2a | ✅ 本 PR 实现 |
 | **P1b-2c1** | 生产 `ModelQuotaRuntime` + `RunStateStore` 检查点端口 + phase5 IPC 接线 + PipelineEngine run 生命周期 | P1b-2b | ✅ 本 PR 实现 |
-| **P1b-2c2a** | 统一模型调用边界（manager.callAdapter 包装）+ 额度失败→decide + PipelineEngine paused | P1b-2c1 | ✅ 本 PR 实现 |`n| **P1b-2c2b** | 任务详情「官方」横幅/切回按钮 + 模型设置「测试连接」分类展示 | P1b-2c2a | ❌ 下一 PR |
+| **P1b-2c2a** | 统一模型调用边界（manager.callAdapter 包装）+ 额度失败→decide + PipelineEngine paused | P1b-2c1 | ✅ 本 PR 实现 |`n| **P1b-2c2b** | 任务详情「官方」横幅 + 「切回我的模型」按钮 | P1b-2c2a | ✅ 本 PR 实现 |`n| **P1b-2c2c** | 模型设置「测试连接」分类展示 | P1b-2c2b | ❌ 下一 PR |
 | **P2** | 官方算力代理 D-① + 余额读通道 U-13 + 价格卡 U-12 + 官方调用客户端 + `byok=0` + 扣分 | D-① / U-12 / U-13 | ❌ 与官方算力同批 |
 | **P3** | 自动档 `official` 全量开放 + 任务积分上限 + 埋点看板 + LLM 官方供给（若 U-1 决定做） | P2 + U-1 | ❌ |
 
@@ -821,6 +821,24 @@ runContext.modelSourceOverrides = {
 **测试**：`model-quota-call-boundary.test.js` 6 例；`model-quota-pipeline-pause.test.js` 2 例；`model-quota-pipeline-pause-integration.test.js` 1 例；`model-quota-runtime.test.js` 新增 1 例；`phase5-ipc.test.js` 新增 1 例。P1b-2c2a 相关定向 **124/124** 测试全绿。
 
 **P1b-2c2a 明确不做**：任务详情「官方」横幅/切回按钮、模型设置「测试连接」分类展示、官方算力客户端（P2 D-①）、业务域自定义错误文案（统一用 `MODEL_QUOTA_PAUSED` + 现有 paused 卡片）。
+
+### 13.7 P1b-2c2b 任务详情官方横幅 + 切回按钮落地记录（2026-10-27）
+
+**范围**：只做「任务详情（创作页进度弹窗）」里的官方来源提示与切回动作；不做模型设置「测试连接」分类展示（P1b-2c2c）。
+
+| 层 | 实际实现 | 说明 |
+|---|---|---|
+| 主进程快照 | `pipeline-engine.getRunSnapshot` 新增 `modelQuotaOverrides` | 从 `ModelQuotaRuntime.getContext(runId)` 读取当前 run 的 `modelSourceOverrides`；无覆盖时为 null，不污染旧快照 |
+| 运行时 | `ProviderRunContext.getModelSourceOverrides()` | 返回覆盖副本；渲染层只读 |
+| 组件 | `src/components/model-quota/ModelQuotaTaskBanner.vue`（新增） | 仅当存在 `source=official` 覆盖时显示；列出能力（图片/视频/语音/音频/文本/语音识别）；「切回我的模型」逐个能力调用 `modelQuotaSwitchBack`；成功 emit `switched`，失败显示错误 |
+| 页面 | `src/views/CreateView.vue` | 进度弹窗 StageProgress 下方挂载；`pipelineQuotaOverrides` 从 `pipelineRunStatus.modelQuotaOverrides` 读取；切回成功后刷新 run 快照 |
+| 文案 | `locales/model-quota/{zh,en}.js` | 新增 `taskBanner.*` 与 `capability.*` 成对文案 |
+
+**数据校验**：`overrides` 非对象/数组视为无；只显示 `source === 'official'`；`runId` 为空或切回中禁用按钮；任一能力切回失败即停止并显示错误，不 emit 成功；未知能力回落到「其他能力」。
+
+**测试**：`ModelQuotaTaskBanner.test.js` 5 例（隐藏/单能力/多能力/部分成功/失败）；`model-quota-pipeline-hooks.test.js` 新增 1 例（覆盖反查）。定向测试见执行记录。
+
+**P1b-2c2b 明确不做**：模型设置「测试连接」分类展示（P1b-2c2c）、官方算力客户端（P2 D-①）、历史页独立横幅（任务详情已覆盖当前 run）。
 
 ---
 

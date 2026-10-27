@@ -39,6 +39,23 @@ export default {
     user_settings: '你选择去更新模型设置',
     timeout: '等待选择超时'
   },
+  taskBanner: {
+    title: '此任务正在使用官方模型',
+    description: '能力：{capabilities}。官方兜底只影响当前任务，不会修改你的默认模型。',
+    switchBack: '切回我的模型',
+    switching: '正在切回…',
+    switched: '已切回你的模型，后续调用将继续使用 BYOK。',
+    failed: '切回失败，请重试。',
+    capabilityUnknown: '其他能力',
+  },
+  capability: {
+    image: '图片',
+    video: '视频',
+    tts: '语音',
+    audio: '音频',
+    llm: '文本',
+    speech_recognition: '语音识别',
+  },
   dialog: {
     title: '模型额度用尽',
     description: '「{provider}」的 {model} 额度不足，是否使用官方模型继续当前任务？',

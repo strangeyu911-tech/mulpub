@@ -27,7 +27,7 @@ const {
 } = require('./story2video-text-config');
 const { checkPipelineModelRequirements } = require('./pipeline-model-preflight');
 const { buildRunDiagnostics, captureEnvSnapshot } = require('./diagnostics/run-diagnostics');
-const { beginModelQuotaRun, endModelQuotaRun, pauseModelQuotaRun } = require('./model-quota-pipeline-hooks');
+const { beginModelQuotaRun, endModelQuotaRun, pauseModelQuotaRun, modelQuotaOverridesFor } = require('./model-quota-pipeline-hooks');
 
 /**
  * 依据机器资源计算默认后台并发上限（低配保守、高配放宽）：
@@ -1949,6 +1949,7 @@ class PipelineEngine {
       errorCode: run.errorCode || null,
       errorParams: run.errorParams || null,
       projectId: run.projectId || null,
+      modelQuotaOverrides: modelQuotaOverridesFor(this, run),
       outputSizeBytes: this._runOutputSizeBytes(run) || null,
       activeMs,
       activeSegmentStartedAt: Number.isFinite(run._activeSegmentStartedAt) ? new Date(run._activeSegmentStartedAt).toISOString() : null,

@@ -490,6 +490,12 @@
           :checkpoint="pipelineRunStatus?.checkpoint || null"
           :queue="pipelineRunStatus?.queue || null"
         />
+        <ModelQuotaTaskBanner
+          v-if="orchestrationRunId && pipelineQuotaOverrides"
+          :run-id="orchestrationRunId"
+          :overrides="pipelineQuotaOverrides"
+          @switched="handleModelQuotaSwitched"
+        />
         <div
           v-if="!isOrchestratedPipeline(selectedPipeline?.name) && pipelineProgressStages.length === 0 && pipelineRunStatus && pipelineRunStatus.progress !== undefined"
           class="pipeline-progress-basic"
@@ -1009,6 +1015,7 @@ import CreateViewHistory from './CreateViewHistory.vue'
 import { buildPublishFromProject, publishDataToQuery } from '@/features/publish/publish-from-project'
 import { extractRunContextVideoPath } from '@/features/pipeline/run-context-video-path'
 import PodcastPublishAction from '@/components/PodcastPublishAction.vue'
+import ModelQuotaTaskBanner from '@/components/model-quota/ModelQuotaTaskBanner.vue'
 import { story2videoSaveAs, story2videoGetProject, draftList } from '@/api/publisher'
 import { PipelineSelector, StageProgress, SceneAssetSelection, S2vConfigPanels } from './video-creation'
 import { S2V_PANEL_KEY, createS2VPanel } from './video-creation/s2v-panel-contract'
@@ -1153,7 +1160,7 @@ export default {
   // （缺失会导致 Vue 'Failed to resolve component'，流水线卡片不渲染）
   // 三侧合并：HEAD 的 QuickRenderPanel + 本分支的 AvatarSubtitlePanel。
   // 注意不要引入本分支之外不存在的组件（UiSelect 属另一未合并分支，加了会 ReferenceError）。
-  components: { AvatarProviderPicker, AvatarClonePanel, QuickRenderPanel, AvatarSubtitlePanel, UiButton, UiModal, CreateViewHistory, PipelineSelector, StageProgress, SceneAssetSelection, S2vConfigPanels, PodcastPublishAction },
+  components: { AvatarProviderPicker, AvatarClonePanel, QuickRenderPanel, AvatarSubtitlePanel, UiButton, UiModal, CreateViewHistory, PipelineSelector, StageProgress, SceneAssetSelection, S2vConfigPanels, PodcastPublishAction, ModelQuotaTaskBanner },
   // 配置面板子树的受控访问入口：白名单由 s2v-panel-contract 单一来源定义，
   // 这里只转发，不复制任何 optionKey 语义（见该文件头注释）。
   provide() {
@@ -1897,6 +1904,11 @@ export default {
         : null
       if (checkpoint?.type || checkpoint?.reason) return false
       return hasLegacyPipelineCheckpointEvidence(snapshot, this.orchestrationContext)
+    },
+    pipelineQuotaOverrides() {
+      const overrides = this.pipelineRunStatus?.modelQuotaOverrides
+      if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) return null
+      return Object.keys(overrides).length > 0 ? overrides : null
     },
     pipelineProgressCheckpointText() {
       const checkpoint = this.pipelineRunStatus?.checkpoint
@@ -3852,6 +3864,10 @@ export default {
     clearPipelineProgressStatusError() {
       this.pipelineProgressStatusError = ''
     },
+    async handleModelQuotaSwitched() {
+      // 切回后立即刷新 run 快照，让横幅根据最新 modelQuotaOverrides 消失。
+      await this.updateOrchestrationStatus()
+    },
     async updateOrchestrationStatus() {
       if (!this.orchestrationRunId) return { ok: false, reason: 'missing-run-id' }
       // runId 快照守卫（2026-08-13，后台运行审查 Critical 1）：detach/取消/切换 run 后，
@@ -3946,7 +3962,10 @@ export default {
         this.story2videoRunMeta = mergePipelineRunMeta(this.story2videoRunMeta, metaResult)
         this.orchestrationStages = mergedStages
         normalized.stages = this.orchestrationStages
-        this.pipelineRunStatus = normalized
+        this.pipelineRunStatus = {
+          ...normalized,
+          modelQuotaOverrides: statusResult.data.modelQuotaOverrides || null,
+        }
         this.syncPipelineCheckpointState(normalized, this.orchestrationContext)
         // 人工审批门：状态刷新后判定是否停在五道门之一（判定口径在主进程，渲染层不硬编码门名单）
         await this.syncApprovalGate()

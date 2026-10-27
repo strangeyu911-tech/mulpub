@@ -64,6 +64,13 @@ class ProviderRunContext {
     this._modelSourceOverrides.clear()
   }
 
+  /** 返回当前 run 的全部来源覆盖副本；渲染层任务详情据此显示「官方」横幅。 */
+  getModelSourceOverrides() {
+    const out = {}
+    for (const [capability, value] of this._modelSourceOverrides) out[capability] = { ...value }
+    return out
+  }
+
   failureOf(providerId) {
     const id = String(providerId || '').trim()
     if (!id) return null

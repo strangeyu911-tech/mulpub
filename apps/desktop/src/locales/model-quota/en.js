@@ -39,6 +39,23 @@ export default {
     user_settings: 'You chose to update model settings',
     timeout: 'Timed out waiting for a choice'
   },
+  taskBanner: {
+    title: 'This task is using the official model',
+    description: 'Capabilities: {capabilities}. Official fallback only affects this task and does not change your default model.',
+    switchBack: 'Switch back to my model',
+    switching: 'Switching back…',
+    switched: 'Switched back to your model. Later calls will use BYOK.',
+    failed: 'Failed to switch back. Please try again.',
+    capabilityUnknown: 'Other capability',
+  },
+  capability: {
+    image: 'Image',
+    video: 'Video',
+    tts: 'Speech',
+    audio: 'Audio',
+    llm: 'Text',
+    speech_recognition: 'Speech recognition',
+  },
   dialog: {
     title: 'Model quota exhausted',
     description: 'The {model} quota for "{provider}" is exhausted. Use the official model to continue this task?',

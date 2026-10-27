@@ -184,6 +184,9 @@ jobs:
             exit 1
           fi
           node --test scripts/check-pr-exec-record.test.js
+          # 高危面派生档的接线锁（change: ci-judge-surface-coverage）：它测的是"判据有没有真的去读闭包"，
+          # 只跑上面那份会漏掉整格 —— 省略注入时行为退回旧语义，而那正是本片要消灭的形态。
+          node --test scripts/check-pr-exec-record-judge-surface.test.js
           # 只读审计档（--audit）的回归锁。不接这一行则锁不跑 —— 等于给新能力开了条无人守门的入库通道。
           node --test scripts/check-pr-exec-record.audit.test.js
           node scripts/check-pr-exec-record.js --base="${EXEC_BASE:-}" --head-branch="${EXEC_HEAD_REF:-}" --head="${EXEC_HEAD_SHA:-HEAD}" --mode=advisory
@@ -744,6 +747,19 @@ jobs:
           node scripts/check-unwired-components.js
           node --test scripts/check-unwired-components.test.js
           node scripts/unwired-components-mutate.js
+
+      # --- Gate 2b16：高危面由判据闭包派生（change: ci-judge-surface-coverage，2026-10-26）---
+      # 落点必须在 changes 作业：这条判据决定「哪些文件的改动必须带外部复核出处」，
+      # 而 docs-only PR 会把 static-gates 整个短路（与 Gate 2b9/2b10/2b13/2b15 同一条理由）。
+      # 三行各管一件事，缺一即装饰：跑判据本体（它的 rc 就是结论）、跑它的回归锁、
+      # 再跑闭包真源与派生面真源的回归锁 —— 后两份不在别的步骤里出现。
+      # 本作业无 Install deps，故三个模块只准 require node 内置（锁见 scripts/quality-rhythm-spec-mirror.test.js 同源约束）。
+      - name: "Gate 2b16 - Judge-surface coverage gate (changes job)"
+        shell: bash
+        run: |
+          node scripts/check-judge-surface-coverage.js --report
+          node --test scripts/check-judge-surface-coverage.test.js
+          node --test scripts/lib/judge-closure.test.js
 
   static-gates:
     name: QG Static

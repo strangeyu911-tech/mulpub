@@ -555,3 +555,7 @@ apps/desktop/electron/services/stealth/stealth-preload-enhanced.bundle.js
 !scripts/dead-components-contract-mutate.js
 # UX 审计 1.10b：错误卡动作位的反证驱动（scripts/*.js 默认忽略会把它静默排除在 git 之外 ⇒ CI 永远不跑）
 !scripts/error-action-mutate.js
+
+# 判据闭包清点判据本体：第 108 行 scripts/*.js 会把新建的判据静默忽略（CI 上 Cannot find module）。
+# 测试文件由 !scripts/*.test.js 通用例外兜住，此处只需反选判据本体。
+!scripts/check-judge-surface-coverage.js

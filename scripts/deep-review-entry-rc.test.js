@@ -43,7 +43,10 @@ const SCRIPT_CLOSURE = [
   'lib/exec-record-statuses.js',
   'lib/exec-record-audit.js',
   // ↓ change: qm6-external-review-honor —— 写回器与判据本体都在加载期 require 它（零依赖纯函数）。
-  'lib/ccg-external-review-honor.js'
+  'lib/ccg-external-review-honor.js',
+  // ↓ change: ci-judge-surface-coverage —— 判据本体在加载期 require 它（闭包真源）。
+  //   漏抄的现场：CI 上 Gate 2b11 整批同形失败，而本地预跑清单没含本文件 ⇒ 只有 ⑫ 那条守卫红得起来。
+  'lib/judge-closure.js',
 ]
 
 const FAKE_DRIVER = `'use strict'
@@ -384,7 +387,11 @@ test('⑫ SCRIPT_CLOSURE 覆盖被复制脚本的全部本地 require（漏抄�
   const missing = []
   for (const rel of SCRIPT_CLOSURE) {
     if (!rel.endsWith('.js')) continue
-    const src = fs.readFileSync(path.join(ROOT, 'scripts', rel), 'utf8')
+    // 扫**剥掉注释之后**的代码面：本文件的清单要认的是"真会被 require 的模块"，
+    //   而散文里举的例子（`require('./lib/x')` 之类）不是依赖边。
+    //   不剥的后果当场实测过：judge-closure.js 的注释给自己造出 3 条假违规（lib/x、lib/fake.js），
+    //   而一条会假红的守卫，下一次就会被当成噪声清掉 —— 那是装饰性门禁的成因，不是严格。
+    const src = require('./check-pr-exec-record.js').stripCommentsForScan(fs.readFileSync(path.join(ROOT, 'scripts', rel), 'utf8'))
     for (const m of src.matchAll(/require\(['"](\.\.?\/[^'"]+)['"]\)/g)) {
       // require 里的 specifier **不带扩展名**（'./lib/foo'），而清单里带（'lib/foo.js'）——
       // 所以不能直接比字符串：按 Node 的解析规则把 specifier 还原成**实际文件**再比。

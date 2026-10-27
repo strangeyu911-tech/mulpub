@@ -1,0 +1,139 @@
+{
+  "sha": "62873db97f906b46577e91aed4d1a8803a0ed284",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 1381 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 1381,
+    "fileCount": 16,
+    "codeFileCount": 9,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 3,
+    "docSensitiveContentSample": [
+      "  - **清单唯一真源**：高危面 = `check-pr-exec-record.js::HIGH_RISK_SURFACES`，逐条自带实测命中数（凭证加解密 / 登录态串行锁 / 云端账号校验 / 登录态三态口径 / 指纹面（限源码扩展名）/ `.github/workflows/` / `scripts/check-`（判据自指）/ `scripts/ccg-review-` / `scripts/deep-review`）。**这段括号是举例不是清单**：条目只由常量持有，新增/收窄前缀时改常量、不改本文（本仓在飞的候选是把 `scripts/lib/ccg-review-` 也列进去）。写进文档的复述（含条数）会过期，**取数一律读该常量**。前缀匹配实现同样只有一处（`highRiskPrefixOf`），由结构锁钉死「只准一处」。",
+      "  - **清单唯一真源**：高危面 = `check-pr-exec-record.js::HIGH_RISK_SURFACES`，逐条自带实测命中数（凭证加解密 / 登录态串行锁 / 云端账号校验 / 登录态三态口径 / 指纹面（限源码扩展名）/ `.github/workflows/` / `scripts/check-`（判据自指）/ `scripts/ccg-review-` / `scripts/deep-review`）。**这段括号是举例不是清单**：条目只由常量持有，新增/收窄前缀时改常量、不改本文（本仓在飞的候选是把 `scripts/lib/ccg-review-` 也列进去）。写进文档的复述（含条数）会过期，**取数一律读该常量 + 下一条的派生面读数**。前缀匹配实现同样只有一处（`highRiskPrefixOf`），由结构锁钉死「只准一处」。",
+      "1. 「自用三轮到顶就交人工」——它限制的是**为了追一个绿灯而反复重评**，不授权\"把已认账的缺陷推到以后\"。"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "3519772b7a35dcc1064acc370f125a031cdbb81013798066084f6035cf22de12",
+  "decidedAt": "2026-10-26T06:37:37.771Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": ".ccg/reviews/*.json 审计产物 sha=62873db 不匹配提案 head 4e703f89，追溯链断裂。",
+        "highRiskDomains": [],
+        "prosecution": "产物里 sha=62873db…（主干提交）而本头是 4e703f89…，看着像追溯链断裂。",
+        "defense": "本仓钩子的口径是\"按**提交前的 HEAD**（即父提交）\"落判定产物，`sha` 字段等于父提交是契约；本次要收口的那份由内容寻址文件名定位。我在 rebase 之后专门重投过一次提交，就是为了让这个字段重新对齐到新父提交。",
+        "verdict": "dismissed",
+        "rationale": "当场断言：`git show HEAD:.ccg/reviews/3519772b…json` 的 sha 与 `git rev-parse HEAD^` 逐字相等；目录内 40hex 命名 929 份 / 64hex 命名 1319 份并存是既有事实（AGENTS 假失败清单第 16 条）。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "check-judge-surface-coverage.js 直接 require 整个 check-pr-exec-record.js 只取 HIGH_RISK_SURFACES，强耦合且易引发初始化副作用。",
+        "highRiskDomains": [],
+        "prosecution": "清点判据 require 整个 CLI 判据只为拿一张清单，强耦合且有初始化副作用风险。",
+        "defense": "耦合是**故意的**：清单与匹配实现只准有一份，另抄一份前缀比较正是本仓「两把尺子」族缺陷的成因（清点判据里有一条结构锁禁止第二份匹配）。副作用这一半被 A/B 量过：加载后工作树逐字不变。",
+        "verdict": "dismissed",
+        "rationale": "实测：require 判据本体 + 清点判据 ⇒ rc=0、stderr 空、导出 46 键、加载 15ms，且 require 前后 `git status --porcelain` **逐字相等**（真有的那次脏改动来自 deep-review 自己写产物，不是加载）。若要解耦，正解是把清单搬进 lib（#4453 对 honor 做过一次），那是另起一刀的范围而不是本 PR 顺手改。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "stripCommentLines 对 JS 文件把 /.../ 正则字面量里的 /* 当作块注释起点，错误剥离真实代码。",
+        "highRiskDomains": [],
+        "prosecution": "正则字面量里的 `/*` 会被当块注释起点，从而错剥真实代码、丢掉真依赖。",
+        "defense": "方向已被 A/B 否证：把剥离整条关掉再跑一次，**闭包成员集合逐字不变**，说明今天没有任何真依赖被剥掉；被清掉的只有假信号。理论上的正则字面量形态我写在注释里并给了方向性结论（宁可漏边不多算边）。",
+        "verdict": "dismissed",
+        "rationale": "A/B 读数：不剥 = entries 47 / files 69 / unresolved 5 / dynamic 8；剥后 = 47 / 69 / 0 / 6；双向集合差均为空（`{\"只在剥后\":[],\"只在剥前\":[]}`）。当场扫含 `/*` 的非注释起始行 39 处，逐条看过全是\"同行开合的空块注释\"或字符串内容（`scripts/*.js`、`packages/*`），前者由同行 `*/` 分支处理、后者由引号跟踪跳过，均不是正则字面量。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "judge-closure.js 对 .sh/.ps1 仍用 JS require()/join() 正则解析，shell 语法被错误解析。",
+        "highRiskDomains": [],
+        "prosecution": "对 .sh/.ps1 仍用 JS 的 require()/join() 正则解析，shell 语法会被错解析。",
+        "defense": "域里保留 shell 是为了让评审链入口（`deep-review.sh`）里**内嵌的 node 片段**可见——那本来就是 JS 语义。而注释规则已按语言分档（shell 只认整行 `#`），解析规则误收的方向被 A/B 量住。",
+        "verdict": "dismissed",
+        "rationale": "实测：域内 shell 文件 = `check-docs-sync.sh`、`deep-review.sh` 两个；复现夹具证明 shell 里 `node -e \"require('./inside.js')\"` 这种内嵌 JS 确实需要被跟（跟到才不漏面）；真实仓 unresolved=0、成员集合与不剥时相同 ⇒ 今天无一条边是被 shell 语法误产出的。"
+      },
+      {
+        "id": "i5",
+        "severity": "Critical",
+        "finding": "tasks.md 中 5.2-5.6（签字、enforce 验证、交人工批准、产物回读、清理）全部未勾；方案未完成关键验证即提交。",
+        "highRiskDomains": [],
+        "prosecution": "tasks 5.2–5.6 全未勾就提交，方案未完成关键验证。",
+        "defense": "这正是轮 1 i2 被采纳后的**规定形态**：账只按已交付勾，未做的逐条点名状态，而不是为了让某一列好看去假勾。",
+        "verdict": "dismissed",
+        "rationale": "落点可核：执行记录里有独立一行「未闭合清单（轮 1 i2 采纳）」逐条点名 5.2–5.6 的当下状态与出口；5.1 已交付并附红集（§D22）。假勾 5.2 才是本仓点名的\"任务勾选与证据不符\"。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "judge-surface-waivers.json 解析失败时 selfFault 消息含内部路径（如 scripts/lib/）；无版本号防止旧格式误读。",
+        "highRiskDomains": [],
+        "prosecution": "selfFault 文案含 `scripts/lib/` 这类内部路径；且豁免文件没有版本号，旧格式会被误读。",
+        "defense": "仓内相对路径是**归因必需**的（本仓红文案纪律：误伤要先能归因），它不是本机绝对路径 —— 那条由 Gate 12c 机械拦。版本号这一半由形状判据承担：任何非 {键: 非空字符串} 的结构一律按违规红，不会被静默当旧格式接受。",
+        "verdict": "dismissed",
+        "rationale": "实测：清点判据对 `scripts/judge-surface-waivers.json` 的四种坏形态逐个点名（空 reason / 布尔值 / 解析失败 / 指向闭包外的键），回归锁「豁免清单形状坏 ⇒ 按未证实」与「豁免四条逐个点名」各测一档；本 PR 受管文档里本机绝对路径命中 0（`check-doc-abs-paths` PASS：counts=1161 全在既有基线内）。"
+      },
+      {
+        "id": "i8",
+        "severity": "Warning",
+        "finding": "设计 D25 提到修复后 dynamic 由 6 降至 5，但 diff 无包含最终 --report 的活数输出，无法验证修复效果。",
+        "highRiskDomains": [],
+        "prosecution": "D25 说 dynamic 从 6 掉到 5，但差量里没有最终的 --report 活数输出，无法验证修复效果。",
+        "defense": "本仓口径就是\"活数不落文件、引用现跑\"——把一次读数写死进文档，下一次它就是假话（这条在 AGENTS 与执行记录里反复出现）。",
+        "verdict": "dismissed",
+        "rationale": "当场重跑：`node scripts/check-judge-surface-coverage.js` 输出 entries=47 files=69 lib=19 dynamic=6 unresolved=0 waived=0 derived-only=21 dead-prefix=0 verdict=PASS；A/B（关掉剥离）另给一份独立证据：unresolved 5→0、dynamic 8→6、成员集合不变。D25 里那句\"从 6 掉到 5\"是对**当时那一次错误修复**的描述，不是现状声明——现状在文档同段末尾写作\"回到 6\"。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-26T06:44:27.226Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4486#issuecomment-6409748508",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@f92f905ffb789794f59cf6115c82454b3d997c288872ec56a94c4883b0831f35"
+  }
+}

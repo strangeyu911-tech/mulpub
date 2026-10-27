@@ -452,7 +452,11 @@ const ENTRY_WRITEBACK_CLOSURE_B = [
   // change: qm6-external-review-honor —— 写回器在加载期 require 它（零依赖纯函数，高危复核的判定真源）。
   // ⚠ 这份清单与 scripts/deep-review-entry-rc.test.js 的 SCRIPT_CLOSURE 是**同一个闭包的两份手抄**
   //   （本刀实测踩到：只补后者，前者当场红）。收敛成一份是欠账，见 openspec/records/ 本条记录。
-  'lib/ccg-external-review-honor.js'
+  'lib/ccg-external-review-honor.js',
+  // ↓ change: ci-judge-surface-coverage —— 判据本体在加载期引用它（闭包真源）。
+  //   同一个坑第二次踩：只补了 entry-rc 那份，这份由上面那把闭包完整性锁当场判红并点名本项，
+  //   于是漏抄没有变成 CI 上一串同形失败。这正是该锁存在的理由，也是上一条欠账的现场证据。
+  'lib/judge-closure.js'
 ]
 
 function makeRepoWithoutRecordB () {

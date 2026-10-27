@@ -29,6 +29,20 @@ const mod = require('./check-pr-exec-record.js')
 
 const st = (list) => list.map(([status, file]) => ({ status, file }))
 
+
+/**
+ * 夹具必须长成「一个仓」：判据在生产里跑于仓根，`scripts/` 一定存在。
+ * 不 seed 的临时目录会让派生面报 selfFault（那是**正确**的未证实出声），
+ * 于是这批既有用例量的就不是「这篇产物收口成不成立」，而是「这个目录不是仓」。
+ * 种下去的是 `scripts/lib/seed-noop.js`（**不是**判据入口）：老用例要的是"这是个仓、闭包算得出来"，
+ * 而不是"这个变更集里躺着一个守门文件"——后者会给它们各自新增一条派生面命中，把兼容面测成新版语义。
+ * 口径来自 AGENTS「测试在 CI 上跑不过时：① 夹具该更像真实形态 ⇒ 把环境造成那个形态，别改断言」。
+ */
+function seedJudgeScripts (repo) {
+  fs.mkdirSync(path.join(repo, 'scripts', 'lib'), { recursive: true })
+  fs.writeFileSync(path.join(repo, 'scripts', 'lib', 'seed-noop.js'), 'module.exports = {}' , 'utf8')
+  return repo
+}
 test('新增一篇记录文件即通过（判据只看本 PR 的变更集）', () => {
   const r = mod.evaluate({
     statuses: st([['A', 'openspec/records/my-task.md'], ['M', 'apps/desktop/src/a.js']]),
@@ -373,6 +387,7 @@ test('远端分支清单取不到时，消费判定降级为 unknown 且必须�
 test('真接缝：从真实 git 夹具取到的 statuses 能被判据正确处理（夹具不得替实现剥壳）', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'exec-record-'))
   const run = (a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' })
+  seedJudgeScripts(dir)
   run(['init', '--quiet', '-b', 'main'])
   run(['config', 'user.email', 't@e.com']); run(['config', 'user.name', 't'])
   fs.mkdirSync(path.join(dir, 'openspec/records'), { recursive: true })
@@ -611,6 +626,7 @@ test('分支名解析优先级：显式参数 > GITHUB_HEAD_REF > git rev-parse�
 test('真接缝：真 detached HEAD 的 git 夹具 + GITHUB_HEAD_REF ⇒ 修订自己那篇记录判为已携带', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'exec-record-detached-'))
   const run = (args, opts = {}) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', ...opts })
+  seedJudgeScripts(dir)
   run(['init', '--quiet', '-b', 'main'])
   run(['config', 'user.email', 'test@example.com'])
   run(['config', 'user.name', 'test'])
@@ -750,6 +766,7 @@ test('保留名（_TEMPLATE 这类）即便等于分支名也不得算修订记�
 function withReviewRecords (files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccg-debt-'))
   for (const [name, rec] of Object.entries(files)) {
+  seedJudgeScripts(dir)
     const p = path.join(dir, '.ccg', 'reviews')
     fs.mkdirSync(p, { recursive: true })
     fs.writeFileSync(path.join(p, name), JSON.stringify(rec), 'utf8')
@@ -894,6 +911,7 @@ test('缺陷D：本次变更集不涉及任何 .ccg 记录时不得报（不扫�
 test('缺陷D：损坏的 JSON 记录不抛异常，但必须点名出声（实测没有任何别的门禁在校验它可解析）', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ccg-debt-'))
   const p = path.join(repo, '.ccg', 'reviews')
+  seedJudgeScripts(repo)
   fs.mkdirSync(p, { recursive: true })
   fs.writeFileSync(path.join(p, `${SHA40}.json`), '{ 这不是合法 JSON', 'utf8')
   try {
@@ -1437,6 +1455,7 @@ test('evaluateDeepReviewDebt 真跑：不符判红、相符判过、无字段的
   const pth = require('node:path')
   const repo = fsp.mkdtempSync(pth.join(os.tmpdir(), `qm6-debt-${process.pid}-`))
   try {
+  seedJudgeScripts(repo)
     // rel 一律用 **正斜杠**：判据的 REVIEWS_DIR_RE 匹配的是 git 风格的仓库相对路径，
     // 而 pth.join 在 Windows 上给反斜杠 ⇒ 扫描域会静默收 0 条，"三条都没读"读起来像全绿。
     const write = (name, rec) => {
@@ -1610,6 +1629,7 @@ test('丙：真跑 CLI —— dual+cleared 但无 tier 的记录必须 rc=0 且�
   const cp = require("child_process");const os = require("os");const path2 = require("path");
   const repo = fs.mkdtempSync(path2.join(os.tmpdir(), "tier-cli-"));
   const RUN = (a) => cp.execFileSync(process.execPath, a, { cwd: repo, encoding: 'utf8' });
+  seedJudgeScripts(repo)
   const RUNx = (a) => { try { const o = cp.execFileSync(process.execPath, a, { cwd: repo, encoding: 'utf8', stdio: ['ignore','pipe','pipe'] }); return { rc: 0, out: o } } catch (e) { return { rc: (e && e.status) || 1, out: String((e && e.stdout) || '') + String((e && e.stderr) || '') } } };
   const git = (a) => cp.execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
   try {
@@ -1644,6 +1664,7 @@ const SHA64U = 'd'.repeat(64)
 test('后端命中：变更集里有解析不动的评审产物 ⇒ 必须点名出声（损坏不等于没欠账）', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ccg-corrupt-'))
   const rel = '.ccg/reviews/' + SHA64U + '.json'
+  seedJudgeScripts(repo)
   fs.mkdirSync(path.join(repo, '.ccg', 'reviews'), { recursive: true })
   fs.writeFileSync(path.join(repo, rel), '{"mode":"dual","deepReview":{"status":"clea', 'utf8')
   try {
@@ -1657,6 +1678,7 @@ test('后端命中：变更集里有解析不动的评审产物 ⇒ 必须点名
 test('后端命中：D 掉的记录 base 内容解析不动 ⇒ 走未证实出口出声，不得静默 continue', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ccg-corrupt-d-'))
   const rel = '.ccg/reviews/' + SHA64U + '.json'
+  seedJudgeScripts(repo)
   try {
     const r = mod.evaluateDeepReviewDebt(st([['D', rel]]), repo, () => '{"mode":"dual","xx')
     assert.strictEqual(r.reasons.length, 1, `base 读得动但解析不动必须报 1 条，实际 ${r.reasons.length}`)
@@ -1689,6 +1711,7 @@ const EXT_OK = { required: true, status: 'cleared', tier: 'external', evidence: 
 function repoWithFile (rel, obj) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccg-matrix-'))
   const full = path.join(dir, rel)
+  seedJudgeScripts(dir)
   fs.mkdirSync(path.dirname(full), { recursive: true })
   fs.writeFileSync(full, JSON.stringify(obj), 'utf8')
   return dir
@@ -1831,6 +1854,7 @@ test('评审#3：转变检测的 base 必须取 merge-base，不能取 base ref 
   const cp = require('node:child_process')
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ccg-mergebase-'))
   const git = (a) => cp.execFileSync('git', a, { cwd: repo, encoding: 'utf8' })
+  seedJudgeScripts(repo)
   const art = (obj) => {
     fs.mkdirSync(path.join(repo, '.ccg', 'reviews'), { recursive: true })
     fs.writeFileSync(path.join(repo, ART2), JSON.stringify(obj), 'utf8')
@@ -1947,6 +1971,7 @@ test('第2轮R2-3：merge-base 取不到时按未证实处理，不得退回 bas
   const cp = require('node:child_process')
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ccg-shallow-'))
   const git = (a) => cp.execFileSync('git', a, { cwd: repo, encoding: 'utf8' })
+  seedJudgeScripts(repo)
   try {
     git(['init', '-q', '-b', 'main', repo])
     fs.mkdirSync(path.join(repo, '.ccg', 'reviews'), { recursive: true })
@@ -1960,6 +1985,7 @@ test('第2轮R2-3：merge-base 取不到时按未证实处理，不得退回 bas
     // `--base` 指到一个与 head **无共同祖先**的 ref（用一个临时空仓库的 HEAD 当 base）
     const other = fs.mkdtempSync(path.join(os.tmpdir(), 'ccg-disjoint-'))
     try {
+    seedJudgeScripts(other)
       cp.execFileSync('git', ['init', '-q', '-b', 'main', other], { encoding: 'utf8' })
       cp.execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'disjoint'], { cwd: other, encoding: 'utf8' })
       const baseSha = cp.execFileSync('git', ['rev-parse', 'HEAD'], { cwd: other, encoding: 'utf8' }).trim()
@@ -1987,6 +2013,7 @@ test('第2轮R2-3b：外部注入变更集 + merge-base 解不出 ⇒ 必须走�
   const cp = require('node:child_process')
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ccg-inject-base-'))
   const git = (a) => cp.execFileSync('git', a, { cwd: repo, encoding: 'utf8' })
+  seedJudgeScripts(repo)
   try {
     cp.execFileSync('git', ['init', '-q', '-b', 'main', repo], { encoding: 'utf8' })
     fs.mkdirSync(path.join(repo, '.ccg', 'reviews'), { recursive: true })
@@ -2286,6 +2313,7 @@ test('i4：路径形态的证据必须属于本次变更集（真跑探针）', 
   const cp = require('node:child_process'); const os = require('node:os')
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evprobe-'))
   const run = (a) => cp.execFileSync('git', a, { cwd: dir, encoding: 'utf8' })
+  seedJudgeScripts(dir)
   const rel = '01-docs/evidence/judge-report.md'
   try {
     run(['init', '-q', '-b', 'main', dir])
@@ -2338,6 +2366,7 @@ test('i3（否证产物）：merge-base 解不出时 readAtBase 走短路返回 
   const cp = require('node:child_process'); const os = require('node:os')
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-null-'))
   const run = (a) => cp.execFileSync('git', a, { cwd: dir, encoding: 'utf8' })
+  seedJudgeScripts(dir)
   try {
     run(['init', '-q', '-b', 'main', dir])
     fs.mkdirSync(path.join(dir, '.ccg', 'reviews'), { recursive: true })
@@ -2383,13 +2412,22 @@ test('X2-5③（接线锁）：探针必须由 main 造好并注进两处消费�
   const code = mod.stripCommentsForScan(src)
   assert.match(code, /const existsAtHead = makeEvidenceProbe\(\{ statuses, repo, head \}\)/,
     'main 必须用工厂造探针（含 statuses ⇒ 归属判据在真实调用链上）')
-  assert.match(code, /evaluateDeepReviewDebt\(statuses, repo, readAtBase, existsAtHead\)/,
-    '债务判据必须收到探针')
+  assert.match(code, /evaluateDeepReviewDebt\(statuses, repo, readAtBase, existsAtHead, judgeSurface\)/,
+    '债务判据必须收到探针**和**派生面上下文 —— 少注一个参数，前者会把证据探针读成 undefined、' 
+    + '后者会退回「临时仓自己的闭包」，两者都静默且不报错')
   assert.match(code, /summarizeTierCoverage\(dualClosedDeepReviews\(statuses, repo\), existsAtHead\)/,
     '覆盖率读数也必须收到，否则两行读数各说各话')
   const iStatuses = code.indexOf('let statuses')
   const iProbe = code.indexOf('const existsAtHead = makeEvidenceProbe')
   const iDebt = code.indexOf('const deepDebt = evaluateDeepReviewDebt')
+  const iSurface = code.indexOf('const judgeSurface = makeJudgeSurfaceContext(repo)')
+  assert.ok(iSurface >= 0, 'main 必须自己造派生面上下文（否则每次判定各建一份＝走 N 次图）')
+  assert.strictEqual(code.split('const judgeSurface = makeJudgeSurfaceContext(repo)').length - 1, 1,
+    'main 里的构造点必须唯一；出现第二处就是两份遍历（design D3 第 2 条）')
+  assert.match(code, /const surface = judgeSurface \|\| makeJudgeSurfaceContext\(repo\)/,
+    '债务判据自带的兜底构造必须在位：漏传参数时它要**自己算**（fail-closed），' 
+    + '不得退回「只看前缀」那档静默语义')
+  assert.ok(iDebt > iSurface, '上下文必须建在债务判据之前（晚于就是没注入）')
   assert.ok(iStatuses >= 0 && iProbe > iStatuses,
     '探针的构造必须晚于 statuses —— 放在前面会读到 TDZ 里的 statuses（实测 SyntaxError 形态）')
   assert.ok(iDebt > iProbe, '探针必须在债务判据之前建好')
@@ -2408,9 +2446,10 @@ test('2.1 单一匹配实现：高危面前缀匹配只准有一处（highRiskPr
     '清单的遍历只准发生在 highRiskPrefixOf 里：另抄一份会让「摘掉判据」的变异只红一半（P1 实测 PARTIAL 的成因）')
   assert.ok(!outside.includes('indexOf(s.prefix'),
     '前缀比较不得出现在第二个地方 —— 同上，两处口径必然漂移')
-  assert.match(src, /function isHighRiskSurface[\s\S]{0,240}?return highRiskPrefixOf\(file\) !== null/,
-    'isHighRiskSurface 必须是 highRiskPrefixOf 的薄封装')
-  assert.match(src, /function highRiskHits[\s\S]{0,600}?highRiskPrefixOf\(e\.file\)/,
+  assert.match(src, /function isHighRiskSurface[\s\S]{0,240}?return highRiskPrefixOf\(file, judgeSurface\) !== null/,
+    'isHighRiskSurface 必须是 highRiskPrefixOf 的薄封装，且**必须把上下文往下传** —— ' 
+    + '丢参数会让它悄悄退回「只看前缀」，而派生面在这一点上就再也不起作用')
+  assert.match(src, /function highRiskHits[\s\S]{0,600}?highRiskPrefixOf\(e\.file, judgeSurface\)/,
     'highRiskHits 的变更集分组必须走同一个匹配实现')
 })
 
@@ -2779,6 +2818,7 @@ test('advisory 与 enforce 对派生产物的分叉必须各有一档读数（�
   }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'honor-mode-'))
   const run = (a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' })
+  seedJudgeScripts(dir)
   run(['init', '--quiet', '-b', 'main']); run(['config', 'user.email', 't@e.com']); run(['config', 'user.name', 't'])
   fs.mkdirSync(path.join(dir, 'openspec/records'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'seed.txt'), '1')

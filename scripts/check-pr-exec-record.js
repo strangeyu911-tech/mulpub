@@ -583,7 +583,9 @@ function main(argv) {
       return execFileSync('git', ['-C', repo, 'show', `${blobBaseRef}:${rel}`], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })
     } catch { return null }
   }
-  const deepDebt = evaluateDeepReviewDebt(statuses, repo, readAtBase, existsAtHead)
+  // 派生面上下文在**这里**建（整条判定仅此一次走图），再注入欠账判据与读数行。
+  const judgeSurface = makeJudgeSurfaceContext(repo)
+  const deepDebt = evaluateDeepReviewDebt(statuses, repo, readAtBase, existsAtHead, judgeSurface)
   // 丙：覆盖率读数。不参与判定 —— 一上线红两百条会逼人把门削宽（本仓点名的失败形态）。
   process.stdout.write(summarizeTierCoverage(dualClosedDeepReviews(statuses, repo), existsAtHead).line + String.fromCharCode(10))
   // 派生档必须自己出一行读数：`c=0` 是健康态，但它是**测出来的 0** 还是**探针没看**，
@@ -597,6 +599,8 @@ function main(argv) {
     (dUnv.length > 0 ? ' 清单=' + dUnv.slice(0, 8).join(' / ') : '') +
     String.fromCharCode(10))
   process.stdout.write(((deepDebt.transition || {}).line) + String.fromCharCode(10))
+  // 高危面来源读数：`members=0` 是健康态还是探针没跑，只有这一行能区分（空集也必须出行）。
+  process.stdout.write(summarizeJudgeSurface(judgeSurface).line + String.fromCharCode(10))
   const applyDeepDebt = (target) => {
     if (deepDebt.reasons.length > 0) {
       target.ok = false
@@ -656,6 +660,102 @@ const HIGH_RISK_SURFACES = [
 ]
 
 /**
+ * 「谁来守门」的第二档来源：判据闭包派生（change: ci-judge-surface-coverage，2026-10-26）。
+ *
+ * 上面的清单按**路径形状**承认面，因此结构性地看不见「判定逻辑住在别的目录」这件事：
+ * 实测 47 个判据入口沿字面量相对 require 可达 67 个仓内脚本，其中 19 个不在任何前缀上，
+ * 含 `scripts/lib/main-red.js`（什么时候不许往 main 上合）、`scripts/classify-docs-only.js`
+ * （决定哪些重型门根本没跑）、`scripts/lib/ccg-external-review-honor.js`（高危阻断该不该扣）。
+ * 于是「只改这些文件的 PR」会被读成与守门无关 —— 这不是设想：清单里 `scripts/lib/ccg-review-`
+ * 那条的 `why` 原文写着上一轮同一个坑（跨家族轴 X2-9）被这样补了一格，而补名字只解决「已看见的这几个」。
+ *
+ * 方向因此是 fail-closed：**落在闭包里就算高危面成员**，想不算必须写进豁免清单并给 reason；
+ * 分类这个动作从「每个新判据文件都要有人记得做」变成「没人做就红」。
+ * 边界如实：只跟字面量相对 require（动态拼接看不见，`dynamic=` 计数出声）；测试文件不进域。
+ */
+const JC = require('./lib/judge-closure.js')
+const JUDGE_CLOSURE_PREFIX = 'scripts/lib/(判据闭包派生)'
+const JUDGE_WAIVERS_REL = 'scripts/judge-surface-waivers.json'
+
+/**
+ * 建一次派生面上下文（**每次判定只准调一次**：它要走 67 个文件的图）。
+ * @returns {{prefix:string, members:Set<string>, waived:string[], entries:number, files:string[],
+ *            dynamicRequireLike:number, unresolved:string[], selfFault:string|null}}
+ *   selfFault 非空时 members 一定是空集 —— 于是「算不出」在匹配面上是**零命中**，
+ *   而零命中不得读成「不在高危面」：那由 evaluateDeepReviewDebt 单独出一条「高危面派生未取证」兜住。
+ *   两处分开是因为动作对象不同（一条修「闭包能不能算」，一条讲「这篇产物能不能收口」）。
+ */
+function makeJudgeSurfaceContext (repo) {
+  const ctx = {
+    prefix: JUDGE_CLOSURE_PREFIX,
+    members: new Set(),
+    waived: [],
+    entries: 0,
+    files: [],
+    dynamicRequireLike: 0,
+    unresolved: [],
+    selfFault: null,
+  }
+  const closure = JC.computeJudgeClosure(repo)
+  ctx.entries = closure.entries
+  ctx.files = closure.files
+  ctx.dynamicRequireLike = closure.dynamicRequireLike
+  ctx.unresolved = closure.unresolved
+  if (closure.selfFault) {
+    ctx.selfFault = '判据闭包算不出：' + closure.selfFault
+    ctx.files = []
+    ctx.entries = 0
+    return ctx
+  }
+  let waivers = {}
+  const waiversPath = path.join(String(repo || ''), JUDGE_WAIVERS_REL)
+  // 文件**不存在**＝没有豁免（安全方向：少放人，不是多放人）。
+  // 存在但读不动 / 形状不认识＝未证实 —— 那与「没有豁免」不是一回事：猜成空集就是把
+  // 一份写坏的清单读成「谁都没被放掉」，而它的真意是「我不知道放了谁」。
+  if (fs.existsSync(waiversPath)) {
+    let parsed
+    try {
+      parsed = JSON.parse(fs.readFileSync(waiversPath, 'utf8'))
+    } catch (e) {
+      ctx.selfFault = JUDGE_WAIVERS_REL + ' 读不动：' + String((e && e.message) || e).split('\n')[0]
+      ctx.files = []
+      ctx.entries = 0
+      return ctx
+    }
+    const v = JC.validateWaivers(parsed)
+    if (!v.ok) {
+      ctx.selfFault = JUDGE_WAIVERS_REL + ' 形状不认识：' + v.bad.map((b) => `${b.key}(${b.why})`).join('；')
+      ctx.files = []
+      ctx.entries = 0
+      return ctx
+    }
+    waivers = parsed
+  }
+  for (const f of closure.files) {
+    if (Object.prototype.hasOwnProperty.call(waivers, f)) ctx.waived.push(f)
+    else ctx.members.add(f)
+  }
+  ctx.waived.sort()
+  return ctx
+}
+
+/**
+ * 读数行 —— 空集也必须出行（本仓口径：没有这一行，「零成员」与「没扫」逐字同形）。
+ * 它不参与判定；判定侧的 selfFault 由 evaluateDeepReviewDebt 单独点名。
+ */
+function summarizeJudgeSurface (ctx) {
+  const c = ctx || {}
+  const line = 'JUDGE-SURFACE entries=' + (c.entries || 0) +
+    ' files=' + ((c.files || []).length) +
+    ' members=' + ((c.members && c.members.size) || 0) +
+    ' waived=' + ((c.waived || []).length) +
+    ' dynamic=' + (c.dynamicRequireLike || 0) +
+    ' unresolved=' + ((c.unresolved || []).length) +
+    ' selfFault=' + (c.selfFault ? 'yes' : 'no')
+  return { line, members: (c.members && c.members.size) || 0, selfFault: c.selfFault || null }
+}
+
+/**
  * 上游 vendored 子树不算本仓守门面。**段起点匹配是有用的，不得收窄成「只认仓库根锚定」**：
  * 实测 `scripts/check-` 的非根位命中有 42 个真判据（`.github/scripts/` 40 个 +
  * `apps/desktop/scripts/` 2 个），把它们一起削掉等于给 CI 侧门禁脚本免检。
@@ -678,11 +778,16 @@ function isVendored (f) {
  * 变异「把 isHighRiskSurface 摘成恒 false」不会让矩阵变红，因为矩阵走的是
  * highRiskHits 里另抄的那份（本轮 P1 实测 PARTIAL 的成因）。
  */
-function highRiskPrefixOf (file) {
+function highRiskPrefixOf (file, judgeSurface) {
   const f = String(file || '').replace(/^\.\//, '')
   if (isVendored(f)) return null
   const hit = HIGH_RISK_SURFACES.find((s) => inSurface(s, f) && inScope(s, f))
-  return hit ? hit.prefix : null
+  if (hit) return hit.prefix
+  // 前缀没命中才问「是不是判据闭包成员」。顺序不得反：反了会把 `scripts/check-*` 的归属
+  // 从它自己的前缀挪到派生档，红文案就点不出是哪条清单把它拉进来的（可归因纪律）。
+  // 这里**只读注入的集合**：在本函数里算闭包＝每个文件重走一次图（第二份遍历 + 性能地雷）。
+  if (judgeSurface && judgeSurface.members && judgeSurface.members.has(f)) return judgeSurface.prefix
+  return null
 }
 
 /**
@@ -713,9 +818,9 @@ function inScope (surface, f) {
   return dot > 0 && surface.exts.indexOf(f.slice(dot)) >= 0
 }
 
-/** 该路径是否落在高危面上（前缀子串匹配，不加正则以免被转义坑）。 */
-function isHighRiskSurface (file) {
-  return highRiskPrefixOf(file) !== null
+/** 该路径是否落在高危面上（前缀 ∥ 派生面；匹配一律走 highRiskPrefixOf）。 */
+function isHighRiskSurface (file, judgeSurface) {
+  return highRiskPrefixOf(file, judgeSurface) !== null
 }
 
 /**
@@ -739,12 +844,12 @@ function closureCorroboration (dr, existsAt) {
 }
 
 /** 变更集里命中的高危面（用于点名，不用于推断新面）。匹配一律走 highRiskPrefixOf。 */
-function highRiskHits (statuses) {
+function highRiskHits (statuses, judgeSurface) {
   // 组序 = 变更集里第一次触碰的顺序（不是清单序）：判据只看「有没有命中」，
   // 点名只取前 4 个前缀，因此这里刻意不再遍历一次清单 —— 第二次遍历就是第二份匹配实现。
   const groups = new Map()
   for (const e of statuses) {
-    const prefix = highRiskPrefixOf(e.file)
+    const prefix = highRiskPrefixOf(e.file, judgeSurface)
     if (prefix === null) continue
     if (!groups.has(prefix)) groups.set(prefix, [])
     groups.get(prefix).push(e.file)
@@ -1131,7 +1236,7 @@ function expandRenames (statuses) {
   return extra.length > 0 ? statuses.concat(extra) : statuses.slice()
 }
 
-function evaluateDeepReviewDebt (statuses, repo, readAtBase, existsAt) {
+function evaluateDeepReviewDebt (statuses, repo, readAtBase, existsAt, judgeSurface) {
   const reasons = []
   const seen = expandRenames(statuses)
   const changedInDir = seen
@@ -1170,7 +1275,9 @@ function evaluateDeepReviewDebt (statuses, repo, readAtBase, existsAt) {
     if (!list.includes(clause)) list.push(clause)
   }
   const transitionRows = []
-  const riskHits = highRiskHits(seen)
+  // 上下文在**这里**取（第 5 个参数留给调用方/测试注入；生产入口 main() 就是注入方）。
+  const surface = judgeSurface || makeJudgeSurfaceContext(repo)
+  const riskHits = highRiskHits(seen, surface)
   const onHighRisk = riskHits.length > 0
   const mFiles = new Set(seen.filter((e) => e.status === 'M').map((e) => e.file))
   const aFiles = new Set(seen.filter((e) => e.status === 'A').map((e) => e.file))
@@ -1227,6 +1334,18 @@ function evaluateDeepReviewDebt (statuses, repo, readAtBase, existsAt) {
   // 而 involved.length===0 恰恰是纯文档 PR 的常态，等于把判据本体在每条文档 PR 上打崩。
   if (involved.length === 0) return { reasons, checked: 0, derived: 0, unverified: 0, unverifiedList: [], selfFaults: [], transition: summarizeTransitionCheck(transitionRows, 0) }
 
+  // 派生面算不出 ⇒ 单独一档出声。**不得**并入下面那条「期望后端取不到读数」：
+  // 两条的动作对象不同（一条修「闭包能不能算」，一条讲「这篇产物的复核记录能不能采信」），
+  // 合成一句等于把排障的人支使去查一份没坏的文件（本仓 fail-closed 兜底文案不得合并成因）。
+  if (surface.selfFault) {
+    reasons.push(
+      `高危面派生未取证 —— 判据闭包算不出（${surface.selfFault}），本次判定只能按前缀清单认高危面。`
+      + '\n    这一档**不得读成「不在高危面」**：清单没命中从此不再等于「这个 PR 与守门无关」，'
+      + '把工具的失明读成「无需外部复核」是本仓定性过的装饰性门禁。'
+      + '\n    正解：确认判据从仓根跑（--repo=<仓根>）、' + JUDGE_WAIVERS_REL + ' 与 scripts/ 可读；'
+      + '不得把这条降成告警放行。'
+    )
+  }
   const unresolved = []
   const backendMismatch = []
   const derivedClosures = []
@@ -1518,6 +1637,6 @@ function report(r, mode) {
 //   stripCommentsForScan 把源码削成「只含代码行」的视图（引号感知剥注释 + 规范化 CRLF）
 // 生产路径只用 describeAuditWidths / auditAcceptedAltForm().description；
 // 其余导出不改变判据行为，仅为可测性存在。
-module.exports = { isResolvableEvidence, isStructuredClosureNote, classifyEvidenceTier, summarizeTierCoverage, HIGH_RISK_SURFACES, isHighRiskSurface, highRiskPrefixOf, highRiskHits, expandRenames, closureCorroboration, summarizeTransitionCheck, evaluate, verdictLine, isVendored, VENDORED_SUBTREES, evidenceForm, repoObjectPath, makeEvidenceProbe, dualClosedDeepReviews, resolveHeadBranch, readExemptsOnDisk, remoteBranchSet, isPureBackfillChangeSet, evaluateDeepReviewDebt, judgeBackendMismatch, CLOSED_DEEP_REVIEW_STATUSES, deriveClosure, honorExpectedCritic, HONORED_TIER_BASIS, RECORDS_RE, EXEMPT_RE, CARRIER_RE, DEFAULT_THRESHOLD, AUDIT_ARTIFACT_RE, auditAcceptedWidths, auditAcceptedAltForm, describeAuditWidths, stripCommentsForScan, AUDIT_NAME_WIDTH_MIN, AUDIT_NAME_WIDTH_MAX }
+module.exports = { isResolvableEvidence, isStructuredClosureNote, classifyEvidenceTier, summarizeTierCoverage, HIGH_RISK_SURFACES, isHighRiskSurface, highRiskPrefixOf, highRiskHits, JUDGE_CLOSURE_PREFIX, JUDGE_WAIVERS_REL, JUDGE_MIN_ENTRIES: JC.MIN_ENTRIES, JUDGE_MIN_FILES: JC.MIN_FILES, makeJudgeSurfaceContext, summarizeJudgeSurface, expandRenames, closureCorroboration, summarizeTransitionCheck, evaluate, verdictLine, isVendored, VENDORED_SUBTREES, evidenceForm, repoObjectPath, makeEvidenceProbe, dualClosedDeepReviews, resolveHeadBranch, readExemptsOnDisk, remoteBranchSet, isPureBackfillChangeSet, evaluateDeepReviewDebt, judgeBackendMismatch, CLOSED_DEEP_REVIEW_STATUSES, deriveClosure, honorExpectedCritic, HONORED_TIER_BASIS, RECORDS_RE, EXEMPT_RE, CARRIER_RE, DEFAULT_THRESHOLD, AUDIT_ARTIFACT_RE, auditAcceptedWidths, auditAcceptedAltForm, describeAuditWidths, stripCommentsForScan, AUDIT_NAME_WIDTH_MIN, AUDIT_NAME_WIDTH_MAX }
 
 if (require.main === module) main(process.argv.slice(2))

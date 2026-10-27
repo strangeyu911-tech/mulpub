@@ -1110,7 +1110,29 @@ codeagent-wrapper --backend <FRONTEND_PRIMARY> --lite "审查 <change> 实现：
   3. `scripts/check-pr-exec-record.js` 的 `evaluateDeepReviewDebt` 要求本次变更集内每条 `mode=dual` 产物的 `deepReview.status` ∈ `{cleared, needs_revision, self_play_resolved}`，否则报「CCG 深度审查欠账」并阻断；
   4. 该门禁同时是上文「PR 自动合并」判据第 4 条——所以「要不要走 CCG」不靠临场自觉。
 - ⚠️ 上述闭环集含 `self_play_resolved`，即**引擎自扮演裁决在机械上就能满足本门禁**，外部模型一个都没跑也可能判绿。自 PR #3987 起，这条缺口**只在非高危面仍然成立**——高危面由 `scripts/check-pr-exec-record.js` 的**收口矩阵**守，「高危面不得自扮演豁免」不再只是一句没有执行体的惯例。
-  - **清单唯一真源**：高危面 = `check-pr-exec-record.js::HIGH_RISK_SURFACES`，逐条自带实测命中数（凭证加解密 / 登录态串行锁 / 云端账号校验 / 登录态三态口径 / 指纹面（限源码扩展名）/ `.github/workflows/` / `scripts/check-`（判据自指）/ `scripts/ccg-review-` / `scripts/deep-review`）。**这段括号是举例不是清单**：条目只由常量持有，新增/收窄前缀时改常量、不改本文（本仓在飞的候选是把 `scripts/lib/ccg-review-` 也列进去）。写进文档的复述（含条数）会过期，**取数一律读该常量**。前缀匹配实现同样只有一处（`highRiskPrefixOf`），由结构锁钉死「只准一处」。
+  - **清单唯一真源**：高危面 = `check-pr-exec-record.js::HIGH_RISK_SURFACES`，逐条自带实测命中数（凭证加解密 / 登录态串行锁 / 云端账号校验 / 登录态三态口径 / 指纹面（限源码扩展名）/ `.github/workflows/` / `scripts/check-`（判据自指）/ `scripts/ccg-review-` / `scripts/deep-review`）。**这段括号是举例不是清单**：条目只由常量持有，新增/收窄前缀时改常量、不改本文（本仓在飞的候选是把 `scripts/lib/ccg-review-` 也列进去）。写进文档的复述（含条数）会过期，**取数一律读该常量 + 下一条的派生面读数**。前缀匹配实现同样只有一处（`highRiskPrefixOf`），由结构锁钉死「只准一处」。
+  - **高危面还有第二档来源：判据闭包派生**（2026-10-26，change: ci-judge-surface-coverage）。
+    `HIGH_RISK_SURFACES` 按**路径形状**承认面，所以结构性看不见「判定逻辑住在 `scripts/lib/` 下」这件事：
+    当场实测 47 个判据入口沿相对 / 分段字面量 `require` 可达 69 个仓内脚本，其中 **21 个不在任何前缀上**
+    （含 `scripts/lib/main-red.js`＝什么时候不许往 main 上合、`scripts/classify-docs-only.js`＝决定哪些重型门根本没跑、
+    `scripts/lib/ccg-external-review-honor.js`＝高危阻断该不该扣、`scripts/lib/gate-timeout-registry.js`＝每条 gate 的超时预算）。
+    于是「只改这些文件的 PR」过去会被读成与守门无关 —— 这不是设想：清单里 `scripts/lib/ccg-review-` 那条的 `why`
+    原文就写着上一轮同一个坑（跨家族轴 X2-9）被这样补了一格，而**按名字补只解决"已经看见的这几个"，不解决"还会再漏"**。
+    派生规则是 **fail-closed**：落在闭包里就算高危面成员，想不算必须写进 `scripts/judge-surface-waivers.json`
+    并给非空 reason；**登记项**起始为空、只能缩小（陈旧即红、闭包外的键不给免检牌），而**上限常量** `MAX_WAIVERS = 0` 只能由人工改（改它就是在放宽「谁来守门」，不是加一行配置）。
+    闭包算不出 ⇒ 判据自己出一条「高危面派生未取证」，**不得**读成「不在高危面」；它与「期望后端取不到读数」
+    分属两条红（动作对象不同：一个修"闭包能不能算"，一个讲"这篇产物能不能采信"），不得合并成一句。
+    三个数（入口 / 闭包 / 派生面独有）都是**活数**，取数一律现跑 `node scripts/check-judge-surface-coverage.js --report`。
+    该清点判据同时锁三件事，缺一即装饰：① 规模**下界**（解析退化成空集时，「零违规」与「什么都没扫」必须可区分）；
+    ② 豁免四条（reason 非空、条数不超上限、键仍在闭包内、闭包外不得发免检牌）；
+    ③ `HIGH_RISK_SURFACES` 的**空转条目**（命中 0 的前缀守的是一个不存在的面，比没有条目更坏 ——
+    那些条目 `why` 里「实测命中 N 个」的 N 是登记当天的数）。退出码三档不得混档：`0 合规 / 1 发现违规 / 2 判据自身读不到`。
+    摩擦如实报：这一刀把 21 个文件纳入**收口矩阵的判定域** ⇒ 这些文件被改动的 PR 只要被判 `dual`，
+    就必须给外部复核出处（只认 `tier=external` + 可核 evidence，closureNote 那一档出口在这里不再够用）。
+    它**没有**解决「小 diff 被判 `single` ⇒ 根本不要求闭环记录」那一格（tasks 8.5，实测这是本片效果的主要折扣，
+    修它要把 23–40 分钟的钩子时长加到每次改判据上，属「谁来守门」，须人工单独裁决），
+    也没有把动态拼接的 `require` 收进闭包（当场实测剩 6 处，`--report` 里逐条可见）；
+    GitHub 侧 required check 清单仍在平台侧、仓内无对账面。
   - **矩阵口径**（只作用于本次变更集内 `mode=dual`、且状态已在闭环白名单里的产物）：命中高危面 ⇒ 只认 `deepReview.tier=external` **且** `evidence` 通过可核指针形态判据（PR 号 / 会话 id / UUID / 40 位对象 id / 仓内文件路径）。`evidence` 判的是**形态不是语义**，这正是 tasks 8.1b 要把写入方收敛到工具的原因。`tier=none`（自称未评审却写闭环值）与 `unrecognized`（字段在、值不在闭集里 = 写错或编造）**任何面都拦**；`tier` 整段缺席（`unknown`）在非高危面**放过**，在高危面上若属「本次新增（A）即写成闭环值」也拦。
   - **`unknown` 没有一律转拦，是刻意的**：全仓尚无生产方写 `tier`，转拦等于造出「改判据 ⇒ 必须先跑完外部评审才能提交 ⇒ 提交又生成新 `unknown`」的死循环（与缺陷G 同型）。实测依据：主干 142 篇已闭环产物里 139 篇整段没有 `tier`、野值 0 篇——所以「缺席不拦、野值一律拦」这一分档是量出来的，不是设想。**前提（转拦的触发条件）= 这一档占比降下来，而占比要降先得有写入方 = tasks 8.1b。**
   - **`closureNote` 在高风险面上不再够格收口**（含 `scripts/check-*` 判据本体、`.github/workflows/*`、凭证/登录态面）。主干既有惯例正是 note-only，所以这是本矩阵**刻意改变的一项惯例，不是副作用**：#3987 落地前实测最近 40 笔第一父提交里「变更集内已闭环的 dual 产物」19 条、同变更集命中高危面 4 条、矩阵事后判红 2 条，两条都来自已合并的 PR #3927（`needs_revision` + `performedBy=claude` + 只有 `closureNote` + 无 `tier`，落 `.github/workflows/`）。探针与逐条读数见 `openspec/records/qm6-highrisk-matrix.md` §七；**这类数是活数，引用时现跑**。

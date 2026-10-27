@@ -35,6 +35,30 @@ describe('workflow-service · 模板', () => {
     expect(svc.deleteTemplate(list.builtin[0].id)).toMatchObject({ ok: false, reason: 'builtin-readonly' })
   })
 
+  it('旧自定义模板读取时自动迁移到 v2，账号 ID 清空', () => {
+    const store = fakeStore()
+    store.setSetting('workflow_templates_custom', JSON.stringify([{
+      id: 'wft_old', name: '旧模板', config: { publish: { targets: ['zhihu'] } },
+    }, {
+      id: 'wft_bad', name: '坏模板',
+    }]))
+    const svc = createWorkflowService({ store, runner: {}, now: () => NOW })
+    const result = svc.listTemplates()
+    expect(result.custom).toHaveLength(1)
+    expect(result.custom[0]).toMatchObject({ id: 'wft_old', name: '旧模板', version: 2 })
+    expect(result.custom[0].config.publish.targets).toEqual([{ platform: 'zhihu', accountId: '' }])
+    // 迁移失败的单条进入 warnings，不静默消失
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toMatchObject({ name: '坏模板', reason: 'invalid-shape' })
+  })
+
+  it('overwrite 与 rename 同时传时明确拒绝', () => {
+    const svc = createWorkflowService({ store: fakeStore(), runner: {}, now: () => NOW })
+    const exported = svc.exportTemplate(svc.listTemplates().builtin[0].id)
+    expect(svc.importTemplate(JSON.stringify(exported.data), { overwrite: true, rename: true }))
+      .toMatchObject({ ok: false, reason: 'conflicting-options' })
+  })
+
   it('保存自定义模板：名字去重、配置非法拒绝并给出 errors', () => {
     const svc = createWorkflowService({ store: fakeStore(), runner: {}, now: () => NOW })
     const ok = svc.saveTemplate({ name: '我的模板', config: validConfig() })
@@ -69,6 +93,40 @@ describe('workflow-service · 模板', () => {
     const bad = svc.importTemplate(JSON.stringify({ version: 1, name: '坏', config: { source: { type: 'nope' } } }))
     expect(bad.ok).toBe(false)
     expect(bad.reason).toBe('invalid-config')
+  })
+
+  it('导出 v2 包剥离账号 ID，导入预览不落盘', () => {
+    const svc = createWorkflowService({ store: fakeStore(), runner: {}, now: () => NOW })
+    const saved = svc.saveTemplate({ name: '团队模板', config: validConfig() })
+    const exported = svc.exportTemplate(saved.template.id)
+    expect(exported.data).toMatchObject({ format: 'mulpub-workflow-template', version: 2 })
+    expect(exported.data.config.publish.targets).toEqual([{ platform: 'zhihu', accountId: '' }])
+
+    const preview = svc.importTemplate(JSON.stringify(exported.data), { dryRun: true })
+    expect(preview.ok).toBe(true)
+    expect(preview.preview.name).toBe('团队模板')
+    expect(preview.preview.conflict).toBe(true)
+    expect(svc.listTemplates().custom).toHaveLength(1)
+  })
+
+  it('v1 platform-only targets 迁移为 accountId 空串；重名导入 rename 自动加后缀', () => {
+    const svc = createWorkflowService({ store: fakeStore(), runner: {}, now: () => NOW })
+    const oldPayload = {
+      version: 1,
+      name: '旧模板',
+      config: {
+        source: { type: 'hotTopics', categories: ['ai'], limit: 3 },
+        content: { type: 'article' },
+        publish: { targets: ['zhihu'] },
+      },
+    }
+    const first = svc.importTemplate(JSON.stringify(oldPayload), { rename: true })
+    expect(first.ok).toBe(true)
+    expect(first.template.config.publish.targets).toEqual([{ platform: 'zhihu', accountId: '' }])
+    const second = svc.importTemplate(JSON.stringify(oldPayload), { rename: true })
+    expect(second.ok).toBe(true)
+    expect(second.template.name).toContain('导入')
+    expect(second.template.name).not.toBe(first.template.name)
   })
 })
 

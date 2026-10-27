@@ -355,6 +355,19 @@
 - 爆款库表单/列表新增行业；旧数据无行业不会被新来源选中（数据质量门禁）。
 - 服务未装配时返回 warning「爆款库服务未装配」，不拖垮其他来源；过滤为空时 items=[]，由运行摘要显示 0。
 
+### 7.13 模板市场 / 团队共享与版本迁移
+
+- 模板包格式 v2：`format=mulpub-workflow-template`、`version=2`、`name`（1–40 字）、`description`（≤200 字）、`config`、`exportedAt`；团队共享走 JSON 文件，不做云端市场。
+- 账号隔离：导出与导入都把 `publish.targets[].accountId` 强制清空，模板只保存平台建议；应用模板后用户必须重新选本机账号。
+- 版本迁移：
+  - v1（含无 version 裸对象）自动补齐 source/rewrite/content/publish/cadence/guardrails/review/dedupe；
+  - platform-only targets 迁移为 `{platform, accountId:''}`；
+  - 未来版本返回 `unsupported-version` 并提示升级应用，不静默导入。
+- 导入校验：`invalid-json` / `invalid-shape` / `name:empty` / `name:tooLong` / `unsupported-format` / `unsupported-version` / `invalid-config`（逐条 errors）/ `name:duplicate` / `limit`（自定义模板上限 50）。
+- 冲突策略：默认重名报错并返回 preview；`rename:true` 自动生成「原名（导入 N）」；`overwrite:true` 显式覆盖同 id 模板。`dryRun:true` 只预览不落盘。
+- UI：模板下拉选中后可「导出模板」；「导入模板」选择 JSON 后自动迁移/校验/导入；成功 toast 模板名，失败区分「版本过新」与「文件不是有效模板 JSON」；导入不自动应用。
+- 旧自定义模板读取时自动迁移到 v2，写回统一 v2；迁移失败的单条模板跳过，不拖垮整个列表。
+
 ### 7.7 护栏
 
 - 单次上限：采集后截断，`summary.truncated=true`、`truncateReason=maxItemsPerRun`。

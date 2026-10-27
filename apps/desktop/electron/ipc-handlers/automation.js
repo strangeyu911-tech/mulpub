@@ -60,7 +60,7 @@ function registerHandlers (ipcMain, deps) {
     ipcMain.handle('automation:templates:save', (_e, payload) => guard(() => workflowService.saveTemplate(payload)))
     ipcMain.handle('automation:templates:delete', (_e, id) => guard(() => workflowService.deleteTemplate(String(id || ''))))
     ipcMain.handle('automation:templates:export', (_e, id) => guard(() => workflowService.exportTemplate(String(id || ''))))
-    ipcMain.handle('automation:templates:import', (_e, payload) => guard(() => workflowService.importTemplate(payload)))
+    ipcMain.handle('automation:templates:import', (_e, payload, opts) => guard(() => workflowService.importTemplate(payload, opts && typeof opts === 'object' ? opts : {})))
     ipcMain.handle('automation:workflow:meta', () => guard(() => ({ data: workflowService.getWorkflowMeta() })))
     ipcMain.handle('automation:preview-plan', (_e, payload) => guard(() => {
       const p = payload && typeof payload === 'object' ? payload : {}

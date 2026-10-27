@@ -26,6 +26,13 @@ const {
   LIMITS,
 } = require('./workflow-schema')
 const { estimatePlan } = require('./workflow-plan')
+const {
+  TEMPLATE_FORMAT,
+  TEMPLATE_VERSION,
+  migrateTemplatePayload,
+  buildTemplateExport,
+  uniqueName,
+} = require('./workflow-template')
 
 const CUSTOM_KEY = 'workflow_templates_custom'
 const MAX_CUSTOM = 50
@@ -36,12 +43,38 @@ function newTemplateId () {
 }
 
 function parseCustom (raw) {
-  if (raw == null) return []
+  if (raw == null) return { items: [], warnings: [] }
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-    return Array.isArray(parsed) ? parsed.filter((t) => t && t.id && t.config) : []
+    if (!Array.isArray(parsed)) return { items: [], warnings: [] }
+    const items = []
+    const warnings = []
+    parsed.forEach((t, index) => {
+      if (!t || !t.id || !t.config) {
+        warnings.push({ index, name: t && t.name ? String(t.name) : '', reason: 'invalid-shape' })
+        return
+      }
+      const migrated = migrateTemplatePayload({
+        format: t.format || TEMPLATE_FORMAT,
+        version: t.version || 1,
+        name: t.name,
+        description: t.description,
+        config: t.config,
+      })
+      if (!migrated.ok) {
+        warnings.push({ index, name: String(t.name || ''), reason: migrated.reason })
+        return
+      }
+      items.push({
+        ...t,
+        ...migrated.template,
+        id: t.id,
+        version: TEMPLATE_VERSION,
+      })
+    })
+    return { items, warnings }
   } catch (_) {
-    return []
+    return { items: [], warnings: [] }
   }
 }
 
@@ -53,10 +86,19 @@ function createWorkflowService (deps = {}) {
   if (!store) throw new TypeError('workflow-service 需要 store')
   const now = typeof deps.now === 'function' ? deps.now : Date.now
 
-  function loadCustom () { return parseCustom(store.getSetting(CUSTOM_KEY)) }
-  function saveCustom (list) { store.setSetting(CUSTOM_KEY, JSON.stringify(list.slice(0, MAX_CUSTOM))) }
+  function loadCustomData () {
+    return parseCustom(store.getSetting(CUSTOM_KEY))
+  }
+  function loadCustom () {
+    return loadCustomData().items
+  }
+  function saveCustom (list) {
+    if (list.length > MAX_CUSTOM) throw new Error('template limit')
+    store.setSetting(CUSTOM_KEY, JSON.stringify(list))
+  }
 
   function listTemplates () {
+    const data = loadCustomData()
     return {
       builtin: BUILTIN_TEMPLATES.map((t) => ({
         id: t.id,
@@ -64,9 +106,12 @@ function createWorkflowService (deps = {}) {
         description: t.description,
         badge: t.badge || '',
         readonly: true,
+        format: TEMPLATE_FORMAT,
+        version: TEMPLATE_VERSION,
         config: JSON.parse(JSON.stringify(t.config)),
       })),
-      custom: loadCustom().map((t) => ({ ...t, readonly: false })),
+      custom: data.items.map((t) => ({ ...t, readonly: false })),
+      warnings: data.warnings,
     }
   }
 
@@ -84,6 +129,8 @@ function createWorkflowService (deps = {}) {
       name,
       description: typeof input.description === 'string' ? input.description.slice(0, 200) : '',
       config: validated.config,
+      format: TEMPLATE_FORMAT,
+      version: TEMPLATE_VERSION,
       createdAt: new Date(now()).toISOString(),
       updatedAt: new Date(now()).toISOString(),
     }
@@ -115,21 +162,61 @@ function createWorkflowService (deps = {}) {
   function exportTemplate (id) {
     const t = findTemplate(id)
     if (!t) return { ok: false, reason: 'not-found' }
-    return { ok: true, data: { version: 1, name: t.name, description: t.description || '', config: t.config } }
+    const data = buildTemplateExport(t)
+    if (!data) return { ok: false, reason: 'invalid-shape' }
+    return { ok: true, data }
   }
 
-  function importTemplate (payload) {
-    let parsed = payload
-    if (typeof payload === 'string') {
-      try {
-        parsed = JSON.parse(payload)
-      } catch (_) {
-        return { ok: false, reason: 'invalid-json' }
-      }
+  function importTemplate (payload, opts = {}) {
+    if (opts.overwrite && opts.rename) {
+      return { ok: false, reason: 'conflicting-options' }
     }
-    if (!parsed || typeof parsed !== 'object') return { ok: false, reason: 'invalid-shape' }
-    if (parsed.version !== 1) return { ok: false, reason: 'unsupported-version' }
-    return saveTemplate({ name: parsed.name, description: parsed.description, config: parsed.config })
+    const migrated = migrateTemplatePayload(payload)
+    if (!migrated.ok) return migrated
+    const validated = validateWorkflowConfig(migrated.template.config, { now: now(), allowEmptyAccounts: true })
+    if (!validated.ok) return { ok: false, reason: 'invalid-config', errors: validated.errors }
+    const list = loadCustom()
+    const conflict = list.find((t) => t.name === migrated.template.name) || null
+    if (!conflict && list.length >= MAX_CUSTOM) return { ok: false, reason: 'limit' }
+    const suggestedName = conflict
+      ? uniqueName(migrated.template.name, list.map((t) => t.name))
+      : migrated.template.name
+    const preview = {
+      name: migrated.template.name,
+      description: migrated.template.description,
+      suggestedName,
+      conflict: Boolean(conflict),
+      migratedFrom: migrated.template.migratedFrom,
+      summary: describeWorkflow(validated.config),
+      config: validated.config,
+    }
+    if (opts.dryRun) return { ok: true, preview }
+    if (conflict && !opts.overwrite && !opts.rename) {
+      return { ok: false, reason: 'name:duplicate', preview }
+    }
+    if (conflict && opts.overwrite) {
+      const updated = {
+        ...conflict,
+        description: migrated.template.description,
+        config: validated.config,
+        format: TEMPLATE_FORMAT,
+        version: TEMPLATE_VERSION,
+        updatedAt: new Date(now()).toISOString(),
+      }
+      const next = list.map((t) => (t.id === conflict.id ? updated : t))
+      try {
+        saveCustom(next)
+      } catch (e) {
+        return { ok: false, reason: 'persist-failed', message: e && e.message ? e.message : String(e) }
+      }
+      return { ok: true, template: updated, preview }
+    }
+    const saved = saveTemplate({
+      name: opts.rename ? suggestedName : migrated.template.name,
+      description: migrated.template.description,
+      config: validated.config,
+    })
+    return saved.ok ? { ...saved, preview } : saved
   }
 
   /** 渲染层下拉框的唯一数据源：标签与白名单都由主进程下发，避免前端再抄一份枚举 */

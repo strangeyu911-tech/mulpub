@@ -43,7 +43,33 @@
             {{ t('automation.wfTemplateSave') }}
           </button>
         </div>
+        <div class="atd-row">
+          <button
+            class="cohere-btn-text"
+            data-testid="wf-template-export"
+            :disabled="!templateId"
+            @click="exportSelectedTemplate"
+          >
+            {{ t('automation.wfTemplateExport') }}
+          </button>
+          <label class="cohere-btn-text" data-testid="wf-template-import-label">
+            {{ t('automation.wfTemplateImport') }}
+            <input
+              type="file"
+              accept="application/json,.json"
+              data-testid="wf-template-import"
+              style="display:none"
+              @change="onTemplateFile"
+            />
+          </label>
+        </div>
+        <div v-if="templateImportError" class="atd-sub atd-sub--warn" data-testid="wf-template-import-error">
+          {{ templateImportError }}
+        </div>
         <div class="atd-sub">{{ t('automation.wfTemplateHint') }}</div>
+        <div v-if="templateWarnings.length" class="atd-sub atd-sub--warn" data-testid="wf-template-warnings">
+          {{ t('automation.wfTemplateMigrationWarnings', { count: templateWarnings.length }) }}
+        </div>
       </div>
 
       <div v-if="form.actionType === 'compositeWorkflow' && workflowConfig && workflowMeta" class="atd-field">
@@ -142,6 +168,7 @@ import {
 } from '@/api/automation'
 import { aiListRewriteStrategies, listAccounts } from '@/api/publisher'
 import { useNotify } from '@/composables/useNotify'
+import { useTemplateTransfer } from './useTemplateTransfer'
 import WorkflowEditor from './WorkflowEditor.vue'
 
 const props = defineProps({
@@ -156,12 +183,16 @@ const form = ref(emptyForm())
 const workflowMeta = ref(null)
 const workflowConfig = ref(null)
 const templates = ref({ builtin: [], custom: [] })
+const templateWarnings = ref([])
 const strategies = ref([])
 const accounts = ref([])
 const accountsReady = ref(false)
 const accountHint = ref('')
 const templateId = ref('')
 const templateName = ref('')
+const { templateImportError, exportSelectedTemplate, onTemplateFile } = useTemplateTransfer({
+  templates, templateId, loadTemplates, t, notifySuccess,
+})
 const planPreview = ref(null)
 const saving = ref(false)
 const formError = ref('')
@@ -205,6 +236,7 @@ async function loadTemplates () {
   const res = await listWorkflowTemplates()
   if (res && res.code === 0 && res.data) {
     templates.value = { builtin: res.data.builtin || [], custom: res.data.custom || [] }
+    templateWarnings.value = res.data.warnings || []
   }
 }
 

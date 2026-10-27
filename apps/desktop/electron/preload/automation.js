@@ -21,7 +21,7 @@ function createAutomationApi(ipcRenderer) {
     automationSaveTemplate: (payload) => ipcRenderer.invoke('automation:templates:save', payload),
     automationDeleteTemplate: (id) => ipcRenderer.invoke('automation:templates:delete', id),
     automationExportTemplate: (id) => ipcRenderer.invoke('automation:templates:export', id),
-    automationImportTemplate: (payload) => ipcRenderer.invoke('automation:templates:import', payload),
+    automationImportTemplate: (payload, opts) => ipcRenderer.invoke('automation:templates:import', payload, opts),
     automationWorkflowMeta: () => ipcRenderer.invoke('automation:workflow:meta'),
     automationPreviewPlan: (payload) => ipcRenderer.invoke('automation:preview-plan', payload),
     automationListRuns: () => ipcRenderer.invoke('automation:runs:list'),

@@ -49,8 +49,8 @@ export async function exportWorkflowTemplate (id) {
   return invokeWithFallback('automationExportTemplate', { code: -1, message: 'electronAPI not available', ok: false }, id)
 }
 
-export async function importWorkflowTemplate (payload) {
-  return invokeWithFallback('automationImportTemplate', { code: -1, message: 'electronAPI not available', ok: false }, payload)
+export async function importWorkflowTemplate (payload, opts = {}) {
+  return invokeWithFallback('automationImportTemplate', { code: -1, message: 'electronAPI not available', ok: false }, payload, opts)
 }
 
 export async function getWorkflowMeta () {

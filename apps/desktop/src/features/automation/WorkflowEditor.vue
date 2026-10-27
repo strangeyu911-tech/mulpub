@@ -194,6 +194,21 @@
         <span class="wf-hint">{{ t('automation.wfGuardDaily') }}</span>
       </div>
       <div class="wf-row">
+        <label class="wf-check">
+          <input v-model="budgetEnabled" type="checkbox" data-testid="wf-budget-enabled" />
+          {{ t('automation.wfBudgetEnabled') }}
+        </label>
+        <template v-if="budgetEnabled">
+          <select v-model="budget.currency" class="wf-input wf-input--sm" data-testid="wf-budget-currency">
+            <option value="CNY">CNY</option>
+            <option value="USD">USD</option>
+          </select>
+          <input v-model.number="budget.maxCost" type="number" min="0.01" step="0.01" class="wf-input wf-input--sm" data-testid="wf-budget-max" :placeholder="t('automation.wfBudgetMax')" />
+          <input v-model.number="budget.estimatedCostPerItem" type="number" min="0.01" step="0.01" class="wf-input wf-input--sm" data-testid="wf-budget-per-item" :placeholder="t('automation.wfBudgetPerItem')" />
+          <span class="wf-hint">{{ t('automation.wfBudgetHint') }}</span>
+        </template>
+      </div>
+      <div class="wf-row">
         <label class="wf-check"><input v-model="model.review.requireApproval" type="checkbox" /> {{ t('automation.wfReview') }}</label>
         <label class="wf-check"><input v-model="model.dedupe.enabled" type="checkbox" /> {{ t('automation.wfDedupe') }}</label>
       </div>
@@ -203,7 +218,7 @@
 </template>
 
 <script setup>
-import { computed, useId } from 'vue'
+import { computed, onMounted, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import WorkflowScheduleRules from './WorkflowScheduleRules.vue'
 import WorkflowAccountPicker from './WorkflowAccountPicker.vue'
@@ -295,6 +310,19 @@ const scheduleRulesEnabled = computed({
   get: () => Boolean(ensureScheduleRules().enabled),
   set: (v) => { ensureScheduleRules().enabled = Boolean(v) },
 })
+
+function ensureBudget () {
+  if (!model.value.guardrails.budget || typeof model.value.guardrails.budget !== 'object') {
+    model.value.guardrails.budget = { enabled: false, maxCost: 0, currency: 'CNY', estimatedCostPerItem: 0 }
+  }
+  return model.value.guardrails.budget
+}
+const budget = computed(() => model.value.guardrails.budget)
+const budgetEnabled = computed({
+  get: () => Boolean(model.value.guardrails.budget && model.value.guardrails.budget.enabled),
+  set: (v) => { ensureBudget().enabled = Boolean(v) },
+})
+onMounted(ensureBudget)
 
 function toLocalInput (iso) {
   if (!iso) return ''

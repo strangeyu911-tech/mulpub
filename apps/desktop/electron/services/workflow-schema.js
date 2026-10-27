@@ -2,16 +2,14 @@
 /**
  * workflow-schema.js — 复合自动化工作流的配置契约（纯函数，无副作用）
  *
- * 为什么独立成文件：自动化任务原本只有一个 `fullAutoPipeline` 动作，配置是自由对象，
- * 谁都能塞任何键。复合工作流把「来源 / 改写 / 内容 / 发布 / 节奏 / 护栏」六段拼在一起，
- * 任何一段非法都不该被保存——否则任务会在凌晨三点以一条看不懂的报错失败。
- * 校验必须是纯函数：可被 IPC、调度器、渲染层预览三处共用，且能注入固定时钟做边界测试。
+ * 为什么独立：复合配置六段任一非法都不该保存；纯函数供 IPC/调度器/预览共用，可注入时钟测试。
  *
  * 三条硬约束（PRD §4）：播客走 RSS；视频只能选文案可直接启动的流水线；抖音爆款读取爆款库（P1-6）。
  */
 const crypto = require('crypto')
 const { normalizeAdaptation, validateAdaptation, ADAPTATION_LIMITS } = require('./workflow-adaptation')
 const { normalizeScheduleRules, validateScheduleRules } = require('./workflow-schedule-rules')
+const { normalizeBudget, validateBudget } = require('./workflow-budget')
 
 /** 来源类型白名单（douyinViral = 已采集到爆款库的抖音内容） */
 const SOURCE_TYPES = Object.freeze(['hotTopics', 'creatorMonitor', 'zhihuFavlist', 'douyinViral'])
@@ -69,7 +67,7 @@ const LIMITS = Object.freeze({
 })
 
 const CADENCE_DEFAULTS = Object.freeze({ minMinutes: 35, maxMinutes: 40 })
-const GUARDRAIL_DEFAULTS = Object.freeze({ maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 1 })
+const GUARDRAIL_DEFAULTS = Object.freeze({ maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 1, budget: Object.freeze({ enabled: false, maxCost: 0, currency: 'CNY', estimatedCostPerItem: 0 }) })
 
 function isPlainObject (v) {
   return !!v && typeof v === 'object' && !Array.isArray(v)
@@ -299,8 +297,10 @@ function validateWorkflowConfig (raw, opts = {}) {
     maxItemsPerRun: Number.isInteger(rawGuardrails.maxItemsPerRun) ? rawGuardrails.maxItemsPerRun : GUARDRAIL_DEFAULTS.maxItemsPerRun,
     dailyItemLimit: Number.isInteger(rawGuardrails.dailyItemLimit) ? rawGuardrails.dailyItemLimit : GUARDRAIL_DEFAULTS.dailyItemLimit,
     retryPerItem: Number.isInteger(rawGuardrails.retryPerItem) ? rawGuardrails.retryPerItem : GUARDRAIL_DEFAULTS.retryPerItem,
+    budget: normalizeBudget(rawGuardrails.budget),
   }
   errors.push(...errorsForGuardrails(guardrails))
+  errors.push(...validateBudget(guardrails.budget))
 
   const scheduleRules = normalizeScheduleRules(src.scheduleRules)
   errors.push(...validateScheduleRules(scheduleRules))

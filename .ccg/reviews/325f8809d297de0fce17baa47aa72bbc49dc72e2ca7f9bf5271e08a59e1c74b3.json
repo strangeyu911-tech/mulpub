@@ -1,0 +1,62 @@
+{
+  "sha": "e4f5dab36f834228dbf6d13dbbd3eb835574a652",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 284 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 284,
+    "fileCount": 19,
+    "codeFileCount": 11,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "325f8809d297de0fce17baa47aa72bbc49dc72e2ca7f9bf5271e08a59e1c74b3",
+  "decidedAt": "2026-10-27T16:48:04.150Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play(pending)",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": null,
+    "template": ".adversarial\\ccg-deep-63811a94\\adjudication.json",
+    "note": "第一轮记录；第二轮已收敛，保留审计",
+    "at": "2026-10-27T16:53:13.907Z",
+    "tier": "external",
+    "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4570#issuecomment-6448319596"
+  }
+}

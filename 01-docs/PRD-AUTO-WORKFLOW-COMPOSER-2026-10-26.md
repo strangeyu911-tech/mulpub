@@ -395,6 +395,14 @@
 - 与 `guardrails.dailyItemLimit` 合并使用，不另造每日上限。
 - 只影响新排期；已入队条目的 publishAt 不回改。预览与运行共用 pacer/规则。
 
+### 7.17 预算与成本护栏
+
+- `guardrails.budget`：`enabled`（默认 false）、`maxCost`（>0）、`currency`（CNY/USD）、`estimatedCostPerItem`（>0）。
+- 运行前按 `selected.length × estimatedCostPerItem` 预检；超预算整轮失败 `budget-exceeded`，不创建条目。
+- 台账 `workflow_budget_ledger`：`{runId,workflowId,cost,estimated:true,currency,createdAt}`；TTL 180 天、上限 2000 条；`canSpend` 按累计估算与 maxCost 比较。
+- 诚实边界：**记录的是按配置预估的预算占用，不是供应商账单**；没有真实 usage 时不写成「实际花费」。不做动态定价/运行中逐条熔断（本期）。台账写失败不回滚已发内容，但写 run.warnings。
+- UI 护栏区：开关、币种、总预算、每项预估；提示「按每项预估累计占用；不是供应商账单」。
+
 ### 7.7 护栏
 
 - 单次上限：采集后截断，`summary.truncated=true`、`truncateReason=maxItemsPerRun`。

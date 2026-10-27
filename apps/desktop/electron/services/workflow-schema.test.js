@@ -134,6 +134,17 @@ describe('workflow-schema · 来源校验', () => {
 })
 
 describe('workflow-schema · 改写/内容/发布校验', () => {
+  it('预算护栏：默认关闭；启用后 maxCost/perItem 必须大于 0', () => {
+    const def = validateWorkflowConfig(validConfig())
+    expect(def.config.guardrails.budget.enabled).toBe(false)
+
+    const bad = validateWorkflowConfig(validConfig({
+      guardrails: { maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 1, budget: { enabled: true, maxCost: 0, estimatedCostPerItem: 0 } },
+    }))
+    expect(bad.errors.some((e) => e.field === 'guardrails.budget.maxCost')).toBe(true)
+    expect(bad.errors.some((e) => e.field === 'guardrails.budget.estimatedCostPerItem')).toBe(true)
+  })
+
   it('排期规则：默认关闭；启用后校验时区/工作日/静默时段', () => {
     const def = validateWorkflowConfig(validConfig())
     expect(def.config.scheduleRules.enabled).toBe(false)

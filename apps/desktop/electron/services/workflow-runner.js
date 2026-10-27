@@ -1,18 +1,7 @@
 // @ts-check
 /**
  * workflow-runner.js — 复合自动化工作流的运行编排
- *
- * 结构：运行（run）→ 条目（item），条目独立状态机：
- *   pending → collecting → rewriting → creating → scheduling → scheduled
- *                                                   ↘ awaiting_review（审核开关）
- *                                                   ↘ failed / skipped
- *
- * 五条设计约束（PRD §6）：
- * ① **去重先于创作**：命中账本就跳过，绝不先花 20 分钟生成视频再发现是旧文；
- * ② **单条失败不拖垮整批**：默认 skip，`abort` 才立即停；失败条目保留错误原因；
- * ③ **账本不可读时 fail-closed**：带着失明的去重继续发，比不跑更危险；
- * ④ **审核开关**：打开后生成完停在 awaiting_review，`approveRun` 才排期；
- * ⑤ **额度截断可解释**：少跑了几条必须在 summary 里说清是单次上限还是每日额度。
+ * 状态机：pending→collecting→rewriting→creating→scheduling→scheduled/awaiting_review/failed/skipped；约束见 PRD §6。
  */
 
 const { validateWorkflowConfig } = require('./workflow-schema')
@@ -22,6 +11,7 @@ const { applyQueueEventRecord } = require('./workflow-queue-event')
 const { buildArticle, itemKeyOf } = require('./workflow-article')
 const { adaptArticle } = require('./workflow-adaptation')
 const { newRunId, iso, newSummary, withRetry } = require('./workflow-run-utils')
+const { prepareBudgetForRun, finishBudgetForRun } = require('./workflow-budget-runner')
 const { snapshotRun } = require('./workflow-run-snapshot')
 const { resumePersistedRun } = require('./workflow-resume')
 
@@ -57,6 +47,8 @@ function createWorkflowRunner (deps = {}) {
 
   /** @type {Map<string, object>} */
   const live = new Map()
+  /** @type {Map<string, {ledger: object, cost: number}>} */
+  const budgets = new Map()
   const cancelled = new Set()
 
   function loadPersisted () {
@@ -81,14 +73,14 @@ function createWorkflowRunner (deps = {}) {
   }
 
   function finish (run, status) {
+    finishBudgetForRun(run, budgets)
     run.status = status
     run.finishedAt = iso(now())
     if (status === 'failed' && !run.error && run.items.length > 0) {
       run.error = (run.items.find((i) => i.error) || {}).error || ''
     }
     persist(run)
-    // 终态只留在持久化里：live 只服务「正在跑」的取消与状态读取，
-    // 否则常驻应用的 live Map 会随每次运行无限增长（含每条的 article 副本）。
+    // live 只服务运行中读取；终态只留持久化，避免常驻 Map 无限增长。
     live.delete(run.id)
     return run
   }
@@ -158,6 +150,21 @@ function createWorkflowRunner (deps = {}) {
     run.summary.truncateReason = guard.reason
     const selected = rawItems.slice(0, guard.allowed)
 
+    const budgetPrep = prepareBudgetForRun({
+      run,
+      config,
+      selectedCount: selected.length,
+      store: deps.store,
+      now,
+      ledger: deps.budget,
+      budgets,
+    })
+    if (!budgetPrep.ok) {
+      run.error = budgetPrep.reason
+      finish(run, 'failed')
+      return { ok: false, error: run.error, runId: run.id }
+    }
+
     for (const [index, src] of selected.entries()) {
       run.items.push({
         index,
@@ -187,7 +194,7 @@ function createWorkflowRunner (deps = {}) {
       scheduleRules: config.scheduleRules,
     })
 
-    // 先落一份可续跑的运行快照：进程崩溃/超时后，启动时可按 _sources 继续未完成条目。
+    // 设计约束：去重先于创作；单条失败不拖垮整批；账本不可读 fail-closed；审核开关；额度截断可解释。
     run._sources = selected.map((src) => ({ ...src }))
     persist(run)
 

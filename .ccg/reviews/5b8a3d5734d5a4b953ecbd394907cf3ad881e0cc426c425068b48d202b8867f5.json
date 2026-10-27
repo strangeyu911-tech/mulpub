@@ -1,0 +1,95 @@
+{
+  "sha": "63811a94de504a0669c1080413ddf8a53aea5595",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 18 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 18,
+    "fileCount": 4,
+    "codeFileCount": 3,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "5b8a3d5734d5a4b953ecbd394907cf3ad881e0cc426c425068b48d202b8867f5",
+  "decidedAt": "2026-10-27T16:56:05.365Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "createWorkflowBudget / prepareRunBudget 调用 store.getSetting 无空值防护；prepareBudgetForRun 从 deps.store 传入，当 store 未提供或 budget 启用时直接抛 TypeError。",
+        "highRiskDomains": [],
+        "prosecution": "store 缺失时 createWorkflowBudget 调 getSetting 抛 TypeError。",
+        "defense": "prepareRunBudget 先检查 store，返回 budget-unavailable；新增测试。",
+        "verdict": "dismissed",
+        "rationale": "预算启用但基础设施缺失时明确失败，不冒充可用。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "台账键 workflow_budget_ledger 是全局唯一，但 maxCost 从当前工作流 guardrails.budget 读取；canSpend 用本地 maxCost 对比全局累计 spent，跨工作流消费会错误触发 budget-exceeded。",
+        "highRiskDomains": [],
+        "prosecution": "全局台账让不同工作流互相占用预算。",
+        "defense": "台账按 workflowId 过滤；canSpend 只累计当前工作流；新增双工作流测试。",
+        "verdict": "dismissed",
+        "rationale": "每个工作流按自己的 maxCost/已用独立判断。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "WorkflowEditor.vue 在模块顶层直接调用 ensureBudget()，在组件导入时就修改 model.value.guardrails.budget，产生副作用初始化。",
+        "highRiskDomains": [],
+        "prosecution": "组件导入时 ensureBudget 修改 model。",
+        "defense": "移到 onMounted，只在挂载后初始化。",
+        "verdict": "dismissed",
+        "rationale": "模块导入/渲染初始化无副作用。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T17:07:00.105Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4570#issuecomment-6448319596",
+    "tierBasis": "adjudicated-self-play",
+    "adjudicationDigest": "adjudicated@e935623f76860a9a442272897adf59c990d86c33d8e68674c9a749e1af5f07d1"
+  }
+}

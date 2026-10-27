@@ -89,6 +89,20 @@ function task (cfg, patch = {}) {
 }
 
 describe('workflow-runner · 正常链路', () => {
+  it('预算护栏：首次占用估算，超预算的下一次运行被拒绝', async () => {
+    const { runner } = makeRunner()
+    const cfg = config({
+      guardrails: {
+        maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 0,
+        budget: { enabled: true, maxCost: 100, currency: 'CNY', estimatedCostPerItem: 30 },
+      },
+    })
+    const first = await runner.startRun(task(cfg))
+    expect(first.ok).toBe(true)
+    const second = await runner.startRun(task(cfg))
+    expect(second).toMatchObject({ ok: false, error: 'budget-exceeded' })
+  })
+
   it('按目标平台适配标题/正文/标签后再入队', async () => {
     const { runner, calls } = makeRunner({ items: [{ ...item(1), content: 'x'.repeat(200) }] })
     const cfg = config({

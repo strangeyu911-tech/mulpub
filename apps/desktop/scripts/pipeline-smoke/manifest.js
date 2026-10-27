@@ -31,15 +31,15 @@ const PIPELINE_SMOKE_MANIFEST = deepFreeze([
   },
   {
     pipeline: 'talking-head',
-    driver: null,
-    driverMode: 'missing',
+    driver: 'builtin:local-executor',
+    driverMode: 'builtin',
     defaultParams: { video: 'talkinghead-source.mp4' },
     inputs: [{ key: 'video', file: 'talkinghead-source.mp4', description: '出镜口播源视频' }],
     requiredTools: ['ffmpeg', 'ffprobe'],
     expectedArtifact: 'video',
     timeoutSec: 1200,
     costTier: 'low',
-    notes: '纯本地转写/字幕/渲染；尚无单条 E2E 驱动。',
+    notes: '纯本地转写/字幕/渲染；由 pipeline-smoke execute.js 真跑（无需 provider）。',
   },
   {
     pipeline: 'cinematic',

@@ -40,7 +40,7 @@ PR #4515 已把 `StageExecutor` 的静默兜底改为 fail closed，并新增接
 | 流水线 | 类别 | 阶段数 | 模型能力（默认参数） | 现有 E2E 驱动 | 状态 |
 |--------|------|--------|----------------------|---------------|------|
 | `animated-explainer` | generated | 8 | llm + image | `tests/e2e/animated-explainer-cdp.js` | 有驱动 |
-| `talking-head` | talking_head | 4 | 无（本地 ffmpeg/ffprobe） | 无 | **缺口** |
+| `talking-head` | talking_head | 4 | 无（本地 ffmpeg/ffprobe） | `builtin:local-executor`（`execute.js`） | 已可执行 |
 | `cinematic` | cinematic | 4 | 无（本地 ffmpeg/ffprobe） | `tests/e2e/pipeline-options-matrix.js` | 有驱动（共享） |
 | `animation` | animation | 4 | llm + video | 无 | **缺口** |
 | `avatar-spokesperson` | talking_head | 4 | llm + video（另需 avatarId/voiceId） | `tests/e2e/video-model-pipelines.js` | 有驱动（共享） |
@@ -200,18 +200,29 @@ pnpm --dir apps/desktop run pipeline:smoke:fixtures
 
 ## 十、后续增量（不在本 PR）
 
-1. 为 5 条缺口流水线补单条 E2E 驱动：`talking-head`、`animation`、`documentary-montage`、`hybrid`、`podcast-repurpose`。
+1. 为剩余 4 条缺口流水线补单条 E2E 驱动：`animation`、`documentary-montage`、`hybrid`、`podcast-repurpose`。
 2. 把共享驱动拆成可按 `--pipeline` 参数化的通用驱动，支持 `--run <pipeline>`。
 3. 把 `audit --strict` 接入发版前 checklist（QM-1 之后、发布之前）。
 4. 真实执行结果落 `artifacts/pipeline-smoke/<date>/<pipeline>.json`，包含 ffprobe 元数据与产物路径。
 
 ## 附录 A：首次审计结果（2026-10-27，本机）
 
-生成合成素材后执行 pipeline:smoke:audit，结果：
+生成合成素材后执行 `pipeline:smoke:audit`，结果：
 
-- 	otal=15 ready=9 blocked=5 broken=0 excluded=1
-- READY：nimated-explainer、cinematic、vatar-spokesperson、character-animation、clip-factory、localization-dub、ramework-smoke、ilm-engineering、story2video-compose
-- BLOCKED（均为 NO_DRIVER）：	alking-head、nimation、documentary-montage、hybrid、podcast-repurpose
-- EXCLUDED：screen-demo
+- `total=15 ready=9 blocked=5 broken=0 excluded=1`
+- READY：`animated-explainer`、`cinematic`、`avatar-spokesperson`、`character-animation`、`clip-factory`、`localization-dub`、`framework-smoke`、`film-engineering`、`story2video-compose`
+- BLOCKED（均为 `NO_DRIVER`）：`talking-head`、`animation`、`documentary-montage`、`hybrid`、`podcast-repurpose`
+- EXCLUDED：`screen-demo`
 
-说明：READY 只代表静态条件（接线/驱动/工具/输入）满足，不代表 provider Key 与生成质量已验证；真实执行前仍需应用内模型设置与 pipeline-model-preflight。
+说明：READY 只代表静态条件（接线/驱动/工具/输入）满足，不代表 provider Key 与生成质量已验证；真实执行前仍需应用内模型设置与 `pipeline-model-preflight`。
+
+## 附录 B：增量 2 真实执行结果（2026-10-27，本机）
+
+`execute.js` 用生产 `PipelineEngine` + `StageExecutor` 真实执行本地流水线：
+
+| 流水线 | 结果 | runId | 产物 | ffprobe |
+|--------|------|-------|------|---------|
+| `talking-head` | **PASS** | `mvq78e25_ad8d` | `%TEMP%/story2video/talkinghead/mvq78e25_ad8d/talkinghead_output.mp4` | duration=4.017s, h264+aac |
+| `framework-smoke` | **PASS** | `mvq79act_f4an` | `%TEMP%/story2video/smoketest/mvq79act_f4an/smoketest_output.mp4` | duration=2s, h264+aac |
+
+执行后审计：`total=15 ready=10 blocked=4 broken=0 excluded=1`（talking-head 从 `NO_DRIVER` 变为 `READY`）。

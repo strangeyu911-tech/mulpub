@@ -21,9 +21,12 @@ const { registerAllPipelineStages } = require('../../electron/services/pipeline-
 const { resolvePipelineModelRequirements } = require('../../electron/services/pipeline-model-preflight')
 const { findFfmpeg, findFfprobe } = require('../../electron/services/media-tool-paths')
 const { PIPELINE_SMOKE_MANIFEST, PIPELINE_SMOKE_EXCLUDED } = require('./manifest')
+const { resolveReportPath } = require('./paths')
 
 const APP_DESKTOP_DIR = path.resolve(__dirname, '..', '..')
 const DEFAULT_INPUT_DIR = path.join(os.tmpdir(), 'story2video', 'e2e-inputs')
+
+const ALLOWED_BUILTIN_DRIVERS = new Set(['builtin:framework-smoke', 'builtin:local-executor'])
 
 const STATUS = Object.freeze({
   READY: 'READY',
@@ -151,7 +154,7 @@ function auditEntry (entry, ctx) {
   if (!entry.driver) {
     return makeItem(entry.pipeline, STATUS.BLOCKED, 'NO_DRIVER', null, base)
   }
-  if (entry.driver.startsWith('builtin:') && entry.driver !== 'builtin:framework-smoke') {
+  if (entry.driver.startsWith('builtin:') && !ALLOWED_BUILTIN_DRIVERS.has(entry.driver)) {
     return makeItem(entry.pipeline, STATUS.BROKEN, 'INVALID_BUILTIN_DRIVER', entry.driver, base)
   }
   if (!entry.driver.startsWith('builtin:') && !ctx.driverExists(entry.driver)) {
@@ -306,17 +309,6 @@ function formatTable (report, { color = false } = {}) {
   return rows
     .map((row) => row.map((cell, index) => pad(cell, widths[index])).join('  ').trimEnd())
     .join('\n')
-}
-
-function resolveReportPath (input) {
-  const target = path.resolve(process.cwd(), input)
-  const cwdPrefix = process.cwd() + path.sep
-  const tmpPrefix = os.tmpdir() + path.sep
-  if (!(target === process.cwd() || target.startsWith(cwdPrefix) ||
-        target === os.tmpdir() || target.startsWith(tmpPrefix))) {
-    throw new Error('--json 只能写入当前工作区或临时目录: ' + target)
-  }
-  return target
 }
 
 function validateOnly (only, manifest, excluded) {

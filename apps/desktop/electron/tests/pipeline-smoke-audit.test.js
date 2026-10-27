@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 
+const os = require('os')
+const path = require('path')
+
 const {
   auditAll,
   computeExitCode,
@@ -71,7 +74,7 @@ describe('pipeline-smoke 审计状态机', () => {
 
   it('无驱动时判 BLOCKED(NO_DRIVER)，不是 BROKEN', () => {
     const report = auditAll(baseOptions())
-    const item = report.items.find((entry) => entry.pipeline === 'talking-head')
+    const item = report.items.find((entry) => entry.pipeline === 'animation')
     expect(item.status).toBe('BLOCKED')
     expect(item.reasonCode).toBe('NO_DRIVER')
   })
@@ -155,9 +158,10 @@ describe('pipeline-smoke 审计状态机', () => {
       .not.toThrow()
   })
 
-  it('--json 不得写到工作区/临时目录之外', () => {
+  it('--json 不得写到工作区/仓库/临时目录之外', () => {
     expect(resolveReportPath('artifacts/pipeline-smoke/report.json')).toContain('artifacts')
-    expect(() => resolveReportPath('../../outside-report.json')).toThrow('只能写入')
+    const outside = path.resolve(os.tmpdir(), '..', 'mp-outside-report.json')
+    expect(() => resolveReportPath(outside)).toThrow('只能写入')
   })
 
   it('未知 pipeline 判 BROKEN(MANIFEST_UNKNOWN_PIPELINE)', () => {

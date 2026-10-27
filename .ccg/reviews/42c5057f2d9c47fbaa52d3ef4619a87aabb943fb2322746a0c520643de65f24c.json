@@ -1,0 +1,111 @@
+{
+  "sha": "9b782ee9cb40119d0e2e50842290e79a639af48d",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 562 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 562,
+    "fileCount": 10,
+    "codeFileCount": 7,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "42c5057f2d9c47fbaa52d3ef4619a87aabb943fb2322746a0c520643de65f24c",
+  "decidedAt": "2026-10-27T05:26:11.906Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "execute.js requires production electron services (pipeline-engine, stage-executor, pipeline-stage-registrars) directly in CLI process. No abstraction or version guard; if modules move/change, CLI breaks at runtime silently via loadProductionDeps catch.",
+        "highRiskDomains": [],
+        "prosecution": "execute.js 直接深 require 生产 electron services；模块移动/改名时 CLI 可能在运行期失败，缺少版本守卫。",
+        "defense": "`loadProductionDeps()` 已用 try/catch 包裹，失败时抛 `INFRA_MISSING`，`runLocalPipeline` 捕获后返回 `FAIL(EXECUTION_SETUP_FAILED)`（测试覆盖 `createEngine` 抛错）；真实运行 `talking-head`/`framework-smoke` 均 PASS。深 require 是本地开发工具的刻意设计：它必须复用生产 `registerAllPipelineStages`，否则会变成第二份接线清单。",
+        "verdict": "dismissed",
+        "rationale": "已有结构化失败路径和真实 PASS 证据；「未来模块移动」会先被构建/测试拦截，不应由执行器维护第二套版本契约。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "probeVideo runs execFileSync(ffprobe) on any path returned by extractArtifact. isArtifactPathAllowed only checks root prefix (tmpdir/artifacts), not file-level allowlist; malicious engine context could target any existing file inside allowed roots.",
+        "highRiskDomains": [],
+        "prosecution": "isArtifactPathAllowed 只检查 tmpdir/artifacts 前缀，恶意 engine context 可指向允许根内的任意文件，ffprobe 读取其元数据。",
+        "defense": "执行器只运行仓内受信流水线代码，engine context 不是外部输入；产物路径还会经过 `fs.existsSync + size>0` 与 ffprobe duration>0。路径限制已阻止跨出临时目录/工作区 artifacts 的访问。",
+        "verdict": "dismissed",
+        "rationale": "威胁模型是本地开发 CLI + 受信引擎；路径前缀 + 存在性 + 大小 + duration 四重校验已覆盖实际风险。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "execute.js is 348 lines mixing CLI args parsing, engine setup, video probing, artifact extraction, pipeline execution, and reporting. Tight coupling to production module internals makes future refactoring risky.",
+        "highRiskDomains": [],
+        "prosecution": "execute.js 348 行混合 CLI 参数、引擎装配、探测、产物提取与报告，未来重构风险高。",
+        "defense": "348 行低于仓库 500 行单文件上限；`pipeline-smoke` 是单命令开发工具，拆成 4 个模块会增加跨文件跳转成本。核心纯函数（buildLocalParams/extractArtifact/isArtifactPathAllowed）已导出并有测试。",
+        "verdict": "dismissed",
+        "rationale": "体量在门禁内，职责围绕单一命令；拆分是风格偏好，不是缺陷。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "runLocalPipeline calculates durationMs before artifact extraction and probe; if those steps fail, reported duration excludes time spent in extraction/probing, giving misleading PASS/FAIL durations.",
+        "highRiskDomains": [],
+        "prosecution": "durationMs 在产物提取与 ffprobe 之前计算，失败报告的时间不含这两步，可能误导。",
+        "defense": "durationMs 的语义是「PipelineEngine 执行耗时」，产物提取/ffprobe 是毫秒级后处理；报告同时给出 artifact/probe 字段，读者可区分。真实运行 durationMs=1-6s，探测耗时未影响 PASS/FAIL 判定。",
+        "verdict": "dismissed",
+        "rationale": "字段语义是引擎执行耗时，不是端到端墙钟；不影响判定。若要区分可后续增加 probeDurationMs，但不是当前缺陷。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "SUPPORTED_LOCAL_PIPELINES and LOCAL_PARAM_BUILDERS are module-level constants loaded once. If manifest is edited at runtime, execute.js requires full process restart to see updates.",
+        "highRiskDomains": [],
+        "prosecution": "SUPPORTED_LOCAL_PIPELINES/LOCAL_PARAM_BUILDERS 在模块加载时固定，运行时改 manifest 需重启进程。",
+        "defense": "execute.js 是 CLI，每次命令都是新进程；manifest 是仓库内静态文件，不存在运行时热更新场景。测试直接 require 最新 manifest。",
+        "verdict": "dismissed",
+        "rationale": "CLI 进程模型下模块级常量是正确做法；热更新不是该工具的运行场景。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T05:31:53.054Z"
+  }
+}

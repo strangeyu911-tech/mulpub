@@ -1,6 +1,6 @@
 # 会员档位机制（MEMBER TIERS MECHANISM）
 
-> **状态**：🟢 现行（v3.7，2026-10-27）
+> **状态**：🟢 现行（v3.8，2026-10-28）
 > **数值真源**：`packages/api-publish-engine/src/auth/plan-matrix.js`（`PLAN_MATRIX_VERSION = 2026-10-26`）
 > **价格与积分推导**：`01-docs/PRD-CREDIT-PRICING-2026-10-25.md`
 > **价格解释**：`01-docs/pricing-strategy.md` §1–§2
@@ -121,7 +121,7 @@
 
 - **卖什么**：定时任务（0/100/不限）、自定义自动化（0/10/50 条工作流；50/500 条·日）、批量发布（单篇/10 条/不限）。
 - **为什么愿意付**：从「每天手动发」变成「一周排一次」；自动化是标准档最硬的升级理由。
-- **谁强制**：定时任务已在客户端 + `scheduler:create` 强制执行（P1-3）；自定义自动化仍无档位门禁，P1-4 补 feature 与配额。
+- **谁强制**：定时任务已在客户端 + `scheduler:create` 强制执行（P1-3）；自定义自动化已在 `workflow-service` save/import + `workflow-runner` 强制执行（P1-4）。
 - **成本**：本地调度/执行，边际成本近零；AI 调用消耗积分。
 
 ### 3.3 L3 AI 与视频层（积分控制）
@@ -179,8 +179,8 @@
 | 6 | 本地单篇/多平台即时发布 | 可用 | 可用 | 可用 | 不扣额度 | 无差异 | 桌面路径不经过 `publish-api-server` |
 | 7 | 本地批量发布 | 仅单篇 | 10 条/次 | 不限 | 按次 | **硬（客户端 + 云 API）** | UI 读 `entitlement.limits.batch_size_per_run`；本地按文章条数，云 `/batch-publish` 先判后扣（2026-10-27 P0-4） |
 | 8 | 定时任务 | 0 | 100 个 | 不限 | 按任务数 | **硬（客户端 + IPC）** | `limits.max_scheduled_tasks`；`scheduler:create` 统计待执行单篇 + scheduled 批次；免费第 1 个即拒（P1-3） |
-| 9 | 自定义自动化（工作流条数） | 0（仅内置模板） | 10 条 | 50 条 | 按模板数 | **规划** | `workflow-service` 已有 `MAX_CUSTOM=50`，无档位门禁 |
-| 10 | 自定义自动化（每日执行条数） | 0 | 50 条/日 | 500 条/日 | 按日 | **规划** | `workflow-schema` 有 `dailyItemLimit`，无档位映射 |
+| 9 | 自定义自动化（工作流条数） | 0（仅内置模板） | 10 条 | 50 条 | 按模板数 | **硬（主进程）** | `limits.max_workflows`；save/import 判据（P1-4） |
+| 10 | 自定义自动化（每日执行条数） | 0 | 50 条/日 | 500 条/日 | 按日 | **硬（主进程）** | `limits.automation_daily_items`；runner 与 guardrail 取更严（P1-4） |
 | 11 | 全自动流水线 | 不提供 | 不提供 | 规划 | — | **规划** | `auto-pipeline` 已有 IPC，未产品化/未门禁 |
 | 12 | 队列优先级 | 标准 | 高 | 最高 | — | **规划** | 当前队列无优先级字段 |
 
@@ -241,7 +241,7 @@
 | **平台支持** | 全部已接入平台 | 全部 | 全部 | 已实现（平台轴退役） |
 | **本地发布** | 单篇/多平台即时 | 单篇 + 批量 10 条/次 | 单篇 + 批量不限 | 已交付（批量有 UI 缺陷） |
 | **定时任务** | — | 100 个 | 不限 | 已交付（P1-3） |
-| **自定义自动化** | — | 10 条工作流 / 50 条·日 | 50 条 / 500 条·日 | 规划（P1） |
+| **自定义自动化** | — | 10 条工作流 / 50 条·日 | 50 条 / 500 条·日 | 已交付（P1-4） |
 | **视频创作** | — | ✓ | ✓ | 已交付（P1-1，客户端入口） |
 | **知识库** | — | ✓ | ✓ | 已交付（P1-2，客户端入口） |
 | **AI 写稿** | 不限（积分/BYOK） | 不限（积分/BYOK） | 不限（积分/BYOK） | 待接线（当前无消费点，实际不限） |
@@ -312,7 +312,7 @@
 | 平台数 | `limits.max_platforms` | 三入口调用但数组→NaN | 发布页第 6 个提示 | **已退役（-1）** | v3.2 起全档 `-1`，不再作为套餐轴 |
 | 单次批量 | `limits.batch_size_per_run` | 云 API 批量/定时执行 + 桌面批量入口 | `batchSizePerRunOf` / `canBatchSize` 已接线 | **硬（客户端 + 云 API）** | 桌面按文章数、云按平台数；先判后扣（P0-4） |
 | 定时任务 | `limits.max_scheduled_tasks` | `scheduler:create` + 发布页/批量排期入口 | `maxScheduledTasksOf` / `canScheduleTask` 已接线 | **硬（客户端 + IPC）** | 0/100/-1；待执行单篇 + scheduled 批次同池（P1-3） |
-| 自定义自动化 | 待新增 `maxWorkflows` / `automationDailyItems` | 无 | 无 | **展示** | 全局 `MAX_CUSTOM=50`，无档位门禁 |
+| 自定义自动化 | `limits.max_workflows` / `limits.automation_daily_items` | `workflow-service` save/import + `workflow-runner` startRun | `maxWorkflows` / `automationDailyItems` 已接线 | **硬（主进程）** | 0/10/50 条；0/50/500 条·日；与 guardrail 取更严（P1-4） |
 | 视频创作 | `features.video_create` | 无 | 无 | **硬（客户端入口 + IPC 启动通道）** | `/create` + 采集/热门选题就地入口（P1-1）；`pipeline:start`/`startOrchestrated`/`render:start*`/`story2video:batch:create` 强制（P1-1b） |
 | 知识库 | `features.knowledge_base` | 无 | 无 | **硬（客户端入口）** | `/knowledge-base` 整页门禁；P1-2 |
 | AI 写稿 | `quota.ai_write_monthly` | 无 | 无 | **展示** | 无 consume；建议改为 -1 全档 |
@@ -354,7 +354,7 @@
 | 绑定账号 | 点「添加账号」弹窗：「免费版最多绑定 5 个账号，当前 5/5；升级标准版可绑定 20 个」+ 升级/取消 | 已实现（P0） | 主进程 IPC + UI 双拦 |
 | 本地批量 | 标准 10 条/次、专业不限；超出提示拆分或升级 | UI 误拦 | P0 改 entitlement |
 | 定时任务 | 免费不可建；标准 100 个；专业不限 | ✅ 已交付（P1-3） | 客户端入口 + `scheduler:create` IPC；见 `PRD-MEMBER-TIER-SCHEDULE-LIMIT-2026-10-27.md` |
-| 自定义自动化 | 免费不可用；标准 10 条/50 条·日；专业 50 条/500 条·日 | 仅全局 50 | P1 feature + 配额 |
+| 自定义自动化 | 免费不可用；标准 10 条/50 条·日；专业 50 条/500 条·日 | ✅ 已交付（P1-4） | 主进程 save/import + runner；见 `PRD-MEMBER-TIER-AUTOMATION-QUOTA-2026-10-28.md` |
 | 视频创作 | 免费入口关闭；标准/专业可用 | ✅ 已交付（P1-1 + P1-1b） | 客户端入口 + IPC 启动通道；见 `PRD-MEMBER-TIER-VIDEO-GATE-2026-10-27.md` / `PRD-MEMBER-TIER-VIDEO-IPC-GATE-2026-10-27.md` |
 | 知识库 | 免费入口关闭；标准/专业可用 | ✅ 已交付（P1-2） | 客户端入口层；见 `PRD-MEMBER-TIER-KNOWLEDGE-BASE-2026-10-27.md` |
 | 官方积分 | 耗尽后引导 BYOK / 积分包；不锁发布 | 无扣减 | P1 consume + 引导 |
@@ -453,7 +453,7 @@
 | P1-1b | 视频创作 IPC 启动通道强制 `video_create` | ✅ 已交付（2026-10-27）：`pipeline:start`/`startOrchestrated`/`render:start*`/`story2video:batch:create` 无权益返回 -3；收尾/取消通道保持登录即可 |
 | P1-2 | `knowledge_base` feature：免费入口关闭 | ✅ 已交付（2026-10-27）：免费点知识库被拒；标准/专业可用 |
 | P1-3 | `schedule_batch` + 定时任务计数：免费 0、标准 100、专业不限 | ✅ 已交付（2026-10-27）：免费创建被拒；标准第 101 个被拒；批次同池计数 |
-| P1-4 | 自定义自动化：免费 0；标准 10 条/50 条·日；专业 50 条/500 条·日 | 工作流创建/执行均有配额；超限有提示 |
+| P1-4 | 自定义自动化：免费 0；标准 10 条/50 条·日；专业 50 条/500 条·日 | ✅ 已交付（2026-10-28）：工作流创建/执行均有配额；超限有提示 |
 | P1-5 | `official_credit` grant/consume + `ai_write` 全档 -1 | 积分发放/扣减/余额可查；AI 写稿不按次数拦 |
 | P1-6 | 设备数 1/3/不限接线 | 第 2 台免费设备登录被提示/拒绝 |
 | P1-7 | 会员中心 quota 本地化 + 用量视图 | `-1` 显示「不限」；显示已用/剩余 |
@@ -558,6 +558,7 @@
 | 2026-10-27 | 机制 v3.5 | P1-1b 落地：视频创作 IPC 启动通道强制 `video_create`（`pipeline:start`/`startOrchestrated`/`render:start*`/`story2video:batch:create`）；收尾/取消仍登录即可；QM-1 打包验证 |
 | 2026-10-27 | 机制 v3.6 | P1-2 落地：`knowledgeBase` 矩阵开关 → `features.knowledge_base`；`/knowledge-base` 整页门禁；缺失/空 features 仍 fail-open |
 | 2026-10-27 | 机制 v3.7 | P1-3 落地：`maxScheduledTasks` 0/100/-1；`scheduler:create` 统计待执行单篇 + scheduled 批次；客户端免费档 IPC 前拦截；返回 `SCHEDULE_LIMIT_EXCEEDED` |
+| 2026-10-28 | 机制 v3.8 | P1-4 落地：`maxWorkflows` 0/10/50 + `automationDailyItems` 0/50/500；workflow-service save/import 判条数；workflow-runner 与 guardrail 取更严；schema 上限 500 |
 
 ## 附录 C：证据索引
 

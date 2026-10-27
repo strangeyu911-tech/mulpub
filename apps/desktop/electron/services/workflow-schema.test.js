@@ -264,9 +264,9 @@ describe('workflow-schema · 节奏与护栏', () => {
     expect(tooShort.errors[0]).toMatchObject({ field: 'cadence.minMinutes', reason: 'outOfRange' })
   })
 
-  it('护栏：单次上限 50、每日上限 200、单条重试 0-3', () => {
+  it('护栏：单次上限 50、每日上限 500、单条重试 0-3', () => {
     const r = validateWorkflowConfig(validConfig({
-      guardrails: { maxItemsPerRun: 51, dailyItemLimit: 201, retryPerItem: 4 },
+      guardrails: { maxItemsPerRun: 51, dailyItemLimit: 501, retryPerItem: 4 },
     }))
     expect(r.errors.map((e) => e.field)).toEqual([
       'guardrails.maxItemsPerRun',

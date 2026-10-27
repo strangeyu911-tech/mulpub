@@ -287,6 +287,23 @@ async function startServices({ container, usageTracker, store, taskQueue, callba
       offlineManager.setOwnerSubjectProvider(ownerSubjectProvider)
       cleanups.push(() => offlineManager.setOwnerSubjectProvider(null))
     }
+    // P1-4：工作流条数 / 每日执行条数的权益来源（phase3 才有 identityService）。
+    const entitlementProvider = identityService
+      ? () => {
+          const state = identityService.getState()
+          return state && state.entitlement ? state.entitlement : null
+        }
+      : null
+    const workflowService = getOptionalService('workflowService')
+    if (workflowService && typeof workflowService.setEntitlementProvider === 'function') {
+      workflowService.setEntitlementProvider(entitlementProvider)
+      cleanups.push(() => workflowService.setEntitlementProvider(null))
+    }
+    const workflowRunner = getOptionalService('workflowRunner')
+    if (workflowRunner && typeof workflowRunner.setEntitlementProvider === 'function') {
+      workflowRunner.setEntitlementProvider(entitlementProvider)
+      cleanups.push(() => workflowRunner.setEntitlementProvider(null))
+    }
 
     const restoreForOwner = (state) => {
       if (!scheduler || typeof scheduler.restore !== 'function') return 0

@@ -63,6 +63,7 @@ export default {
     errNoWeekday: 'Please select at least one weekday',
     errSaveFailed: 'Failed to save. Please retry',
     errRunFailed: 'Failed to start. Please retry',
+    errDailyLimit: 'Daily automation item limit reached for your plan. Try again tomorrow or upgrade.',
     errDeleteFailed: 'Failed to delete. Please retry',
     errAlreadyRunning: 'The previous run is still active — this trigger was skipped',
 
@@ -173,6 +174,7 @@ export default {
     wfTemplateMigrationWarnings: '{count} legacy template(s) could not be migrated and were skipped; please save them again.',
     wfTemplateNameRequired: 'Enter a template name first',
     wfTemplateDuplicate: 'A template with this name already exists',
+    wfTemplateLimit: 'Custom automation workflows have reached your plan limit. Please upgrade and retry.',
     wfTemplateSaved: 'Template saved',
     wfTemplateExport: 'Export template',
     wfTemplateImport: 'Import template',

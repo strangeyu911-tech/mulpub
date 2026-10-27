@@ -198,6 +198,27 @@ describe('workflow-runner · 去重与护栏', () => {
     expect(calls.schedule).toHaveLength(0)
   })
 
+  it('P1-4 免费档每日 0 条 → plan-daily-limit，且不采集', async () => {
+    const { runner, calls } = makeRunner()
+    runner.setEntitlementProvider(() => ({ limits: { automation_daily_items: 0 } }))
+    const r = await runner.startRun(task(config()))
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe('plan-daily-limit')
+    expect(calls.schedule).toHaveLength(0)
+  })
+
+  it('P1-4 计划 10 条比 guardrail 20 更严：已用 10 条即拒绝', async () => {
+    const store = fakeStore()
+    const ledger = createWorkflowLedger({ store, now: () => NOW })
+    for (let i = 0; i < 10; i++) ledger.record({ sourceKey: 'old' + i, fingerprint: 'f' + i, runId: 'r0', createdAt: new Date(NOW).toISOString() })
+    const { runner, calls } = makeRunner({ store, ledger })
+    runner.setEntitlementProvider(() => ({ limits: { automation_daily_items: 10 } }))
+    const r = await runner.startRun(task(config()))
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe('dailyItemLimit')
+    expect(calls.schedule).toHaveLength(0)
+  })
+
   it('账本不可读 → fail-closed，绝不带着失明的去重继续发', async () => {
     const store = fakeStore()
     store.setSetting('workflow_dedupe_ledger', '{broken')

@@ -179,10 +179,16 @@ async function toggleEnabled (task, value) {
 async function runNow (task) {
   const res = await automationRunNow(task.id)
   if (!res || res.code !== 0) { notifyError('automation.errRunFailed'); return }
-  if (res.data && res.data.reason === 'already-running') {
+  const reason = (res.data && res.data.reason) || res.reason || ''
+  if (reason === 'already-running') {
     notifyError('automation.errAlreadyRunning')
     return
   }
+  if (reason === 'plan-daily-limit' || reason === 'dailyItemLimit') {
+    notifyError('automation.errDailyLimit')
+    return
+  }
+  if (res.ok === false) { notifyError('automation.errRunFailed'); return }
   notifySuccess('automation.started')
   await load()
 }

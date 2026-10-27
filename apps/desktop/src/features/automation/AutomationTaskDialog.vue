@@ -361,9 +361,9 @@ async function saveAsTemplate () {
   }
   const res = await saveWorkflowTemplate({ name: templateName.value.trim(), config: templateConfig })
   if (!res || res.code !== 0 || !res.ok) {
-    formError.value = res && res.reason === 'name:duplicate'
-      ? t('automation.wfTemplateDuplicate')
-      : t('automation.errSaveFailed')
+    if (res && res.reason === 'name:duplicate') formError.value = t('automation.wfTemplateDuplicate')
+    else if (res && (res.reason === 'plan-limit' || res.reason === 'limit')) formError.value = t('automation.wfTemplateLimit')
+    else formError.value = t('automation.errSaveFailed')
     return
   }
   notifySuccess('automation.wfTemplateSaved')

@@ -259,7 +259,7 @@ class AutomationScheduler {
       const result = await this._executeWithPolicy(task)
       this._markResult(task, result.status, result.error || '', startedAt)
       this._emitNotification(task, result, previousStatus)
-      return { ok: result.status !== 'failed', status: result.status }
+      return { ok: result.status !== 'failed', status: result.status, reason: result.error || '' }
     } catch (e) {
       const msg = e && e.message ? e.message : String(e)
       this._markResult(task, 'failed', msg, startedAt)

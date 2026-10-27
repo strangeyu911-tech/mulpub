@@ -55,7 +55,7 @@ const CONTENT_LABELS = Object.freeze({ article: '图文', video: '视频', podca
 
 const LIMITS = Object.freeze({
   maxItemsPerRun: 50,
-  maxDailyItems: 200,
+  maxDailyItems: 500,
   maxTargets: 30,
   maxFollows: 50,
   maxFolders: 20,

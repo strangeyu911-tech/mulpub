@@ -149,6 +149,39 @@ describe('workflow-service · 预览', () => {
   })
 })
 
+describe('workflow-service · P1-4 工作流条数配额', () => {
+  it('免费档 max_workflows=0：保存新模板返回 plan-limit', () => {
+    const svc = createWorkflowService({ store: fakeStore(), runner: {}, now: () => NOW })
+    svc.setEntitlementProvider(() => ({ limits: { max_workflows: 0 } }))
+    const r = svc.saveTemplate({ name: '免费模板', config: validConfig() })
+    expect(r).toMatchObject({ ok: false, reason: 'plan-limit' })
+    expect(r.data).toMatchObject({ limit: 0, current: 0 })
+  })
+
+  it('标准档 10 条：第 11 条返回 limit；已存在 10 条时不落盘', () => {
+    const store = fakeStore()
+    const seed = Array.from({ length: 10 }, (_, i) => ({ id: 'wft_seed_' + i, name: '预置' + i, config: validConfig() }))
+    store.setSetting('workflow_templates_custom', JSON.stringify(seed))
+    const svc = createWorkflowService({ store, runner: {}, now: () => NOW })
+    svc.setEntitlementProvider(() => ({ limits: { max_workflows: 10 } }))
+    const r = svc.saveTemplate({ name: '第十一条', config: validConfig() })
+    expect(r).toMatchObject({ ok: false, reason: 'limit' })
+    expect(svc.listTemplates().custom).toHaveLength(10)
+  })
+
+  it('缺失 limits：回落全局 MAX_CUSTOM=50（不误拦旧快照）', () => {
+    const svc = createWorkflowService({ store: fakeStore(), runner: {}, now: () => NOW })
+    expect(svc.listTemplates().limits).toMatchObject({ max_custom: 50, current: 0 })
+    expect(svc.saveTemplate({ name: '旧快照模板', config: validConfig() }).ok).toBe(true)
+  })
+
+  it('max_workflows=-1：按不限处理，回落全局 MAX_CUSTOM=50', () => {
+    const svc = createWorkflowService({ store: fakeStore(), runner: {}, now: () => NOW })
+    svc.setEntitlementProvider(() => ({ limits: { max_workflows: -1 } }))
+    expect(svc.listTemplates().limits).toMatchObject({ max_custom: 50, current: 0 })
+  })
+})
+
 describe('workflow-service · 发布队列门面', () => {
   it('list/summary/retry 透传给队列', () => {
     const queue = {

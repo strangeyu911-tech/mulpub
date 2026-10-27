@@ -3,10 +3,10 @@
  * workflow-runner.js — 复合自动化工作流的运行编排
  * 状态机：pending→collecting→rewriting→creating→scheduling→scheduled/awaiting_review/failed/skipped；约束见 PRD §6。
  */
-
 const { validateWorkflowConfig } = require('./workflow-schema')
 const { createPacer, resolveTargetKey, checkGuardrails, buildDedupeKeys } = require('./workflow-plan')
 const { createAccountGuard } = require('./workflow-account-guard')
+const { createWorkflowPlanLimit } = require('./workflow-plan-limit')
 const { applyQueueEventRecord } = require('./workflow-queue-event')
 const { buildArticle, itemKeyOf } = require('./workflow-article')
 const { adaptArticle } = require('./workflow-adaptation')
@@ -14,10 +14,8 @@ const { newRunId, iso, newSummary, withRetry } = require('./workflow-run-utils')
 const { prepareBudgetForRun, finishBudgetForRun } = require('./workflow-budget-runner')
 const { snapshotRun } = require('./workflow-run-snapshot')
 const { resumePersistedRun } = require('./workflow-resume')
-
 const RUNS_KEY = 'workflow_runs'
 const MAX_PERSISTED_RUNS = 50
-
 /**
  * @param {{
  *   sources: { collect: Function },
@@ -39,18 +37,16 @@ function createWorkflowRunner (deps = {}) {
   if (!deps.store) throw new TypeError('workflow-runner 需要 store')
   if (typeof deps.rewrite !== 'function') throw new TypeError('workflow-runner 需要 rewrite')
   if (typeof deps.schedulePublish !== 'function') throw new TypeError('workflow-runner 需要 schedulePublish')
-
   const now = typeof deps.now === 'function' ? deps.now : Date.now
   const random = typeof deps.random === 'function' ? deps.random : Math.random
   const log = deps.log || { warn () {}, error () {}, info () {} }
   const accountGuard = createAccountGuard({ accountProvider: deps.accountProvider })
-
+  const planLimitReader = createWorkflowPlanLimit()
   /** @type {Map<string, object>} */
   const live = new Map()
   /** @type {Map<string, {ledger: object, cost: number}>} */
   const budgets = new Map()
   const cancelled = new Set()
-
   function loadPersisted () {
     try {
       const raw = deps.store.getSetting(RUNS_KEY)
@@ -61,7 +57,6 @@ function createWorkflowRunner (deps = {}) {
       return []
     }
   }
-
   function persist (run) {
     try {
       const all = loadPersisted().filter((r) => r && r.id !== run.id)
@@ -71,7 +66,6 @@ function createWorkflowRunner (deps = {}) {
       log.warn && log.warn('WorkflowRunner', '运行记录持久化失败: ' + (e && e.message ? e.message : String(e)))
     }
   }
-
   function finish (run, status) {
     finishBudgetForRun(run, budgets)
     run.status = status
@@ -84,8 +78,6 @@ function createWorkflowRunner (deps = {}) {
     live.delete(run.id)
     return run
   }
-
-
   /**
    * 启动一次运行。等待「生成 + 排期」完成（发布由持久队列在到点时执行）。
    * @param {object} task 归一化后的自动化任务
@@ -100,12 +92,19 @@ function createWorkflowRunner (deps = {}) {
     const accountCheck = await accountGuard.check(config)
     if (!accountCheck.ok) return accountCheck
     if (!deps.ledger.isReadable()) return { ok: false, error: 'ledger-unreadable' }
-
     const usedToday = typeof deps.ledger.countToday === 'function' ? deps.ledger.countToday() : 0
-    if (usedToday >= config.guardrails.dailyItemLimit) {
+    const planLimit = planLimitReader.planDailyLimit()
+    if (planLimit !== null && planLimit >= 0 && usedToday >= planLimit) {
+      return { ok: false, error: planLimit === 0 ? 'plan-daily-limit' : 'dailyItemLimit' }
+    }
+    // 计划上限与工作流自身 guardrail 取更严者；config 只读，另建 effectiveGuardrails。
+    const effectiveDaily = planLimit === null
+      ? config.guardrails.dailyItemLimit
+      : Math.min(config.guardrails.dailyItemLimit, planLimit)
+    if (usedToday >= effectiveDaily) {
       return { ok: false, error: 'dailyItemLimit' }
     }
-
+    const effectiveGuardrails = { ...config.guardrails, dailyItemLimit: effectiveDaily }
     const run = {
       id: newRunId(),
       workflowId: (task && task.id) || '',
@@ -121,7 +120,6 @@ function createWorkflowRunner (deps = {}) {
     }
     live.set(run.id, run)
     cancelled.delete(run.id)
-
     let collected
     try {
       collected = await deps.sources.collect(config)
@@ -140,7 +138,7 @@ function createWorkflowRunner (deps = {}) {
       return { ok: status !== 'failed', runId: run.id, status }
     }
 
-    const guard = checkGuardrails({ itemCount: rawItems.length, guardrails: config.guardrails, usedToday })
+    const guard = checkGuardrails({ itemCount: rawItems.length, guardrails: effectiveGuardrails, usedToday })
     if (!guard.ok) {
       run.error = guard.reason
       finish(run, 'failed')
@@ -491,7 +489,7 @@ function createWorkflowRunner (deps = {}) {
     return { ok: true }
   }
 
-  return { startRun, resumeRun, resumeInterruptedRuns, approveRun, getRun, listRuns, cancel, applyQueueEvent }
+  return { startRun, setEntitlementProvider: planLimitReader.setEntitlementProvider, resumeRun, resumeInterruptedRuns, approveRun, getRun, listRuns, cancel, applyQueueEvent }
 }
 
 module.exports = { createWorkflowRunner, RUNS_KEY, MAX_PERSISTED_RUNS }

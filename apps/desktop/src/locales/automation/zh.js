@@ -63,6 +63,7 @@ export default {
     errNoWeekday: '请至少选择一个星期',
     errSaveFailed: '保存失败，请重试',
     errRunFailed: '启动失败，请重试',
+    errDailyLimit: '今日自动化执行条数已达当前套餐上限，请明天再试或升级套餐',
     errDeleteFailed: '删除失败，请重试',
     errAlreadyRunning: '该任务上一轮还在运行，已跳过本次触发',
 
@@ -173,6 +174,7 @@ export default {
     wfTemplateMigrationWarnings: '有 {count} 个旧模板迁移失败，已跳过；请重新保存这些模板。',
     wfTemplateNameRequired: '请先填写模板名称',
     wfTemplateDuplicate: '已有同名模板，请换一个名称',
+    wfTemplateLimit: '自定义自动化工作流已达当前套餐上限，请升级后重试',
     wfTemplateSaved: '模板已保存',
     wfTemplateExport: '导出模板',
     wfTemplateImport: '导入模板',

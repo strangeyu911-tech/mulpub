@@ -86,6 +86,34 @@ function createWorkflowService (deps = {}) {
   const store = deps.store
   if (!store) throw new TypeError('workflow-service 需要 store')
   const now = typeof deps.now === 'function' ? deps.now : Date.now
+  // P1-4：工作流条数上限由 entitlement.limits.max_workflows 下发；缺失时回落全局 MAX_CUSTOM（50）。
+  // 身份服务在 phase3 才创建，因此用 setter 后绑定（与 account/batch 的 owner provider 同款）。
+  let entitlementProvider = null
+  function setEntitlementProvider (provider) {
+    entitlementProvider = typeof provider === 'function' ? provider : null
+  }
+  function maxWorkflowsLimit () {
+    if (!entitlementProvider) return null
+    let entitlement
+    try { entitlement = entitlementProvider() } catch (_) { return null }
+    const limits = entitlement && entitlement.limits
+    const raw = limits ? limits.max_workflows : null
+    if (raw === null || raw === undefined || raw === '') return null
+    const value = typeof raw === 'number' ? raw : Number(raw)
+    return Number.isFinite(value) ? value : null
+  }
+  function maxCustomAllowance () {
+    const limit = maxWorkflowsLimit()
+    if (limit === null || limit < 0) return MAX_CUSTOM
+    return Math.max(0, Math.min(MAX_CUSTOM, limit))
+  }
+  function limitFailure (limit, current) {
+    return {
+      ok: false,
+      reason: limit === 0 ? 'plan-limit' : 'limit',
+      data: { limit, current },
+    }
+  }
 
   function loadCustomData () {
     return parseCustom(store.getSetting(CUSTOM_KEY))
@@ -113,6 +141,7 @@ function createWorkflowService (deps = {}) {
       })),
       custom: data.items.map((t) => ({ ...t, readonly: false })),
       warnings: data.warnings,
+      limits: { max_custom: maxCustomAllowance(), current: data.items.length },
     }
   }
 
@@ -124,7 +153,8 @@ function createWorkflowService (deps = {}) {
     if (!validated.ok) return { ok: false, reason: 'invalid-config', errors: validated.errors }
     const list = loadCustom()
     if (list.some((t) => t.name === name)) return { ok: false, reason: 'name:duplicate' }
-    if (list.length >= MAX_CUSTOM) return { ok: false, reason: 'limit' }
+    const allowance = maxCustomAllowance()
+    if (list.length >= allowance) return limitFailure(allowance, list.length)
     const template = {
       id: newTemplateId(),
       name,
@@ -178,7 +208,8 @@ function createWorkflowService (deps = {}) {
     if (!validated.ok) return { ok: false, reason: 'invalid-config', errors: validated.errors }
     const list = loadCustom()
     const conflict = list.find((t) => t.name === migrated.template.name) || null
-    if (!conflict && list.length >= MAX_CUSTOM) return { ok: false, reason: 'limit' }
+    const allowance = maxCustomAllowance()
+    if (!conflict && list.length >= allowance) return limitFailure(allowance, list.length)
     const suggestedName = conflict
       ? uniqueName(migrated.template.name, list.map((t) => t.name))
       : migrated.template.name
@@ -253,6 +284,7 @@ function createWorkflowService (deps = {}) {
 
   return {
     listTemplates,
+    setEntitlementProvider,
     getWorkflowMeta,
     saveTemplate,
     deleteTemplate,

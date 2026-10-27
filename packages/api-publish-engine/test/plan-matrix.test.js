@@ -119,6 +119,15 @@ test('plan-matrix 契约（spec §2）', async (t) => {
     assert.strictEqual(free.limits.max_scheduled_tasks, 0)
     assert.strictEqual(standard.limits.max_scheduled_tasks, 100)
     assert.strictEqual(getPlanEntitlement('pro').limits.max_scheduled_tasks, -1)
+    // v3.1：自定义自动化 0/10/50 条工作流；0/50/500 条·日
+    assert.strictEqual(free.limits.max_workflows, 0)
+    assert.strictEqual(free.limits.automation_daily_items, 0)
+    assert.strictEqual(standard.limits.max_workflows, 10)
+    assert.strictEqual(standard.limits.automation_daily_items, 50)
+    assert.strictEqual(getPlanEntitlement('pro').limits.max_workflows, 50)
+    assert.strictEqual(getPlanEntitlement('pro').limits.automation_daily_items, 500)
+    assert.ok(standard.features.includes('automation_workflow'))
+    assert.ok(!free.features.includes('automation_workflow'))
     // v3.1：视频创作只做功能开关，不设条数上限（free 0 = 不提供）
     assert.strictEqual(standard.quota.video_create_monthly, -1)
     assert.strictEqual(getPlanEntitlement('pro').quota.video_create_monthly, -1)

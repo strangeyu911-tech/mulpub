@@ -2258,3 +2258,78 @@ test("遗留10-T11 合并态与暂存档同口径：.ccg 自身产物进观测�
     fx.cleanup()
   }
 })
+
+// ── 残余2 续（2026-10-26）：旗标等号形态 + 「未判定」必须是独立退出码档 ──
+function cliIn(root, args) {
+  return spawnSync(process.execPath, [SRC].concat(args), { cwd: root, encoding: "utf8" });
+}
+
+test("残余2续：--base=<rev> 与 --base <rev> 两种写法都必须真正生效", () => {
+  const { root, g } = makeRangeRepo();
+  try {
+    fs.writeFileSync(path.join(root, "scripts", "feature.js"), "const a = 1;\n");
+    g("add", ".");
+    g("commit", "-q", "-m", "feature");
+    for (const argv of [["--print", "--base=HEAD~1"], ["--print", "--base", "HEAD~1"]]) {
+      const r = cliIn(root, argv);
+      const out = `${r.stdout || ""}${r.stderr || ""}`;
+      assert.strictEqual(r.status, 0, `${argv.join(" ")} 应当判定成功；输出：\n${out}`);
+      assert.doesNotMatch(out, /未判定/, `${argv.join(" ")} 被读成未判定 ⇒ 等号形态没生效：\n${out}`);
+      assert.doesNotMatch(out, /暂存区无变更/, `${argv.join(" ")} 落回了暂存区路径：\n${out}`);
+    }
+  } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }) } catch { /* 夹具 */ }
+  }
+});
+
+test("残余2续：显式 --base 读不到 ⇒ rc=2（判据自身故障档），不得与「无需审查」同形", () => {
+  const { root } = makeRangeRepo();
+  try {
+    const r = cliIn(root, ["--print", "--base", "no-such-rev"]);
+    const out = `${r.stdout || ""}${r.stderr || ""}`;
+    assert.match(out, /未判定/, `必须说「未判定」；实际：\n${out}`);
+    assert.strictEqual(r.status, 2, `显式基准读不到必须 rc=2；实际 ${r.status}\n${out}`);
+  } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }) } catch { /* 夹具 */ }
+  }
+});
+
+test("残余2续：显式 --base 的差量为空 ⇒ rc=2（今天返 0 ⇒ 补跑链会把「没判」当「判过」）", () => {
+  const { root } = makeRangeRepo();
+  try {
+    const r = cliIn(root, ["--print", "--base", "HEAD"]);
+    const out = `${r.stdout || ""}${r.stderr || ""}`;
+    assert.match(out, /未判定/, `必须说「未判定」；实际：\n${out}`);
+    assert.strictEqual(r.status, 2, `差量为空必须 rc=2；实际 ${r.status}\n${out}`);
+  } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }) } catch { /* 夹具 */ }
+  }
+});
+
+test("残余2续：未知旗标与空值旗标一律 rc=2 并点名，禁止静默忽略", () => {
+  const { root } = makeRangeRepo();
+  try {
+    const a = cliIn(root, ["--print", "--frobnicate"]);
+    const aOut = `${a.stdout || ""}${a.stderr || ""}`;
+    assert.strictEqual(a.status, 2, `未知旗标必须 rc=2；实际 ${a.status}\n${aOut}`);
+    assert.match(aOut, /--frobnicate/, `必须点名该旗标；实际：\n${aOut}`);
+    const b = cliIn(root, ["--print", "--base="]);
+    assert.strictEqual(b.status, 2, `--base= 空值必须 rc=2；实际 ${b.status}`);
+  } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }) } catch { /* 夹具 */ }
+  }
+});
+
+test("残余2续 反向对偶：pre-commit 常态（无参数、空暂存区）仍必须 rc=0", () => {
+  const { root } = makeRangeRepo();
+  try {
+    const r = cliIn(root, ["--print"]);
+    const out = `${r.stdout || ""}${r.stderr || ""}`;
+    assert.match(out, /未判定/, `仍要说「未判定」而不是「无需审查」；实际：\n${out}`);
+    // 这一档是 pre-commit 的常态（暂存区为空很常见），把它判红等于每次提交都阻断；
+    // 因此 rc=0 是**有意的**，且必须与上面两条"显式域"档可区分。
+    assert.strictEqual(r.status, 0, `pre-commit 常态不得阻断；实际 ${r.status}\n${out}`);
+  } finally {
+    try { fs.rmSync(root, { recursive: true, force: true }) } catch { /* 夹具 */ }
+  }
+});

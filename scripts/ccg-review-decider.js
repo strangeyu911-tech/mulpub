@@ -1063,15 +1063,43 @@ function backendNoticeLines(backends, mode) {
   return out;
 }
 
+// 退出码口径（本文件被 pre-commit 与 gate 补跑两条链共用，档位必须可区分）：
+//   0 = 判定完成且无需阻断；或 pre-commit 常态下"无显式域可判"
+//   1 = 判定完成、需要阻断（缺判定记录 / 深度审查欠账）
+//   2 = **判据自身没跑成**（参数不认、显式给的基准读不到 / 差量为空）——
+//       这一档绝不能返 0：调用方会把「从未执行」读成「无需审查」。
+const EXIT_SELF_FAULT = 2;
+
 function main() {
   const argv = process.argv.slice(2);
   const printOnly = argv.includes("--print");
-  const shaIdx = argv.indexOf("--sha");
-  const sha = shaIdx >= 0 && argv[shaIdx + 1] ? argv[shaIdx + 1] : currentSha();
-  const inputIdx = argv.indexOf("--input");
+  // 旗标读取单一实现：`--name value` 与 `--name=value` **两种写法都必须生效**。
+  // 旧实现只写 argv.indexOf("--base") 再取下一个参数 ⇒ `--base=origin/main` 被静默忽略，
+  // 于是「我显式给了基准」与「我压根没给」在输出上同形（正是残余2 最怕的那类）。
+  const KNOWN_FLAGS = new Set(["--print", "--sha", "--input", "--base"]);
+  const flagVal = (name) => {
+    for (let i = 0; i < argv.length; i++) {
+      const tok = argv[i];
+      if (tok === name) return argv[i + 1] === undefined ? "" : argv[i + 1];
+      if (tok.startsWith(name + "=")) return tok.slice(name.length + 1);
+    }
+    return null;
+  };
+  const unknownFlags = argv.filter((t) => t.startsWith("--") && !KNOWN_FLAGS.has(t.split("=")[0]));
+  if (unknownFlags.length) {
+    console.log(`   [CCG] ✗ 参数不被识别：${unknownFlags.join(" ")}｜可用旗标：${[...KNOWN_FLAGS].join(" / ")}`);
+    console.log("         静默忽略参数不等于「已按你的意图判定」⇒ rc=2（判据自身故障档）");
+    return EXIT_SELF_FAULT;
+  }
+  for (const f of ["--sha", "--input", "--base"]) {
+    if (flagVal(f) === "") {
+      console.log(`   [CCG] ✗ ${f} 只给了等号没有值 ⇒ 不得当作未传处理（rc=2）`);
+      return EXIT_SELF_FAULT;
+    }
+  }
+  const sha = flagVal("--sha") || currentSha();
   // --base <rev> = 验证层·已提交区间：事后补跑时判 base...HEAD，而不是（通常为空的）暂存区
-  const baseIdx = argv.indexOf("--base");
-  const base = baseIdx >= 0 && argv[baseIdx + 1] ? argv[baseIdx + 1] : null;
+  const base = flagVal("--base");
 
   // --input <方案文件> = 决策层：动手之前对方案判复杂度
   // --base <rev>       = 验证层·已提交区间：事后补跑（残余 2）
@@ -1086,8 +1114,9 @@ function main() {
   // 提到外层是因为保存记录时要拿 staged.mergeScope / staged.files 组 pathspec，
   // 而且必须能区分「合并态的空交集」与「普通空暂存区」两种空。
   let mergeState = { merging: false, mergeHead: null, probeError: null };
-  if (inputIdx >= 0 && argv[inputIdx + 1]) {
-    const file = path.resolve(argv[inputIdx + 1]);
+  const inputFile = flagVal("--input");
+  if (inputFile) {
+    const file = path.resolve(inputFile);
     staged = collectProposal(file);
     if (staged.error) {
       console.log(`   [CCG] ${staged.error}`);
@@ -1100,7 +1129,8 @@ function main() {
       console.log("         这**不等于**「无需审查」。可用基准按序试：");
       console.log("           origin/main / main / <本次改动之前的那个提交>；");
       console.log("           或用 CCG_DECIDER_BASE=<rev> 指定后重跑。");
-      return 0;
+      console.log("         ⇒ rc=2：基准是调用方**显式给的**，读不到就是判据没跑成，不得读成「无需审查」。");
+      return EXIT_SELF_FAULT;
     }
     if (staged.files.length === 0) {
       // ★ 深度审查 i3 修正（2026-10-15）：原措辞只提示「若你期望有改动，说明 base 选错了」，
@@ -1117,7 +1147,8 @@ function main() {
         `           ② 改动**已并入 ${base}**（HEAD 就在基准上）⇒ 换更早的基准，例如` +
           ` \`--base ${base}~1\`，或用 \`git log\` 找到本次改动的父提交`
       );
-      return 0;
+      console.log("         ⇒ rc=2：显式基准的差量为空 ⇒ 这批改动从未被判定，不得读成「无需审查」。");
+      return EXIT_SELF_FAULT;
     }
   } else {
     // ★ 遗留 10（2026-10-20）：合并态走**独立采集**，不复用暂存区口径。

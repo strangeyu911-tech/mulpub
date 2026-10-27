@@ -1,0 +1,105 @@
+{
+  "sha": "fd20c886aa5c00360167871108b82c738390833c",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 107 行（≤ 200）但命中 auth/数据库/加密：敏感内容 12 处",
+  "stats": {
+    "changedLines": 107,
+    "fileCount": 6,
+    "codeFileCount": 3,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 12,
+    "docSensitiveContentHits": 11,
+    "docSensitiveContentSample": [
+      "- 直接调用同模型 `max_tokens=4000`：`content=\"\"`、`finish_reason=\"length\"`、`reasoning_tokens=4000`，全部预算被思考占用；",
+      "- `videogen-stages.js`：新增 `MAX_LLM_BUDGET_TOKENS=16000`；",
+      "- 直接 LLM 证据：`tianyiyun-coding-plan / deepseek-v4-flash-0731-oc` + 16000 tokens 返回合法 12 场景 JSON（completion_tokens=1480）。"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "55cc926d58c37f9eecd54c7dca33afe04aa8989e4fe26b37e0c2728601e0433b",
+  "decidedAt": "2026-10-27T13:10:51.123Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "finding": "New top-level `require('./logger')` introduces runtime dependency; if `logger.js` missing, module load crashes and service won't start.",
+        "highRiskDomains": [],
+        "prosecution": "新增 top-level require('./logger')；若 logger.js 缺失，模块加载崩溃，服务无法启动。",
+        "defense": "`logger.js` 是仓内既有模块，`videogen-stages.js` 同目录且被大量服务使用；测试 42 例已加载该模块通过。若 logger 缺失，整个 Electron 服务本来也无法启动，不是本 PR 新增风险。",
+        "verdict": "dismissed",
+        "rationale": "logger 是既有必需模块；模块加载与 42 例测试均通过。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "`exhausted` requires `finish_reason='length'` OR reasoning ≥ 90% budget; empty content with `finish_reason='stop'` skips escalation silently.",
+        "highRiskDomains": [],
+        "prosecution": "空 content 且 finish_reason=stop 时不升级，静默失败。",
+        "defense": "`finish_reason=stop` + 空 content 通常表示内容过滤/模型主动空回复，不是预算耗尽；盲目升级到 16000 只会增加成本且大概率仍为空。当前策略只对 `length` 或 reasoning≥90% 的预算耗尽升级，其他空回复直接报错，符合 fail-closed。",
+        "verdict": "dismissed",
+        "rationale": "stop+空内容不是预算问题；升级无益，直接报错更正确。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "`budgetAttempt` added as 6th positional argument; callers and tests depend on exact arg order, fragile to future changes.",
+        "highRiskDomains": [],
+        "prosecution": "budgetAttempt 作为第 6 个位置参数，调用方依赖参数顺序，未来易错。",
+        "defense": "`budgetAttempt` 只由 `callDefaultLlm` 内部递归传递，外部调用方（concept/storyboard/script）都不传；测试也只在验证时省略。6 个参数是内部实现细节，不是公开 API。",
+        "verdict": "dismissed",
+        "rationale": "该参数仅内部递归使用，外部调用不依赖。"
+      },
+      {
+        "id": "i7",
+        "severity": "Warning",
+        "finding": "`budgetAttempt > 2` throws before 4th LLM call; parameter named 'attempt' but represents retry index, can be misread.",
+        "highRiskDomains": [],
+        "prosecution": "budgetAttempt > 2 在第 4 次调用前抛错；参数名 attempt 实际是 retry index，易误读。",
+        "defense": "语义是 retry index：0=首次，1=第二次，2=第三次；`MAX_LLM_BUDGET_ATTEMPTS=2` 表示最多 2 次重试（共 3 次调用）。测试明确断言 calls=3。命名不影响行为。",
+        "verdict": "dismissed",
+        "rationale": "参数语义与测试一致，最多 3 次调用；命名是风格问题。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T13:15:39.449Z"
+  }
+}

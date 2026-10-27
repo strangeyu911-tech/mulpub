@@ -20,6 +20,7 @@
 'use strict'
 
 const { execFile } = require('child_process')
+const log = require('./logger')
 const fs = require('fs')
 const http = require('http')
 const https = require('https')
@@ -129,7 +130,10 @@ function getVideoProviderConfig (aiGenerator) {
 }
 
 
-async function callDefaultLlm (aiGenerator, systemPrompt, userContent, maxTokens, runtimeOptions) {
+const MAX_LLM_BUDGET_TOKENS = 16000
+const MAX_LLM_BUDGET_ATTEMPTS = 2
+
+async function callDefaultLlm (aiGenerator, systemPrompt, userContent, maxTokens, runtimeOptions, budgetAttempt = 0) {
   if (!aiGenerator || typeof aiGenerator.generateWithDefault !== 'function') {
     throw new Error('默认 LLM 不可用，请先完成模型设置')
   }
@@ -137,10 +141,20 @@ async function callDefaultLlm (aiGenerator, systemPrompt, userContent, maxTokens
   if (!llmConfig) {
     throw new Error('未找到需要的相关模型，请在设置中添加模型')
   }
-  // 显式 maxTokens 优先；未指定时推理型模型自动放大预算，避免思考块截断 JSON
-  const effectiveMaxTokens = Number.isFinite(maxTokens)
+  if (budgetAttempt > MAX_LLM_BUDGET_ATTEMPTS) {
+    throw new Error('LLM 预算升级次数超过上限: ' + budgetAttempt)
+  }
+  const reasoningModel = isReasoningLlmModel(llmConfig.model)
+  const allowEscalation = !(runtimeOptions && runtimeOptions.disableBudgetEscalation === true)
+  const { disableBudgetEscalation: _disableBudgetEscalation, ...forwardRuntimeOptions } = runtimeOptions || {}
+  // 显式 maxTokens 优先；未指定时推理型模型自动放大预算，避免思考块截断 JSON。
+  // 升级公式：base * 2^attempt，封顶 MAX_LLM_BUDGET_TOKENS。
+  const baseMaxTokens = Number.isFinite(maxTokens)
     ? maxTokens
-    : (isReasoningLlmModel(llmConfig.model) ? REASONING_LLM_MAX_TOKENS : DEFAULT_LLM_MAX_TOKENS)
+    : (reasoningModel ? REASONING_LLM_MAX_TOKENS : DEFAULT_LLM_MAX_TOKENS)
+  const effectiveMaxTokens = budgetAttempt === 0
+    ? baseMaxTokens
+    : Math.min(MAX_LLM_BUDGET_TOKENS, baseMaxTokens * (2 ** budgetAttempt))
   const result = await aiGenerator.generateWithDefault('llm', {
     temperature: 0.7,
     max_tokens: effectiveMaxTokens,
@@ -148,9 +162,26 @@ async function callDefaultLlm (aiGenerator, systemPrompt, userContent, maxTokens
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userContent },
     ],
-  }, undefined, runtimeOptions)
+  }, undefined, forwardRuntimeOptions)
   const content = result && typeof result.content === 'string' ? result.content.trim() : ''
-  if (!content) throw new Error('默认 LLM 返回空内容')
+  if (!content) {
+    const usage = (result && result.usage) || {}
+    const details = usage.completion_tokens_details || {}
+    const reasoningTokens = Number(details.reasoning_tokens)
+    // 只有推理型模型才把空 content 归因于思考预算；非推理模型直接报错，避免无谓高成本重试。
+    const exhausted = reasoningModel && (
+      (result && result.finish_reason === 'length') ||
+      (Number.isFinite(reasoningTokens) && reasoningTokens >= effectiveMaxTokens * 0.9)
+    )
+    if (allowEscalation && exhausted && budgetAttempt < MAX_LLM_BUDGET_ATTEMPTS && effectiveMaxTokens < MAX_LLM_BUDGET_TOKENS) {
+      log.warn('VideoGenStages', 'LLM 输出为空且推理预算耗尽（attempt=' + budgetAttempt +
+        ', max_tokens=' + effectiveMaxTokens + ', reasoning_tokens=' + (Number.isFinite(reasoningTokens) ? reasoningTokens : 'n/a') +
+        ', finish_reason=' + String((result && result.finish_reason) || '') + '），提升预算后重试')
+      return callDefaultLlm(aiGenerator, systemPrompt, userContent, maxTokens, forwardRuntimeOptions, budgetAttempt + 1)
+    }
+    throw new Error('默认 LLM 返回空内容' + (exhausted ? '（推理预算耗尽，已到上限 ' + effectiveMaxTokens + ' tokens）' : '') +
+      (exhausted && !allowEscalation ? '；调用方已禁用预算升级' : ''))
+  }
   return content
 }
 
@@ -1026,6 +1057,8 @@ module.exports = {
   FIDELITY_MODES,
   DEFAULT_LLM_MAX_TOKENS,
   REASONING_LLM_MAX_TOKENS,
+  MAX_LLM_BUDGET_TOKENS,
+  MAX_LLM_BUDGET_ATTEMPTS,
   REASONING_MODEL_PATTERNS,
   isReasoningLlmModel,
   resolveStoryboardMode,

@@ -317,3 +317,36 @@ hybrid 真实执行 mvqk4n8q_fbto：156s 后失败，错误为「排队等待超
 - 需要应用已启动、已登录、已配置 provider，且 9279 端口可连；CI 不自动跑。
 - 不验证 key 有效性、额度、base_url、模型名；这些由应用内 `pipeline-model-preflight` 与真实执行负责。
 - 产物在应用临时目录，报告只记录路径，不复制大文件。
+
+
+## 十四、增量 5：推理型 LLM 预算修复与 CDP 超时对齐（2026-10-27）
+
+### 14.1 animation 失败根因
+
+`animation` 第二次真实执行失败在 `storyboard`，错误 `storyboard 无法解析场景 JSON`。根因不是 JSON parser，而是**默认 LLM 的推理预算耗尽**：
+
+- 默认 LLM 为 `deepseek-v4-flash`（推理型）；
+- 直接调用同模型 `max_tokens=4000`：`content=""`、`finish_reason="length"`、`reasoning_tokens=4000`，全部预算被思考占用；
+- `storyboard` 收到空字符串，`parseJsonArray` 返回 null，三次重试仍空 → `STORYBOARD_EMPTY_SCENES`。
+
+另外 CDP 驱动默认 20min，而清单 `animation.timeoutSec=1800`（30min），首次失败被误读为纯超时。
+
+### 14.2 修复
+
+- `videogen-stages.js`：新增 `MAX_LLM_BUDGET_TOKENS=16000`；
+- `callDefaultLlm` 在 `content` 为空且 `finish_reason=length` 或 reasoning_tokens ≥ 90% 预算时，自动翻倍重试：5000 → 10000 → 16000；
+- 到 16000 仍空：明确抛「推理预算耗尽，已到上限 16000 tokens」，不无限重试；
+- 显式 `maxTokens` 同样走升级链（4000 → 8000 → 16000）；
+- CDP `DEFAULT_TIMEOUT_MS` 20min → 30min，与清单对齐。
+
+### 14.3 验证
+
+- `videogen-stages.test.js`：42 passed（新增 2 例：空 content + length 升级；到上限只调用 3 次并明确报错）。
+- 直接 LLM 证据：`tianyiyun-coding-plan / deepseek-v4-flash-0731-oc` + 16000 tokens 返回合法 12 场景 JSON（completion_tokens=1480）。
+- animation/hybrid 仍为 `NO_DRIVER`；需重启应用加载本修复后真实重跑，PASS 才允许挂 driver。
+
+### 14.4 边界
+
+- 只对「空 content + length/推理占满」升级，不把所有调用放大。
+- 未验证 MiniMax-M2.7/M3、kimi 等其他推理模型在 16000 下的表现。
+- 当前运行中的应用加载的是旧代码，本增量不自动重启用户应用。

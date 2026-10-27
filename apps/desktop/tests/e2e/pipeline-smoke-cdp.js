@@ -21,7 +21,7 @@ const { execFileSync } = require('child_process')
 const { PIPELINE_SMOKE_MANIFEST } = require('../../scripts/pipeline-smoke/manifest')
 
 const DEFAULT_CDP_PORT = 9279
-const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000
+const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
 const DEFAULT_TEXT = '一段用于流水线冒烟测试的短视频文案。\n第二句用于验证分镜和字幕。'
 
 function parseJson (text, label) {

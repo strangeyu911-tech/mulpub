@@ -608,4 +608,64 @@ describe('推理型 LLM 的默认 max_tokens 预算', () => {
     await callDefaultLlm(ai, 'system', 'user', 1234)
     expect(ai.generateWithDefault.mock.calls[0][1].max_tokens).toBe(1234)
   })
+  it('推理模型把预算全用于 reasoning 导致空 content 时自动提升预算重试', async () => {
+    let calls = 0
+    const ai = {
+      _modelProviderManager: { getDefault: () => ({ id: 'test-llm', models: ['deepseek-v4-flash'] }) },
+      generateWithDefault: vi.fn(async () => {
+        calls += 1
+        if (calls === 1) {
+          return { content: '', finish_reason: 'length', usage: { completion_tokens_details: { reasoning_tokens: 5000 } } }
+        }
+        return { content: '[{"prompt":"p","text":"t","duration":5}]', finish_reason: 'stop' }
+      }),
+    }
+    const out = await callDefaultLlm(ai, 'system', 'user', undefined)
+    expect(out).toContain('prompt')
+    expect(ai.generateWithDefault.mock.calls[0][1].max_tokens).toBe(REASONING_LLM_MAX_TOKENS)
+    expect(ai.generateWithDefault.mock.calls[1][1].max_tokens).toBe(REASONING_LLM_MAX_TOKENS * 2)
+  })
+
+  it('预算提升到上限仍为空时明确报错，不无限重试', async () => {
+    let calls = 0
+    const ai = {
+      _modelProviderManager: { getDefault: () => ({ id: 'test-llm', models: ['deepseek-v4-flash'] }) },
+      generateWithDefault: vi.fn(async () => {
+        calls += 1
+        return { content: '', finish_reason: 'length', usage: { completion_tokens_details: { reasoning_tokens: 16000 } } }
+      }),
+    }
+    await expect(callDefaultLlm(ai, 'system', 'user', undefined)).rejects.toThrow('推理预算耗尽')
+    expect(calls).toBe(3)
+  })
+
+  it('非推理模型空 content + length 不触发预算升级', async () => {
+    const ai = makeAiWithLlmModel('agnes-2.0-flash', '')
+    await expect(callDefaultLlm(ai, 'system', 'user', undefined)).rejects.toThrow('默认 LLM 返回空内容')
+    expect(ai.generateWithDefault).toHaveBeenCalledTimes(1)
+  })
+
+  it('调用方可通过 disableBudgetEscalation 拒绝高成本重试', async () => {
+    const ai = makeAiWithLlmModel('deepseek-v4-flash', '')
+    ai.generateWithDefault = vi.fn(async () => ({ content: '', finish_reason: 'length', usage: { completion_tokens_details: { reasoning_tokens: 5000 } } }))
+    await expect(callDefaultLlm(ai, 'system', 'user', undefined, { disableBudgetEscalation: true })).rejects.toThrow('已禁用预算升级')
+    expect(ai.generateWithDefault).toHaveBeenCalledTimes(1)
+  })
+
+  it('显式 maxTokens 也按 4000→8000 升级', async () => {
+    let calls = 0
+    const ai = {
+      _modelProviderManager: { getDefault: () => ({ id: 'test-llm', models: ['deepseek-v4-flash'] }) },
+      generateWithDefault: vi.fn(async () => {
+        calls += 1
+        if (calls === 1) return { content: '', finish_reason: 'length', usage: { completion_tokens_details: { reasoning_tokens: 4000 } } }
+        return { content: 'ok', finish_reason: 'stop' }
+      }),
+    }
+    const out = await callDefaultLlm(ai, 'system', 'user', 4000)
+    expect(out).toBe('ok')
+    expect(ai.generateWithDefault.mock.calls[0][1].max_tokens).toBe(4000)
+    expect(ai.generateWithDefault.mock.calls[1][1].max_tokens).toBe(8000)
+  })
+
 })

@@ -1,7 +1,7 @@
 # 影视工程「自动」模式长篇化改造 · 实施落地方案
 
 > **文档类型**：PRD + 实施落地方案（先文档后代码的输入件）
-> **版本**：v1.11
+> **版本**：v1.12
 > **日期**：2026-10-24
 > **代码基线**：`Colinchiu007/mulpub` @ `ceef6e74e`（2026-10-24 拉取，已 `--unshallow` 补全 5626 提交历史）
 > **上游文档**：`01-docs/PRD-FILM-AUTO-MODE-2026-10-09.md`（自动模式 v3 定稿）、`01-docs/PRD-FILM-FULL-CORPUS-PRODUCTION-2026-09-23.md`（全量出片）
@@ -307,8 +307,10 @@ ffprobe -v error -print_format json -show_streams shot_000.mp4 | \
 - 有 audio 流 ⇒ 前提 (a) 成立 ⇒ 走 §四 全套需求；
 - 无 audio 流 ⇒ 前提不成立 ⇒ **本方案 R3/R4/R5 全部作废**，改为「先补适配器音轨开关 + 建 provider 音轨能力表」，长篇化降级为 P1。
 
-**附带产出**：一张 `VIDEO_AUDIO_PARAM_BY_PROVIDER` 能力表（形态照抄 `video-reference-inputs.js:30-34` 的 `VIDEO_REFERENCE_PARAM_BY_PROVIDER`），
-在规划期就告诉用户「你配的 provider 不产对白」，而不是等 15 小时跑完才发现。
+**附带产出**：一张 `VIDEO_AUDIO_CAPABILITY_BY_PROVIDER` 音轨能力表（**已落地** = §3.2.5.6；
+形态取自 `video-reference-inputs.js` 的 `Object.freeze` 映射 + 保守探测，但**条目是「能力」不是「参数名」**），
+让规划期能区分「**这个 provider 的音轨从哪来**」，而不是等 15 小时跑完才发现。
+⚠ **但「未实测」不能当成「不产对白」来告警**（未实测 ≠ 不支持）⇒ 详见 §3.2.5.6 的三态设计。
 
 ### F-2 目标 Provider 是否接受应用下发的镜长？
 
@@ -518,9 +520,13 @@ Duration: 8.000000 s
 **⇒ 结论**：
 1. **前提 (a) 成立** ⇒ provider 隐式产音轨 ⇒ 「对白和声音交给视频生成模型统一完成」的产品前提**成立**
    ⇒ **§四 R3 / R4 / R5 不作废**，长篇化维持原优先级；
-2. **音轨能力表**（`VIDEO_AUDIO_PARAM_BY_PROVIDER`，M0.4）新增一行：
-   `agnes-multimodal`（`agnes-video-2.5-flash`）⇒ 音轨开关列 = **「不需要（隐式）」**；
-3. ⚠️ **`params.audios` 是「参考音频输入」（reference 模式素材），不是「生成对白」的开关** ⇒ 不得填进能力表的开关列。
+2. **音轨能力表**（M0.4，**已落地** = §3.2.5.6）：产出 `VIDEO_AUDIO_CAPABILITY_BY_PROVIDER`
+   ⇒ **覆盖全部 15 个视频 provider**（不是「只列测过的那一个」⇒ 否则「漏列」与「未实测」同形）；
+   `agnes-multimodal`（`agnes-video-2.5-flash`）⇒ `mode = implicit`（音轨**不需要**显式开关）；
+3. ⚠️ **`params.audios` 是「参考音频输入」（reference 模式素材），不是「生成对白」的开关** ⇒ 不得填进能力表的 `audioParam` 列。
+4. ⚠️ **实测推翻了「音轨表 = provider → 开关参数名」的预设**：**没有任何 provider 有「音轨开关」参数**
+   ⇒ ⇒ 表项必须是**能力条目**（`{ mode, audioParam, audioSource, verified, evidence }`），不是参数名映射；
+   ⇒ ⇒ 且 `mode` 必须是**三态**（`implicit` / `explicit` / `unknown`）—— **「未实测」≠「不支持」**（§3.2.5.6）。
 
 ### 3.2.2　表 3.2-2　F-2　目标 Provider 是否接受应用下发的镜长？
 
@@ -1153,6 +1159,92 @@ M-8 唯一写点写死 `false` ⇒ **2 红**。
   （用户选不了的档位）⇒ 出片端 `pickFilmFrameCount(12)` = 289 帧（存在 ⇒ 链路自洽），
   但「用户能不能选 12」与「规划期该不该算到 12」是**两个问题** ⇒ 本片只如实记录，不统一。
 
+#### 3.2.5.6　M0.4　音轨能力表（2026-10-27，✅ 本版已落地）
+
+**产出物**：`apps/desktop/electron/services/film-engineering/video-audio-inputs.js`
+（`VIDEO_AUDIO_CAPABILITY_BY_PROVIDER` + 三态探测函数）+ `video-audio-inputs.test.js`（16 例）。
+
+##### ⛔ 为什么是**三态**（`implicit` / `explicit` / `unknown`），不是二态
+
+「音轨支持 / 不支持」这个二态**会骗人**：
+- `agnes-multimodal`：**模型自己产音轨**（实测 51/51 产物带 `aac`）⇒ `implicit`（**不需要**显式开关）；
+- `heygen`：**有显式音轨参数**（数字人 `voice` + `script`）⇒ `explicit`；
+- 其余 13 个：**读源码未见音轨参数，但产物未验证** ⇒ `unknown`。
+
+⇒ ⭐ **`unknown` ≠「不支持」** ⇒ 探测函数**不能只返回布尔**（否则两者同形）
+⇒ ⇒ `resolveVideoAudioCapability()` 返回**结构化对象** `{ mode, audioParam, audioSource, verified, evidence }`；
+⇒ ⇒ `isVideoModelProducedAudio()` 对 `unknown` 返回 **`null`（未知）**、不是 `false`（不满足）。
+
+##### ⭐ 域 = **15 个**视频 provider（权威判据，**不靠人工名单**）
+
+**判据 = `adapter.supports('generateVideo') === true`**
+（`adapters/_base/base.js`：`KNOWN_METHODS` 含该方法 **且** 实例的 `generateVideo` **不等于** `BaseAdapter.prototype.generateVideo`
+⇒ 只「提及」不算，只「继承基类默认实现」也不算）。
+
+实测集合（**15 个**）：`hunyuan` / `cogvideo` / `grok-video` / `heygen` / `kling` / `runway` / `veo` / `wan` /
+`minimax` / `minimax-multimodal` / `agnes-multimodal` / `ltx` / `seedance` / `higgsfield` / `agnes-video`。
+
+⚠ **两个易错口径**：
+- ⛔ 仓内注册表 `model-provider-manager.js` 那段注释写「视频生成 (14)」⇒ **数字也不准**（该区块实为 16 条目，
+  其中 `hifly` 是数字人类、**不支持** `generateVideo`）⇒ **以 `supports()` 实测为准**；
+- ⛔ `comfyui` **不是**视频 provider（注册在图像区块）⇒ 旧口径把它算成视频适配器是错的。
+
+⇒ ★ **表覆盖全部 15 个**（不是「只列测过的那一个」）
+⇒ ⇒ 否则「**漏列**」与「**未实测**」在读数上同形（前者是缺陷、后者是事实）⇒ 机械锁双向比对（漏列/多列都红）。
+
+##### ⛔ 域的边界：本表**不是**「仓里有没有 TTS」
+
+本表的域 = **「视频适配器的音轨产出方式」** ⇒ 仓内的 `doubao-tts` / `elevenlabs` / `mimo-tts` / `minimax-tts` /
+`google-tts` / `openai-tts` / `suno` / `musicgen` / `pixabay-music` / `freesound` / `local-whisper` …
+**全部不属于本表**（那是独立的语音/音乐能力，不是「视频出片时音轨从哪来」）。
+⇒ ⚠ **`minimax-multimodal` 是这个边界最容易踩的** ⇒ 它**有** `synthesize` / `listVoices` / `cloneVoice`（TTS 能力），
+但它的 `generateVideo` **转发给 `minimax.js`**（载荷 = `model/prompt/duration/resolution/first_frame_image/prompt_optimizer`，
+**无音轨字段**）⇒ **仍判 `unknown`** ⇒ 「有 TTS 能力」**不等于**「视频出片有音轨」。
+
+##### ★ `audioSource`：音轨的**来源类别**（`mode` 之外的第二个维度）
+
+| `audioSource` | 含义 | 满足「音轨交给视频模型」前提？ |
+|---|---|---|
+| `model` | 音轨来自**视频模型本身** | ✅ 满足 |
+| `tts` | 音轨由**独立 TTS / 数字人**驱动 | ⛔ **不满足** |
+| `null` | 未实测 | ⚠ 未知（不是「不满足」） |
+
+⇒ `heygen` = `explicit` + `audioSource: 'tts'` ⇒ ⚠ **它不满足本仓前提**
+（HeyGen 的 `generateVideo` 是**数字人视频**：`params.character` / `params.voice` / `params.script` **三者必填**，
+音轨 = `voice{type:'text', input_text:script, voice_id:voice}`）⇒ 声音来自 TTS，不是视频模型。
+⇒ ⇒ **规划期若选它，音轨来源要另行说明**（这是**前提不适配**，不是缺陷）。
+
+##### ⛔ `agnes-multimodal` 的 `params.audios` **不得**填进 `audioParam`
+
+它（≤3 个）是 **reference 模式的参考音频 URL 列表**（**输入素材**），
+**不是**「生成对白」的开关 ⇒ 填进去等于宣称「传 3 段参考音频就能开对白」⇒ 那是假的。
+⇒ ⇒ `audioParam` 必须是 `null`（有机械锁盯着）。
+
+##### 验收
+
+| 编号 | 判据 | 落点 |
+|---|---|---|
+| **A52** | ⭐ **域锁**：表内 provider 集合 **==** 实测 `supports('generateVideo')===true` 的集合（**双向**：漏列、多列都红） | `video-audio-inputs.test.js` |
+| **A53** | ⭐ **域边界锁**：TTS/音乐/STT 适配器（`openai-tts` / `suno` / `musicgen` / `freesound` / `local-whisper` / `elevenlabs` …）**不得**出现在本表；且「有 TTS 能力」的 `minimax-multimodal` **仍判 `unknown`** | `video-audio-inputs.test.js` |
+| **A54** | ⭐ **三态锁**：`heygen`=explicit（`audioParam='voice'` / `audioSource='tts'`）、`agnes-multimodal`=implicit（`audioParam=null`）、其余 **13 个**=unknown（`audioParam=null` / `audioSource=null` / `verified=false`）；且表里**恰好 1 条 explicit** | `video-audio-inputs.test.js` |
+| **A55** | ⭐ **「未实测 ≠ 不支持」锁**：未列入的 provider 与非字符串入参 ⇒ 一律 `unknown`（**不是**「不支持」）；`isVideoModelProducedAudio` 对 `unknown` 返回 **`null`**（不是 `false`）；未实测条目**共享同一冻结对象引用** | `video-audio-inputs.test.js` |
+
+##### 诚实边界
+
+- ⚠ **本片只产出「能力表」，规划期接入 = 遗留**（下片）。
+  ⇒ 原因**不是**「来不及」，而是**接入点与语义都还没定**：
+  ① 「告警」的对象在 `unknown` 面前**不成立**（未实测不能告警成「不支持」）；
+  ② 唯一可告警的 `heygen`（`audioSource='tts'`）在自动模式里**本来就用不了**
+  （`video-gen.js` 不传 `character`/`voice`/`script` ⇒ 会报 `INVALID_CONFIG`）⇒ 那是**另一个问题**（自动模式不接数字人 provider），
+  不该伪装成「音轨能力告警」；
+  ⇒ ⇒ 接入前必须先定「**未知 / 不满足前提 / 真不支持**」三者的**文案与落点**（并沿用 A33 的纪律：文案口径与数字口径同源、
+  文案本体要有文件级机械锁）。
+- ⚠ **本片新增了一个叶子模块，当前生产代码引用数 = 0** ⇒ ⚠ **「单测全绿」≠「已接线」**
+  ⇒ ⇒ 明确登记为「**能力表（供后续接入）**」，**不冒充**「规划期已能告警」。
+- ⚠ **本片不动出片链路、不动提示词、不动 locale** ⇒ 音轨行为与 M0 取证前**完全一致**。
+- ⚠ `heygen` 的 `explicit` 是**读源码 + 契约测试**得出的（其 `generateVideo` 必填 `voice`/`script`），
+  **未做真机出片验证** ⇒ 但「参数存在且必填」这件事本身是**源码级确定**的（不同于「产物有没有音轨」那种需要实测的事）。
+
 ### 3.2.6　对后续里程碑的影响（冻结项）
 
 | 里程碑 | 原前置 | 现在的状态 |
@@ -1162,7 +1254,7 @@ M-8 唯一写点写死 `false` ⇒ **2 红**。
 | **M1** 放开规模 + 护栏 | 依赖 M0 全过 | 🔓 **可启动**（§3.2.4 的 ①②③ 已于 2026-10-25 落地，见 §3.2.5.1 / §3.2.5.3）；⚠️ 仍需在 M1 内补：额度治理、`model_provider_logs` 侧复算工具、单镜重生成路径的熔断 |
 | **M0′.3** 出片消费逐镜镜长 | 依赖 F-2（镜长可控） | ✅ **已落地**（§3.2.5.4；新增 `effectiveSeconds` 字段，从 `rawSec` 吸附） |
 | **A33** 进度提示区分「执行中 / 已收口」 | 随 §3.2.5.1 | ✅ **已落地**（§3.2.5.5；新增 `landingProgress` 文案 + `resolveProgressMessageKeys` 单一真源） |
-| **M0.4** 音轨能力表 | 依赖 F-1 | ⏳ **下一片**：新增 `VIDEO_AUDIO_PARAM_BY_PROVIDER`，首行 `agnes-multimodal`（音轨开关 = 「不需要（隐式）」） |
+| **M0.4** 音轨能力表 | 依赖 F-1 | ✅ **已落地**（§3.2.5.6；产出 `VIDEO_AUDIO_CAPABILITY_BY_PROVIDER`，**15 个 provider 全覆盖**、**三态** `implicit`/`explicit`/`unknown`）｜⏳ **遗留**：**规划期接入**（告警文案与落点尚未定，见 §3.2.5.6 的诚实边界） |
 | **M0′.3.1** 12 秒档三处入口 | 新增 | ⏳ **遗留**：三处常量同时放开才有 12 秒档 |
 
 ---
@@ -1767,7 +1859,7 @@ templateShots: <随包 kit 153 镜>
 | M0.2 | F-2：目标 provider 镜长可控性取证（**✅ 已完成 2026-10-25**） | 《provider 镜长可控性实测表》= §3.2.2（**逐档**：121/201/241/**289** 帧四档） | ✅ 三态结论 = **全档可控**（5s 21/21 = 5.184s、8s = 8.000s、10s 2/2 = 10.144s；**289 帧档不可达 ⇒ 留空不推测**） |
 | M0.3 | F-3a：应用侧出片链路跑通（**已完成** 2026-10-24） | 12 镜 + `final.mp4`（真 ffmpeg 合成） | 真 ffprobe 断言（视频流/分辨率/时长 = 12 × 档位 ± 容差）+ 缺镜 fail-closed |
 | M0.3b | F-3b：真 provider 出片跑通（**✅ 已完成 2026-10-25**） | 真 provider 的 12 镜 + `final.mp4`（`62.240s` / 1488 帧 / 有音轨） | ✅ ffprobe 断言通过（时长偏差 0.032s）+ 留证（§3.2.3） |
-| M0.4 | 产出 `VIDEO_AUDIO_PARAM_BY_PROVIDER` 能力表（**🔓 可落地**） | 新文件 + 规划期接入 | 规划期能对不支持的 provider 告警；**首行** = `agnes-multimodal`（音轨开关 = 「不需要（隐式）」） |
+| M0.4 | 产出 `VIDEO_AUDIO_CAPABILITY_BY_PROVIDER` 音轨能力表（**✅ 已落地 2026-10-27**） | 新文件 `film-engineering/video-audio-inputs.js` + 单测 + 结构锁 | ✅ **域** = 15 个 `supports('generateVideo')===true` 的 provider（**实测为准，不靠人工名单**）；✅ **三态**：`agnes-multimodal`=implicit（有实测）、`heygen`=explicit（数字人 TTS）、其余 13 个 = **unknown（未实测）**；⏳ **规划期接入** = 遗留（见 §3.2.5.6） |
 | M0.5 | 依据 M0.1/M0.2 的结论，**冻结 R3 的档位形态**（**✅ 已完成 2026-10-25**） | 本文档 **v1.6**（补 R3 档 1/档 2/档 3 的最终选择；**本里程碑记录时**为 v1.5，**当前版本见文首**） | ✅ 冻结为**档 1**（档 2/档 3 保留不启用） |
 | M0.6 | **落盘体积实测**（A24 的上游依赖）：`prompt.length` 的 P50/P95 × 镜数 × 3 份副本 | 《落盘规模实测表》 | 给出 P50/P95 两个数与对应体积 |
 

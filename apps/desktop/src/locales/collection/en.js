@@ -352,6 +352,7 @@ export default {
       title: 'Video creation',
       pipelineLabel: 'Pipeline: {pipeline}',
       starting: 'Starting video creation…',
+      upgradeRequired: 'Video creation is available on Standard and Pro plans. Upgrade to unlock it.',
       textTruncated: 'The copy is {length} characters, over the {max}-character limit for video creation. The first {max} characters are used. To keep the full copy, lower the rewrite word-count limit or shorten the source text.',
       view: 'View video',
       publish: 'Publish',

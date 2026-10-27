@@ -1,0 +1,83 @@
+{
+  "sha": "2a4dca07e3635b4d5c0717eb22c81f98a4227860",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 495 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 495,
+    "fileCount": 25,
+    "codeFileCount": 22,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 33,
+    "docSensitiveContentHits": 1,
+    "docSensitiveContentSample": [
+      "**为什么空数组也放行**：identity store 的 `normalizeState` 会把缺失的 `features` 归一成 `[]`；若把 `[]` 判成未授权，一次旧快照字段漂移会把全体付费用户锁在功能外。这是与 `plan-limits` 相同的 fail-open 纪律。"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "59f55ae4d76dc65f3b46afc4fdc8a83fd3f3aa080a74be4875e011a548aee562",
+  "decidedAt": "2026-10-27T05:07:33.046Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "finding": "hasFeature 的缺失即放行（null）纪律微妙；未来功能门禁若误用 === true 而非 === false，会把旧快照付费用户锁死。",
+        "highRiskDomains": [],
+        "prosecution": "新调用方若写 `hasFeature(...) === true` 判断，null（旧快照）会被当成未授权，付费用户被锁；概率不低，因为 `=== true` 是常见写法。",
+        "defense": "本 PR 的四个消费点全部用 `=== false` / `!== false`（MemberFeatureGate、Collection、HotTopics、CreateGate 间接），并有单测明确锁「缺失 → 放行」；`hasFeature` 的 JSDoc 把 null/false/true 三态写死。要防的是未来误用，不是当前实现缺陷。",
+        "verdict": "dismissed",
+        "rationale": "当前所有消费点与测试都按三态契约实现；把「未来可能误用」当成本 PR 阻断项，会要求为每个纯函数预判所有误用方式。三态契约与用例已经是可验证的防线。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "本切片仅客户端入口层门禁（/create、采集页、热门选题）；服务端 pipeline:start 与 IPC 层无 video_create 强制，P1-1b 未落地。",
+        "highRiskDomains": [],
+        "prosecution": "攻击者/自动化脚本可直接 invoke `pipeline:start` 绕过 UI，免费档仍能消耗算力；「功能开关」应至少在主进程 choke point 强制。",
+        "defense": "P1-1 的验收明确是「免费入口关闭；标准/专业可用」，本 PR 已覆盖三个用户可见入口并写入 PRD §9 非目标；账号上限 P0 同样采用客户端硬限制。主进程 `pipeline:start`/`startOrchestrated` 的 feature map 改造涉及 `license-access-control` 的登录/权益双层语义与 QM-1 打包，已登记为 P1-1b，单独切片可避免把 UI 门禁与 IPC 安全改造混在一个 PR。",
+        "verdict": "dismissed",
+        "rationale": "指控描述的是本 PR 明确声明的非目标与后续切片，不是实现与验收不一致；当前 PR 对三个用户入口的拒绝行为有测试覆盖。残余风险已在 PRD §9 与执行记录「未落地」中公开。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T05:16:05.690Z"
+  }
+}

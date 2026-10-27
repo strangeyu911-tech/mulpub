@@ -11,6 +11,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { aiRewrite, draftSave, storeGetSetting, pipelineStartOrchestrated, pipelineGetRunContext, pipelineCancelRun, onPipelineUpdate } from '@/api/publisher'
 import { useNotify } from '@/composables/useNotify'
+import { hasFeature } from '@/features/member/plan-features'
 import {
   DEFAULT_GEN_VIDEO_PIPELINE,
   isPipelineRunnableFromTopic,
@@ -52,8 +53,9 @@ const GEN_VIDEO_POLL_INTERVAL_MS = 3000
  * @param {(topicText: string) => string} deps.buildRewriteInput 改写输入构造器（<20 字符补引导语）
  * @param {import('vue').Ref<boolean>} deps.hotUseViral 是否结合爆款库
  * @param {() => boolean} deps.isDisposed 视图是否已卸载（in-flight 响应不再写回状态）
+ * @param {() => object|null} [deps.getEntitlement] 读取权益快照（视频创作功能开关）
  */
-export function useHotTopicsGenVideo({ buildRewriteInput, hotUseViral, isDisposed }) {
+export function useHotTopicsGenVideo({ buildRewriteInput, hotUseViral, isDisposed, getEntitlement = () => null }) {
   const router = useRouter()
   const { t } = useI18n()
   const { notifyInfo } = useNotify()
@@ -132,6 +134,14 @@ export function useHotTopicsGenVideo({ buildRewriteInput, hotUseViral, isDispose
    */
   async function startGenerateVideo(topic, pipelineName = DEFAULT_GEN_VIDEO_PIPELINE) {
     if (genVideoBusy.value || !topic?.topic) return false
+    // P1-1 功能开关：免费档在热门选题「一键成片」入口同样必须被拒。
+    if (hasFeature(getEntitlement(), 'video_create') === false) {
+      genVideoModalOpen.value = true
+      genVideoPhase.value = 'failed'
+      genVideoErrorText.value = t('hotTopics.genVideoUpgradeRequired')
+      genVideoBusy.value = false
+      return false
+    }
     const requested = typeof pipelineName === 'string' && pipelineName.trim()
       ? pipelineName.trim()
       : DEFAULT_GEN_VIDEO_PIPELINE

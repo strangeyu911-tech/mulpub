@@ -15,6 +15,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 
 // mock element-plus（ElMessage 等）
 vi.mock('element-plus', () => ({
@@ -137,7 +138,7 @@ describe('HotTopics.vue — 生成视频【去发布】标题生成与三级降�
     document.body.appendChild(el)
     const wrapper = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
     await wrapper.find('[data-testid="hot-topic-generate-video-zhihu:1"]').trigger('click')

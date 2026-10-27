@@ -333,6 +333,7 @@ import { useI18n } from 'vue-i18n'
 import { hotTopicsFetch, hotTopicsGetCache } from '@/api/hot-topics'
 import { aiRewrite, draftSave } from '@/api/publisher'
 import { useNotify } from '@/composables/useNotify'
+import { useIdentityStore } from '@/stores/identity'
 import PublishDestinationModal from '@/components/PublishDestinationModal.vue'
 import { buildCreateHandoffQuery } from '@/features/publish-destination/publish-destination-config'
 import HotTopicsGenVideoPicker from '@/components/HotTopicsGenVideoPicker.vue'
@@ -351,6 +352,7 @@ import {
 const router = useRouter()
 const { t } = useI18n()
 const { notifyError, notifyInfo } = useNotify()
+const identityStore = useIdentityStore()
 
 // 统一内容类别（2026-10-03）：运营中心「内容类别管理」下发；读不到时回退内置 11 类。
 // categoryLabel 需显式落到本地绑定才进得了模板（script setup 只自动暴露本文件声明）。
@@ -404,7 +406,7 @@ const {
   genVideoPhase, genVideoRunId, genVideoTopic, genVideoPipelineName, mergeGenStages,
   // unify-video-pipeline-progress-modal：终态产物也只被单测断言（模板经 genVideoResultReady 消费）
   genVideoCompletedVideoPath, genVideoCompletedProjectId,
-} = useHotTopicsGenVideo({ buildRewriteInput, hotUseViral, isDisposed: () => disposed })
+} = useHotTopicsGenVideo({ buildRewriteInput, hotUseViral, isDisposed: () => disposed, getEntitlement: () => identityStore.entitlement })
 
 defineExpose({
   genVideoPhase, genVideoRunId, genVideoTopic, genVideoPipelineName, mergeGenStages,

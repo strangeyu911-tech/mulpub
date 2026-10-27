@@ -643,6 +643,7 @@ import CollectedResultsList from '@/features/collection/CollectedResultsList.vue
 import CreatorMonitor from '@/features/collection/CreatorMonitor.vue'
 import { usePlatformStore } from '@/stores/platforms'
 import { useAccountStore } from '@/stores/accounts'
+import { useIdentityStore } from '@/stores/identity'
 import { useCollectionBatchPublish } from '@/composables/useCollectionBatchPublish'
 // 改写结果变化时的「已存草稿 / 归因链」作废契约（fix-collection-rewrite-publish-flow，2026-10-20）：
 // 判据与实现抽在 composables/useRewriteResultInvalidation.js（程序赋值与用户手改两条路径
@@ -1121,6 +1122,7 @@ function onBatchCollectedRewrites (items) {
 // ═══════════════════════════════════════════════════════════════════
 const platformStore = usePlatformStore()
 const accountStore = useAccountStore()
+const identityStore = useIdentityStore()
 const batch = useCollectionBatchPublish({
   platformStore,
   accountStore,
@@ -1151,7 +1153,7 @@ const {
   videoTextLimit, startVideoCreation, cancelVideoCreation, retryVideoCreation,
   handleVideoClose, resetVideoState, viewVideoInHistory, publishVideoResult,
   videoConfigProfileWarning,
-} = useCollectionVideoCreation()
+} = useCollectionVideoCreation({ getEntitlement: () => identityStore.entitlement })
 const batchPlatformOptions = computed(() => batch.usablePlatforms('imageText'))
 const batchVideoPlatformOptions = computed(() => batch.usablePlatforms('video'))
 const batchVideoPlatformScope = ref('')

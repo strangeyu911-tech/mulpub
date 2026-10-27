@@ -7,6 +7,11 @@ import identityDiagnosticsEn from '../identity-diagnostics/en'
 
 export default {
     ...identityDiagnosticsEn,
+    featureGateChecking: 'Checking membership…',
+    featureLockedBody: '"{feature}" is available on Standard and Pro plans. Upgrade to unlock it.',
+    featureLockedHint: 'It unlocks automatically after upgrading. No need to sign in again.',
+    featureLockedCta: 'View plans',
+    videoCreateTitle: 'Video creation',
     redeemTitle: 'Redeem activation code',
     redeemHint: 'Enter the 12-character activation code (like ABCD-EFGH-JKMN) to redeem membership. Codes are bound to your account and can only be redeemed once.',
     redeemPlaceholder: 'ABCD-EFGH-JKMN',

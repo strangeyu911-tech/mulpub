@@ -76,6 +76,7 @@ export default {
     sourceRank: (ctx) => '来源渠道内第 ' + ctx.named('rank') + ' 名（列表序号为当前筛选视图内顺序）',
     loadFailed: '选题获取失败，请稍后重试',
     generateVideo: '生成视频',
+    genVideoUpgradeRequired: '视频创作是标准版及以上功能，升级后即可使用。',
     // hot-topics-pipeline-picker（2026-10-17）：行内下箭头 → 全流水线选择层
     genVideoPipelinePickerAria: '选择视频创作流水线',
     genVideoPipelinePickTitle: '选择视频创作流水线',

@@ -99,6 +99,7 @@ vi.mock('@/composables/useNotify', () => ({
 }))
 
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import HotTopics from './HotTopics.vue'
 import i18n from '@/i18n'
 import { hotTopicsFetch } from '@/api/hot-topics'
@@ -111,7 +112,7 @@ const mockTopics = [
 
 function mountPage() {
   return mount(HotTopics, {
-    global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+    global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
   })
 }
 

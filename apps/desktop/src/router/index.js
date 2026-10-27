@@ -34,7 +34,7 @@ const routes = [
   { path: '/viral-analysis', name: 'ViralAnalysis', component: () => import('@/views/ViralAnalysis.vue') },
   { path: '/providers', redirect: '/model-providers' },
   { path: '/model-providers', name: 'ModelProviders', component: () => import('@/views/ModelProviders.vue') },
-  { path: '/create', name: 'Create', component: () => import('@/views/CreateView.vue') },
+  { path: '/create', name: 'Create', component: () => import('@/views/CreateGateView.vue') },
   { path: '/member-center', name: 'MemberCenter', component: () => import('@/views/MemberCenter.vue') },
   { path: '/create/pipeline', redirect: '/create' },
   { path: '/create/result', name: 'CreateResult', component: () => import('@/views/ResultView.vue') },

@@ -75,6 +75,7 @@ export default {
     sourceRank: (ctx) => 'Rank #' + ctx.named('rank') + ' on source channel (list numbers are sequential within the current filtered view)',
     loadFailed: 'Failed to fetch topics, please retry later',
     generateVideo: 'Generate video',
+    genVideoUpgradeRequired: 'Video creation is available on Standard and Pro plans. Upgrade to unlock it.',
     // hot-topics-pipeline-picker (2026-10-17): inline caret → all video creation pipelines
     genVideoPipelinePickerAria: 'Choose a video creation pipeline',
     genVideoPipelinePickTitle: 'Choose a video creation pipeline',

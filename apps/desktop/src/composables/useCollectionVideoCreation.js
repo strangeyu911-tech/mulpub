@@ -39,6 +39,7 @@ import { useI18n } from 'vue-i18n'
 //   storeGetSetting(key)                    → 设置值
 // 测试可用 `opts.deps` 覆盖其中任意一项（见下方 `deps` 合并处）。
 import * as publisherApi from '@/api/publisher'
+import { hasFeature } from '@/features/member/plan-features'
 import { resolveCollectionVideoStartSnapshot } from '@/features/collection/collection-video-config-profile'
 import {
   buildGenVideoStartParams,
@@ -118,6 +119,7 @@ export function useCollectionVideoCreation (opts = {}) {
   const router = useRouter()
   const { t } = useI18n()
   const isDisposed = typeof opts.isDisposed === 'function' ? opts.isDisposed : () => false
+  const getEntitlement = typeof opts.getEntitlement === 'function' ? opts.getEntitlement : () => null
 
   const deps = {
     // 惰性取用：调用时才访问 publisherApi 的导出（理由见 import 处的注释）
@@ -273,6 +275,14 @@ export function useCollectionVideoCreation (opts = {}) {
     if (videoBusy.value) return false
     const source = typeof text === 'string' ? text.trim() : ''
     if (!source) return false
+    // P1-1 功能开关：免费档在「就地视频创作」入口同样必须被拒（不能只挡 /create 页面）。
+    if (hasFeature(getEntitlement(), 'video_create') === false) {
+      videoModalOpen.value = true
+      videoPhase.value = 'failed'
+      videoErrorText.value = t('collection.videoCreate.upgradeRequired')
+      videoBusy.value = false
+      return false
+    }
 
     videoSeq += 1
     const seq = videoSeq

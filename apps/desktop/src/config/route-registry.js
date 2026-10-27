@@ -190,7 +190,7 @@ export const ROUTE_REGISTRY = Object.freeze([
   {
     path: '/create',
     name: 'Create',
-    view: 'CreateView.vue',
+    view: 'CreateGateView.vue',
     navEntry: { key: 'create', group: SIDEBAR_GROUP_PRIMARY, labelI18nKey: 'sidebar.nav.create', to: '/create', icon: VideoCamera },
     internal: false,
     entryFrom: null,

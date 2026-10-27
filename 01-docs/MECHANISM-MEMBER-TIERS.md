@@ -1,6 +1,6 @@
 # 会员档位机制（MEMBER TIERS MECHANISM）
 
-> **状态**：🟢 现行（v3.3，2026-10-27）
+> **状态**：🟢 现行（v3.4，2026-10-27）
 > **数值真源**：`packages/api-publish-engine/src/auth/plan-matrix.js`（`PLAN_MATRIX_VERSION = 2026-10-26`）
 > **价格与积分推导**：`01-docs/PRD-CREDIT-PRICING-2026-10-25.md`
 > **价格解释**：`01-docs/pricing-strategy.md` §1–§2
@@ -190,7 +190,7 @@
 |---|---|---|---|---|---|---|---|
 | 13 | AI 写稿 | 不限 | 不限 | 不限 | 官方模型扣积分；BYOK 不扣 | 无差异 | `aiWriteMonthly` 建议三档 -1；无消费点 |
 | 14 | 官方积分（月度额度） | 30 | 1500 | 3000 | 月度发放，月末清零 | **展示** | 无 grant/consume 引擎接线 |
-| 15 | 视频创作 | 不提供 | 可用 | 可用 | 不设条数上限 | **规划** | `video_create` 已派生；免费未被拦 |
+| 15 | 视频创作 | 不提供 | 可用 | 可用 | 不设条数上限 | **硬（客户端入口）** | `features.video_create`；`/create` 整页门禁 + 采集/热门选题就地入口（P1-1） |
 | 16 | 可用模型档 | 基础 | 标准 | 高阶 | — | **展示** | `model_tier` / `tier_access_*` 无模型路由消费点 |
 | 17 | AI 图片/封面 | 可用 | 可用 | 可用 | 按积分 | 无差异 | 矩阵无图片额度字段 |
 | 18 | TTS 配音 | 可用 | 可用 | 可用 | 按积分/字符 | 无差异 | 仅登录 |
@@ -242,7 +242,7 @@
 | **本地发布** | 单篇/多平台即时 | 单篇 + 批量 10 条/次 | 单篇 + 批量不限 | 已交付（批量有 UI 缺陷） |
 | **定时任务** | — | 100 个 | 不限 | 规划（P1） |
 | **自定义自动化** | — | 10 条工作流 / 50 条·日 | 50 条 / 500 条·日 | 规划（P1） |
-| **视频创作** | — | ✓ | ✓ | 规划（P1） |
+| **视频创作** | — | ✓ | ✓ | 已交付（P1-1，客户端入口） |
 | **知识库** | — | ✓ | ✓ | 规划（P1） |
 | **AI 写稿** | 不限（积分/BYOK） | 不限（积分/BYOK） | 不限（积分/BYOK） | 待接线（当前无消费点，实际不限） |
 | **官方积分** | 30/月 | 1,500/月 | 3,000/月 | 待接线（P1） |
@@ -313,7 +313,7 @@
 | 单次批量 | `limits.batch_size_per_run` | 云 API 批量/定时执行 + 桌面批量入口 | `batchSizePerRunOf` / `canBatchSize` 已接线 | **硬（客户端 + 云 API）** | 桌面按文章数、云按平台数；先判后扣（P0-4） |
 | 定时任务 | `features.schedule_batch` | 无 | 无 | **展示** | 免费可建；无数量上限 |
 | 自定义自动化 | 待新增 `maxWorkflows` / `automationDailyItems` | 无 | 无 | **展示** | 全局 `MAX_CUSTOM=50`，无档位门禁 |
-| 视频创作 | `features.video_create` | 无 | 无 | **展示** | 免费未被拦 |
+| 视频创作 | `features.video_create` | 无 | 无 | **硬（客户端入口）** | `/create` + 采集/热门选题就地入口；P1-1 |
 | 知识库 | 待新增 `knowledge_base` feature | 无 | 无 | **未实现** | 免费可用；无 feature |
 | AI 写稿 | `quota.ai_write_monthly` | 无 | 无 | **展示** | 无 consume；建议改为 -1 全档 |
 | 官方积分 | `quota.official_credit_monthly` | 无 | 无 | **展示** | 无 grant/consume |
@@ -334,7 +334,7 @@
 | E | 桌面本地发布/批量/定时绕过服务端 | 不扣额、不校验数量 | `batch-manager.js`；`scheduler.js` | 接受为本地荣誉制；账号/功能在客户端拦 |
 | F | `api_key` legacy 与「无 businessUser」直接放行 | 门禁不是全调用面覆盖 | `plan-capability-guard.js:24-25`；`publish-api-server.js:566-573` | P1：收敛绕过面，至少记审计 |
 | G | AI/积分额度无 consume/grant | 免费可无限用官方模型；付费额度是空数字 | `plan-matrix.test.js:193`；`subscription-service.js:112-121` | P1：接 consume/grant + 失败退回 |
-| H | `schedule_batch` / `video_create` / `tier_access_*` 无消费点 | 功能轴全是纸面承诺 | 全仓 grep 仅命中派生与测试 | P1：逐 feature 补消费点或删除 |
+| H | `schedule_batch` / `video_create` / `tier_access_*` 无消费点 | 功能轴全是纸面承诺 | 全仓 grep 仅命中派生与测试 | `video_create` ✅ 已接（P1-1）；其余 P1：逐 feature 补消费点或删除 |
 | I | `UsageQuota.vue` 直接渲染原始 quota 键 | `-1` 显示 `-1`、英文键不本地化 | `UsageQuota.vue:26-35` | P2：接 `quotaLabelOf/quotaValueText` |
 | J | `labels.js` 缺新 feature/quota 文案 | 会员中心回退英文码 | `labels.js:52-72` | P2：补齐 zh/en |
 | K | 平台数软提示无 N/M 展示 | 用户不知道上限/已选数 | `usePlatformSelection.js:73-99` | ✅ 已随平台轴退役（P0）；`maxPlatforms = -1` 后不再触发 |
@@ -355,7 +355,7 @@
 | 本地批量 | 标准 10 条/次、专业不限；超出提示拆分或升级 | UI 误拦 | P0 改 entitlement |
 | 定时任务 | 免费不可建；标准 100 个；专业不限 | 免费可建 | P1 feature + 计数 |
 | 自定义自动化 | 免费不可用；标准 10 条/50 条·日；专业 50 条/500 条·日 | 仅全局 50 | P1 feature + 配额 |
-| 视频创作 | 免费入口关闭；标准/专业可用 | 免费可用 | P1 feature |
+| 视频创作 | 免费入口关闭；标准/专业可用 | ✅ 已交付（P1-1） | 客户端入口层；见 `PRD-MEMBER-TIER-VIDEO-GATE-2026-10-27.md` |
 | 知识库 | 免费入口关闭；标准/专业可用 | 免费可用 | P1 feature |
 | 官方积分 | 耗尽后引导 BYOK / 积分包；不锁发布 | 无扣减 | P1 consume + 引导 |
 | 登录设备 | 超限提示注销最旧设备，不静默踢线 | 无 cap | P1 |
@@ -449,7 +449,7 @@
 
 | # | 动作 | 验收 |
 |---|---|---|
-| P1-1 | `video_create` 门禁：免费入口关闭 | 免费点视频创作被拒；标准/专业可用 |
+| P1-1 | `video_create` 门禁：免费入口关闭 | ✅ 已交付（2026-10-27）：免费点视频创作被拒；标准/专业可用 |
 | P1-2 | `knowledge_base` feature：免费入口关闭 | 免费点知识库被拒；标准/专业可用 |
 | P1-3 | `schedule_batch` + 定时任务计数：免费 0、标准 100、专业不限 | 免费创建被拒；标准第 101 个被拒 |
 | P1-4 | 自定义自动化：免费 0；标准 10 条/50 条·日；专业 50 条/500 条·日 | 工作流创建/执行均有配额；超限有提示 |
@@ -553,6 +553,7 @@
 | 2026-10-26 | 机制 v3.1 | 主计量轴→绑定账号（5/20/100，客户端硬限）；视频/知识库改功能开关；AI 写稿不限；云 API/去水印/加购包移除；免费设备 1 台 |
 | 2026-10-26 | 机制 v3.2 | P0 落地：`maxAccounts` 进矩阵与 entitlement；`account:add` / `auth:open-login` 主进程拦截 + UI 弹窗；`maxPlatforms` 全档 -1；AI 写稿/视频改 -1；免费设备 1；详细 PRD 见 `PRD-MEMBER-TIER-ACCOUNT-LIMIT-2026-10-26.md` |
 | 2026-10-27 | 机制 v3.3 | P0-4 落地：批量 UI 改读 `batch_size_per_run`（纯订阅可批量）；本地批量按文章数、云 `/batch-publish` 先判后扣；修复 B/C 两项历史缺陷 |
+| 2026-10-27 | 机制 v3.4 | P1-1 落地：`features.video_create` 客户端门禁；`/create` 整页锁定 + 采集/热门选题就地入口拦截；缺失/空 features 仍 fail-open |
 
 ## 附录 C：证据索引
 

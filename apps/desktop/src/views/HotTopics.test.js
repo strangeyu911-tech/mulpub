@@ -1,6 +1,8 @@
 // @ts-check
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { useIdentityStore } from '@/stores/identity'
 
 // mock element-plus（ElMessage 等）
 vi.mock('element-plus', () => ({
@@ -79,7 +81,7 @@ const mockPipelineList = [
 
 function mountPage() {
   return mount(HotTopics, {
-    global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+    global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
   })
 }
 
@@ -109,6 +111,27 @@ describe('HotTopics.vue', () => {
     const items = wrapper.findAll('[data-testid="hot-topic-item"]')
     expect(items).toHaveLength(3)
     expect(wrapper.text()).toContain('AI大模型最新突破进展')
+  })
+
+  it('免费档点「生成视频」被拒：不启动流水线，进入失败态', async () => {
+    hotTopicsFetch.mockResolvedValue({ code: 0, data: { topics: mockTopics, fetchedAt: Date.now(), channelStats: { zhihu: { ok: true } } } })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const identity = useIdentityStore()
+    identity.entitlement = { plan: 'free', features: ['cloud_publish', 'ai_write'] }
+
+    const wrapper = mount(HotTopics, {
+      global: {
+        plugins: [pinia, i18n],
+        stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true },
+      },
+    })
+    await flushPromises()
+    await wrapper.find('[data-testid="hot-topic-generate-video-zhihu:1"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.vm.genVideoPhase).toBe('failed')
+    expect(pipelineStartOrchestrated).not.toHaveBeenCalled()
   })
 
   // ─── SWR 优化：缓存优先渲染 + 后台刷新 ───
@@ -269,7 +292,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     const attached = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
     await attached.find('.select-all-label input').setValue(true)
@@ -304,7 +327,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     return { el, attached: mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     }) }
   }
 
@@ -365,7 +388,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     const attached = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
     attached.vm.selectedIds = new Set(mockTopics.map(x => x.id))
@@ -496,7 +519,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     const wrapper = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
     await wrapper.find('[data-testid="hot-topic-generate-video-zhihu:1"]').trigger('click')
@@ -540,7 +563,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     const wrapper = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
     await wrapper.find('[data-testid="hot-topic-generate-video-zhihu:1"]').trigger('click')
@@ -596,7 +619,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     const wrapper = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
     await wrapper.find('[data-testid="hot-topic-generate-video-zhihu:1"]').trigger('click')
@@ -644,7 +667,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     const wrapper = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
     await wrapper.find('[data-testid="hot-topic-generate-video-zhihu:1"]').trigger('click')
@@ -692,7 +715,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     const wrapper = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
     await wrapper.find('[data-testid="hot-topic-generate-video-zhihu:1"]').trigger('click')
@@ -729,7 +752,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     const wrapper = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
     await wrapper.find('[data-testid="hot-topic-generate-video-zhihu:1"]').trigger('click')
@@ -870,7 +893,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     const attached = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
     await attached.find('[data-testid="hot-topic-generate-video-zhihu:1"]').trigger('click')
@@ -926,7 +949,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     const attached = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
 
@@ -1152,7 +1175,7 @@ describe('HotTopics.vue', () => {
     document.body.appendChild(el)
     const wrapper = mount(HotTopics, {
       attachTo: el,
-      global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+      global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
     })
     await flushPromises()
     await openPipelineMenu(wrapper)

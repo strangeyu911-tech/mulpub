@@ -348,6 +348,7 @@ export default {
       title: '视频创作',
       pipelineLabel: '流水线：{pipeline}',
       starting: '正在启动视频创作…',
+      upgradeRequired: '视频创作是标准版及以上功能，升级后即可使用。',
       textTruncated: '文案共 {length} 字，超过视频创作上限 {max} 字，已截取前 {max} 字用于生成。如需完整文案，请调小改写字数上限或缩短原文。',
       view: '查看视频',
       publish: '去发布',

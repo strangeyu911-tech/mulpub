@@ -72,6 +72,19 @@ describe('useCollectionVideoCreation — 采集页视频创作就地编排', () 
     expect(params.story2videoTextConfig.prompt).toBe(LATEST)
   })
 
+  it('免费档（features 不含 video_create）在就地入口被拒，不启动流水线', async () => {
+    const c = useCollectionVideoCreation({
+      getEntitlement: () => ({ plan: 'free', features: ['cloud_publish', 'ai_write'] }),
+    })
+    const started = await c.startVideoCreation({ text: '文案' })
+
+    expect(started).toBe(false)
+    expect(c.videoModalOpen.value).toBe(true)
+    expect(c.videoPhase.value).toBe('failed')
+    expect(c.videoErrorText.value).toBe('collection.videoCreate.upgradeRequired')
+    expect(mocks.pipelineStartOrchestrated).not.toHaveBeenCalled()
+  })
+
   it('进度浮层在流水线跑起来之前就打开（用户立刻有反馈）', async () => {
     const c = useCollectionVideoCreation()
     expect(c.videoModalOpen.value).toBe(false)

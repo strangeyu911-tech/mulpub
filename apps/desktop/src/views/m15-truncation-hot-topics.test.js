@@ -10,6 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 
 // 造 40 个选题（> 默认渲染上限 30）
 const manyTopics = Array.from({ length: 40 }, (_, i) => ({
@@ -51,7 +52,7 @@ import i18n from '@/i18n'
 
 function mountPage() {
   return mount(HotTopics, {
-    global: { plugins: [i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
+    global: { plugins: [createPinia(), i18n], stubs: { 'el-alert': true, 'el-select': true, 'el-option': true, 'el-progress': true, 'el-skeleton': true } },
   })
 }
 

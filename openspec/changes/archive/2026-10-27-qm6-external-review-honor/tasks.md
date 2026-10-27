@@ -150,11 +150,22 @@
           若连 5「染色」那条一起红说明两格被同一把锁混判）
 - [x] 6.3 QM-6 实现轴外部评审（`sh scripts/deep-review.sh`，走真链、不手写 tier），逐条处置后把
       轮次/交付条数/裁决记进 design.md；**本刀属"改谁来守门"，PR 一律交人工合并**（proposal 四·5）
-- [ ] 6.4 PR + `node scripts/check-main-red.js --pr <n>` 读数 + `--mode=enforce` 读数；
+- [x] 6.4 PR + `node scripts/check-main-red.js --pr <n>` 读数 + `--mode=enforce` 读数；
       合并由人执行，agent 只做产物取证
-- [ ] 6.5 回读本次合并触发的 main push（若人工合并），读数写进 PR 评论、不写回仓库文件
-- [ ] 6.6 R1-R7 worktree 清理（`safe-worktree-remove.ps1 -WhatIf` 先行）+ 记忆收敛：
+      证据（勾时现取，不是转述）：PR **#4453**，merge `4729a93a0f701fc21f628d42355492e0bade869f`（`gh pr view --json state,mergeCommit` 现读 MERGED）。
+      `--mode=enforce` 的 rc=0 与逐套件 pass 数写在 PR 评论 `pull/4453#issuecomment-6403976344`；
+      合并闸门读数 `MAIN-RED verdict=OK exit=0 … prFail=0 mainFail=0 newRed=0 uncertain=0 unknown=0/0 prPending=0` 在 `#issuecomment-6404423854`。
+- [x] 6.5 回读本次合并触发的 main push（若人工合并），读数写进 PR 评论、不写回仓库文件
+      证据：回读写在 PR 评论 `pull/4453#issuecomment-6406892565`（**没有**回填仓库文件）——坐标 `(merge SHA 4729a93a0, workflow quality-gate.yml)`，
+      run `40256876308`，`event=push`，`status=completed` / `conclusion=success`；内容归属判据 `[BRANCH-MERGED] ref=a1288e20d23f against=origin/main@4729a93a0`。
+      同一条评论当时就记下「`QG Coverage` 这一格是 skipped 不是 success」，但**止于"required 清单被满足"，没有建账**；
+      2026-10-27 对照实测（最近 6 次 main push，含与本刀无关的 4 次）该作业**全部 skipped** ⇒ 已作为具名欠账写进本次归档 PR 的执行记录
+      「未闭合清单」行，并附重取命令（required 清单要读两套机制的并集：ruleset 23749994 + branches/main/protection）。
+- [x] 6.6 R1-R7 worktree 清理（`safe-worktree-remove.ps1 -WhatIf` 先行）+ 记忆收敛：
       更新 `qm6-tier-watermark-slice.md` 与本刀的落地状态，登记「#4261/#4326 现可用派生档签字」
+      证据（勾时现取）：`git worktree list` 对该 worktree **0 条命中**（清理走 `scripts/safe-worktree-remove.ps1`，`-WhatIf` 先行、R7 对账主工作区与基线一致）；
+      记忆三份在场 —— `qm6-honor-in-repo-landed.md`（本刀落地状态）、`qm6-tier-watermark-slice.md`（派生档那条出口的上游片）、
+      `qm6-gate-surface-single-source-slice.md`（含「#4261 卡住的 11.7 现由 #4453 派生档打开」的登记，现读该文件内 `11.7` 出现 4 次）。
 
 
 ## 7. 实现轴轮 2 采纳追加项（原清单没有这几格，是评审逼出来的）

@@ -106,6 +106,15 @@ describe('model-quota IPC', () => {
     expect(deps.modelQuotaSwitchBack).toHaveBeenCalledWith({ runId: 'run-1', capability: 'image' })
   })
 
+  it('switch-back 等待异步 false 并返回 NOT_FOUND', async () => {
+    const ipc = createMockIpcMain()
+    const deps = makeDeps({ modelQuotaSwitchBack: vi.fn(async () => false) })
+    registerHandlers(ipc, deps)
+    const res = await ipc._call('model-quota:switch-back', { runId: 'run-1', capability: 'image' })
+    expect(res.code).toBe(-10)
+    expect(res.message).toContain('不存在')
+  })
+
   it('store 不可用时 set-policy 返回 REQUEST_ERROR', async () => {
     const ipc = createMockIpcMain()
     registerHandlers(ipc, makeDeps({ store: null }))

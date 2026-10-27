@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { PipelineEngine, generateRunId } = require('../services/pipeline-engine')
+const { ProviderRunContext } = require('../services/provider-run-context')
 
 describe('PipelineEngine 状态机模式', () => {
   let engine
@@ -103,6 +104,15 @@ describe('PipelineEngine 状态机模式', () => {
   it('start 将 pipeline 状态切换为 running', () => {
     expect(engine.start('animated-explainer', { topic: 'AI basics' })).toMatchObject({ success: true })
     expect(engine.getStatus('animated-explainer').status).toBe('running')
+  })
+
+  it('start / 终结时通知 modelQuotaRuntime 生命周期', () => {
+    const beginRun = vi.fn(); const endRun = vi.fn()
+    engine.modelQuotaRuntime = { beginRun, endRun }
+    const { runId } = engine.start('animated-explainer', { topic: 'AI basics' })
+    expect(beginRun).toHaveBeenCalledWith(runId, expect.objectContaining({ runContext: expect.any(ProviderRunContext) }))
+    engine._finalizeRun(engine._runs.get(runId), 'completed')
+    expect(endRun).toHaveBeenCalledWith(runId)
   })
 
   it('pause 将运行状态切换为 paused', () => {

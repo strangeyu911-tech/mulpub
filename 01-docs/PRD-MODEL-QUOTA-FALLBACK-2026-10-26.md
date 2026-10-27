@@ -1,7 +1,7 @@
 # PRD：模型额度用尽时的来源切换策略（model-quota-fallback）
 
 > **文档性质**：产品需求 + 决策记录（PRD）。本文件是「用户自带模型 Key（BYOK）」与「平台官方模型（消耗官方积分）」之间**优先级与切换控制**的单一真源。
-> **状态**：🚧 **P1a 已实现**（错误识别 + 精确提示 + 「前往模型设置」动作）；**P1b-1 后端决策层已实现**；**P1b-2a 设置 IPC/preload + 策略卡片已实现**；**P1b-2b 兜底弹窗 + App 根层 + composable 已实现**，**P1b-2c Coordinator 生产接线/业务域接入未实现**；P2/P3 未实现。P1b-1 见 §13.2，P1b-2a 见 §13.3，P1b-2b 见 §13.4 与 `openspec/records/model-quota-p1b2b.md`。官方兜底仍受 D-11 约束（官方算力代理 D-① 未落地，官方按钮禁用、卡片默认隐藏）。
+> **状态**：🚧 **P1a 已实现**；**P1b-1 后端决策层已实现**；**P1b-2a 设置 IPC/preload + 策略卡片已实现**；**P1b-2b 兜底弹窗 + App 根层 + composable 已实现**；**P1b-2c1 生产运行时 + IPC 接线 + run 生命周期已实现**，**P1b-2c2 业务域调用边界接入未实现**；P2/P3 未实现。P1b-1 见 §13.2，P1b-2a 见 §13.3，P1b-2b 见 §13.4，P1b-2c1 见 §13.5 与 `openspec/records/model-quota-p1b2c1.md`。官方兜底仍受 D-11 约束（官方算力代理 D-① 未落地，官方按钮禁用、卡片默认隐藏）。
 > **关联设计**：`01-docs/DESIGN-MODEL-QUOTA-FALLBACK-2026-10-26.md`
 > **上游依赖**：`01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（D-① 官方算力代理，**未落地**）、`01-docs/PRD-CREDIT-CONSUME-API-2026-10-25.md`（扣分端点，已实现）、`01-docs/PRD-OFFICIAL-COMPUTE-CHARGE-STATE-2026-10-25.md`（扣分状态机，已实现）
 > **日期**：2026-10-26
@@ -703,7 +703,8 @@ runContext.modelSourceOverrides = {
 | **P1b-1** | 纯函数决策器 + Coordinator + `modelSourceOverrides` + 检查点/埋点编排 | 无（可先于官方算力） | ✅ 本 PR 实现 |
 | **P1b-2a** | IPC/preload + `ModelQuotaPolicyCard` + 标签/locales；官方按钮按能力 gate 禁用 | P1b-1 | ✅ 本 PR 实现 |
 | **P1b-2b** | `ModelQuotaFallbackDialog` + `useModelQuotaFallback` + App 根层挂载 | P1b-2a | ✅ 本 PR 实现 |
-| **P1b-2c** | Coordinator 生产实例化 + run 生命周期 + 业务域接入 + 模型设置「测试连接」分类展示 | P1b-2b | ❌ 下一 PR |
+| **P1b-2c1** | 生产 `ModelQuotaRuntime` + `RunStateStore` 检查点端口 + phase5 IPC 接线 + PipelineEngine run 生命周期 | P1b-2b | ✅ 本 PR 实现 |
+| **P1b-2c2** | 业务域调用边界接入（Story2Video/图片轮播/数字人/Film Engineering）+ 模型设置「测试连接」分类展示 | P1b-2c1 | ❌ 下一 PR |
 | **P2** | 官方算力代理 D-① + 余额读通道 U-13 + 价格卡 U-12 + 官方调用客户端 + `byok=0` + 扣分 | D-① / U-12 / U-13 | ❌ 与官方算力同批 |
 | **P3** | 自动档 `official` 全量开放 + 任务积分上限 + 埋点看板 + LLM 官方供给（若 U-1 决定做） | P2 + U-1 | ❌ |
 
@@ -782,6 +783,25 @@ runContext.modelSourceOverrides = {
 **测试**：`useModelQuotaFallback.test.js` 5 例；`ModelQuotaFallbackDialog.test.js` 5 例；`model-quota-coordinator.test.js` 9 例（新增 2 例 remember 语义）。P1b-2b 定向 19 例全绿。
 
 **P1b-2b 明确不做**：Coordinator 生产实例化、`checkpointPort` 的 run 生命周期、`modelQuotaSwitchBack` 的真实 run 上下文、Story2Video/图片轮播/数字人/Film Engineering 业务域接入、模型设置「测试连接」分类展示。这些属 P1b-2c。
+
+### 13.5 P1b-2c1 生产运行时 + IPC 接线 + run 生命周期落地记录（2026-10-27）
+
+**范围**：把 P1b-1 的纯 Coordinator 变成生产单例，并接上 `RunStateStore` 检查点与 PipelineEngine run 生命周期；**不接业务域调用边界**（P1b-2c2）。
+
+| 层 | 实际实现 | 说明 |
+|---|---|---|
+| 运行时 | `electron/services/model-quota-runtime.js`（新增） | `ModelQuotaRuntime` 持有唯一 Coordinator；`beginRun(runId,{runContext,overrides})` 复用/恢复 run context；`decide()` 自动带 context；`endRun()` 清理；`switchBack()` 先落检查点再清覆盖 |
+| 检查点端口 | `electron/services/model-quota-checkpoint-port.js`（新增） | 从 `RunStateStore.load(runId)` 读旧快照 → 合并 `context.modelSourceOverrides` → `savePaused()`；`override=null` 删除能力覆盖；只写 `source/originalProviderId/decidedAt/reason`，不写 Key/响应体 |
+| Pipeline 生命周期 | `electron/services/model-quota-pipeline-hooks.js`（新增） | `beginModelQuotaRun` 从 `run.context` 取同一个 `ProviderRunContext` 注册；`endModelQuotaRun` 在 `_finalizeRun` 清理；独立模块避免继续撑大 `pipeline-engine.js` |
+| 生产接线 | `electron/bootstrap/phase5-ipc.js` | 创建运行时（`BrowserWindow.getAllWindows()` 广播 `model-quota:required`）；`pipelineEngine.modelQuotaRuntime` 挂载；`handlerDependencies` 注入 `modelQuotaCoordinator` / `modelQuotaSwitchBack` |
+| IPC 修正 | `electron/ipc-handlers/model-quota.js` | `switch-back` 改为 `await`，异步运行时返回 false 时不再被 Promise 真值误判成功 |
+| 边界 | — | 本 PR **没有**任何业务域调用 `decide()`：`model-quota:required` 的生产触发仍属 P1b-2c2；P2 D-① 前官方仍不可用 |
+
+**数据校验**：`beginRun` 空 runId 抛 `TypeError`；`overrides` 非对象/数组忽略；只接受 `source ∈ official|byok`；`officialAttempts` 非负整数否则 0；`switchBack` 空 runId/capability、未知 run、非 official 覆盖均返回 false；检查点端口对缺 runId/capability、无 store、快照不存在/损坏、`savePaused` 抛错均返回 false 且不抛。
+
+**测试**：`model-quota-runtime.test.js` 8 例；`model-quota-checkpoint-port.test.js` 6 例；`model-quota-pipeline-hooks.test.js` 3 例；`phase5-ipc.test.js` 新增 1 例；`model-quota.test.js` 新增 1 例；`pipeline-engine.test.js` 新增 1 例。P1b-2c1 相关 130 例全绿。
+
+**P1b-2c1 明确不做**：Story2Video/图片轮播/数字人/Film Engineering 的模型调用边界接入、业务域失败→`decide()` 的触发、任务详情「官方」横幅/切回按钮、模型设置「测试连接」分类展示；这些属 P1b-2c2。
 
 ---
 

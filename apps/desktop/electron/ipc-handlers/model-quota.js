@@ -150,7 +150,7 @@ function registerHandlers (ipcMain, deps = {}) {
       if (typeof modelQuotaSwitchBack !== 'function') {
         return { code: EC.REQUEST_ERROR, message: '任务级切换未就绪' }
       }
-      const switched = modelQuotaSwitchBack(payload)
+      const switched = await modelQuotaSwitchBack(payload)
       if (!switched) return { code: EC.NOT_FOUND, message: '任务或能力不存在' }
       return { code: 0, data: { switched: true } }
     } catch (e) {

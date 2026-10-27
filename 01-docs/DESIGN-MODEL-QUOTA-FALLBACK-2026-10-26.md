@@ -1,7 +1,7 @@
 # DESIGN：模型额度用尽处理策略 —— 技术设计与落地形态（2026-10-26）
 
 > **文档性质**：技术设计（Design）。配套 PRD：`01-docs/PRD-MODEL-QUOTA-FALLBACK-2026-10-26.md`（下称 PRD）。
-> **状态**：🚧 **P1a 已实现**；**P1b-1 后端决策层已实现**；**P1b-2a 设置 IPC/preload + 策略卡片已实现**；**P1b-2b 兜底弹窗 + App 根层 + composable 已实现**，**P1b-2c Coordinator 生产接线/业务域未实现**；P2/P3 未实现。实际落地见 §3.1、§3.2/§3.3、§3.6 与执行记录 `openspec/records/model-quota-p1b2b.md`。
+> **状态**：🚧 **P1a 已实现**；**P1b-1 后端决策层已实现**；**P1b-2a 设置 IPC/preload + 策略卡片已实现**；**P1b-2b 兜底弹窗 + App 根层 + composable 已实现**；**P1b-2c1 生产运行时 + IPC 接线 + run 生命周期已实现**，**P1b-2c2 业务域调用边界未实现**；P2/P3 未实现。实际落地见 §3.1、§3.2/§3.3、§3.6 与执行记录 `openspec/records/model-quota-p1b2c1.md`。
 > **上游依赖**：`01-docs/DESIGN-OFFICIAL-COMPUTE-WIRING-2026-10-25.md`（D-① 官方算力代理 **未落地**）。
 > **日期**：2026-10-26
 
@@ -119,7 +119,8 @@ function parseRetryAfterMs(headers) : number|null
 - 渲染端 `formatUserError` 的候选顺序为 `userErrorCode → errorCode → 数值码 → pattern`；未知 `userErrorCode` 会回落到已知 `errorCode`，不吞错。
 - **P1b-1 已实现**：`model-quota-policy.js`、`model-quota-coordinator.js`、`ProviderRunContext.modelSourceOverrides`、检查点/埋点注入编排。
 - **P1b-2a 已实现**：`ipc-handlers/model-quota.js` 四条通道、`preload/system.js` 五个桥接、`ModelQuotaPolicyCard.vue` + `model-quota-labels.js` + locales。
-- **P1b-2b 已实现**：`ModelQuotaFallbackDialog.vue`、`useModelQuotaFallback.js`、App 根层挂载。**P1b-2c 未实现**：Coordinator 生产实例化、run 生命周期、业务域接入、模型设置「测试连接」分类展示。
+- **P1b-2b 已实现**：`ModelQuotaFallbackDialog.vue`、`useModelQuotaFallback.js`、App 根层挂载。
+- **P1b-2c1 已实现**：`model-quota-runtime.js`（生产 Coordinator + run context 注册 + switchBack）、`model-quota-checkpoint-port.js`（RunStateStore 检查点）、`model-quota-pipeline-hooks.js`（begin/end）、phase5 IPC 注入。**P1b-2c2 未实现**：业务域调用边界、任务详情官方横幅/切回按钮、模型设置「测试连接」分类展示。
 
 ### 3.2 `model-quota-policy.js`（P1b，主进程纯函数）
 
@@ -280,7 +281,7 @@ Response:
 | `useModelQuotaFallback.js` | 订阅事件、维护 `currentRequest`、提交 decision、错误 toast |
 | `model-quota-labels.js` | `accessState` / `quotaKind` / reason → locale key 的纯函数映射（可单测） |
 
-**落地状态**：`ModelQuotaPolicyCard.vue` + `model-quota-labels.js` + locales 已在 P1b-2a 实现并挂在 `ModelProviders.vue` 顶部；`ModelQuotaFallbackDialog.vue` / `useModelQuotaFallback.js` / App 根层挂载已在 P1b-2b 实现。Coordinator 生产接线/业务域接入留在 P1b-2c。
+**落地状态**：`ModelQuotaPolicyCard.vue` + `model-quota-labels.js` + locales 已在 P1b-2a 实现并挂在 `ModelProviders.vue` 顶部；`ModelQuotaFallbackDialog.vue` / `useModelQuotaFallback.js` / App 根层挂载已在 P1b-2b 实现；生产 `ModelQuotaRuntime` + 检查点端口 + PipelineEngine run 生命周期已在 P1b-2c1 实现。业务域调用边界留在 P1b-2c2。
 
 **组件放置**：`ModelQuotaFallbackDialog` 挂在 `App.vue` 根层，确保任何页面都能弹；`ModelQuotaPolicyCard` 挂在 `ModelProviders.vue` 顶部。
 

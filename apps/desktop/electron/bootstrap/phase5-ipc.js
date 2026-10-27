@@ -202,6 +202,34 @@ function registerAllIpcHandlers({ app, BrowserWindow, context }) {
     contentIntelligence,
   } = context
 
+  // 模型额度兜底运行时：唯一 Coordinator + run 生命周期 + 检查点端口。
+  // 放在 phase5 是因为它需要 BrowserWindow 发 model-quota:required；phase1 不持有窗口。
+  const { createModelQuotaRuntime } = require('../services/model-quota-runtime')
+  const { createRunStateCheckpointPort } = require('../services/model-quota-checkpoint-port')
+  const checkpointStoreReady = Boolean(runStateStore &&
+    typeof runStateStore.load === 'function' &&
+    typeof runStateStore.savePaused === 'function')
+  if (!checkpointStoreReady) {
+    log.warn('ModelQuotaRuntime', 'runStateStore missing/incomplete; model quota checkpoint disabled')
+  }
+  const checkpointPort = checkpointStoreReady
+    ? createRunStateCheckpointPort(runStateStore, { log })
+    : { save: async () => false }
+  const modelQuotaRuntime = context.modelQuotaRuntime || createModelQuotaRuntime({
+    store,
+    checkpointPort,
+    emitToRenderer: (channel, payload) => {
+      const windows = BrowserWindow && typeof BrowserWindow.getAllWindows === 'function'
+        ? BrowserWindow.getAllWindows()
+        : []
+      for (const win of windows) {
+        if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) continue
+        if (win.webContents && typeof win.webContents.send === 'function') win.webContents.send(channel, payload)
+      }
+    },
+  })
+  if (pipelineEngine && typeof pipelineEngine === 'object') pipelineEngine.modelQuotaRuntime = modelQuotaRuntime
+
   // publish-frequency-policy-v2：发布频率守卫单例（容器注册项）。优先取 context 上的引用，
   // 其次经容器现取；整体 try 包裹并在失败时降级为 null —— IPC 侧据此如实回报「服务未初始化」，
   // 绝不允许在装配期抛错把整条 IPC 注册链带崩。
@@ -225,6 +253,8 @@ function registerAllIpcHandlers({ app, BrowserWindow, context }) {
     BACKEND_PLATFORMS, templateManager, licenseManager, aiWriter,
     compositionManager, aiGenerator, assetGenerator, videoEngine, pipelineEngine, modelProviderManager,
     story2videoBatchQueue, runStateStore,
+    modelQuotaCoordinator: modelQuotaRuntime,
+    modelQuotaSwitchBack: (payload) => modelQuotaRuntime.switchBack(payload),
     // rewriteHardConstraintManager：当前无直接 IPC handler 消费（审查 m4），
     // 保留传递为后续桌面端管理入口预留；引擎注入经 container 单例完成
     opsCenterSync, rewriteStrategyManager, rewriteHardConstraintManager, rewriteAiTasteMapManager, rewriteEngineService,

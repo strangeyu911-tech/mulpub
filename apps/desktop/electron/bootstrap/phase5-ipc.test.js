@@ -85,6 +85,20 @@ describe('usageTracker context 注入', () => {
     expect(usageTracker.trackEvent).not.toHaveBeenCalled()
   })
 
+  it('modelQuotaRuntime 注入 model-quota 依赖并挂到 pipelineEngine', () => {
+    const runtime = { switchBack: vi.fn(async () => true), userDecision: vi.fn(() => true) }
+    const pipelineEngine = {}
+    registerAllIpcHandlers({
+      app,
+      BrowserWindow,
+      context: { modelQuotaRuntime: runtime, pipelineEngine },
+    })
+    expect(pipelineEngine.modelQuotaRuntime).toBe(runtime)
+    const deps = mockRegisterAllHandlers.mock.calls.at(-1)[1]
+    expect(deps.modelQuotaCoordinator).toBe(runtime)
+    expect(typeof deps.modelQuotaSwitchBack).toBe('function')
+  })
+
   it('context 未提供 usageTracker 时保持默认返回值', async () => {
     registerAllIpcHandlers({ app, BrowserWindow, context: {} })
     await expect(ipcMain._handlers['usage:stats'](makeTrustedEvent())).resolves.toEqual({

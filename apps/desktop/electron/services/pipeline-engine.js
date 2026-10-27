@@ -27,6 +27,7 @@ const {
 } = require('./story2video-text-config');
 const { checkPipelineModelRequirements } = require('./pipeline-model-preflight');
 const { buildRunDiagnostics, captureEnvSnapshot } = require('./diagnostics/run-diagnostics');
+const { beginModelQuotaRun, endModelQuotaRun } = require('./model-quota-pipeline-hooks');
 
 /**
  * 依据机器资源计算默认后台并发上限（低配保守、高配放宽）：
@@ -943,6 +944,7 @@ class PipelineEngine {
     };
 
     this._runs.set(runId, run);
+    beginModelQuotaRun(this, run);
     // 批量 run 不写 _<name> 索引/currentPipeline：手动流水线启动页按索引查询状态，
     // 若被批量 run 覆盖，手动页面会读到批量任务进度（状态串扰）。
     if (run.source !== 'batch') {
@@ -1579,6 +1581,7 @@ class PipelineEngine {
       error: null,
     };
     this._runs.set(restored.id, restored);
+    beginModelQuotaRun(this, restored);
     this._runs.set('_' + restored.pipeline, restored);
     this._currentPipeline = restored.pipeline;
     this._syncStory2VideoProjectStatus(restored);
@@ -1663,6 +1666,7 @@ class PipelineEngine {
       error: null,
     };
     this._runs.set(restored.id, restored);
+    beginModelQuotaRun(this, restored);
     this._runs.set('_' + restored.pipeline, restored);
     this._currentPipeline = restored.pipeline;
     this._syncStory2VideoProjectStatus(restored);
@@ -2142,6 +2146,7 @@ class PipelineEngine {
 
   _finalizeRun(run, status, error) {
     if (!run || run.endedAt) return;
+    endModelQuotaRun(this, run);
     run.status = status;
     // 完成态进度固定为 100%（持久化到历史卡片；_advanceRun 在最后一个阶段不再重算 run.progress）
     if (status === 'completed') run.progress = 100;
@@ -2771,4 +2776,3 @@ module.exports = {
   generateRunId,
   PIPELINE_DEFINITIONS,
 };
-

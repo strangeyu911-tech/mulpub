@@ -226,3 +226,43 @@ pnpm --dir apps/desktop run pipeline:smoke:fixtures
 | `framework-smoke` | **PASS** | `mvq79act_f4an` | `%TEMP%/story2video/smoketest/mvq79act_f4an/smoketest_output.mp4` | duration=2s, h264+aac |
 
 执行后审计：`total=15 ready=10 blocked=4 broken=0 excluded=1`（talking-head 从 `NO_DRIVER` 变为 `READY`）。
+
+
+## 十二、增量 3：provider 就绪审计（2026-10-27）
+
+### 12.1 背景
+
+前两增量的 `READY` 只检查接线、驱动、工具、输入，**没有检查应用里是否配置了模型 provider**。本机实测应用 SQLite 只有 `minimax-image`（image）一个可用 provider，但审计仍把 `animated-explainer`（llm+image）、`avatar-spokesperson`（llm+video）、`character-animation`（llm+video）、`localization-dub`（llm）、`story2video-compose`（image+video）标为 READY，属于「静态条件满足 ≠ 能真正生成」的误报。
+
+### 12.2 数据源与安全
+
+- 默认读取 `%APPDATA%/@multi-publish/desktop/multi-publish.db`（可用 `--providers-db <path>` 覆盖）。
+- 只读打开（sql.js），读取 `id/category/enabled/is_default/config` 与 `length(api_key)`/`length(api_key_enc)`。
+- **不解密、不输出 API Key**；只有 `enabled=1` 且 key 长度>0 的 provider 计入能力集。
+- 能力来源：`category` + `config.capabilities` + `config.capability_models` 的并集。
+
+### 12.3 CLI 与判定
+
+```bash
+node apps/desktop/scripts/pipeline-smoke/audit.js --with-providers
+node apps/desktop/scripts/pipeline-smoke/audit.js --with-providers --providers-db <path> --json artifacts/pipeline-smoke/report-providers.json
+```
+
+- 未加 `--with-providers`：保持原静态审计语义，不读 DB。
+- 加 `--with-providers`：每条流水线的 `capabilities` 与可用能力集求差，缺能力 → `BLOCKED(MISSING_PROVIDER)`，reason 点名缺失能力（如 `llm, video`）。
+- DB 缺失/损坏：CLI 退出码 2，不静默通过。
+- 报告新增 `providerChecked: true`；CLI 首行打印 `PROVIDERS db=... usable=N caps=...`。
+
+### 12.4 本机实测
+
+```
+PROVIDERS db=...multi-publish.db usable=1 caps=image
+SUMMARY total=15 ready=5 blocked=9 broken=0 excluded=1
+```
+
+- READY（5）：`talking-head`、`cinematic`、`clip-factory`、`framework-smoke`、`film-engineering`
+- BLOCKED(MISSING_PROVIDER)：`animated-explainer`（llm）、`avatar-spokesperson`（llm, video）、`character-animation`（llm, video）、`localization-dub`（llm）、`story2video-compose`（video）
+- BLOCKED(NO_DRIVER)：`animation`、`documentary-montage`、`hybrid`、`podcast-repurpose`
+- EXCLUDED：`screen-demo`
+
+说明：本机只有 image 能力，因此 5 条含 LLM/VIDEO 依赖的流水线被正确降级为 BLOCKED；这正是「provider 未就绪」的真实读数。

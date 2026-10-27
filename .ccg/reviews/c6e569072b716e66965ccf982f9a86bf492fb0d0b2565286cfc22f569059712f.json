@@ -1,0 +1,115 @@
+{
+  "sha": "f29f3e1f337dc5fc0f6cc564c263340b50bd6781",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 183 行（≤ 200）但命中 auth/数据库/加密：敏感内容 2 处",
+  "stats": {
+    "changedLines": 183,
+    "fileCount": 6,
+    "codeFileCount": 3,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 10,
+    "docSensitiveContentSample": [
+      "- **不解密、不输出 API Key**；只有 `enabled=1` 且 key 长度>0 的 provider 计入能力集。",
+      "`pipeline-e2e-smoke` 的 `READY` 只检查接线、驱动、工具、输入，**没有检查应用里是否真的配置了模型 provider**。实测应用 SQLite 中只有 `minimax-image` 一个可用 provider（加密 key 长度>0），但审计仍把 `animated-explainer`、`avatar-spokesperson`、`character-animation`、`localization-dub`、`story2video-compose` 标为 `READY`，属于「静态条件满足 ≠ 能真正生成」的误报。",
+      "   - **不解密、不输出 API Key**；只有 `enabled=1` 且有 key 的 provider 计入能力集；"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "c6e569072b716e66965ccf982f9a86bf492fb0d0b2565286cfc22f569059712f",
+  "decidedAt": "2026-10-27T07:10:09.994Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "provider-readiness.js requires 'sql.js' module but diff shows no package.json dependency update; runtime MODULE_NOT_FOUND crash.",
+        "highRiskDomains": [],
+        "prosecution": "provider-readiness.js require('sql.js') 但 diff 未更新 package.json，运行期可能 MODULE_NOT_FOUND。",
+        "defense": "`apps/desktop/package.json` 已声明 `sql.js: ^1.11.0`（既有依赖，本 PR 无需新增）；`node apps/desktop/scripts/pipeline-smoke/audit.js --with-providers` 实测成功输出 `usable=1 caps=image`。",
+        "verdict": "dismissed",
+        "rationale": "依赖已在 package.json 中；真实命令已运行成功，不存在 MODULE_NOT_FOUND。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "defaultProviderDbPath uses env.APPDATA directly; --providers-db accepts arbitrary paths with no validation. Malicious DB could inject capabilities.",
+        "highRiskDomains": [],
+        "prosecution": "--providers-db 接受任意路径，恶意 DB 可伪造 capabilities，让审计误报 READY。",
+        "defense": "这是本地开发/CI CLI，DB 路径由执行者显式提供；工具只读、不执行 DB 内容，能力注入最多影响本地报告，不改变生产。默认路径是应用自身 userData DB。",
+        "verdict": "dismissed",
+        "rationale": "威胁模型是本地可信执行者；任意路径是调试/多 profile 的必要能力。若需更强隔离，可后续加签名/白名单，但不是当前缺陷。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "audit.js uses capabilities.filter() but variable 'capabilities' is not visible in the diff scope; potential ReferenceError at runtime.",
+        "highRiskDomains": [],
+        "prosecution": "audit.js 使用 capabilities.filter()，但 capabilities 在 diff 作用域不可见，可能 ReferenceError。",
+        "defense": "`auditEntry()` 内先执行 `let capabilities = []; capabilities = resolvePipelineModelRequirements(...).capabilities`，provider 检查在同一函数后半段；单元测试（缺能力/齐全）已实际执行该分支并通过。",
+        "verdict": "dismissed",
+        "rationale": "变量在同函数作用域内定义；测试覆盖该路径，未出现 ReferenceError。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "main() converted to async unnecessarily; auditAll is synchronous. Adds promise overhead without async operations inside main besides readProviderInventory.",
+        "highRiskDomains": [],
+        "prosecution": "main() 改为 async 没有必要，auditAll 同步，增加 Promise 开销。",
+        "defense": "`--with-providers` 需要 `await readProviderInventory()`（sql.js 初始化是 Promise）；main 作为 CLI 入口 async 是正确做法，开销可忽略。",
+        "verdict": "dismissed",
+        "rationale": "async 是 readProviderInventory 的必需调用形式；CLI 启动开销与 Promise 无关。"
+      },
+      {
+        "id": "i8",
+        "severity": "Warning",
+        "finding": "SQL query selects length(api_key) but no file size or DB integrity check before passing to sql.js; corrupt DB may cause unhandled exceptions.",
+        "highRiskDomains": [],
+        "prosecution": "未校验 DB 文件头/大小，损坏 DB 可能导致 sql.js 未处理异常。",
+        "defense": "`readProviderRows` 在 `fs.existsSync` 后读取；sql.js 解析失败会抛异常，`main().catch` 统一打印 `[pipeline-smoke] FAILED` 并置 exitCode=2；实际 DB 读取成功（usable=1）。",
+        "verdict": "dismissed",
+        "rationale": "已有统一 exit 2 失败路径；文件大小/header 校验属额外加固，不是当前缺陷。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T07:15:42.427Z"
+  }
+}

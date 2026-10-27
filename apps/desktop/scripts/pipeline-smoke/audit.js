@@ -22,6 +22,7 @@ const { resolvePipelineModelRequirements } = require('../../electron/services/pi
 const { findFfmpeg, findFfprobe } = require('../../electron/services/media-tool-paths')
 const { PIPELINE_SMOKE_MANIFEST, PIPELINE_SMOKE_EXCLUDED } = require('./manifest')
 const { resolveReportPath } = require('./paths')
+const { readProviderInventory, capabilitiesFromInventory } = require('./provider-readiness')
 
 const APP_DESKTOP_DIR = path.resolve(__dirname, '..', '..')
 const DEFAULT_INPUT_DIR = path.join(os.tmpdir(), 'story2video', 'e2e-inputs')
@@ -73,6 +74,7 @@ function reasonText (code, detail) {
     case 'MISSING_INPUT': return '缺少 E2E 输入文件（E2E_INPUTS）' + suffix
     case 'MISSING_MEDIA_TOOL': return '未找到 ffmpeg/ffprobe' + suffix
     case 'MISSING_ENV': return '缺少必需环境变量' + suffix
+    case 'MISSING_PROVIDER': return '缺少可用模型能力（请到应用「模型设置」配置并启用）' + suffix
     case 'UNWIRED_STAGE': return '存在未接线的阶段类型' + suffix
     case 'MANIFEST_UNKNOWN_PIPELINE': return '清单登记了 PIPELINE_DEFINITIONS 中不存在的流水线' + suffix
     case 'MANIFEST_COVERAGE_GAP': return '带 stageDefs 的流水线未登记到冒烟清单' + suffix
@@ -184,6 +186,16 @@ function auditEntry (entry, ctx) {
     return makeItem(entry.pipeline, STATUS.BLOCKED, 'MISSING_ENV', missingEnv.join(', '), base)
   }
 
+  if (ctx.providerCapabilities) {
+    const missingCapabilities = capabilities.filter((capability) => !ctx.providerCapabilities.has(capability))
+    if (missingCapabilities.length > 0) {
+      return makeItem(entry.pipeline, STATUS.BLOCKED, 'MISSING_PROVIDER', missingCapabilities.join(', '), {
+        ...base,
+        missingCapabilities,
+      })
+    }
+  }
+
   return makeItem(entry.pipeline, STATUS.READY, null, null, base)
 }
 
@@ -215,6 +227,7 @@ function auditAll (options = {}) {
     driverExists: options.driverExists || defaultDriverExists,
     inputExists: options.inputExists || defaultInputExists,
     toolExists: options.toolExists || defaultToolExists,
+    providerCapabilities: options.providerCapabilities || null,
   }
 
   const items = []
@@ -262,6 +275,7 @@ function auditAll (options = {}) {
   const report = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
+    providerChecked: Boolean(options.providerCapabilities),
     summary,
     items,
   }
@@ -322,14 +336,26 @@ function validateOnly (only, manifest, excluded) {
 }
 
 function parseArgs (argv) {
-  const options = { json: null, strict: false, only: [], inputDir: null, help: false }
+  const options = {
+    json: null,
+    strict: false,
+    only: [],
+    inputDir: null,
+    withProviders: false,
+    providersDb: null,
+    help: false,
+  }
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--json') options.json = argv[++i]
     else if (arg === '--strict') options.strict = true
     else if (arg === '--only') options.only.push(argv[++i])
     else if (arg === '--input-dir') options.inputDir = argv[++i]
-    else if (arg === '--help' || arg === '-h') options.help = true
+    else if (arg === '--with-providers') options.withProviders = true
+    else if (arg === '--providers-db') {
+      options.providersDb = argv[++i]
+      options.withProviders = true
+    } else if (arg === '--help' || arg === '-h') options.help = true
     else throw new Error('未知参数: ' + arg)
   }
   return options
@@ -342,14 +368,25 @@ function filterReport (report, only) {
   return { ...report, summary: summarize(items), items }
 }
 
-function main (argv = process.argv.slice(2)) {
+async function main (argv = process.argv.slice(2)) {
   const options = parseArgs(argv)
   if (options.help) {
-    console.log('用法: node apps/desktop/scripts/pipeline-smoke/audit.js [--json <path>] [--strict] [--only <pipeline>] [--input-dir <dir>]')
+    console.log('用法: node apps/desktop/scripts/pipeline-smoke/audit.js [--json <path>] [--strict] [--only <pipeline>] [--input-dir <dir>] [--with-providers] [--providers-db <path>]')
     return 0
   }
   validateOnly(options.only, PIPELINE_SMOKE_MANIFEST, PIPELINE_SMOKE_EXCLUDED)
-  const report = filterReport(auditAll({ inputDir: options.inputDir || undefined }), options.only)
+  let providerCapabilities = null
+  if (options.withProviders) {
+    const inventory = await readProviderInventory({ dbPath: options.providersDb || undefined })
+    providerCapabilities = capabilitiesFromInventory(inventory)
+    console.log('PROVIDERS db=' + inventory.dbPath +
+      ' usable=' + inventory.usable.length +
+      ' caps=' + ([...providerCapabilities].join(',') || '-'))
+  }
+  const report = filterReport(auditAll({
+    inputDir: options.inputDir || undefined,
+    providerCapabilities,
+  }), options.only)
   console.log(formatTable(report, { color: Boolean(process.stdout.isTTY) }))
   const s = report.summary
   console.log('\nSUMMARY total=' + s.total + ' ready=' + s.ready + ' blocked=' + s.blocked + ' broken=' + s.broken + ' excluded=' + s.excluded)
@@ -363,12 +400,10 @@ function main (argv = process.argv.slice(2)) {
 }
 
 if (require.main === module) {
-  try {
-    process.exitCode = main()
-  } catch (error) {
+  main().then((code) => { process.exitCode = code }).catch((error) => {
     console.error('[pipeline-smoke] FAILED: ' + (error && error.stack ? error.stack : String(error)))
     process.exitCode = 2
-  }
+  })
 }
 
 module.exports = {

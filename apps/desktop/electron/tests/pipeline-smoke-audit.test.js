@@ -16,6 +16,7 @@ const {
   PIPELINE_SMOKE_MANIFEST,
   PIPELINE_SMOKE_EXCLUDED,
 } = require('../../scripts/pipeline-smoke/manifest')
+const { capabilitiesFromInventory, parseCapabilities } = require('../../scripts/pipeline-smoke/provider-readiness')
 const { buildFixturePlan, ensureFixture } = require('../../scripts/pipeline-smoke/make-fixtures')
 const { PIPELINE_DEFINITIONS } = require('../services/pipeline-engine')
 
@@ -193,6 +194,42 @@ describe('pipeline-smoke 报告与退出码', () => {
       engine: fakeEngine([{ pipeline: 'cinematic', stage: 'ingest', type: 'cinematic_ingest' }]),
     }))
     expect(computeExitCode(broken, { strict: false })).toBe(1)
+  })
+})
+
+describe('pipeline-smoke provider 就绪', () => {
+  it('parseCapabilities 合并 category 与 config.capabilities', () => {
+    expect(parseCapabilities('image', '{"capabilities":["image","video"]}')).toEqual(['image', 'video'])
+    expect(parseCapabilities('llm', 'not-json')).toEqual(['llm'])
+  })
+
+  it('capabilitiesFromInventory 只取 enabled + 有 key 的 provider', () => {
+    const inventory = {
+      usable: [
+        { categories: ['image'], enabled: true, hasKey: true },
+        { categories: ['llm'], enabled: true, hasKey: true },
+      ],
+    }
+    expect([...capabilitiesFromInventory(inventory)].sort()).toEqual(['image', 'llm'])
+  })
+
+  it('有 provider 校验时，缺能力判 BLOCKED(MISSING_PROVIDER)', () => {
+    const report = auditAll(baseOptions({ providerCapabilities: new Set(['image']) }))
+    const story2video = report.items.find((item) => item.pipeline === 'story2video-compose')
+    const animated = report.items.find((item) => item.pipeline === 'animated-explainer')
+    expect(story2video.status).toBe('BLOCKED')
+    expect(story2video.reasonCode).toBe('MISSING_PROVIDER')
+    expect(story2video.reason).toContain('video')
+    expect(animated.reasonCode).toBe('MISSING_PROVIDER')
+    expect(animated.reason).toContain('llm')
+  })
+
+  it('能力齐全时 provider 校验不阻断 READY', () => {
+    const report = auditAll(baseOptions({
+      providerCapabilities: new Set(['image', 'video', 'llm', 'tts', 'speech_recognition']),
+    }))
+    const story2video = report.items.find((item) => item.pipeline === 'story2video-compose')
+    expect(story2video.status).toBe('READY')
   })
 })
 

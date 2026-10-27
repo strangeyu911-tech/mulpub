@@ -4,6 +4,9 @@ const { LogtoWebhookConsumer } = require('./logto-webhook')
 const { signEntitlement } = require('./entitlement')
 const { PostgresEntitlementProvider, PostgresIdentityRepository } = require('./postgres-identity-repository')
 const { SubscriptionService } = require('./subscription-service')
+// 促销配置在**装配期**从 env 读一次（改 env 需重启生效，与决策表一致）；
+// 配置非法（endsAt ≤ startsAt / price ≥ listPrice）在这里直接抛 PROMO_CONFIG_INVALID。
+const { buildStandardMonthlyPromoConfig } = require('./plan-matrix')
 const { createProductionReadinessProbe } = require('./production-readiness')
 const { validateProductionConfig } = require('./production-config')
 const { createWeChatNativeProvider } = require('./payment-providers/wechat-native-factory')
@@ -132,10 +135,15 @@ async function createLogtoRuntime(options = {}) {
     const paymentProvider = options.paymentProvider !== undefined
       ? options.paymentProvider
       : createWeChatNativeProvider(env)
+    // 促销：`options.promoConfig !== undefined`（而不是 ||）—— 测试要能显式传 null 模拟「未配置预售」。
+    const promoConfig = options.promoConfig !== undefined
+      ? options.promoConfig
+      : buildStandardMonthlyPromoConfig(env, options.planOverrides || null)
     const subscriptionService = new SubscriptionService({
       repository,
       planOverrides: options.planOverrides || null,
       paymentProvider,
+      promoConfig,
     })
     const webhookKey = String(env.LOGTO_WEBHOOK_SIGNING_KEY || '')
     const createWebhookConsumer = options.createWebhookConsumer || ((consumerOptions) => new LogtoWebhookConsumer(consumerOptions))

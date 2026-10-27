@@ -39,6 +39,10 @@ export default {
     planUnknown: 'Loading plan…',
     planBuyCta: 'Buy',
     planBuyCurrent: 'Current plan',
+    // ——— Standard monthly launch promo (standard-plan-promo, 2026-10-27) ———
+    planPromoBadge: 'Launch offer · {days} days left',
+    planPromoExhausted: 'Offer used up — {price}/month',
+    promoEndingSoon: 'The launch offer ends on {date}; renewals after that are {price}/month',
     quotaUnlimited: 'Unlimited',
     // ——— Expiry grace period (v4: #4051 graceUntil/previousPlan) ———
     graceTitle: 'Expired · Grace period',

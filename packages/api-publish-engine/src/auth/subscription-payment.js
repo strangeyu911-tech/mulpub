@@ -18,6 +18,7 @@
 
 const crypto = require('crypto')
 const { PLAN_IDS, getPlanCatalog } = require('./plan-matrix')
+const { resolvePrice } = require('./promo-resolver')
 const { OUT_TRADE_NO_PATTERN } = require('./payment-providers/index')
 const { claimPaymentEvent, completePaymentEvent } = require('./payment-event-outbox')
 
@@ -63,15 +64,22 @@ class SubscriptionPaymentOps {
     if (orderId !== undefined && orderId !== null && orderId !== '') {
       return this._reusePendingOrder({ userId, plan, period, orderId })
     }
-    const amountCents = this._paymentPriceCents(plan, period)
+    // 促销定价：**唯一**判定点在 promo-resolver（纯函数），本方法只负责取计数与落库。
+    const pricing = this._checkoutPricing(plan, period, await this._promoPurchaseCount(userId))
     const newOrderId = this._newPaymentOrderId()
     const order = await this.repository.createPendingOrder({
       id: newOrderId,
       userId,
       plan,
-      amount: amountCents,
+      // amount 恒为**标价**：退款口径、合同价、对账都按它；实收另存 payable_cents。
+      amount: pricing.listPriceCents,
       currency: 'CNY',
       period,
+      payableCents: pricing.payableCents,
+      discountCents: pricing.discountCents,
+      // ⚠️ exhausted 的订单 promotion 非空（UI 要提示「已用完」）但**不得落 promotion_id**：
+      // 计数只数真正享促销价的单，落进去会让「第 4 单」也占额度，用户在 3 单后永远原价。
+      promotionId: pricing.promotion && !pricing.promotion.exhausted ? pricing.promotion.id : null,
     })
     if (!order) throw commerceError('订单创建失败', 'PAYMENT_ORDER_CREATE_FAILED', 503)
     // 用户 ↔ 供应商客户映射：webhook 回传 openid 时反查用。本期只用 user_id 键，best-effort。
@@ -84,7 +92,8 @@ class SubscriptionPaymentOps {
         orderId: newOrderId,
         plan,
         period,
-        amountCents,
+        // ⛔ 传给微信的必须是**实收**（2900），不是标价 5900 —— 传错会多收 30 元。
+        amountCents: pricing.payableCents,
         currency: 'CNY',
         // attach 会被微信原样回传，是 webhook 落定用户的关键（回调本身不带我们的 user_id）
         attach: { orderId: newOrderId, userId },
@@ -105,6 +114,39 @@ class SubscriptionPaymentOps {
       throw commerceError('该档位未配置价格', 'CHECKOUT_PRICE_MISSING', 500)
     }
     return value
+  }
+
+  /** 该用户已支付的促销单数；未配置促销时不查库（也避免为无关档位多打一次 SQL）。 */
+  async _promoPurchaseCount(userId) {
+    if (!this.promoConfig) return 0
+    if (typeof this.repository.countPromoPurchases !== 'function') {
+      // 促销开着却没有计数能力 ⇒ 限购形同虚设。fail-closed，不静默按 0 处理。
+      throw commerceError('促销计数不可用', 'PROMO_COUNT_UNAVAILABLE', 500)
+    }
+    return this.repository.countPromoPurchases(userId)
+  }
+
+  /**
+   * 下单定价：无促销配置时等价于旧行为（标价 = 实收），有配置时走纯函数。
+   * 配置非法（endsAt ≤ startsAt、price ≥ listPrice）在这里映射成 500，**不回退原价**。
+   */
+  _checkoutPricing(plan, period, promoPurchaseCount) {
+    const listPriceCents = this._paymentPriceCents(plan, period)
+    if (!this.promoConfig) {
+      return { listPriceCents, payableCents: listPriceCents, discountCents: 0, promotion: null }
+    }
+    try {
+      return resolvePrice({
+        plan,
+        period,
+        now: this.now(),
+        // 标价由 plan-matrix 注入：promo-resolver 不反向依赖价格表。
+        config: { ...this.promoConfig, listPriceCents },
+        promoPurchaseCount,
+      })
+    } catch (error) {
+      throw commerceError(`促销配置非法：${(error && error.message) || error}`, 'PROMO_CONFIG_INVALID', 500)
+    }
   }
 
   /** 订单号：`wp` + base36 时间戳 + 8 位 hex。全局唯一、有界、形状与 provider 侧校验一致。 */
@@ -147,7 +189,8 @@ class SubscriptionPaymentOps {
       orderId,
       plan: order.plan,
       period: order.period,
-      amountCents: order.amount,
+      // 复用既有 pending 单必须按**落库的实收**重新取码：促销单若按 amount(5900) 取码会多收。
+      amountCents: Number.isInteger(order.payable_cents) ? order.payable_cents : order.amount,
       currency: order.currency || 'CNY',
       attach: { orderId, userId },
     })
@@ -179,7 +222,20 @@ class SubscriptionPaymentOps {
     }
     const durationDays = DURATION_DAYS[order.period] || DURATION_DAYS.month
     const reference = providerReference || `wechat:${orderId}`
-    void amountCents
+    // ⛔ 金额校验（原实现 `void amountCents` = 完全不校验）：
+    //   微信回调的 amount.total 是**用户实付**，必须等于订单落库的 payable_cents。
+    //   相等才结算；不等说明「回调与订单不是同一笔钱」（多收/少收/伪造/串单），
+    //   一律 PAYMENT_AMOUNT_MISMATCH 拒绝，且**不得发放权益**（订单留 pending 等人工核对）。
+    //   `payable_cents` 为 INTEGER NOT NULL（迁移 011 已回填），下面的 amount 兜底只服务
+    //   测试替身/迁移前历史行；生产读不到该列本身就是迁移失败的硬错误。
+    const expectedPayableCents = Number.isInteger(order.payable_cents) ? order.payable_cents : order.amount
+    if (!Number.isInteger(amountCents) || amountCents !== expectedPayableCents) {
+      throw commerceError(
+        `回调金额 ${amountCents} 与订单实收 ${expectedPayableCents} 不一致`,
+        'PAYMENT_AMOUNT_MISMATCH',
+        409,
+      )
+    }
     return this.repository.commerceTransaction(async (tx) => {
       // 回调留痕（PRD §15.9）：回调到达必须有持久化痕迹，事后追查不能只靠日志。
       // 幂等键是订单号 —— 同一单的重复投递落到同一行、`claimed=false` 时**直接短路**，

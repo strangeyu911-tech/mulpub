@@ -1,0 +1,73 @@
+{
+  "sha": "86e8580fa6722027fccfd5e377e49374d99c3dc8",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 1679 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 1679,
+    "fileCount": 31,
+    "codeFileCount": 28,
+    "sensitivePathHits": [
+      "migrations/postgresql/011_payment_promo.sql",
+      "packages/api-publish-engine/src/auth/logto-runtime.js",
+      "packages/api-publish-engine/src/auth/payment-order-store.js",
+      "packages/api-publish-engine/src/auth/payment-promo-schema.js",
+      "packages/api-publish-engine/src/auth/plan-matrix.js",
+      "packages/api-publish-engine/src/auth/postgres-commerce-store.js",
+      "packages/api-publish-engine/src/auth/postgres-identity-repository.js",
+      "packages/api-publish-engine/src/auth/promo-resolver.js",
+      "packages/api-publish-engine/src/auth/publish-api-commerce.js",
+      "packages/api-publish-engine/src/auth/subscription-payment.js",
+      "packages/api-publish-engine/src/auth/subscription-service.js"
+    ],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 23,
+    "docSensitiveContentHits": 6,
+    "docSensitiveContentSample": [
+      "付款码，我们账上什么都没有」——回调到达时无从归属，既不能授权也不能对账。先落单最坏留一条 pending。",
+      "| 限额计数 | `SELECT count(*) FROM identity_orders WHERE user_id=$1 AND promotion_id IS NOT NULL AND status='paid'` |",
+      "**回填**：`UPDATE identity_orders SET payable_cents = amount - COALESCE(discount_cents, 0) WHERE payable_cents IS NULL;`"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "aa06e845db78db79da60a09df6ceb66da9ab830bd32b5a8aa245f172f28b982a",
+  "decidedAt": "2026-10-27T09:14:06.876Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

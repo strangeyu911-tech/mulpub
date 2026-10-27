@@ -125,6 +125,23 @@ const CHECKS = [
              AND e.received_at < now() - interval '10 minutes'
            LIMIT $1`,
   },
+  {
+    // 促销单三列口径：amount(标价) - discount_cents(让利) 必须等于 payable_cents(实收)。
+    // INFO 而非 blocking：这类差异**几乎都源于人工改单/回填**，自动判红会让灰度期噪声淹没真问题；
+    // 但它必须可见 —— 三列不自洽意味着「退款按 amount 退」时会多退 30 元（决策表第 14 行按实付退，
+    // 所以发现即人工核对，**不要自动改金额**）。
+    id: 'promo-order-amount-mismatch',
+    params: ['since', 'limit'],
+    severity: INFO,
+    title: '促销订单三列金额不自洽',
+    hint: 'payable_cents ≠ amount - COALESCE(discount_cents, 0)。先核对微信商户平台该单实收，' +
+      '再人工修正；退款口径是**按实付 2900 原路退**，不要用 amount 退。',
+    sql: `SELECT o.id, o.amount, o.discount_cents, o.payable_cents, o.promotion_id, o.paid_at
+            FROM identity_orders o
+           WHERE o.channel = 'payment' AND o.promotion_id IS NOT NULL AND o.created_at >= $1
+             AND o.payable_cents <> o.amount - COALESCE(o.discount_cents, 0)
+           LIMIT $2`,
+  },
 ];
 // 装配期自检：占位符必须从 $1 开始连续编号，且个数与 params 声明一致。
 // 这类错误漏到线上会让整条 SQL 直接失败、拿不到任何部分结果，所以放在模块加载时。

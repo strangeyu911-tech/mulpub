@@ -20,6 +20,11 @@
  *   依赖注入能否触达本矩阵取决于部署层——本仓无法自证。
  */
 
+// 促销定价判定是纯函数（零 I/O），本矩阵只负责注入标价与档位上下文。
+// ⚠️ 方向不可反：promo-resolver **不得** require 本文件，否则「5900 是唯一真源」
+// 会退化成两份常量（改一处漏一处，测试还可能两边都绿）。
+const { loadStandardMonthlyPromoConfig, resolvePrice } = require('./promo-resolver')
+
 const PLAN_MATRIX_VERSION = '2026-10-26'
 
 const PLAN_IDS = Object.freeze(['free', 'standard', 'pro'])
@@ -267,16 +272,56 @@ function planRank(plan) {
   return Object.prototype.hasOwnProperty.call(PLAN_RANK, plan) ? PLAN_RANK[plan] : -1
 }
 
+/**
+ * 单档月付定价（目录展示 + 下单共用同一判定）。
+ *
+ * `priceMonthlyCents` 保持**实收价**语义（前端零改动），标价另出 `listPriceMonthlyCents`。
+ * 免费档标价 0 ⇒ 不进入促销判定（resolvePrice 的「price < listPrice」校验对 0 无意义）。
+ */
+function catalogMonthlyPricing(plan, matrix, now, promoConfig, promoPurchaseCount) {
+  const listPriceCents = matrix.priceMonthlyCents
+  const base = { listPriceCents, payableCents: listPriceCents, discountCents: 0, promotion: null }
+  if (!promoConfig || listPriceCents <= 0) return base
+  return resolvePrice({
+    plan,
+    period: 'month',
+    now,
+    // 标价由本矩阵注入：promo-resolver 因此无需反向依赖价格表。
+    config: { ...promoConfig, listPriceCents },
+    promoPurchaseCount,
+  })
+}
+
+/**
+ * 从 env + 运营 overrides 装配标准版月付促销配置（启动期一次）。
+ * 标价取 override 后的 standard 月付价 —— 运营改价时促销价与之的差值自动跟随，
+ * 并在「促销价 ≥ 标价」时于装配期抛错（见 promo-resolver.validateConfig）。
+ */
+function buildStandardMonthlyPromoConfig(env, overrides) {
+  return loadStandardMonthlyPromoConfig(env, {
+    listPriceCents: mergePlanSection('standard', overrides).priceMonthlyCents,
+  })
+}
+
 /** 价目目录（GET /api/v1/plans 展示用，含展示字段，与权益分离）。 */
-function getPlanCatalog(overrides) {
+function getPlanCatalog(overrides, options = {}) {
+  const now = options.now instanceof Date ? options.now : new Date()
+  const promoConfig = options.promoConfig || null
+  const promoPurchaseCount = Number.isInteger(options.promoPurchaseCount) && options.promoPurchaseCount > 0
+    ? options.promoPurchaseCount
+    : 0
   return PLAN_IDS.map((plan) => {
     const matrix = mergePlanSection(plan, overrides)
+    const pricing = catalogMonthlyPricing(plan, matrix, now, promoConfig, promoPurchaseCount)
     return deepFreeze({
       id: plan,
       label: matrix.label,
       currency: 'CNY',
-      priceMonthlyCents: matrix.priceMonthlyCents,
+      priceMonthlyCents: pricing.payableCents,
+      // 标价：仅供「活动价已用完」文案与服务端自检读取；前端**不得划线展示**（PRD §6.3）。
+      listPriceMonthlyCents: pricing.listPriceCents,
       priceYearlyCents: matrix.priceYearlyCents,
+      promotion: pricing.promotion,
       rank: matrix.rank,
       entitlement: getPlanEntitlement(plan, overrides),
     })
@@ -286,4 +331,12 @@ function getPlanCatalog(overrides) {
 // 基线为全标量 + 浅拷贝安全；显式深冻结作 tripwire，若将来有人塞入嵌套对象可及时暴露（见测试）。
 deepFreeze(BASE_MATRIX)
 
-module.exports = { PLAN_MATRIX_VERSION, PLAN_IDS, PLAN_RANK, getPlanEntitlement, getPlanCatalog, planRank }
+module.exports = {
+  PLAN_MATRIX_VERSION,
+  PLAN_IDS,
+  PLAN_RANK,
+  buildStandardMonthlyPromoConfig,
+  getPlanEntitlement,
+  getPlanCatalog,
+  planRank,
+}

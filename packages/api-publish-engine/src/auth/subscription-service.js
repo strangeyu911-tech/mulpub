@@ -8,6 +8,7 @@
 
 const crypto = require('crypto')
 const { PLAN_IDS, getPlanEntitlement, planRank } = require('./plan-matrix')
+const { resolvePrice } = require('./promo-resolver')
 
 // 排除易混淆字符 I/O/0/1；格式 4-4-4（与 LicenseManager.activate 的输入习惯兼容）。
 const REDEEM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
@@ -118,6 +119,30 @@ class SubscriptionService {
     // 支付通道适配器（PaymentProvider）。未注入 ⇒ 下单入口 fail-closed 503，
     // 兑换码/后台开通两条既有通道不受影响（它们本就不经过供应商）。
     this.paymentProvider = options.paymentProvider || null
+    // 标准版月付促销配置（由 logto-runtime 从 env 装配后注入）。null = 不做任何促销判定，
+    // 与「促销关闭」等价；配置非法在装配期就已抛错，不会走到这里。
+    this.promoConfig = options.promoConfig || null
+  }
+
+  /**
+   * 促销是否正在进行：只判「开关 + 时间窗」，**不看该用户的购买计数**。
+   * 原因：兑换码不可叠加是活动级规则（决策表第 12 行），不能因为某人已买满 3 单就放开——
+   * 那会让「买满促销额度的用户」成为唯一能用兑换码套利的人群。
+   */
+  promoActive() {
+    if (!this.promoConfig) return false
+    try {
+      const priced = resolvePrice({
+        plan: 'standard',
+        period: 'month',
+        now: this.now(),
+        config: this.promoConfig,
+        promoPurchaseCount: 0,
+      })
+      return Boolean(priced.promotion)
+    } catch (error) {
+      throw new CommerceError(`促销配置非法：${(error && error.message) || error}`, 'PROMO_CONFIG_INVALID', 500)
+    }
   }
 
   entitlementPayload(plan) {
@@ -258,6 +283,11 @@ class SubscriptionService {
   /** 兑换码核销：行锁 + 条件更新双保险幂等；本人重放不重复记账。 */
   async redeem({ userId, code }) {
     await this.requireUser(userId)
+    // 促销期内兑换码不可叠加（决策表第 12 行）：活动价已经低于兑换码折算单价，
+    // 允许叠加等于同一份时长被两个折扣同时补贴。放在格式校验之前 —— 这是通道级拒付。
+    if (this.promoActive()) {
+      throw new CommerceError('上市期特惠进行中，兑换码暂不可叠加使用', 'REDEEM_DISABLED_DURING_PROMO', 409)
+    }
     const normalized = typeof code === 'string' ? code.trim().toUpperCase() : ''
     if (!REDEEM_CODE_PATTERN.test(normalized)) {
       throw new CommerceError('兑换码格式不正确（形如 ABCD-EFGH-JKMN）', 'REDEEM_CODE_FORMAT', 400)

@@ -164,3 +164,40 @@ export function formatTimestamp(value) {
   if (Number.isNaN(ms)) return String(value)
   return new Date(ms).toLocaleString()
 }
+
+// ——— 标准版月付促销（standard-plan-promo，2026-10-27） ———
+
+/**
+ * 购买按钮文案：促销额度用尽时**下单前**就告诉用户「活动价已用完，¥59/月」。
+ * 金额一律来自服务端 `listPriceMonthlyCents`（不硬编码金额），
+ * 由调用方注入 formatPrice —— 本文件保持纯函数、不耦合组件里的货币格式化实现。
+ */
+export function promoBuyCtaOf(t, plan, formatPrice) {
+  if (plan && plan.promotion && plan.promotion.exhausted === true) {
+    return t('memberCenter.planPromoExhausted', {
+      price: formatPrice(plan.listPriceMonthlyCents, plan.currency),
+    })
+  }
+  return t('memberCenter.planBuyCta')
+}
+
+/**
+ * 结束前 7 天的续费预告（决策表第 13 行）。
+ * 返回 i18n 插值参数 `{ date, price }`；无预告时返回 null（模板用 v-if）。
+ * ⚠️ `exhausted` 的用户不再提示：他们已经在按原价买，再提示「之后按原价」只是噪音。
+ */
+export function promoEndingSoonOf(plans, formatPrice) {
+  if (!Array.isArray(plans)) return null
+  const plan = plans.find((item) => item && item.promotion &&
+    item.promotion.exhausted === false &&
+    Number.isInteger(item.promotion.remainingDays) &&
+    item.promotion.remainingDays > 0 &&
+    item.promotion.remainingDays <= 7)
+  if (!plan) return null
+  const endsAt = new Date(plan.promotion.endsAt)
+  if (Number.isNaN(endsAt.getTime())) return null
+  return {
+    date: endsAt.toLocaleDateString(),
+    price: formatPrice(plan.listPriceMonthlyCents, plan.currency),
+  }
+}

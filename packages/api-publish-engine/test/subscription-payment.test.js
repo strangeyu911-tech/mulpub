@@ -123,6 +123,11 @@ function makeRepository() {
       const stored = {
         ...row,
         user_id: row.userId,
+        // 011 起这三列是 DB 真实列（snake_case）；夹具不映射会让 settle 的金额校验
+        // 走到 amount 兜底分支，从而掩盖「只校验 payable_cents」的回归。
+        payable_cents: Number.isInteger(row.payableCents) ? row.payableCents : row.amount,
+        discount_cents: row.discountCents || 0,
+        promotion_id: row.promotionId || null,
         channel: 'payment',
         status: 'pending',
         provider_order_id: null,
@@ -305,13 +310,19 @@ test('settlePaymentWebhook', async (t) => {
     assert.strictEqual(repo.subscriptions.size, 0)
   })
 
-  await t.test('金额不一致 → 记 WARN 但**不改计费不阻断授权**', async () => {
+  // 2026-10-27 语义反转（standard-plan-promo）：旧口径「金额不一致记 WARN 但照常授权」
+  // 意味着**回调金额从未被校验**（实现是 `void amountCents`）—— 伪造/串单回调同样能发放权益。
+  // 新口径：不等即 PAYMENT_AMOUNT_MISMATCH 拒绝，且不得发权益、订单保持 pending。
+  await t.test('金额不一致 → PAYMENT_AMOUNT_MISMATCH，不授权、订单保持 pending', async () => {
     const { repo, svc } = setup()
     const { orderId } = await svc.createCheckout({ userId: 'u-1', plan: 'standard', period: 'month' })
-    // 回调金额 100 分 ≠ 订单 5900 分
-    const out = await svc.settlePaymentWebhook({ orderId, providerReference: `wechat:${orderId}`, amountCents: 100 })
-    assert.strictEqual(out.plan, 'standard', '金额不一致不得阻断授权')
-    assert.strictEqual(repo.subscriptions.get('u-1').plan, 'standard')
+    // 回调金额 100 分 ≠ 订单实收 5900 分
+    await assert.rejects(
+      svc.settlePaymentWebhook({ orderId, providerReference: `wechat:${orderId}`, amountCents: 100 }),
+      (err) => err.code === 'PAYMENT_AMOUNT_MISMATCH' && err.status === 409,
+    )
+    assert.strictEqual(repo.subscriptions.size, 0, '金额不符绝不能发权益')
+    assert.strictEqual(repo.orders.get(orderId).status, 'pending')
   })
 
   await t.test('乱序：refunded 早于 checkout.completed → 记 ignored 不抛错', async () => {

@@ -73,25 +73,26 @@
           <span class="member-center-plan-label">
             {{ isCurrentPlan(plan.id) ? t('memberCenter.planCurrentSuffix', { label: plan.label }) : plan.label }}
           </span>
-          <span class="member-center-plan-price" :data-testid="`plan-${plan.id}-price`">
-            <template v-if="plan.priceMonthlyCents === 0">{{ t('memberCenter.planFree') }}</template>
-            <template v-else>
-              {{ formatPrice(plan.priceMonthlyCents, plan.currency) }} / {{ t('memberCenter.perMonth') }}
-              <span class="member-center-plan-yearly">
-                · {{ formatPrice(plan.priceYearlyCents, plan.currency) }} / {{ t('memberCenter.perYear') }}
-              </span>
-            </template>
-          </span>
-          <!-- 购买入口：与卡片同路径（同一 openPay），不做第二套按钮组 -->
+          <PlanPriceTag :plan="plan" :format-price="formatPrice" :test-id="`plan-${plan.id}-price`" />
+          <!-- 购买入口：与卡片同路径（同一 openPay），不做第二套按钮组。
+               「活动价已用完」的文案由服务端 promotion.exhausted 驱动，**下单前可见**。 -->
           <span
             v-if="canBuyPlan(plan.id)"
             class="member-center-plan-buy"
-          >{{ t('memberCenter.planBuyCta') }}</span>
+            :data-testid="`plan-${plan.id}-buy`"
+          >{{ promoBuyCtaOf(t, plan, formatPrice) }}</span>
           <span v-else-if="isCurrentPlan(plan.id)" class="member-center-plan-current">
             {{ t('memberCenter.planBuyCurrent') }}
           </span>
         </li>
       </ul>
+      <!-- 决策表第 13 行：结束前 7 天在会员中心预告「之后按原价续费」。
+           只在**促销仍生效**时出现（exhausted 的用户已经按原价，没有再提醒的必要）。 -->
+      <p
+        v-if="promoEndingSoon"
+        class="member-center-promo-ending"
+        data-testid="member-center-promo-ending"
+      >{{ t('memberCenter.promoEndingSoon', promoEndingSoon) }}</p>
     </section>
 
     <!-- 降档说明（P1-b / 产品裁决：不支持自助降档）。刻意是纯文案不是按钮——
@@ -153,7 +154,8 @@ import { useI18n } from 'vue-i18n'
 import { useIdentityStore } from '@/stores/identity'
 import { useMemberStore } from '@/stores/member'
 import { onIdentityStateChanged } from '@/api/identity'
-import { featureLabelOf, formatExpiresAt, graceState, planLabelOf, planRankOf } from './labels'
+import { featureLabelOf, formatExpiresAt, graceState, planLabelOf, planRankOf, promoBuyCtaOf, promoEndingSoonOf } from './labels'
+import PlanPriceTag from './PlanPriceTag.vue'
 import { REDEEM_CODE_MAX_LENGTH, REDEEM_CODE_PATTERN, REDEEM_ERR_FORMAT_LOCAL, normalizeRedeemInput } from './constants'
 
 // 异步组件：弹窗只在用户点「购买」后才需要。同步 import 会让会员中心的每次挂载
@@ -173,6 +175,8 @@ const grace = computed(() => graceState(t, entitlement.value))
 // **不提供硬编码兜底**——取不到就显示「暂不可用」，绝不拿记忆里的金额冒充。
 const plans = computed(() => identityStore.plans)
 const plansLoading = computed(() => identityStore.status === 'signing_in' || identityStore.status === 'refreshing')
+// 促销到期预告（决策表第 13 行）：纯函数在 labels.js，组件只负责渲染。
+const promoEndingSoon = computed(() => promoEndingSoonOf(plans.value, formatPrice))
 
 // ── 档位比较（v4 E1：服务端契约已就绪，渲染层切换）─────────────────
 // plan_rank 来自 entitlement.limits（服务端 PLAN_RANK 下发）。
@@ -400,15 +404,12 @@ async function submitRedeem() {
   font-size: var(--font-size-sm);
   font-weight: 700;
 }
-.member-center-plan-price {
-  color: var(--ink);
+/* 价格/年付/促销角标已随 PlanPriceTag.vue 迁出（本文件贴 500 行债务基线）。 */
+.member-center-promo-ending {
+  margin: 10px 0 0;
+  color: #b45309;
   font-size: var(--font-size-sm);
-  font-weight: 700;
-}
-.member-center-plan-yearly {
-  color: var(--muted);
-  font-size: var(--font-size-xs);
-  font-weight: 400;
+  line-height: 1.6;
 }
 .member-center-plan-buy {
   flex: 0 0 auto;

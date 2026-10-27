@@ -115,7 +115,7 @@ test('payment-event-outbox：SQL 形状与幂等键', async (t) => {
 test('settlePaymentWebhook：留痕与结算的关系', async (t) => {
   await t.test('正常结算：先 INSERT 再 UPDATE，结果带 eventRecorded=true', async () => {
     const { service, client, applied } = makeService();
-    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID, providerReference: `wechat:${ORDER_ID}` });
+    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID, providerReference: `wechat:${ORDER_ID}`, amountCents: 5900 });
     assert.equal(result.plan, 'standard');
     assert.equal(result.eventRecorded, true);
     assert.equal(applied.length, 1, '权益必须发放');
@@ -125,7 +125,7 @@ test('settlePaymentWebhook：留痕与结算的关系', async (t) => {
 
   await t.test('同一订单重复投递：短路，不再 applySubscription（不发第二次权益）', async () => {
     const { service, applied } = makeService({ alreadyClaimed: true });
-    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID });
+    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID, amountCents: 5900 });
     assert.equal(result.ignored, true);
     assert.equal(result.duplicate, true);
     assert.equal(applied.length, 0, '重复投递绝不能再次发放权益');
@@ -133,7 +133,7 @@ test('settlePaymentWebhook：留痕与结算的关系', async (t) => {
 
   await t.test('事件表不可用：结算照常完成，但 eventRecorded=false（不静默）', async () => {
     const { service, applied } = makeService({ claimThrows: true });
-    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID });
+    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID, amountCents: 5900 });
     assert.equal(result.plan, 'standard', '用户已付钱，权益不能被可观测性拖累');
     assert.equal(result.eventRecorded, false);
     assert.equal(applied.length, 1);
@@ -141,7 +141,7 @@ test('settlePaymentWebhook：留痕与结算的关系', async (t) => {
 
   await t.test('收口失败：已经结算的不回滚，eventRecorded 降级为 false', async () => {
     const { service, applied } = makeService({ completeThrows: true });
-    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID });
+    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID, amountCents: 5900 });
     assert.equal(result.plan, 'standard');
     assert.equal(result.eventRecorded, false);
     assert.equal(applied.length, 1);
@@ -149,7 +149,7 @@ test('settlePaymentWebhook：留痕与结算的关系', async (t) => {
 
   await t.test('非 checkout.completed 事件不落库也不结算', async () => {
     const { service, client, applied } = makeService();
-    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID, type: 'refund.created' });
+    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID, type: 'refund.created', amountCents: 5900 });
     assert.equal(result.ignored, true);
     assert.equal(client.calls.length, 0);
     assert.equal(applied.length, 0);
@@ -162,7 +162,9 @@ test('eventRecorded 的三值契约（键永远存在）', async (t) => {
     const applied = [];
     const repository = {
       async getOrderById () {
-        return { id: ORDER_ID, user_id: 'u', plan: 'standard', amount: 100, channel: 'payment', period: 'month' };
+        // 011 起金额校验读 payable_cents（NOT NULL）：夹具必须带这一列，否则走 amount 兜底
+        // 会把「校验点被改回 amount」的回归掩盖掉。
+        return { id: ORDER_ID, user_id: 'u', plan: 'standard', amount: 5900, payable_cents: 5900, channel: 'payment', period: 'month' };
       },
       async markOrderPaid () {},
       async commerceTransaction (cb) {
@@ -173,7 +175,7 @@ test('eventRecorded 的三值契约（键永远存在）', async (t) => {
       },
     };
     const service = new SubscriptionService({ repository, now: () => new Date('2026-10-23T00:00:00Z') });
-    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID });
+    const result = await service.settlePaymentWebhook({ orderId: ORDER_ID, amountCents: 5900 });
     assert.equal('eventRecorded' in result, true, '缺键会被调用方读成"成功"');
     assert.equal(result.eventRecorded, null, 'null = 不适用（没有可写的事件表），不是失败');
     assert.equal(applied.length, 1);

@@ -3,6 +3,8 @@ const { planRank } = require('./plan-matrix')
 // 010 订阅段链的仓储原语：与订阅投影 / 权益快照**同事务**写入（段链是事实源）。
 // ⛔ 挂进事务类（而不是仓储池级）⇒ 写段与写投影/快照天然同事务，rollback 一起回滚。
 const { SubscriptionSegmentMethods } = require('./subscription-segments')
+// 011 促销：订单三列账务口径 + 限购计数（createPendingOrder / countPromoPurchases）
+const { applyPaymentOrderOps } = require('./payment-order-store')
 
 /**
  * postgres-commerce-store.js — 会员中心 P1 商务数据访问层。
@@ -28,9 +30,11 @@ const UPSERT_SUBSCRIPTION = `INSERT INTO identity_subscriptions
 // 复用了同一幂等键（重放/误填同值），属可预期的 409，不得冒泡成裸 23505 → 500。约束名固化在仓储层，服务层无需知道。
 const ORDER_REFERENCE_CONFLICT_CONSTRAINT = 'identity_subscriptions_provider_reference_key'
 
+// 011 起 payable_cents 是 NOT NULL：兑换码/后台开通没有折扣 ⇒ 实收 = 面值（$4 复用两次），
+// 漏写会让所有非支付订单 INSERT 直接 23502（表现为「兑换码兑换 500」）。
 const INSERT_ORDER = `INSERT INTO identity_orders
-    (id, user_id, plan, amount, currency, channel, status, paid_at)
-   VALUES ($1, $2, $3, $4, $5, $6, 'paid', NOW())
+    (id, user_id, plan, amount, currency, channel, status, paid_at, payable_cents)
+   VALUES ($1, $2, $3, $4, $5, $6, 'paid', NOW(), $4)
    RETURNING *`
 
 const PUT_ENTITLEMENT = `INSERT INTO identity_entitlement_snapshots (user_id, version, payload, updated_at)
@@ -249,24 +253,6 @@ class CommerceMethods {
   }
 
   // ——— 006 微信 Native 支付（最小闭环） ———
-
-  /**
-   * 落一笔待支付订单。**白名单列**：不写 provider_sub_id（本期恒 NULL）、
-   * 不让调用方指定 status（恒 pending，只能由 webhook 推进）。
-   *
-   * 为什么不复用 INSERT_ORDER：那条 SQL 硬编码 `status='paid', paid_at=NOW()`——
-   * 它是兑换码/后台开通的语义（一经写入即已授予），支付路径必须先 pending 再等回调。
-   * 混用会让「下单即视为已支付」，是最危险的形态。
-   */
-  async createPendingOrder({ id, userId, plan, amount, currency = 'CNY', period }) {
-    const result = await this.pool.query(
-      `INSERT INTO identity_orders (id, user_id, plan, amount, currency, channel, status, period)
-       VALUES ($1, $2, $3, $4, $5, 'payment', 'pending', $6)
-       RETURNING *`,
-      [id, userId, plan, amount, currency, period],
-    )
-    return result.rows[0] || null
-  }
 
   async getOrderById(orderId) {
     const result = await this.pool.query('SELECT * FROM identity_orders WHERE id = $1', [orderId])
@@ -491,6 +477,8 @@ class CommerceMethods {
     }
   }
 }
+
+applyPaymentOrderOps(CommerceMethods)
 
 module.exports = {
   PostgresCommerceTransaction,

@@ -29,6 +29,8 @@
 
 const { validateProductionConfig } = require('../src/auth/production-config');
 const { createWeChatNativeProvider } = require('../src/auth/payment-providers/wechat-native-factory');
+// 促销配置自检：价格/窗口配错必须在上线前炸，而不是等第一个用户下单才发现「活动没生效」。
+const { buildStandardMonthlyPromoConfig } = require('../src/auth/plan-matrix');
 
 const PASS = 'PASS';
 const FAIL = 'FAIL';
@@ -84,6 +86,23 @@ async function runPreflight (options = {}) {
   const checks = [];
   const add = (id, status, detail) => checks.push({ id, status, detail });
 
+  // 0) 促销配置（standard-plan-promo）：**最先查**，因为它的两条早退分支（provider=none /
+  //    非法 provider）也会 return —— 放在后面会让「支付关闭时促销配置有没有配错」永远不被检查。
+  const buildPromoConfig = deps.buildPromoConfig || buildStandardMonthlyPromoConfig;
+  try {
+    const promo = buildPromoConfig(env, null);
+    if (!promo.enabled) {
+      add('promo-config', SKIP, 'PROMO_STANDARD_MONTHLY_ENABLED 未开启 —— 标准版月付按原价售卖（期望促销请设 1 并重启）');
+    } else {
+      add('promo-config', PASS,
+        `标准版月付促销已开启：实收 ${promo.priceCents} 分（窗口 ${promo.startsAt} ~ ${promo.endsAt}，每人上限 ${promo.maxPurchasesPerUser} 单）`);
+    }
+  } catch (error) {
+    add('promo-config', FAIL,
+      `${(error && error.code) || 'PROMO_CONFIG_INVALID'}: ${(error && error.message) || error} —— ` +
+      '检查 PROMO_STANDARD_MONTHLY_PRICE_CENTS（必须为正且低于标价）与 *_STARTS_AT / *_ENDS_AT');
+  }
+
   // 1) provider 种类
   const kind = String(env.PAYMENT_PROVIDER || 'none').trim().toLowerCase();
   if (kind === 'none') {
@@ -105,7 +124,9 @@ async function runPreflight (options = {}) {
     // 即使支付关闭也要显式留一行：否则结果里完全没有 database 项，
     // 操作者会以为「查过了」，而实际上是根本没走到。
     add('database', SKIP, '支付未启用，未检查迁移');
-    return { ok: true, checks };
+    // ⚠️ 不能硬编码 ok:true：`promo-config` 是**独立于支付通道**的自检项，
+    // 它的 FAIL 必须能把退出码顶成 1（否则「支付关着 + 促销价配成 0」会被报成通过）。
+    return { ok: checks.every((c) => c.status !== FAIL), checks };
   }
   if (kind !== 'wechat_native') {
     add('provider-kind', FAIL, `PAYMENT_PROVIDER=${kind} 非法，只接受 none / wechat_native`);

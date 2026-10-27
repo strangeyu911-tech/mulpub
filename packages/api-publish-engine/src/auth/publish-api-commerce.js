@@ -5,6 +5,7 @@
 // 全部方法以 this 绑定访问实例成员（_json/_logError/_ctx/_subscriptionService/
 // _businessIdentityRepository），拆分后调用方语义与对外 HTTP 契约完全不变。
 const { safeErrorCode } = require('./safe-error-code')
+const { getPlanCatalog } = require('./plan-matrix')
 
 class PublishApiCommerceHelpers {
   /** CommerceError{code,status} 直接映射 HTTP；>=500 记 error 日志，业务错误不污染 error 日志。 */
@@ -41,6 +42,32 @@ class PublishApiCommerceHelpers {
   _commerceRepository() {
     const repository = (this._subscriptionService && this._subscriptionService.repository) || this._businessIdentityRepository
     return repository && typeof repository.listOrders === "function" ? repository : null
+  }
+
+  /**
+   * GET /api/v1/plans：目录 + （按用户）促销限购状态。
+   * 从 publish-api-server 的主路由拆出：主文件已贴 1590 行点名还账目标（零增长容差）。
+   * `promoPurchaseCount` 只有**登录用户 + 已配置促销 + 仓储支持计数**时才查库；
+   * 其它情况按 0 处理 —— 目录展示不得因为一次计数查询失败而整体 500。
+   */
+  async _handlePlanCatalog(req, res, method, url) {
+    if (url !== "/api/v1/plans") return false
+    if (method !== "GET") { this._json(res, 405, { error: "METHOD_NOT_ALLOWED" }); return true }
+    try {
+      const service = this._subscriptionService
+      const promoConfig = (service && service.promoConfig) || null
+      const repository = this._commerceRepository()
+      const userId = this._memberUserId(req)
+      const promoPurchaseCount = promoConfig && userId && repository &&
+        typeof repository.countPromoPurchases === "function"
+        ? await repository.countPromoPurchases(userId)
+        : 0
+      const now = service && typeof service.now === "function" ? service.now() : new Date()
+      this._json(res, 200, {
+        plans: getPlanCatalog((service && service.planOverrides) || null, { now, promoConfig, promoPurchaseCount }),
+      })
+    } catch (error) { this._commerceFailure(req, res, error) }
+    return true
   }
 }
 

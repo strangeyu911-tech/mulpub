@@ -16,7 +16,6 @@ const { assertPlanCapabilitiesForRequest, assertPlanCapabilitiesForContext } = r
 const { requireScopes } = require("./auth/logto-auth");
 const { BusinessIdentityError, assertBusinessUserActive, ensureBusinessUser } = require("./auth/business-identity");
 const { LOGTO_WEBHOOK_SIGNATURE_HEADER, LogtoWebhookError } = require("./auth/logto-webhook");
-const { getPlanCatalog } = require("./auth/plan-matrix")
 const { safeErrorCode } = require("./auth/safe-error-code")
 const { applyCommerceHelpers } = require("./auth/publish-api-commerce")
 const { applyRedeemCodeAdminHelpers } = require("./auth/publish-api-redeem-code-admin")
@@ -939,13 +938,7 @@ class PublishApiServer {
       }
 
       // --- 会员中心 P1：目录 / 核销 / 订单 / 通知 / 会话 / 资料 / 运营入口 ---
-      if (method === "GET" && url === "/api/v1/plans") {
-        // 目录构造可能因运营 override 配置非法抛 PLAN_MATRIX_CONFIG_INVALID：必须走 _commerceFailure 保留语义码，而非落外层兜底成 INTERNAL_SERVER_ERROR。
-        try {
-          this._json(res, 200, { plans: getPlanCatalog((this._subscriptionService && this._subscriptionService.planOverrides) || null) });
-        } catch (error) { this._commerceFailure(req, res, error); }
-        return;
-      }
+      if (await this._handlePlanCatalog(req, res, method, url)) return;
 
       if (await this._handleMemberRedeem(req, res, method, url)) return;
 

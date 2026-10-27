@@ -3,6 +3,7 @@ const path = require('path')
 const { discoverMigrations, validateMigrationLedger } = require('./postgres-migrations')
 const { PostgresCommerceTransaction, CommerceMethods } = require('./postgres-commerce-store')
 const { PAYMENT_SCHEMA } = require('./payment-schema')
+const { PAYMENT_PROMO_SCHEMA } = require('./payment-promo-schema')
 const { CREDIT_SCHEMA } = require('./credit-schema')
 // 010 订阅段链：同样独立成 subscription-segments-schema.js（理由同上）。
 const { SEGMENT_SCHEMA } = require('./subscription-segments-schema')
@@ -185,6 +186,9 @@ const SCHEMA = [
   // 006 微信 Native 支付：语句组独立成 payment-schema.js（内联会把本文件推过 500 行债务基线）。
   // 与迁移的逐字比对口径不变（迁移 → SCHEMA，单向）。
   ...PAYMENT_SCHEMA,
+  // 011 标准版月付促销：订单三列账务口径（payable_cents / discount_cents / promotion_id）。
+  // 同样独立成 payment-promo-schema.js；不含 CREATE TABLE ⇒ 不影响 SCHEMA 末位表的漂移锁。
+  ...PAYMENT_PROMO_SCHEMA,
   // 008 积分账户与不可变账本：同样独立成 credit-schema.js（理由同上）。
   ...CREDIT_SCHEMA,
   // 010 订阅段链：独立成 subscription-segments-schema.js（理由同上）。

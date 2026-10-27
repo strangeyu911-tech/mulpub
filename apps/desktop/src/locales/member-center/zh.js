@@ -39,6 +39,11 @@ export default {
     planUnknown: '方案加载中',
     planBuyCta: '购买',
     planBuyCurrent: '当前方案',
+    // ——— 标准版月付促销（standard-plan-promo，2026-10-27） ———
+    // 决策表第 5 行：只出角标、不划线、不展示原价。
+    planPromoBadge: '上市期特惠 · 剩余 {days} 天',
+    planPromoExhausted: '活动价已用完，{price}/月',
+    promoEndingSoon: '特惠将于 {date} 结束，之后按 {price}/月续费',
     quotaUnlimited: '不限',
     // ——— 到期宽限期（v4：#4051 graceUntil/previousPlan） ———
     graceTitle: '已到期 · 宽限期中',

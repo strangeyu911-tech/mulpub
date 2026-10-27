@@ -300,7 +300,12 @@ describe('买断授权模型移除契约锁', () => {
     it('三档价目展示必须仍在（订阅制的对外呈现）', () => {
       const src = read(subscriptionPath)
       expect(src).toContain('member-center-plans')
-      expect(src).toMatch(/priceMonthlyCents/)
+      // 2026-10-27（standard-plan-promo）：价目行抽成 PlanPriceTag 组件 —— Subscription.vue 贴着
+      // 500 行债务基线，内联会直接超限。判据锚点因此从「文件」上移到「渲染链」：组件必须被
+      // 会员中心挂载，且金额绑定必须仍在渲染者里。两条一起判，比原来只判一个文件更强。
+      const priceTagPath = path.join('..', '..', 'src', 'views', 'member-center', 'PlanPriceTag.vue')
+      expect(src, '价目组件必须由会员中心挂载').toMatch(/<PlanPriceTag\b/)
+      expect(read(priceTagPath), '价目金额绑定必须仍在渲染者里').toMatch(/priceMonthlyCents/)
       // v4：价目卡已升级为可购买卡片，与购买按钮共用同一 openPay 入口
       expect(src, '价目卡必须可购买（v4 E6：禁双路径）').toMatch(/openPay/)
     })

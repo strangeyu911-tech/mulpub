@@ -1,0 +1,105 @@
+{
+  "sha": "1941dacfebfc985eaa996b9d225111f84273f382",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 932 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 932,
+    "fileCount": 8,
+    "codeFileCount": 5,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 6,
+    "docSensitiveContentSample": [
+      "- 本 PR 不在 CI 中真实调用外部模型（成本、密钥、稳定性不可控）；真实执行仍由人工/专用 profile 触发。",
+      "- 不解决 provider 额度、账号登录态、平台发布授权；这些在执行阶段由既有 preflight/阶段 fail-closed 处理。",
+      "> 模型能力只做**展示**，不在审计阶段判 BLOCKED：能力是否可用取决于应用内模型设置/SQLite provider 配置，纯 Node 进程无法可靠读取加密凭据。执行阶段由 `pipeline-model-preflight` 在真正启动前拦截，错误码 `PIPELINE_MODEL_REQUIREMENTS_MISSING`。"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "40cb71ab3f1b440730d9086427c3733e21195d331d4248dd9d32b4649bb4617b",
+  "decidedAt": "2026-10-27T02:18:10.697Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": ".ccg/reviews/*.json 引用 SHA 1941dacfe（非本 PR head c799c370），且 deepReview 仍为 pending/performedBy:null、overridden:false，却作为新文件提交，审计元数据与实际审查状态不一致。",
+        "highRiskDomains": [],
+        "prosecution": "若 .ccg/reviews 记录的 sha 不是本 PR head，且 deepReview.status=pending/performedBy=null，门禁/审计者可能把评审证据关联到错误的提交，误以为已评审。",
+        "defense": "deep-review 工具在 pre-commit 阶段运行，输出明确写明「判定记录按 diff 内容寻址命中…写在父 sha 上——这是预期行为」；记录文件名是 stagedDiffHash（内容寻址），不是 head sha。`deepReview.status=pending` 是评审进行中的临时态，完成自扮演裁决并重跑后变为 `self_play_resolved`、`performedBy=self-play`（本会话已实测）。",
+        "verdict": "dismissed",
+        "rationale": "指控把工具设计的父 sha/临时 pending 态当成伪造证据；可用 `node scripts/check-pr-exec-record.js` 与重跑 `deep-review.sh` 观察到状态从 pending 变为 self_play_resolved。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "audit.js 直接 require 生产模块（pipeline-engine、stage-executor、pipeline-stage-registrars、pipeline-model-preflight）；无回退，若生产导出为 ESM 或文件缺失，CLI 在 import 时报错而非退出码 2。",
+        "highRiskDomains": [],
+        "prosecution": "audit.js 顶部直接 require 5 个生产模块；若任一模块被改成 ESM、被删除或导出名变化，CLI 在 import 阶段直接抛异常，拿不到约定的退出码 2。",
+        "defense": "这 5 个模块当前均为 CJS，且 `node apps/desktop/scripts/pipeline-smoke/audit.js` 实测正常退出 0；同一仓库的构建/测试会在导出变化时先红。CLI 的 `main()` 外层已有 try/catch，`require.main === module` 时任何运行期异常都会打印 `[pipeline-smoke] FAILED` 并置 exitCode=2；import 阶段异常属于仓库已损坏，不应由审计工具掩盖。",
+        "verdict": "dismissed",
+        "rationale": "当前模块均为 CJS 且实测可运行；「未来改 ESM」是假设性风险。若真发生，构建/测试会先失败，且修复点是模块迁移，不是审计工具加回退。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "manifest.js 硬编码 14 条流水线；唯一反查仅靠 audit 的 MANIFEST_COVERAGE_GAP。新增 stageDefs 流水线必须手动同步清单，否则审计直接 BROKEN。",
+        "highRiskDomains": [],
+        "prosecution": "manifest.js 硬编码 14 条流水线；新增带 stageDefs 的流水线若忘记登记，审计才报 BROKEN，属于事后发现，不是构建期阻断。",
+        "defense": "这正是设计：清单是人工维护的单一真源，`auditAll` 对 `PIPELINE_DEFINITIONS` 做覆盖反查，漏登记必然 `MANIFEST_COVERAGE_GAP` + 退出码 1；若从 definitions 自动生成清单，反而会把「未登记」变成「自动通过」，失去审计意义。",
+        "verdict": "dismissed",
+        "rationale": "自动生成骨架会消除「新增流水线必须显式登记」的强制点；当前 BROKEN + 退出码 1 已是机械阻断，符合 PRD §4 判定规则。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "pipeline-smoke-audit.test.js 混合 ESM import 与 CJS require，且直接调用生产 createWiringEngine() 执行真实阶段注册，测试与生产服务强耦合。",
+        "highRiskDomains": [],
+        "prosecution": "测试混用 ESM import 与 CJS require，并直接调用生产 createWiringEngine() 执行真实阶段注册，测试与生产服务强耦合，生产注册器改动会让单测变红。",
+        "defense": "同目录 `electron/tests/stage-executor.test.js` 也是 `import { ... } from 'vitest'` + `require(...)` 的既有模式；`createWiringEngine` 用例是**有意的集成锁**，验证生产注册器与真实 StageExecutor 能装配成功；状态机/JSON/退出码用例全部使用 fakeEngine，不依赖生产注册。",
+        "verdict": "dismissed",
+        "rationale": "风格与仓内既有测试一致；集成锁与纯单测已分层，生产注册器改动导致集成锁变红是预期保护，不是缺陷。"
+      }
+    ],
+    "blocking": [],
+    "note": "自扮演裁决：全部指控不成立",
+    "at": "2026-10-27T02:24:49.384Z"
+  }
+}

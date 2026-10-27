@@ -58,7 +58,9 @@
     "test:e2e:b1": "node tests/e2e/specs/b1-core-publish.js",
     "test:e2e:accounts": "node tests/e2e/specs/account-management-full.js",
     "test:startup": "vitest run --config vitest.smoke.config.js",
-    "test:preload:sandbox": "pnpm run build:preload && node scripts/verify-preload-sandbox.js"
+    "test:preload:sandbox": "pnpm run build:preload && node scripts/verify-preload-sandbox.js",
+    "pipeline:smoke:audit": "node scripts/pipeline-smoke/audit.js",
+    "pipeline:smoke:fixtures": "node scripts/pipeline-smoke/make-fixtures.js"
   },
   "keywords": [
     "multi-publish",

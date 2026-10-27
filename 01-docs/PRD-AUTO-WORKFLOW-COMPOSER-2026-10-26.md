@@ -336,6 +336,15 @@
 - UI 侧对 `expired/inactive/disabled` 账号禁用复选框并显示状态文案（登录已过期/未启用）；保存时再次校验，防止绕过 UI 直接调用。
 - 账号列表来自「账号管理」的 `listAccounts()`，任务只引用账号 ID，不复制凭证。
 
+### 7.11 生成中断续跑
+
+- `startRun` 建好条目后把未处理源条目写入内部字段 `run._sources` 并立即持久化；每处理完一条清空对应槽位并 `persist(run)`，运行结束删除 `_sources`。
+- 应用启动时在发布队列恢复之后异步调用 `workflowRunner.resumeInterruptedRuns()`：扫描 `status=running` 且有 `_sources` 的运行，只续跑 `pending/collecting/rewriting/creating` 条目。
+- `scheduling` 条目可能已部分入队，无法判断哪些目标已写；续跑时置 `failed + resume-scheduling-uncertain`，**不自动重发**，由用户人工确认。
+- `_sources[i]` 缺失的 pending 条目置 `failed + resume-source-missing`，不消耗生成额度。
+- 续跑失败只写 `WorkflowRunner` 通知，不阻塞主窗口；已 `scheduled/published/failed/skipped` 的条目保持原状，不重复。
+- 这解决的是「30 分钟硬超时/进程崩溃后已完成的进度不丢」，不是把生成改成独立队列；生成仍在应用内异步执行，但可跨重启续跑。
+
 ### 7.7 护栏
 
 - 单次上限：采集后截断，`summary.truncated=true`、`truncateReason=maxItemsPerRun`。

@@ -15,4 +15,18 @@ function newSummary () {
   return { collected: 0, skipped: 0, scheduled: 0, published: 0, failed: 0, awaitingReview: 0, truncated: false, truncateReason: '' }
 }
 
-module.exports = { newRunId, iso, newSummary }
+async function withRetry (fn, retries) {
+  let last = null
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const result = await fn()
+      if (result && result.ok) return result
+      last = result
+    } catch (e) {
+      last = { ok: false, error: e && e.message ? e.message : String(e) }
+    }
+  }
+  return last || { ok: false, error: 'unknown' }
+}
+
+module.exports = { newRunId, iso, newSummary, withRetry }

@@ -111,6 +111,8 @@ const ALLOWED_KEYS = new Set([
   'BatchManager:scheduled-batches-restored',
   'WorkflowQueue:workflow-queue-tick-failed',
   'WorkflowQueue:workflow-queue-start-failed',
+  'WorkflowRunner:workflow-run-resumed',
+  'WorkflowRunner:workflow-run-resume-failed',
   'App:tasks-recovered-from-queue',
   'window:main-window-shown',
   'window:main-window-load-failed',

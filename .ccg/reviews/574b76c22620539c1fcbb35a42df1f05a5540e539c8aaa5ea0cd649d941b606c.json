@@ -1,0 +1,149 @@
+{
+  "sha": "790a8528f07aa4120d1e7fc7b1837c0b1227bec2",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 241 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 241,
+    "fileCount": 15,
+    "codeFileCount": 7,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "574b76c22620539c1fcbb35a42df1f05a5540e539c8aaa5ea0cd649d941b606c",
+  "decidedAt": "2026-10-27T05:54:42.804Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_blocked",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i3",
+        "severity": "Critical",
+        "domains": [
+          "crypto"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "startRun 创建 run._sources 但从未赋值 run._config；resumeRun 的 !config 检查将使所有续跑被拒（not-resumable），功能完全不可用。",
+        "highRiskDomains": [],
+        "prosecution": "startRun 建 run 时没有 _config，resumeRun 的 !config 检查会让所有续跑 not-resumable，功能不可用。",
+        "defense": "workflow-runner.js:127 的 run 对象已包含 `_config: config`；persist 保存原始 run 时一并写入，resumeRun 能读到。",
+        "verdict": "dismissed",
+        "rationale": "核对代码：startRun 创建 run 时 `_config: config` 已赋值；finding 与实现不符。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "resumePersistedRun 遍历 run.items[i] 但未校验 items 与 _sources 长度一致；数据损坏时访问 undefined 会抛异常。",
+        "highRiskDomains": [],
+        "prosecution": "resumePersistedRun 遍历 items 时假定 _sources 长度一致；损坏数据会访问 undefined 并抛异常。",
+        "defense": "加 `_sources.length === items.length` 校验，不一致返回 not-resumable；不进入循环。",
+        "verdict": "dismissed",
+        "rationale": "指控在修复前成立；当前 diff 已加 `_sources.length === items.length` 校验，损坏快照返回 not-resumable，不再访问 undefined。"
+      },
+      {
+        "id": "i3",
+        "severity": "Critical",
+        "finding": "_sources 在中断运行时持久化完整源快照到 electron store，无加密、无 TTL、无清理机制，敏感内容长期留存。",
+        "highRiskDomains": [
+          "crypto"
+        ],
+        "prosecution": "中断运行的 _sources 含源正文，持久化在 electron store 中无加密/TTL，敏感内容可能长期留存。",
+        "defense": "运行结束即 delete _sources；仅崩溃未重启的短窗口保留。store 是本机用户目录，不存凭证/密钥；本地应用 threat model 不要求对该内容加密。",
+        "verdict": "dismissed",
+        "rationale": "接受本地存储边界：内容快照用于续跑，完成即删；不新增跨用户暴露面。",
+        "externalReview": {
+          "performedBy": "claude",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4536#issuecomment-6434965105",
+          "reviewedAt": "2026-10-27T06:00:18Z"
+        }
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "startRun 在创建和每条处理后各调用一次 persist(run)，存储写入量翻倍，无批处理或去抖。",
+        "highRiskDomains": [],
+        "prosecution": "startRun 建 run 和每条处理后各 persist 一次，500 条运行会写两次/条。",
+        "defense": "每处理完一条 persist 是断点续跑的必要边界；建 run 一次 persist 用于崩溃时能找到 _sources。500 条上限下可接受。",
+        "verdict": "dismissed",
+        "rationale": "断点续跑必须以每条的持久化边界为代价；没有实测写放大瓶颈。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "resumeRun 先查 live 再查 persisted，但未处理同 ID 多条记录或版本不一致的边界情况。",
+        "highRiskDomains": [],
+        "prosecution": "resumeRun 先 live 后 persisted，同 ID 多条记录或版本不一致时可能续跑旧版。",
+        "defense": "persist 按 run.id 过滤后 unshift，正常不会产生同 ID 多条；live 是当前运行，优先使用正确。",
+        "verdict": "dismissed",
+        "rationale": "同 ID 去重在 persist 中完成；版本不一致属于 store 损坏，不在正常路径。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "resumePersistedRun 通过参数注入 processItem/persist/finish，无显式接口契约，调用方重构易静默破坏续跑。",
+        "highRiskDomains": [],
+        "prosecution": "resumePersistedRun 通过参数注入 processItem/persist/finish，没有显式接口契约，重构易破坏。",
+        "defense": "模块是内部实现，调用点与 JSDoc 固定；拆出独立模块后职责更清晰，测试覆盖续跑成功路径。",
+        "verdict": "dismissed",
+        "rationale": "内部模块参数是显式对象解构；测试锁住行为，不构成运行时缺陷。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i3",
+        "severity": "Critical",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "crypto"
+        ]
+      }
+    ],
+    "note": "自扮演裁决：1 条指控成立或需外部复核",
+    "at": "2026-10-27T06:03:50.232Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4536#issuecomment-6434965105",
+    "tierBasis": "adjudicated-self-play-honored",
+    "adjudicationDigest": "adjudicated@cdc9cd28d4e8849619140371350d351482775da45d3414c41fc9c07213b18b75"
+  }
+}

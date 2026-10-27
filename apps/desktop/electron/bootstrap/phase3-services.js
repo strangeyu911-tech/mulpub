@@ -331,6 +331,16 @@ async function startServices({ container, usageTracker, store, taskQueue, callba
           log.notify('WorkflowQueue', 'workflow-queue-start-failed', { level: 'WARN', error: errorMessage(error) })
         }
       }
+      const wfRunner = container && typeof container.get === 'function'
+        ? (() => { try { return container.get('workflowRunner') } catch (_) { return null } })()
+        : null
+      if (wfRunner && typeof wfRunner.resumeInterruptedRuns === 'function') {
+        Promise.resolve(wfRunner.resumeInterruptedRuns()).then((r) => {
+          if (r && r.resumed) log.notify('WorkflowRunner', 'workflow-run-resumed', { level: 'INFO' })
+        }).catch((error) => {
+          log.notify('WorkflowRunner', 'workflow-run-resume-failed', { level: 'WARN', error: errorMessage(error) })
+        })
+      }
       return restored
     }
     restoreForOwner(identityService && identityService.getState())

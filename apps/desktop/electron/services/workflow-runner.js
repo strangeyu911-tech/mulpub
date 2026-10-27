@@ -20,7 +20,9 @@ const { createPacer, resolveTargetKey, checkGuardrails, buildDedupeKeys } = requ
 const { createAccountGuard } = require('./workflow-account-guard')
 const { applyQueueEventRecord } = require('./workflow-queue-event')
 const { buildArticle, itemKeyOf } = require('./workflow-article')
-const { newRunId, iso, newSummary } = require('./workflow-run-utils')
+const { newRunId, iso, newSummary, withRetry } = require('./workflow-run-utils')
+const { snapshotRun } = require('./workflow-run-snapshot')
+const { resumePersistedRun } = require('./workflow-resume')
 
 const RUNS_KEY = 'workflow_runs'
 const MAX_PERSISTED_RUNS = 50
@@ -90,52 +92,6 @@ function createWorkflowRunner (deps = {}) {
     return run
   }
 
-  function snapshot (run) {
-    return {
-      id: run.id,
-      workflowId: run.workflowId,
-      workflowName: run.workflowName,
-      status: run.status,
-      startedAt: run.startedAt,
-      finishedAt: run.finishedAt,
-      error: run.error || '',
-      warnings: run.warnings.slice(),
-      items: run.items.map((i) => ({
-        index: i.index,
-        title: i.title,
-        sourceType: i.sourceType,
-        platform: i.platform,
-        externalId: i.externalId,
-        url: i.url,
-        itemKey: i.itemKey || '',
-        status: i.status,
-        error: i.error,
-        scheduleId: i.scheduleId,
-        publishAt: i.publishAt,
-        queueStatus: i.queueStatus || '',
-        queueError: i.queueError || '',
-        queueAttempts: i.queueAttempts || 0,
-        queueAt: i.queueAt || '',
-        videoPath: i.videoPath,
-        episodeId: i.episodeId,
-      })),
-      summary: { ...run.summary },
-    }
-  }
-
-  async function withRetry (fn, retries) {
-    let last = null
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const result = await fn()
-        if (result && result.ok) return result
-        last = result
-      } catch (e) {
-        last = { ok: false, error: e && e.message ? e.message : String(e) }
-      }
-    }
-    return last || { ok: false, error: 'unknown' }
-  }
 
   /**
    * 启动一次运行。等待「生成 + 排期」完成（发布由持久队列在到点时执行）。
@@ -229,6 +185,10 @@ function createWorkflowRunner (deps = {}) {
       random,
     })
 
+    // 先落一份可续跑的运行快照：进程崩溃/超时后，启动时可按 _sources 继续未完成条目。
+    run._sources = selected.map((src) => ({ ...src }))
+    persist(run)
+
     let aborted = false
     for (let i = 0; i < selected.length; i++) {
       if (aborted || cancelled.has(run.id)) break
@@ -246,6 +206,8 @@ function createWorkflowRunner (deps = {}) {
           aborted = true
         }
       }
+      run._sources[i] = null
+      persist(run)
     }
 
     let status
@@ -254,6 +216,7 @@ function createWorkflowRunner (deps = {}) {
     else if (run.summary.awaitingReview > 0) status = 'awaiting_review'
     else if (run.summary.failed > 0) status = run.summary.scheduled + run.summary.published > 0 ? 'completed_with_errors' : 'failed'
     else status = 'completed'
+    delete run._sources
     finish(run, status)
     return { ok: status !== 'failed', runId: run.id, status }
   }
@@ -463,9 +426,39 @@ function createWorkflowRunner (deps = {}) {
     return { ok: true, status: run.status }
   }
 
+  async function resumeRun (runId) {
+    const run = live.get(runId) || loadPersisted().find((r) => r && r.id === runId)
+    if (!run) return { ok: false, error: 'not-found' }
+    if (run.status !== 'running') return { ok: false, error: 'not-running' }
+    const config = run._config
+    if (!config || !Array.isArray(run._sources)) return { ok: false, error: 'not-resumable' }
+    const pacer = createPacer({
+      startAtMs: now(),
+      minMinutes: config.cadence.minMinutes,
+      maxMinutes: config.cadence.maxMinutes,
+      random,
+    })
+    live.set(run.id, run)
+    return resumePersistedRun({ run, config, pacer, processItem, persist, finish, now })
+  }
+
+  async function resumeInterruptedRuns () {
+    const runs = loadPersisted().filter((r) => r && r.status === 'running' && Array.isArray(r._sources) && r._config)
+    let resumed = 0
+    for (const run of runs) {
+      try {
+        const result = await resumeRun(run.id)
+        if (result && result.status) resumed += 1
+      } catch (e) {
+        log.warn && log.warn('WorkflowRunner', '续跑失败 run=' + run.id + ': ' + (e && e.message ? e.message : String(e)))
+      }
+    }
+    return { resumed, total: runs.length }
+  }
+
   function getRun (runId) {
     const run = live.get(runId) || loadPersisted().find((r) => r && r.id === runId)
-    return run ? snapshot(run) : null
+    return run ? snapshotRun(run) : null
   }
 
   function listRuns () {
@@ -479,7 +472,7 @@ function createWorkflowRunner (deps = {}) {
       .filter((r) => r && r.id)
       .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
       .slice(0, MAX_PERSISTED_RUNS)
-      .map(snapshot)
+      .map(snapshotRun)
   }
 
   function cancel (runId) {
@@ -488,7 +481,7 @@ function createWorkflowRunner (deps = {}) {
     return { ok: true }
   }
 
-  return { startRun, approveRun, getRun, listRuns, cancel, applyQueueEvent }
+  return { startRun, resumeRun, resumeInterruptedRuns, approveRun, getRun, listRuns, cancel, applyQueueEvent }
 }
 
 module.exports = { createWorkflowRunner, RUNS_KEY, MAX_PERSISTED_RUNS }

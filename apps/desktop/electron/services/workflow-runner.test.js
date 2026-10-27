@@ -328,6 +328,29 @@ describe('workflow-runner · 失败策略', () => {
     expect(detail.summary.failed).toBe(0)
   })
 
+  it('重启续跑：running + _sources 的 pending 条目会重新生成并排期', async () => {
+    const { runner, store } = makeRunner({ items: [item(1)] })
+    await runner.startRun(task(config()))
+    const runs = JSON.parse(store.getSetting('workflow_runs'))
+    const run = runs[0]
+    run.status = 'running'
+    run.finishedAt = ''
+    run.summary = { collected: 1, skipped: 0, scheduled: 0, published: 0, failed: 0, awaitingReview: 0, truncated: false, truncateReason: '' }
+    run.items[0].status = 'pending'
+    run.items[0].error = ''
+    run.items[0].externalId = 't2'
+    run.items[0].itemKey = '0|t2'
+    run.items[0].title = '续跑选题'
+    run._sources = [item(2)]
+    store.setSetting('workflow_runs', JSON.stringify([run]))
+
+    const r = await runner.resumeInterruptedRuns()
+    expect(r).toEqual({ resumed: 1, total: 1 })
+    const detail = runner.getRun(run.id)
+    expect(detail.items[0].status).toBe('scheduled')
+    expect(detail.status).toBe('completed')
+  })
+
   it('账本写入失败 → 回滚已排期项，不留下「无账本记录却会发」的队列项', async () => {
     const cancelled = []
     const { runner, ledger } = makeRunner({

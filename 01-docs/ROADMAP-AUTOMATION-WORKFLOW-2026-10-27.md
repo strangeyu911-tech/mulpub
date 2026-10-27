@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | 1 | 发布前账号预检 + 失效账号禁止选择 | 本 PR | `workflow-runner.checkAccounts`、`WorkflowEditor`、`AutomationTaskDialog` |
 | 2 | 队列状态回写运行记录 + 队列面板 | 本 PR | `workflow-publish-queue.onEvent`、`runner.applyQueueEvent`、`WorkflowRunsDrawer` |
-| 3 | 生成与发布解耦、断点续跑 | 下一 PR | 目标：生成作业持久化，重启后续跑未完成条目，避免 30 分钟硬超时 |
+| 3 | 生成与发布解耦、断点续跑 | 本 PR | 持久化 `_sources` + `resumeInterruptedRuns`；`scheduling` 条目标 `resume-scheduling-uncertain` 不自动重发 |
 | 4 | 派发幂等（dispatching lease） | 本 PR | `dispatching` 先落盘、10 分钟租约、`dispatch-uncertain` 人工确认 |
 | 5 | 本地队列常驻保障 | 本 PR（UI）/后续 | 队列失败黄条、队列面板、重试；开机自启/托盘提示后续补 |
 

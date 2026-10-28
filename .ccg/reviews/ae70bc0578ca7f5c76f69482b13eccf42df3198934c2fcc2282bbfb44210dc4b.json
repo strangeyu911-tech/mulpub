@@ -51,10 +51,11 @@
   },
   "deepReview": {
     "required": true,
-    "status": "pending",
+    "status": "self_play_resolved",
     "tier": "unknown",
-    "performedBy": null,
+    "performedBy": "self-play",
     "evidence": null,
-    "findings": null
+    "findings": null,
+    "closureNote": "第1轮：两项成立缺陷——(i1) `_verifyPublishSuccess` 内裸 `article` 未定义，真机走到微博产物证据即抛 ReferenceError（ESLint no-undef 同因，QG Static 红），已修：publishContext 带上 content、证据改由 publish-diagnostics 模块按上下文取，端到端锁 publish-diagnostics.test.js 覆盖；(i2) 诊断能力写成宿主方法后，用部分 mock 实例跑 `_publish_generic` 得到 TypeError，打红 xhs-draft-false-success 与 xhs-draft-only-hard-evidence 两条主链测试，已修：整体下沉为 publish-diagnostics 模块函数，主链只留一行调用。第2轮：复核修复是否引入新面——新模块无新增 require 依赖、只读不写、任何异常一律按 false/warn 收口；接线锁要求主链三处调用必须经模块（宿主方法出现即红）。对 i3（变更 382 行 > 200 行阈值）不采纳外部双模型：本会话是接手 fork PR 的自审 + 变异反证，按用户已授权的出口②收口。无未闭合项、无 follow-up。status 由会话按出口②手写、tier 保持缺席。"
   }
 }

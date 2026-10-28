@@ -13,6 +13,7 @@ const { adaptArticle } = require('./workflow-adaptation')
 const { newRunId, iso, newSummary, withRetry } = require('./workflow-run-utils')
 const { prepareBudgetForRun, finishBudgetForRun } = require('./workflow-budget-runner')
 const { writebackCreatorStatus } = require('./workflow-creator-status')
+const { applyPerformanceGuard } = require('./workflow-performance-runner')
 const { snapshotRun } = require('./workflow-run-snapshot')
 const { resumePersistedRun } = require('./workflow-resume')
 const RUNS_KEY = 'workflow_runs'
@@ -148,7 +149,8 @@ function createWorkflowRunner (deps = {}) {
     run.summary.truncated = guard.truncated
     run.summary.truncateReason = guard.reason
     const selected = rawItems.slice(0, guard.allowed)
-
+    const perfGuard = await applyPerformanceGuard({ run, config, performance: deps.performance, finish })
+    if (!perfGuard.ok) return { ok: false, error: run.error, runId: run.id }
     const budgetPrep = prepareBudgetForRun({
       run,
       config,
@@ -163,7 +165,6 @@ function createWorkflowRunner (deps = {}) {
       finish(run, 'failed')
       return { ok: false, error: run.error, runId: run.id }
     }
-
     for (const [index, src] of selected.entries()) {
       run.items.push({
         index,

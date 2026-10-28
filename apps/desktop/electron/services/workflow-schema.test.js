@@ -140,6 +140,18 @@ describe('workflow-schema · 改写/内容/发布校验', () => {
     expect(buildDefaultWorkflowConfig().schemaVersion).toBe(2)
   })
 
+  it('效果复核：默认关闭；启用后窗口/样本/播放/互动率越界拒绝', () => {
+    const def = validateWorkflowConfig(validConfig())
+    expect(def.config.guardrails.performance.enabled).toBe(false)
+    const bad = validateWorkflowConfig(validConfig({
+      guardrails: { maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 1, performance: { enabled: true, windowDays: 0, minSamples: 0, minViews: -1, minEngagementRate: 2 } },
+    }))
+    expect(bad.errors.map((e) => e.field)).toEqual(expect.arrayContaining([
+      'guardrails.performance.windowDays', 'guardrails.performance.minSamples',
+      'guardrails.performance.minViews', 'guardrails.performance.minEngagementRate',
+    ]))
+  })
+
   it('预算护栏：默认关闭；启用后 maxCost/perItem 必须大于 0', () => {
     const def = validateWorkflowConfig(validConfig())
     expect(def.config.guardrails.budget.enabled).toBe(false)

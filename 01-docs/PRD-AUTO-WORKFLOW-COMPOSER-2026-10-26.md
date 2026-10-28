@@ -425,6 +425,15 @@
 - `workflow-schema` 增加 `SCHEMA_VERSION=2`；`validateWorkflowConfig`/`buildDefaultWorkflowConfig` 返回 `schemaVersion=2`；旧配置缺字段归一化为 2。
 - 模板版本仍由 `TEMPLATE_VERSION` 独立管理，不混用。
 
+### 7.21 发布后效果回流与自动复核
+
+- 归因链：工作流派发时记录 TaskQueue `taskId` → `tracked_content.publish_history_id` → `performance_snapshot.tracked_content_id`。没有 taskId/tracked_content 的条目不参与，不按账号或时间猜归因。
+- 汇总：同一作品只取窗口内最新一份快照（累计计数不可跨快照求和）；`samples/views/interactions/avgViews/engagementRate`；互动为 likes+comments+favorites+shares。
+- `guardrails.performance`：`enabled`（默认 false）、`windowDays`（1–90）、`minSamples`（1–100）、`minViews`（>=0）、`minEngagementRate`（0–1）；启用时校验越界。
+- 运行时在采集截断后、预算预检前复核：未启用放行；provider 缺失/异常 fail-closed `performance-unavailable`；样本不足 `insufficient-samples` 放行；低于播放/互动率阈值 → run failed `performance-below-views` / `performance-below-engagement`，`summary.performanceGuard` 带 detail，不创建条目、不排期。
+- 运行详情有 performance 时显示「发布后效果：{samples} 条作品，平均播放 {views}，互动率 {rate}」；无数据不渲染。
+- 边界：不做跨平台播放口径统一；不做自动恢复；依赖既有账号指标回流周期，不实时刷新。
+
 ### 7.7 护栏
 
 - 单次上限：采集后截断，`summary.truncated=true`、`truncateReason=maxItemsPerRun`。

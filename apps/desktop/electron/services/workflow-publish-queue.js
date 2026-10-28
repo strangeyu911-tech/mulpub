@@ -143,7 +143,10 @@ function createWorkflowPublishQueue (deps = {}) {
         persist()
         emit(e, 'dispatching')
         try {
-          await deps.enqueue({ ...e, late })
+          const enqueued = await deps.enqueue({ ...e, late })
+          // TaskQueue.add 返回 taskId（字符串）；历史发布记录的 publish_history_id 就是它。
+          if (typeof enqueued === 'string' && enqueued) e.taskId = enqueued
+          else if (enqueued && typeof enqueued === 'object' && enqueued.id) e.taskId = String(enqueued.id)
           e.status = 'dispatched'
           e.dispatchedAt = new Date(at).toISOString()
           e.attempts = (e.attempts || 0) + 1

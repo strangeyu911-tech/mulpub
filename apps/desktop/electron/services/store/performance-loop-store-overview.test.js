@@ -68,7 +68,13 @@ describe('listTrackedForOverview / listSnapshotsForOverview', () => {
     insertSnapshot('s-new', 'c1', 5, '2026-10-02T00:00:00.000Z')
 
     const tracked = store.listTrackedForOverview('user-A')
-    expect(Object.keys(tracked.rows[0]).sort()).toEqual(['created_at', 'id', 'last_recrawl_at', 'platform', 'recrawl_status'])
+    // `publish_history_id` 于 P1-12 加入这个投影：`workflow-performance-runner.js` 用它把
+    // tracked 行对齐到发布队列 taskId（`taskIds.has(String(r.publish_history_id || ''))`），
+    // 没有它效果回流就只能靠猜归因。断言仍保持**逐列相等**——以后再加列必须同时带来消费方，
+    // 否则这里当场红（T15 的「最小集」是棘轮，不是快照）。
+    expect(Object.keys(tracked.rows[0]).sort()).toEqual(
+      ['created_at', 'id', 'last_recrawl_at', 'platform', 'publish_history_id', 'recrawl_status'],
+    )
 
     const snaps = store.listSnapshotsForOverview('user-A')
     expect(snaps.rows.map(r => r.id)).toEqual(['s-new', 's-old'])

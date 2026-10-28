@@ -28,6 +28,7 @@ const i18n = createI18n({
         wfScheduleRules: '排期规则', wfTimezone: '时区', wfWeekdays: '工作日', wfQuietHours: '静默',
         wfQuietHoursHint: 'hint', wfScheduleRulesHint: 'hint', wfWeekdayShort: { 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六', 7: '周日' },
         wfBudgetEnabled: '预算', wfBudgetMax: '总预算', wfBudgetPerItem: '每项', wfBudgetHint: 'hint',
+        wfPerformanceEnabled: '效果复核', wfPerformanceWindow: '窗口', wfPerformanceSamples: '样本', wfPerformanceViews: '播放', wfPerformanceRate: '互动率', wfPerformanceHint: 'hint',
         wfGuardPerRun: '每次', wfGuardDaily: '每天', wfReview: '审核', wfDedupe: '去重', wfReviewHint: 'hint',
         wfCategory: { general: '综合', society: '社会', finance: '财经', tech: '科技', ai: 'AI' },
         wfViralIndustry: '行业', wfViralIndustryPlaceholder: '请选择行业', wfViralIndustryHint: 'hint',
@@ -111,6 +112,18 @@ describe('WorkflowEditor · 平台内容适配', () => {
     await w.find('[data-testid="wf-budget-per-item"]').setValue(2.5)
     const budget = w.props('modelValue').guardrails.budget
     expect(budget).toMatchObject({ enabled: true, maxCost: 100, estimatedCostPerItem: 2.5, currency: 'CNY' })
+  })
+
+  it('效果复核启用后写入窗口/样本/播放/互动率', async () => {
+    const w = mountEditor()
+    await w.find('[data-testid="wf-performance-enabled"]').setValue(true)
+    await w.find('[placeholder="窗口"]').setValue(30)
+    await w.find('[placeholder="样本"]').setValue(5)
+    await w.find('[placeholder="播放"]').setValue(100)
+    await w.find('[placeholder="互动率"]').setValue(0.05)
+    expect(w.props('modelValue').guardrails.performance).toMatchObject({
+      enabled: true, windowDays: 30, minSamples: 5, minViews: 100, minEngagementRate: 0.05,
+    })
   })
 
   it('选中账号后启用适配，显示该平台行并写入标题上限', async () => {

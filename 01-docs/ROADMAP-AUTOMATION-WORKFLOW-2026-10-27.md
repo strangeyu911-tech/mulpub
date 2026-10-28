@@ -22,7 +22,7 @@
 | 9 | 按平台/账号内容适配 | 本 PR（文本层） | 标题/正文/标签按平台/账号覆盖；封面/视频比例需媒体管线，未伪实现 |
 | 10 | 排期规则（静默时段/工作日/时区/每日上限） | 本 PR | scheduleRules 默认关闭；IANA 时区、工作日、跨午夜静默顺延；每日上限复用 guardrails |
 | 11 | 预算与成本护栏 | 本 PR（估算） | guardrails.budget 预检 + workflow_budget_ledger；记录 estimated 占用，不冒充供应商账单 |
-| 12 | 发布后效果回流 | 待做 | 阅读/播放/互动数据与自动暂停/复核 |
+| 12 | 发布后效果回流 | 本 PR | taskId→publish_history_id→performance_snapshot；最新快照口径；阈值复核暂停；运行详情显示 |
 | 13 | 播客宿主下沉 | 本 PR | podcast IPC 注册惰性 host 工厂；工作流 provider 经 service 取宿主，无需先开播客页；仍复用同一宿主 |
 | 14 | 博主发现项状态回写 | 本 PR | 成功写 workflow_published、失败写 failed；不冒充 collected，不写资产/outbox；博主页显示 |
 

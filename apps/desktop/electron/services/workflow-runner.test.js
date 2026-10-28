@@ -103,6 +103,21 @@ describe('workflow-runner · 正常链路', () => {
     expect(second).toMatchObject({ ok: false, error: 'budget-exceeded' })
   })
 
+  it('效果复核低于阈值时暂停本次运行，不创建排期', async () => {
+    const { runner, calls } = makeRunner({
+      deps: { performance: { summary: async () => ({ samples: 5, avgViews: 1, engagementRate: 0 }) } },
+    })
+    const cfg = config({
+      guardrails: {
+        maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 0,
+        performance: { enabled: true, windowDays: 7, minSamples: 3, minViews: 10, minEngagementRate: 0 },
+      },
+    })
+    const r = await runner.startRun(task(cfg))
+    expect(r).toMatchObject({ ok: false, error: 'performance-below-views' })
+    expect(calls.schedule).toHaveLength(0)
+  })
+
   it('按目标平台适配标题/正文/标签后再入队', async () => {
     const { runner, calls } = makeRunner({ items: [{ ...item(1), content: 'x'.repeat(200) }] })
     const cfg = config({

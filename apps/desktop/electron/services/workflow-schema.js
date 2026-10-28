@@ -1,13 +1,11 @@
 // @ts-check
-/**
- * workflow-schema.js — 复合自动化工作流的配置契约（纯函数，无副作用）
- * 三条硬约束：播客走 RSS；视频只选文案可直接启动的流水线；抖音爆款读取爆款库。
- */
+// 硬约束：播客走 RSS；视频只选文案可直接启动的流水线；抖音爆款读取爆款库。
 const crypto = require('crypto')
 const SCHEMA_VERSION = 2
 const { normalizeAdaptation, validateAdaptation, ADAPTATION_LIMITS } = require('./workflow-adaptation')
 const { normalizeScheduleRules, validateScheduleRules } = require('./workflow-schedule-rules')
 const { normalizeBudget, validateBudget } = require('./workflow-budget')
+const { normalizePerformance, validatePerformance } = require('./workflow-performance-schema')
 
 /** 来源类型白名单（douyinViral = 已采集到爆款库的抖音内容） */
 const SOURCE_TYPES = Object.freeze(['hotTopics', 'creatorMonitor', 'zhihuFavlist', 'douyinViral'])
@@ -65,7 +63,7 @@ const LIMITS = Object.freeze({
 })
 
 const CADENCE_DEFAULTS = Object.freeze({ minMinutes: 35, maxMinutes: 40 })
-const GUARDRAIL_DEFAULTS = Object.freeze({ maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 1, budget: Object.freeze({ enabled: false, maxCost: 0, currency: 'CNY', estimatedCostPerItem: 0 }) })
+const GUARDRAIL_DEFAULTS = Object.freeze({ maxItemsPerRun: 5, dailyItemLimit: 20, retryPerItem: 1, budget: Object.freeze({ enabled: false, maxCost: 0, currency: 'CNY', estimatedCostPerItem: 0 }), performance: Object.freeze({ enabled: false, windowDays: 7, minSamples: 3, minViews: 0, minEngagementRate: 0 }) })
 
 function isPlainObject (v) {
   return !!v && typeof v === 'object' && !Array.isArray(v)
@@ -296,9 +294,11 @@ function validateWorkflowConfig (raw, opts = {}) {
     dailyItemLimit: Number.isInteger(rawGuardrails.dailyItemLimit) ? rawGuardrails.dailyItemLimit : GUARDRAIL_DEFAULTS.dailyItemLimit,
     retryPerItem: Number.isInteger(rawGuardrails.retryPerItem) ? rawGuardrails.retryPerItem : GUARDRAIL_DEFAULTS.retryPerItem,
     budget: normalizeBudget(rawGuardrails.budget),
+    performance: normalizePerformance(rawGuardrails.performance),
   }
   errors.push(...errorsForGuardrails(guardrails))
   errors.push(...validateBudget(guardrails.budget))
+  errors.push(...validatePerformance(guardrails.performance))
 
   const scheduleRules = normalizeScheduleRules(src.scheduleRules)
   errors.push(...validateScheduleRules(scheduleRules))
@@ -322,7 +322,7 @@ function buildDefaultWorkflowConfig () {
     content: { type: 'article', videoPipeline: '', podcastChannelId: '', adaptation: normalizeAdaptation() },
     publish: { targets: [], mode: 'immediate', startAt: '' },
     cadence: { ...CADENCE_DEFAULTS },
-    guardrails: { ...GUARDRAIL_DEFAULTS },
+    guardrails: { ...GUARDRAIL_DEFAULTS, performance: normalizePerformance() },
     scheduleRules: normalizeScheduleRules(),
     review: { requireApproval: false },
     dedupe: { enabled: true },

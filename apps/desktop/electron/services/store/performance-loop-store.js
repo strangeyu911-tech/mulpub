@@ -348,7 +348,7 @@ module.exports = {
       const countRow = this.db.prepare('SELECT COUNT(*) AS n FROM tracked_content ' + sql).get(...params)
       const total = countRow ? Number(countRow.n) || 0 : 0
       const rows = this.db.prepare(
-        'SELECT id, platform, recrawl_status, created_at, last_recrawl_at FROM tracked_content ' + sql +
+        'SELECT id, platform, recrawl_status, created_at, last_recrawl_at, publish_history_id FROM tracked_content ' + sql +
         ' ORDER BY created_at DESC, rowid DESC LIMIT ?'
       ).all(...params, cap)
       return { rows, total, truncated: total > rows.length }

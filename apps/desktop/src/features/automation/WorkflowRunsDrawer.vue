@@ -65,6 +65,13 @@
               <span class="wfr-item__time">{{ item.publishAt ? formatTime(item.publishAt) : '' }}</span>
               <span v-if="item.error" class="wfr-item__err" :title="item.error">{{ item.error }}</span>
             </div>
+            <div v-if="detail.summary && detail.summary.performance" class="wfr-warn" data-testid="workflow-performance">
+              {{ t('automation.wfPerformanceSummary', {
+                samples: detail.summary.performance.samples,
+                views: detail.summary.performance.avgViews,
+                rate: detail.summary.performance.engagementRate,
+              }) }}
+            </div>
             <div v-if="detail.warnings && detail.warnings.length" class="wfr-warn">
               <div v-for="(w, i) in detail.warnings" :key="i">⚠ {{ w.sourceType }}: {{ w.message }}</div>
             </div>

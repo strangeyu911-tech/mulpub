@@ -209,6 +209,19 @@
         </template>
       </div>
       <div class="wf-row">
+        <label class="wf-check">
+          <input v-model="performanceEnabled" type="checkbox" data-testid="wf-performance-enabled" />
+          {{ t('automation.wfPerformanceEnabled') }}
+        </label>
+        <template v-if="performanceEnabled">
+          <input v-model.number="performance.windowDays" type="number" min="1" max="90" class="wf-input wf-input--sm" :placeholder="t('automation.wfPerformanceWindow')" />
+          <input v-model.number="performance.minSamples" type="number" min="1" max="100" class="wf-input wf-input--sm" :placeholder="t('automation.wfPerformanceSamples')" />
+          <input v-model.number="performance.minViews" type="number" min="0" class="wf-input wf-input--sm" :placeholder="t('automation.wfPerformanceViews')" />
+          <input v-model.number="performance.minEngagementRate" type="number" min="0" max="1" step="0.01" class="wf-input wf-input--sm" :placeholder="t('automation.wfPerformanceRate')" />
+          <span class="wf-hint">{{ t('automation.wfPerformanceHint') }}</span>
+        </template>
+      </div>
+      <div class="wf-row">
         <label class="wf-check"><input v-model="model.review.requireApproval" type="checkbox" /> {{ t('automation.wfReview') }}</label>
         <label class="wf-check"><input v-model="model.dedupe.enabled" type="checkbox" /> {{ t('automation.wfDedupe') }}</label>
       </div>
@@ -323,6 +336,19 @@ const budgetEnabled = computed({
   set: (v) => { ensureBudget().enabled = Boolean(v) },
 })
 onMounted(ensureBudget)
+
+function ensurePerformance () {
+  if (!model.value.guardrails.performance || typeof model.value.guardrails.performance !== 'object') {
+    model.value.guardrails.performance = { enabled: false, windowDays: 7, minSamples: 3, minViews: 0, minEngagementRate: 0 }
+  }
+  return model.value.guardrails.performance
+}
+const performance = computed(() => ensurePerformance())
+const performanceEnabled = computed({
+  get: () => Boolean(model.value.guardrails.performance && model.value.guardrails.performance.enabled),
+  set: (v) => { ensurePerformance().enabled = Boolean(v) },
+})
+onMounted(ensurePerformance)
 
 function toLocalInput (iso) {
   if (!iso) return ''

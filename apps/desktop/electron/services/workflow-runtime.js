@@ -15,6 +15,7 @@ const { createWorkflowLedger } = require('./workflow-ledger')
 const { createWorkflowSources } = require('./workflow-source')
 const { createWorkflowRunner } = require('./workflow-runner')
 const { createWorkflowPublishQueue } = require('./workflow-publish-queue')
+const { createWorkflowPerformance } = require('./workflow-performance-runner')
 
 const VIDEO_POLL_INTERVAL_MS = 5000
 const VIDEO_TIMEOUT_MS = 30 * 60 * 1000
@@ -253,6 +254,8 @@ function createWorkflowRuntime (deps = {}) {
     },
   })
 
+  const performance = createWorkflowPerformance({ queue, store, now })
+
   const runner = createWorkflowRunner({
     sources,
     ledger,
@@ -260,6 +263,7 @@ function createWorkflowRuntime (deps = {}) {
     collectArticle,
     createVideo,
     createPodcast,
+    performance,
     accountProvider: deps.accountProvider,
     schedulePublish: async (payload) => {
       const r = queue.add({

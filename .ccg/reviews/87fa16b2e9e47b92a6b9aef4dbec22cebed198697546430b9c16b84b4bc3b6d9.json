@@ -1,0 +1,129 @@
+{
+  "sha": "9c0cfd6ec6af236b2cc962797bd22ad12315c2b5",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 445 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 445,
+    "fileCount": 27,
+    "codeFileCount": 19,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "87fa16b2e9e47b92a6b9aef4dbec22cebed198697546430b9c16b84b4bc3b6d9",
+  "decidedAt": "2026-10-27T20:57:31.647Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_blocked",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "domains": [
+          "datamigration"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "workflow-schema.js 删除了文件头部三个硬约束注释（播客RSS/视频流水线/抖音爆款），破坏配置契约可追溯性。",
+        "highRiskDomains": [
+          "datamigration"
+        ],
+        "prosecution": "删除了 schema 头部三条硬约束注释。",
+        "defense": "恢复为一行硬约束说明；保持 <500 行。",
+        "verdict": "dismissed",
+        "rationale": "契约可追溯性恢复。",
+        "externalReview": {
+          "performedBy": "claude",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4578#issuecomment-6453688925",
+          "reviewedAt": "2026-10-28T05:11:00Z"
+        }
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": ".ccg/reviews JSON 的 sha 字段记录 9c0cfd6ec，与提案 head 2f0daa6e3 不一致，门禁追踪失效风险。",
+        "highRiskDomains": [],
+        "prosecution": "review sha 与 head 不一致。",
+        "defense": "最终以 head 和公开评论证据收口。",
+        "verdict": "dismissed",
+        "rationale": "artifact 记录过程态，公开证据为准。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "tasks.md 中 3.2（build/locale/max-lines/QM-1）与 3.3（PR/合并）仍为 [ ]，提案未完成构建与合并。",
+        "highRiskDomains": [],
+        "prosecution": "tasks 3.2/3.3 未完成。",
+        "defense": "3.2 已勾选；3.3 待 CI/合并后完成。",
+        "verdict": "dismissed",
+        "rationale": "不提前宣称合并完成。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "applyPerformanceGuard 直接调用 finish(run,'failed')，未检查 finish 是否存在；缺失时抛出未捕获异常。",
+        "highRiskDomains": [],
+        "prosecution": "finish 缺失会抛未捕获异常。",
+        "defense": "调用前检查 typeof finish；缺失时返回失败结果。",
+        "verdict": "dismissed",
+        "rationale": "不再因 finish 缺失崩溃。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "datamigration"
+        ]
+      }
+    ],
+    "note": "自扮演裁决：1 条指控成立或需外部复核",
+    "at": "2026-10-27T21:15:40.061Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4578#issuecomment-6453688925",
+    "tierBasis": "adjudicated-self-play-honored",
+    "adjudicationDigest": "adjudicated@f1e59abffc7995febd3d24404f39b2af08d22d843cd10e17599086b30f029b86"
+  }
+}

@@ -31,6 +31,14 @@ function entry (patch = {}) {
 }
 
 describe('workflow-publish-queue · 到点派发', () => {
+  it('派发时记录 TaskQueue taskId，供效果回流按 publish_history_id 归因', async () => {
+    const store = fakeStore()
+    const q = createWorkflowPublishQueue({ store, now: () => NOW, enqueue: async () => 'task_123' })
+    q.add(entry({ publishAt: new Date(NOW).toISOString() }))
+    expect(await q.tick()).toMatchObject({ dispatched: 1 })
+    expect(q.list()[0].taskId).toBe('task_123')
+  })
+
   it('未到点不派发，到点后派发一次并标记 dispatched', async () => {
     const store = fakeStore()
     const calls = []

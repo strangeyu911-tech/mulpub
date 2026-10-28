@@ -80,7 +80,7 @@
               <p v-if="pipelineImages.length === 0">点击或拖拽图片到此处</p>
               <div v-else class="image-grid">
                 <div v-for="(img, i) in pipelineImages" :key="i" class="image-thumb">
-                  <img :src="img.preview" />
+                  <img :src="img.preview" loading="eager" decoding="async" />
                   <button class="remove-btn" @click.stop="pipelineImages.splice(i, 1)">×</button>
                 </div>
               </div>

@@ -373,7 +373,7 @@ async function loadPlatforms () {
           :data-testid="'creator-item-' + c.id"
           @click="activeCreatorId = c.id; loadDiscoveries()"
         >
-          <img v-if="c.avatar_url" class="creator-avatar" :src="c.avatar_url" alt="" />
+          <img v-if="c.avatar_url" class="creator-avatar" :src="c.avatar_url" alt="" loading="lazy" decoding="async" />
           <span v-else class="creator-avatar creator-avatar--fallback" aria-hidden="true">{{ creatorInitial(c) }}</span>
           <div class="mp-row-main creator-meta">
             <div class="creator-name-line">
@@ -438,7 +438,7 @@ async function loadPlatforms () {
 
       <ul v-else class="mp-list" data-testid="creator-discoveries">
         <li v-for="d in discoveries" :key="d.id" class="mp-row creator-discovery" :data-testid="'discovery-' + d.id">
-          <img v-if="d.thumbnail_url" class="creator-thumb" :src="d.thumbnail_url" alt="" />
+          <img v-if="d.thumbnail_url" class="creator-thumb" :src="d.thumbnail_url" alt="" loading="lazy" decoding="async" />
           <span v-else class="creator-thumb creator-thumb--fallback" aria-hidden="true">▶</span>
           <div class="mp-row-main creator-meta">
             <span class="mp-row-title creator-title" :title="d.title">{{ d.title }}</span>

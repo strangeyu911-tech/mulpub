@@ -49,7 +49,7 @@
               <td>{{ (page - 1) * pageSize + idx + 1 }}</td>
               <td :title="recrawlTooltip(item)">{{ item.title || '-' }}</td>
               <td>
-                <img v-if="item.cover_url" class="kb-cover" :src="item.cover_url" alt="" />
+                <img v-if="item.cover_url" class="kb-cover" :src="item.cover_url" alt="" loading="lazy" decoding="async" />
                 <span v-else>-</span>
               </td>
               <td>{{ item.author || '-' }}</td>

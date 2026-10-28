@@ -19,7 +19,7 @@
 
       <!-- qrcode / polling -->
       <template v-else-if="state === 'qrcode' || state === 'polling'">
-        <img v-if="qrDataUrl" class="wechat-pay-qr" :src="qrDataUrl" :alt="t('memberCenter.payScanHint')" data-testid="wechat-pay-qr">
+        <img v-if="qrDataUrl" class="wechat-pay-qr" :src="qrDataUrl" :alt="t('memberCenter.payScanHint')" data-testid="wechat-pay-qr" loading="lazy" decoding="async">
         <p class="wechat-pay-hint" data-testid="wechat-pay-scan-hint">{{ t('memberCenter.payScanHint') }}</p>
         <p v-if="state === 'polling'" class="wechat-pay-sub" data-testid="wechat-pay-waiting">{{ t('memberCenter.payWaiting') }}</p>
       </template>

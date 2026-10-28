@@ -13,7 +13,7 @@
         <p v-if="!frames[slot.key]">{{ $t('create.story2video.ui.quickUploadFrame') }}</p>
         <div v-else class="image-grid">
           <div class="image-thumb">
-            <img :src="frames[slot.key].dataUrl" />
+            <img :src="frames[slot.key].dataUrl" loading="lazy" decoding="async" />
             <button class="remove-btn" :data-testid="`quick-frame-remove-${slot.key}`" @click.stop="emit('remove-frame', slot.key)">×</button>
           </div>
         </div>
@@ -35,7 +35,7 @@
         <p v-if="referenceImages.length === 0">{{ $t('create.story2video.ui.quickUploadImage') }}</p>
         <div v-else class="image-grid">
           <div v-for="(img, i) in referenceImages" :key="i" class="image-thumb">
-            <img :src="img.dataUrl" />
+            <img :src="img.dataUrl" loading="lazy" decoding="async" />
             <button class="remove-btn" data-testid="quick-ref-image-remove" @click.stop="emit('remove-image', i)">×</button>
             <span class="image-index">{{ i + 1 }}</span>
           </div>
@@ -105,7 +105,7 @@
         <p v-if="galleryImages.length === 0">{{ $t('create.story2video.ui.quickUploadImage') }}</p>
         <div v-else class="image-grid">
           <div v-for="(img, i) in galleryImages" :key="i" class="image-thumb">
-            <img :src="img.dataUrl" />
+            <img :src="img.dataUrl" loading="lazy" decoding="async" />
             <button class="remove-btn" data-testid="quick-gallery-remove" @click.stop="emit('remove-gallery', i)">×</button>
             <span class="image-index">{{ i + 1 }}</span>
           </div>

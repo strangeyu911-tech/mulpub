@@ -57,7 +57,7 @@ function onCopyToken (token) { emit('copy-token', token) }
         <div class="fe-pane-title">{{ t('filmEngineering.library.refTokens') }}</div>
         <div v-if="props.shot.resolvedRefs && props.shot.resolvedRefs.length" class="fe-refs">
           <div v-for="ref in props.shot.resolvedRefs" :key="ref.token" class="fe-ref">
-            <img v-if="ref.entry.imageUrls && ref.entry.imageUrls.length" :src="ref.entry.imageUrls[0]" class="fe-ref-img" loading="lazy" referrerpolicy="no-referrer" alt="" />
+            <img v-if="ref.entry.imageUrls && ref.entry.imageUrls.length" :src="ref.entry.imageUrls[0]" class="fe-ref-img" loading="lazy" decoding="async" referrerpolicy="no-referrer" alt="" />
             <div class="fe-ref-meta">
               <div class="fe-ref-name">
                 <el-tag size="small" :type="ref.entry.kind === 'unknown' ? 'danger' : 'info'">{{ ref.entry.name || t('filmEngineering.library.refUnknown') }}</el-tag>

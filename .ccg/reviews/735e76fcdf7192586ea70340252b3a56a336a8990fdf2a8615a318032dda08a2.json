@@ -1,0 +1,60 @@
+{
+  "sha": "c3f1bb8c1188614d8c4be71ce8e194d6b3fd2cda",
+  "layer": "diff",
+  "mode": "single",
+  "reason": "变更 38 行（≤ 200）且无敏感命中 → 走 §12.6 常规专家分派",
+  "stats": {
+    "changedLines": 38,
+    "fileCount": 12,
+    "codeFileCount": 11,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 2,
+    "docSensitiveContentSample": [
+      "| `views/CreateView.vue` | 「快图」块已拆成 `QuickRenderPanel` 组件 | 管线预览一张：`loading=\"eager\" decoding=\"async\"`（锚点仍授权） |",
+      "| `views/PromptEvalView.vue` | `:key` 换成 `img.url`（身份键） | 待评测图：`eager + async`（锚点仍授权） |"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "735e76fcdf7192586ea70340252b3a56a336a8990fdf2a8615a318032dda08a2",
+  "decidedAt": "2026-10-28T04:17:53.699Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

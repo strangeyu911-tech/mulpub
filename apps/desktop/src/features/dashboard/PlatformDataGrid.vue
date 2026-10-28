@@ -19,7 +19,7 @@
     <article v-for="row in rows" :key="row.platform" class="cohere-card dash-platform-card" :data-testid="'platform-card-' + row.platform">
       <div class="card-top">
         <div class="card-icon">
-          <img v-if="isPlatformIconUrl(iconUrl(row.platform))" :src="iconUrl(row.platform)" class="mp-platform-icon" :alt="row.name" width="24" height="24">
+          <img v-if="isPlatformIconUrl(iconUrl(row.platform))" :src="iconUrl(row.platform)" class="mp-platform-icon" :alt="row.name" width="24" height="24" loading="lazy" decoding="async">
           <span v-else>{{ iconUrl(row.platform) }}</span>
         </div>
         <div class="card-info">

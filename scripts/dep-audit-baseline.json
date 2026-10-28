@@ -29,7 +29,7 @@
       "decision": "upgrade-tracked",
       "note": "npm-opscenter 域首条登记。该域审计 ops-center/frontend/package-lock.json（npm，非 pnpm），实测解析到 @vue/server-renderer@3.5.41、vue@3.5.41，差一个补丁版本。ops-center/frontend/package.json 声明 vue ^3.5.0，caret 已覆盖 >=3.5.42，仅 lockfile 未刷新。动作=在该目录 npm install 刷新 lockfile。与 npm 域那条（3.5.35）判据同形但版本与载体都不同，故必须分域各登记一条——两域基线键不共用。"
     },
-        {
+    {
       "source": "npm",
       "id": "GHSA-2883-xcg3-v3hh",
       "module": "js-yaml",
@@ -88,7 +88,7 @@
       "decision": "upgrade-tracked",
       "note": "jszip 由 apps/desktop 的文档导入链引入；升级 PR 提到 >=3.8.0。"
     },
-        {
+    {
       "source": "npm",
       "id": "GHSA-5p4m-2wfm-xmqj",
       "module": "js-yaml",
@@ -173,7 +173,19 @@
       "decision": "upgrade-tracked",
       "note": "lockfile 实测解析到 @vue/server-renderer@3.5.35。本仓三处 manifest 声明 vue ^3.5.0（apps/desktop、ops-center/frontend、packages/ui），caret 区间已覆盖 >=3.5.42，仅 lockfile 未刷新；且它作为 vue 的 peer 引入，本仓不直接声明该包。动作=刷新 lockfile（pnpm update vue），无需改 manifest。注意与本仓 SSR 用法解耦：server-renderer 只在 storybook/SSR 构建链出现，不影响 Electron 渲染进程运行时。"
     },
-                {
+    {
+      "source": "npm",
+      "id": "GHSA-gcqx-w48m-w2h4",
+      "module": "deepmerge",
+      "severity": "low",
+      "patched": ">=4.3.2",
+      "roots": [
+        "apps__desktop"
+      ],
+      "decision": "no-fix-available",
+      "note": "**上游没有修复版本，不是「还没升」**。实测取证：`pnpm audit --prod --json`（registry.npmjs.org）报 id=GHSA-gcqx-w48m-w2h4、title=deepmerge mergeObject() allows prototype poisoning of returned objects、severity=low、vulnerable=`>=4.2.0 <=4.3.1`、patched=`>=4.3.2`，finding 路径 `apps__desktop>puppeteer-extra-plugin-stealth>puppeteer-extra-plugin-user-preferences>deepmerge` @4.3.1；`pnpm why deepmerge` 同一条链逐段解析为 @multi-publish/desktop → puppeteer-extra-plugin-stealth@2.11.2 → puppeteer-extra-plugin-user-preferences@2.4.1 → deepmerge@4.3.1（全仓仅此一份，无第二个版本共存）。而公告声称的修复版 **4.3.2 在 npm 上不存在**：`npm view deepmerge dist-tags` 只返回 latest=4.3.1，`npm view deepmerge versions` 末位也是 4.3.1；OSV 侧同一条公告（aliases=CVE-2026-93753，CWE-1321，LOW，published 2026-09-18，github_reviewed 2026-10-27）的 affected ranges 是 introduced 4.2.0 → last_affected 4.3.1，**未给出任何已发布的修复版本**。⇒ 判 no-fix-available；不得改判 upgrade-tracked —— 给一个不存在的版本写 targetVersion 是假挂账，只会留下一条到期必红的 DECISION_OVERDUE。可利用性（判断，非实测）：本仓只在 apps/desktop/electron/services/url-collector.js:436 以 `chromium.use(require('puppeteer-extra-plugin-stealth')())` 零参数实例化，deepmerge 的两侧输入分别是该插件的默认 `userPrefs: {}` 与各 stealth 插件静态声明的 `userPreferences` 数据（见 node_modules/puppeteer-extra-plugin-user-preferences/index.js 的 `merge(this._opts.userPrefs, this._userPrefsFromPlugins)`），**没有任何渲染进程或被采集网页的内容进入 merge** ⇒ 本仓未构成可达的原型污染路径，这也是判 LOW 挂账而非紧急升级的依据。收敛动作（两条任一）：上游发 4.3.2 后 `pnpm update deepmerge` 刷新 lockfile；或随 puppeteer-extra 链一起换掉该宿主插件。复核条件：deepmerge 的 latest > 4.3.1，或本仓出现把外部可控对象交给 deepmerge 的新调用点。"
+    },
+    {
       "source": "npm",
       "id": "GHSA-r28c-9q8g-f849",
       "module": "postcss",
@@ -201,7 +213,7 @@
       "decision": "upgrade-tracked",
       "note": "lockfile 实测解析到 postcss-selector-parser@7.1.4，差两个补丁版本。纯构建期传递依赖：本仓 manifest 零声明，来源为 eslint-plugin-vue（desktop devDeps）、css-loader / @remotion/bundler（remotion-composer 链），不进入运行时产物。动作=刷新 lockfile 收敛到 >=7.1.6。"
     },
-        {
+    {
       "source": "npm",
       "id": "GHSA-w5vr-8v7q-w6rv",
       "module": "baseline-browser-mapping",
@@ -214,7 +226,7 @@
       "decision": "upgrade-tracked",
       "note": "baseline-browser-mapping 与 browserslist 同族构建期数据包；升级 PR 提到 >=2.11.0。"
     },
-        {
+    {
       "source": "pip",
       "id": "PYSEC-2026-1325",
       "module": "ecdsa",

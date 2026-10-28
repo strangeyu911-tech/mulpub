@@ -1,0 +1,61 @@
+{
+  "sha": "13d8730256ad938182366418dbd9c3906ecefa71",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 12 行（≤ 200）但命中 auth/数据库/加密：敏感内容 1 处",
+  "stats": {
+    "changedLines": 12,
+    "fileCount": 2,
+    "codeFileCount": 1,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 1,
+    "docSensitiveContentHits": 2,
+    "docSensitiveContentSample": [
+      "| 逃逸分析（QM-5 ②） | ✅ | 见 §2：公告由 `pnpm audit` 实时拉取，基线只能人手写；本条公告的修复版 `>=4.3.2` 上游未发布，机器 `--update` 也无法预填承诺 ⇒ 只能人工判 `no-fix-available` |",
+      "- 收敛动作两条任一：上游发 4.3.2 后 `pnpm update deepmerge` 刷新 lockfile；或随 puppeteer-extra 链换掉 `puppeteer-extra-plugin-user-preferences` 这个宿主插件。"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "e5c05eae78b4ec93011268ae97809e65640a8f2f39024c237a1dc2a67c02551a",
+  "decidedAt": "2026-10-28T02:50:33.309Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": [],
+    "closureNote": "第 1 轮（会话按门禁出口②手写收口，非 deep-review writeback、非外部直签）：本记录是 pre-commit 的 ccg-review-decider 按敏感内容关键词自动判成 mode=dual 的产物。复核其 stats：sensitivePathHits=[]、ccgSensitiveContentHits=0，被计入的只有 sensitiveContentHits=1 与 docSensitiveContentHits=2，而 docSensitiveContentSample 给出的两条原文分别是「公告由 `pnpm audit` 实时拉取」与「上游发 4.3.2 后 `pnpm update deepmerge` 刷新 lockfile」—— 命中的是审计命令与依赖包名字面，不是高危域内容，属词面误命中（假阳性）。处置结论：本 PR 实际改动只有 scripts/dep-audit-baseline.json 的 12 行挂账数据 + 一篇 openspec 执行记录，零代码逻辑、不触运行面、且不命中 HIGH_RISK_SURFACES（scripts/check- / scripts/ccg-review- / .github/workflows/ 三条前缀均不匹配），不存在可审的代码面 ⇒ 驳回 dual 深度审查要求，findings 置空数组。tier 维持 unknown（未声明 external），覆盖率读数里这一档可见。"
+  }
+}

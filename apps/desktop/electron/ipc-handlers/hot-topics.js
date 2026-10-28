@@ -7,6 +7,8 @@
  *   hot-topics:get-cache  → HotTopicsService.getCache()
  */
 
+const { withLegacyKind, pickContentFields } = require('../services/hot-topics/item-model.js')
+
 /**
  * @param {import('electron').IpcMain} ipcMain
  * @param {{ hotTopicsService: { fetchTopics: Function, getCache: Function }, store?: object, identityService?: object, log?: object }} deps
@@ -53,6 +55,11 @@ function registerHandlers(ipcMain, deps) {
       hotValue: Number.isFinite(Number(raw.hotValue)) ? Number(raw.hotValue) : null,
       url: typeof raw.url === 'string' ? raw.url.slice(0, 2048) : null,
       fetchedAt: Number.isFinite(Number(raw.fetchedAt)) ? Number(raw.fetchedAt) : null,
+      // 判别位逐字复用 withLegacyKind：**只有缺席/null 才读作 topic**，与旧缓存同一口径。
+      // 旧写法在「存在但非法」时也落到 topic（等于消费层把值修好），违反 Requirement 1——
+      // 非法值必须原样交给资格判据判红，症状才是可归因的 KIND_INVALID 而不是静默改类型。
+      kind: withLegacyKind(raw).kind,
+      ...pickContentFields(raw),
     }
   }
 

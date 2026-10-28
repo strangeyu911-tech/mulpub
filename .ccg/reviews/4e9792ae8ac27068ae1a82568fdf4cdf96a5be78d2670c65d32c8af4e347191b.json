@@ -1,0 +1,117 @@
+{
+  "sha": "86e8580fa6722027fccfd5e377e49374d99c3dc8",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 805 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 805,
+    "fileCount": 13,
+    "codeFileCount": 10,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 2,
+    "docSensitiveContentSample": [
+      "- **一条意外的引擎行为，值得单独记**：本轮 `requiresExternalReview` 里那条 `highRiskDomains=crypto` 不是代码有密码学改动——当场清点本支改动面 grep `crypto|pbkdf2|createHash|cipher|md5`，**代码文件命中 0**，命中全在散文里（本记录的 `md5=7a014b67…`、PRD/tasks 各 1 处、判定产物 1 处）。**是我为了留变异反证证据而写下的那串 md5，把这条 finding 挂成了高危域并要求外部复核。** 后果不是无害的：它让一个\"文档里提到校验和\"的 PR 落到与真加密改动同一档要求上。域判定在仓外评审引擎里（`~/.claude/skills/adversarial-review-loop/scripts/ccg-deep-review.js`），不由本 PR 改。",
+      "- **三条出口，留给人工裁决**：① 等 #4516 落地后用补救证书收口（成立项已逐条修完，正是该证书的目标形态）；② 把本支交给一次真跨家族双模型闭环（`requiresExternalReview` 那条 crypto 标签来自 `md5` 关键词误挂——本片无密码学改动，`grep -c \"crypto\\|pbkdf2\\|createHash\" 本支改动面` 可自证，但这属引擎域判定，不由我改）；③ 人工直接判 QM-6 已过并留一句理由。"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "4e9792ae8ac27068ae1a82568fdf4cdf96a5be78d2670c65d32c8af4e347191b",
+  "decidedAt": "2026-10-27T08:31:39.232Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "domains": [
+          "crypto"
+        ]
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "domains": [
+          "auth"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "verdict": "dismissed",
+        "rationale": "产物入库是 AGENTS.md:1109 的机制要求（check-pr-exec-record.js:1242/1363 靠读它算欠账）；crypto 标签来自 engine.js:74-76 对 finding 文本的关键词正则，i1 自身文本即触发源（自指）；本支代码文件 crypto 关键词命中 0。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "verdict": "dismissed",
+        "rationale": "channels.js:341 定义 CHANNEL_PARSERS，:355/:356 登记 gyread 两个解析器，:363 导出；hot-topics-item-model.test.js:147-162 遍历注册表并断言 >=15 且每个函数体含 kind。"
+      },
+      {
+        "id": "i3",
+        "severity": "Critical",
+        "verdict": "dismissed",
+        "rationale": "pending 是可读的未完成形态：check-pr-exec-record.js:1475-1485 对它判欠账并阻断（实跑 rc=1）；AGENTS.md:1137 记录过「要求先闭环才能提交」会造出无法闭合的死循环。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "verdict": "dismissed",
+        "rationale": "1390 在记录/change/PRD 扫描域命中 0（1370 的唯一命中是记录引用该指控本身）；805 是排除 .ccg 后的测量域（deep-review.sh:676）；170→208 已在 tasks.md:25 显式对账。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "verdict": "dismissed",
+        "rationale": "PRD:299 原文解释的是「拒绝截断」的理由（截断会得到看起来真的名字，比缺席更坏），与代码同向；auth 域来自 engine.js:75 无词边界正则命中字段名 author。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "verdict": "dismissed",
+        "rationale": "channels-gyread.js:10 与 channels.js:16 是字面量 require，require 期失败即 MODULE_NOT_FOUND；hot-topics-item-model.test.js:15 加载该链；check-debt-budget circularDeps=0。"
+      }
+    ],
+    "blocking": [],
+    "template": ".adversarial\\ccg-deep-4cd2313b\\adjudication.json",
+    "closureNote": "QM-6 第 5 版折叠（轮 4 → 轮 5，head 4cd2313ba）自扮演裁决：6 条全部 dismissed（逐条证据见 .adversarial/ccg-deep-4cd2313b/adjudication.json 的 prosecution/defense/verdict/rationale 与本记录补记八、补记九）。status 由会话按门禁出口②手写（非高危面：本支变更集不命中 HIGH_RISK_SURFACES，也无判据闭包成员），不是工具直签；tier 保持缺席（不冒充 external）。两条 requiresExternalReview 是引擎侧关键词误挂且已逐条证伪：i1 的 crypto 来自 finding 自身文本（engine.js:76），i5 的 auth 来自字段名 author 命中 engine.js:75 的无词边界正则 —— AGENTS.md:1141 已登记「引擎侧 highRiskDomains 与本矩阵路径前缀是两个轴，判据不读前者」。",
+    "note": "自扮演裁决：6 条指控全部驳回（逐条取证）；两条高危标签经引擎源码核对为关键词子串误挂",
+    "at": "2026-10-28T02:40:00.000Z"
+  }
+}

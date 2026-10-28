@@ -15,6 +15,7 @@ import { CHANNEL_CONFIGS, CATEGORY_BOOSTS, GYREAD_SOURCE, HotTopicsService } fro
 import { CHANNEL_PARSERS, parseGyreadIndex, parseGyreadEdition } from './hot-topics/channels.js'
 import { CHANNEL_WEIGHTS } from './hot-topics/scorer.js'
 import { classifyTopic, classifyTopicMulti } from './hot-topics/classifier.js'
+import { validateEntry, filterViableEntries, KIND_TOPIC } from './hot-topics/item-model.js'
 
 /** 真实形态的索引样本（字段与线上一致，条目为抽样） */
 function sampleIndex () {
@@ -351,5 +352,34 @@ describe('classifier：AI 词表扩充（跨语料通用术语）', () => {
     const r = classifyTopicMulti(null, 'gyread', 'AI 公司完成 10 亿美元融资，估值翻倍')
     expect(r.categories).toContain('ai')
     expect(r.categories).toContain('finance')
+  })
+})
+
+describe('解析器判别位契约（QM-6 轮1 指控 i2 的回归锁）', () => {
+  it('parseGyreadIndex 每条产出都带合法 kind，且整批都能活过采集出口', () => {
+    const items = parseGyreadIndex(sampleIndex(), { days: 2 })
+    // 反真空断言：夹具若退化成空数组，下面两条循环会静默全绿
+    expect(items.length).toBeGreaterThanOrEqual(2)
+    for (const it of items) {
+      expect(it.kind).toBe(KIND_TOPIC)
+      expect(validateEntry(it).ok).toBe(true)
+    }
+    const { kept, dropped } = filterViableEntries(items, { channel: 'gyread', log: { warn: () => {} } })
+    expect(dropped).toBe(0)
+    expect(kept).toHaveLength(items.length)
+  })
+
+  it('parseGyreadEdition 每条产出都带合法 kind', () => {
+    const items = parseGyreadEdition(legacyEditionHtml())
+    expect(items.length).toBeGreaterThanOrEqual(2)
+    for (const it of items) {
+      expect(it.kind).toBe(KIND_TOPIC)
+      expect(validateEntry(it).ok).toBe(true)
+    }
+  })
+
+  it('两个 gyread 解析器都在 CHANNEL_PARSERS 注册表里（注册即须守约）', () => {
+    expect(CHANNEL_PARSERS.gyread_index).toBe(parseGyreadIndex)
+    expect(CHANNEL_PARSERS.gyread_edition).toBe(parseGyreadEdition)
   })
 })

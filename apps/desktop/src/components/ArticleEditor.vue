@@ -64,6 +64,9 @@ import { APP_ARTICLE_CONTENT_MAX } from '@/features/publish/publish-contract'
 // 就已是一段，发布链侧 `formatArticleBody` 再正确也救不回来。
 // 故装载前必须经 `toHtmlBody`：纯文本按行成段、已是 HTML 原样透传（与发布链同判据）。
 import { toHtmlBody } from '@multi-publish/shared-utils/src/article-body-format'
+// 富文本模式的输入硬拦（审计 4.7 ③）：maxlength 对 contenteditable 完全无效，
+// 超限必须在回写这一刻截尾，而不是只让计数器变红。
+import { truncateContentToLimit } from './article-editor-hard-stop'
 
 // 本地注册（2026-10-15 fix-newtab-home-slow）：QuillEditor 原先由 main.js 以
 // app.component 全局注册，那会把 @vueup/vue-quill 拉进首屏 bundle 闭包。
@@ -119,7 +122,7 @@ const richContent = computed({
   get: () => toHtmlBody(props.modelValue),
   // 回写：Quill 的 innerHTML（此时每段都是真 `<p>` 块）；纯文本承载平台由发布链
   // 的 formatArticleBody 统一转回纯文本，故此处不做反向转换。
-  set: (val) => emit('update:modelValue', val)
+  set: (val) => emit('update:modelValue', truncateContentToLimit(val, props.maxChars))
 })
 
 const mdContent = computed({

@@ -9,7 +9,7 @@ delivered_by_pr: 4081
 
 | 门禁 | 状态 | Fresh 证据（当场实跑，非引用） |
 |---|---|---|
-| 变更类型与隔离 | ✅ | 运行时代码（`apps/desktop/electron/**`、`packages/rpa-engine/src/platform-selectors.js`）⇒ 独立 worktree `D:\Data\projects\mp-worktrees\mp-pubfail-4081` + 裸分支 `fix-publish-failures-20261020`；共享根 `D:\Data\projects\mulpub` 全程只读（停留 `main`，未落文件）；依赖三连 OK（`pnpm install --frozen-lockfile` 1m8s / `ensure-electron.js` v43.7.7 / `verify-worktree-deps.js` 11 项解析到当前 worktree） |
+| 变更类型与隔离 | ✅ | 运行时代码（`apps/desktop/electron/**`、`packages/rpa-engine/src/platform-selectors.js`）⇒ 独立 worktree `<仓库父目录>/mp-worktrees/mp-pubfail-4081` + 裸分支 `fix-publish-failures-20261020`；共享根（main-only 协调目录）全程只读（停留 `main`，未落文件）；依赖三连 OK（`pnpm install --frozen-lockfile` 1m8s / `ensure-electron.js` v43.7.7 / `verify-worktree-deps.js` 11 项解析到当前 worktree） |
 | 冲突真相与 rebase | ✅ | `git merge-tree --write-tree origin/main fork4081/...` = **1 个文件 content 冲突**（`apps/desktop/electron/services/rpa-view-platforms.js`），非 modify/delete、非二进制；任务描述里的「0 条文本冲突」是旧 main tip 的读数。rebase 3 个 commit 全部落上 `origin/main`(88640e1c0)，末 commit `7adff8ce7` |
 | 第一性原因（QM-5 ①） | ✅ | ① 公众号：保存草稿的**点击不可信**（`click()` 返回就当下发）+ 成功只看 appmsgid，缺 mediaId 时把「平台没收到请求」与「收到了但没回 ID」混成一句话；② 微博：新版首页发布后**三类信号全不给**（不跳转 / 无成功文案 / `responses=0`）⇒ 真实成功被判失败（假失败比假成功更伤：用户会反复重发）。两处都不是「选择器少写一条」而是**判据缺失** |
 | 逃逸分析（QM-5 ②） | ✅ | 单元层：`xhs-draft-false-success` / `xhs-draft-only-hard-evidence` 用**部分 mock 实例**跑 `_publish_generic`，新增的宿主方法在它上面不存在 ⇒ 诊断把主链测试整片打红（CI 实测）；静态层：`QG Static` 的 ESLint 抓到 `_verifyPublishSuccess` 里 `article` 未定义（真机走到微博兜底会抛 ReferenceError）；集成层：微博「发布成功」只能靠真机手测，无自动判据 ⇒ 靠 `QG Desktop Shards` 全量才照出来 |
@@ -104,7 +104,7 @@ rc=0
 
 本批触碰 `apps/desktop/electron/services/**` 与 `packages/rpa-engine/src/**`，按 QM-1 应给三层读数（asar 清单 / require 链 / 8 秒启动 + stderr 三分档）。本会话的取舍与缺口：
 
-- 已做：`node scripts/ensure-electron.js`（v43.7.7 就绪）+ `node scripts/verify-worktree-deps.js`（11 项 workspace 解析到当前 worktree，OK）；`pnpm exec electron-builder --win --dir --publish never` 的读数与实际结论记在本节末尾。
+- 已做：`node scripts/ensure-electron.js`（v43.7.7 就绪）+ `node scripts/verify-worktree-deps.js`（11 项 workspace 解析到当前 worktree，OK）；`pnpm exec electron-builder --win --dir --publish never` → `rc=0`，产物 `dist-electron/win-unpacked/`（app.asar 151310832 字节）；`pnpm exec asar list` 里能看到本次新增的 `\electron\services\publish-diagnostics.js` 与既有 `\electron\services\logger.js`；解包后 `node -e "require('<extracted>/node_modules/@multi-publish/rpa-engine'); require('<extracted>/electron/services/publish-diagnostics.js')"` → `REQUIRE-CHAIN OK`，rc=0。
 - 未做（缺口，不得当成通过）：真机 8 秒启动 + stderr 三分档需要桌面会话与共享用户数据，本会话不跑 GUI，**不声称 QM-1 通过**。
 - 风险面如实评估：本批新增的是一个**无副作用的纯诊断模块**（只读页面 + 写日志）与两处一行级接线；没有新增 `require` 依赖、没有新增 native 资源、没有改 preload/asr 打包清单。CI 侧 `electron-tests` / `QG Desktop Shards`（各 526+ 测试文件）与 `build` 覆盖了加载与行为面。
 

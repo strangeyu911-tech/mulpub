@@ -16,6 +16,9 @@
  *   现场定性，调用点必须限定在发布链已经要失败/已经落空的分支里。
  * - 与 `rpa-dom-dump.js` 的分工：那个是**默认关闭**的落盘取证通道（MP_DOM_DUMP=1，
  *   不采内容）；本模块是**始终生效**的日志摘要，用于「失败也说不清页面长什么样」的场景。
+ * - 与 `rpa-view-publish-diagnostics.js` 的分工：**本模块做 I/O 与页面结构留证**（会
+ *   `executeJavaScript` 读页面、等页面）；那个是纯函数、无 I/O 的网络记录摘要
+ *   （`summarizePublishDiagnostics` / `readVisibleEditorToast`）。两者职责不同，勿合并。
  */
 
 const log = require('./logger')

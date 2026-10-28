@@ -6,9 +6,9 @@ date: 2026-10-28
 
 ## 本次执行记录：图文平台「有封面无配图」必败 + 微博缺 publish_url 秒失败（fix-publish-cover-url，2026-10-28）
 
-> 分支 `fix-publish-cover-url`，隔离 worktree `D:\Data\projects\mp-worktrees\mp-cover-url`。
+> 分支 `fix-publish-cover-url`，隔离 worktree `<worktree-root>/mp-worktrees/mp-cover-url`。
 > 作者起点 `6fcc1cb2`，2026-10-28 在 worktree 内 `git rebase origin/main`（落点 `88640e1c0`），
-> 3 个提交无冲突；共享根 `D:\Data\projects\mulpub` 全程只读（未落文件、未 checkout）。
+> 3 个提交无冲突；共享根 `<repo-root>`（main-only 协调目录）全程只读（未落文件、未 checkout）。
 
 | 门禁 | 状态 | Fresh 证据 |
 |------|------|-----------|

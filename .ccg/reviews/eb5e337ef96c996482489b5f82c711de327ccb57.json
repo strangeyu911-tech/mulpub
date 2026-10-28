@@ -1,0 +1,56 @@
+{
+  "sha": "eb5e337ef96c996482489b5f82c711de327ccb57",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 547 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 547,
+    "fileCount": 14,
+    "codeFileCount": 10,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-26T03:50:38.181Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null,
+    "closureNote": "第 2 轮：引擎未运行（本记录由 pre-commit 判定器生成，findings 为空，无逐条条目可裁）。\n可审面为兜底页三件，逐条自审结论：\n① canGoBack 双层判定（存在上一页 且 上一页解析出的路由名不是 NotFound）有正反用例，复跑通过；\n② 宿主接线合同用真 createWebHashHistory 断言 history.state 字段归属，复跑通过；\n③ not-found 的 zh/en 文案锁断言不复述键位，复跑通过。\n合计读数：catchall-route.test.js + NotFound.test.js = 16/16 passed，rc=0；变异驱动 8/8 CAUGHT 记录在案。\n无遗留 Critical，未修项为 0。\n本 status 由会话按门禁出口②手写，非 writeback 直签，tier 保持缺席。"
+  }
+}

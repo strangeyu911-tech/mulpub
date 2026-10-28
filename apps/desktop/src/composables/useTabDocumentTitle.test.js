@@ -68,7 +68,10 @@ describe('resolveRouteTabTitle（纯函数判定表）', () => {
     const registered = ROUTE_REGISTRY.filter(e => e.view !== '').map(e => e.path)
     expect(registered.length).toBeGreaterThanOrEqual(32)
     // 已知例外：暗路由在 home-shell 新标签中正常可达但暂用品牌名回退（补键计划见 PRD §9.2）
-    const exceptions = new Set(['/first-run', '/create/result', '/video-clone', '/film-engineering/classic'])
+    // 通配兜底路由 `/:pathMatch(.*)*` 是**语义上的例外**而不是待补的欠账：它命中任意未登记路径，
+    // 映射表里不可能有通配键；标题回退品牌名正是它的设计行为 —— 本文件「未知路径回退品牌名」
+    // 那条用例就是这条口径的正向锁。写进例外清单而不是给映射表塞一条永远命不中的假键。
+    const exceptions = new Set(['/first-run', '/create/result', '/video-clone', '/film-engineering/classic', '/:pathMatch(.*)*'])
     const unresolved = []
     for (const path of registered) {
       if (exceptions.has(path)) continue

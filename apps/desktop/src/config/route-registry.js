@@ -379,6 +379,16 @@ export const ROUTE_REGISTRY = Object.freeze([
     internal: false,
     entryFrom: null,
   },
+  {
+    // 兜底路由（阶段 1.9）：暗页 —— 它不是导航入口，任何在册页面都不该跳向它，
+    // 只有未登记的路径会落进来；entryFrom 取应用主入口（表内已登记的 /）。
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    view: 'NotFound.vue',
+    navEntry: null,
+    internal: true,
+    entryFrom: '/',
+  },
 ])
 
 /**

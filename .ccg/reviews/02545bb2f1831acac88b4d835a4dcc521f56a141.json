@@ -1,0 +1,122 @@
+{
+  "sha": "02545bb2f1831acac88b4d835a4dcc521f56a141",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 509 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 509,
+    "fileCount": 13,
+    "codeFileCount": 10,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 2,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-24T23:13:08.289Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "finding": "“返回上一页只在真能返回时出现”这一承诺被 `state.back` 的真值过度兑现：`state.back` 只说明“存在上一个 router location”，不保证上一个 location 不是另一个 NotFound。深链直达 `/nope`（back=null，无按钮）后在站内再导航到未知 `/other-nope`（push 后 back='/nope'，按钮出现），点击 go(-1) 会落回另一个 404 页，用户依然被锁在“404→404”回路里，唯一的出口还是回到首页。AC6 的“真能返回”含语义也包括“返回目的值得去”，当前判据没有覆盖。</br>suggestion: 按钮可见性在 `state.back` 之上再加一条：用 `router.resolve(state.back)` 判断上一个地址解析出的路由名不是 NotFound（或允许上一个地址回环时不渲染）。并为此在 `catchall-route.test.js` 补一条“上一页也是未登记路径 ⇒ 不渲染返回按钮”的判据。",
+        "highRiskDomains": [],
+        "prosecution": "成立。`state.back` 的语义是\"存在上一个 router location\"，不是\"上一个地址值得回去\"。连访两个未登记地址时 back 指向的也是 404 页，go(-1) 只是把用户从 404 挪到 404，此时页面上唯一的真实出口仍是回首页 —— AC6 里\"真能返回\"的语义确实没被覆盖。",
+        "defense": "可辩护处只有范围：这一档要用户\"连续访问两个错地址\"才出现，且回首页出口一直在，不构成阻断性缺陷。但\"给了一个把用户送回同一个错误的按钮\"本身就是本仓禁止的死锚点形状，不能因概率低就放行。",
+        "verdict": "upheld",
+        "rationale": "证据与处置：① `canGoBack` 现在在 `back` 之上再做一次 `router.resolve(back).name !== 'NotFound'`（resolve 抛错按 false 处理，不猜）；② 新用例「上一页本身也是未登记路径 ⇒ 不渲染返回按钮（评审 i1：404→404 回路）」用**真 router 的 resolve**（不是替身）判语义，替身只保留在 `history.state` 那一格；③ 变异 K7 专打这一层：只把 `return prevName !== 'NotFound'` 改成 `return true`、保留 `Boolean(back)` 那层 ⇒ 该用例当场红（与 K3 各测各的一层，不合并计一条）。实跑读数：`CAUGHT=8/8`，还原后复跑 `rc=0`。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "AC6 的两个方向（“无上一条历史不渲染”“有历史时 go(-1)”）以及“翻转正控”全部只对**手工构造的替身** `router.options.history.state` 成立；真正把 `router.options.history.state` 映射到 `window.history.state` 的那一层宿主接线（vue-router 在真实推送/replace/popstate 时写入的 `{back,current,forward,position}`）在本批里没有任何自动化验证——记录自己也承认 memory history 实测“测算不出”而改判为宿主语义归宿主。若某版 vue-router 或 Electron webview 对该 state 形状的处理不同，最坏退化（风险 3 已承认）是“返回按钮永不出现”，AC6 的正向条款会静默失效而非变红。",
+        "highRiskDomains": [],
+        "prosecution": "成立。AC6 的正向条款与\"翻转正控\"此前全部只对**手工构造的 `history.state` 替身**成立；真正把 `router.options.history.state` 映射到宿主 `{back,current,forward,position}` 的那一层（vue-router 在 push/replace/popstate 时写入）没有任何自动化验证。记录自己也写了\"宿主语义归宿主\"——那等于承认正向条款在最坏情况下静默失效而不红。",
+        "defense": "可辩护处：这条判据本质属于宿主行为，用单测锁它只能锁\"当前安装的 vue-router 版本确实这么填\"，不能锁未来版本；且真机验证路径存在（视觉/E2E）。但\"只能锁当前版本\"不等于不该锁 —— 升级导致形状变化时，宁可红也不要静默。",
+        "verdict": "upheld",
+        "rationale": "处置：新增「宿主接线合同（评审 i2）：真 hash history 在两次导航后必须真的填 state.back」一条，用 `createWebHashHistory` + 两次真导航断言 `state.back === '/host-hop-a'` 且 `state.current === '/host-hop-b'`，与\"组件是否跟随该字段\"（替身测）**分成两件事**，两侧各自可红：宿主不再填 ⇒ 本条红；组件不读 ⇒ 正控红。本仓既有同型纪律：宿主 API 字段归属必须在已安装声明上实测，不得凭字段名推断。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "变异驱动 K4 的锚点 `from: '  void route.fullPath\\n'` 把行尾 `\\n` 焊进了锚点串，这与本条记录自己在「QM-6 与变异的两处自我更正」第 3 条写下的教训“锚点只取行本身，不取分隔符”正对着干——那条教训正是基于同一仓库 router/index.js 的 CRLF 工作副本踩出来的。脚本在 LF 的 NotFound.vue 上当前能过（现场 6/6），但任何在 Windows 上以 CRLF 检出该文件的开发者（autocrlf=true、或 IDE 改写行尾）再跑驱动，K4 会以“锚点命中 0 次”抛错，整个 CAUGHT=6/6 的证据链当场断掉，且报错信息容易被误读为“代码已变”。",
+        "highRiskDomains": [],
+        "prosecution": "成立。K4 的锚点 `from: '  void route.fullPath\\n'` 把行尾焊进了匹配串，与记录里「自我更正」第 3 条（锚点只取行本身）直接对着干；CRLF 检出的开发者跑驱动时会以\"锚点命中 0 次\"失败，整条 CAUGHT=6/6 的证据链当场断，且报错读起来像\"代码变了\"。",
+        "defense": "可辩护处：`NotFound.vue` 当前是 LF，所以在**我这台机器**上确实跑过了；这条是脆弱性不是当场的错。但『证据只在一种检出形态下可复现』本身就是缺陷 —— 本仓 CI 与本机行尾档不同是已知事实。",
+        "verdict": "upheld",
+        "rationale": "处置不止修 K4：按这条重新审全部 8 把刀的锚点，又抓出两处同源问题并一并修掉 ——① K4 的替代写法 `void /*removed*/` 是**语法错误**，vitest 转换失败 ⇒ `rc=1` 却解析不出任何失败用例名，被归因层报成 NOT_CAUGHT（\"红在别处\"里那个空名单就是它），现改为合法空注释替换；② K3 的锚点 `return Boolean(router.options?.history?.state?.back)` 在 i1 重写后已不存在 ⇒ 当场 ERROR；③ K6/K8 的期望名与锚点因测试改名、文案改写而失配。修后实跑 `CAUGHT=8/8`。结论：驱动必须与被改代码同批维护，且**锚点失配/语法错造成的红不算反证**，归因层要能区分这三档。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "`notFound.hint` 的文案硬编码“快捷键 Ctrl+Alt+1 到 6”，而审计阶段 1.6 的本仓库实现是快捷键从 `hotkeys:list` 数据驱动，键位表本身是配置不是约定。两者之间没有任何机械耦合：日后重绑快捷键、或 mac 变体需要 Cmd 组合时，这句面向用户的指导文案会静默变假，且没有任何测试会红——这正落在本仓“提示了问题但不给出口”同型的“文案与真相脱节”上，只是方向反了。",
+        "highRiskDomains": [],
+        "prosecution": "成立且比指控更重：指控说\"将来重绑键位时文案会静默变假\"，实测**今天就假** —— `electron/services/hotkeys.js` 的真源键位是 `CmdOrCtrl+Alt+P/D/C/A/K/V/H/N`（按字母），而我写的 `notFound.hint` 是「快捷键 Ctrl+Alt+1 到 6」，数字档在本仓根本不存在。渲染侧也没有任何测试覆盖这句文案与键位表的一致性。",
+        "defense": "无实质辩护空间。把键位抄进文案是\"复制一份事实\"，与本仓「单一实现 + parity 锁」的既有口径相反；这里连 parity 锁都没有。",
+        "verdict": "upheld",
+        "rationale": "处置取\"禁止该面复述键位\"而非\"把键位抄对\"（抄对仍是第二份事实）：① zh/en 的 `hint` 去掉全部键位表述；② 新增锁「提示文案不得复述键位（评审 i4）：键位真源在 electron/services/hotkeys.js」，对 `locales/not-found/{zh,en}.js?raw` 断言不出现 `Ctrl+Alt|CmdOrCtrl|⌘|⌥|Alt+`；③ 变异 K8 把键位抄回 zh 文案 ⇒ 该锁当场红。实跑：`CAUGHT=8/8`，`check-locale-sync.js --cjk` PASS。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      }
+    ],
+    "note": "自扮演裁决：4 条指控成立或需外部复核",
+    "at": "2026-10-26T03:49:00.747Z",
+    "closureNote": "第 1 轮（self-play 引擎实数产出 4 条 upheld，均已修）：\ni1 已修 —— canGoBack 在 Boolean(back) 之上加 router.resolve(back).name !== 'NotFound'，提交 eb5e337ef；\ni2 已修 —— 新增宿主接线合同（真 createWebHashHistory + 两次真导航断言 history.state.back/current），提交 eb5e337ef；\ni3 已修 —— 按该条把 8 把变异刀全部重审，剔除行尾字符焊入与语法错写法，记录「外部评审逐条处置」i3 记 CAUGHT=8/8；\ni4 已修 —— zh/en 的 not-found 提示不再复述键位并加锁，提交 eb5e337ef。\n本轮复跑读数：catchall-route.test.js 4 passed + NotFound.test.js 12 passed = 16/16，rc=0。\n四条全部成立且已落地，无遗留 Critical。\n本 status 由会话按门禁出口②手写，非 writeback 直签，tier 保持缺席。"
+  }
+}

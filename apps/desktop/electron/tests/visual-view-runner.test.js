@@ -36,12 +36,18 @@ describe('单视图视觉门禁合同', () => {
       ).toBe(true)
     }
 
-    for (const route of routerPaths) {
-      expect(
-        viewRunner.viewTests.some(test => routeMatches(route, test.route)),
-        '路由 ' + route + ' 缺少单视图门禁',
-      ).toBe(true)
-    }
+    // Vue 的**可重复通配兜底路由**（`/:pathMatch(.*)*`）无法表示成单视图视觉探针：
+    // 探针必须有一个确定的 route 才能落成 base-screenshots/<name>.png，而通配路由命中
+    // 任意形状的路径。所以这里不放宽判据，改成把「未覆盖集合」与**精确例外表**逐项比对：
+    //   · 新增任何无人守门的真实路由 ⇒ 集合变长 ⇒ 当场红（原有牙齿不变）；
+    //   · 兜底路由被删或改名 ⇒ 例外表变成陈旧登记 ⇒ 同样红（反向也锁住）。
+    // 兜底页 NotFound 的行为守门在本 PR 的 src/views/NotFound.test.js；视觉基线只能取自
+    // CI 产物（AGENTS.md QM-4 第 7 条），本机不得代造，故不新增一条无基线的视图注册。
+    const CATCHALL_EXCEPTIONS = ['/:pathMatch(.*)*']
+    const uncovered = routerPaths.filter(
+      route => !viewRunner.viewTests.some(test => routeMatches(route, test.route)),
+    )
+    expect(uncovered, '未覆盖路由集合必须精确等于通配兜底例外表').toEqual(CATCHALL_EXCEPTIONS)
   })
 
   it('每个视图都声明严格就绪条件和机器可执行断言', () => {

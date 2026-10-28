@@ -6,6 +6,7 @@ import commonEn from './common/en'
 import loginGateEn from './login-gate/en'
 import providerCrudEn from './provider-crud/en'
 import publishDraftsEn from './publish-drafts/en'
+import notFoundEn from './not-found/en'
 import navEn from './nav/en'
 import tabBarEn from './tab-bar/en'
 import memberCenterEn from './member-center/en'
@@ -64,6 +65,7 @@ export default {
   providerCrud: { ...providerCrudEn },
   publishDrafts: { ...publishDraftsEn },
   nav: { ...navEn },
+  notFound: { ...notFoundEn },
   tabBar: { ...tabBarEn },
   sidebar: { ...sidebarEn },
   copyLibrary: { ...copyLibraryEn },

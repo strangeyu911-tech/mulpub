@@ -6,6 +6,7 @@ import commonZh from './common/zh'
 import loginGateZh from './login-gate/zh'
 import providerCrudZh from './provider-crud/zh'
 import publishDraftsZh from './publish-drafts/zh'
+import notFoundZh from './not-found/zh'
 import navZh from './nav/zh'
 import tabBarZh from './tab-bar/zh'
 import memberCenterZh from './member-center/zh'
@@ -64,6 +65,7 @@ export default {
   providerCrud: { ...providerCrudZh },
   publishDrafts: { ...publishDraftsZh },
   nav: { ...navZh },
+  notFound: { ...notFoundZh },
   tabBar: { ...tabBarZh },
   sidebar: { ...sidebarZh },
   copyLibrary: { ...copyLibraryZh },

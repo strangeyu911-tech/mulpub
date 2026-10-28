@@ -57,6 +57,11 @@ const routes = [
   { path: '/rewrite', name: 'Rewrite', component: () => import('@/views/RewriteView.vue') },
   { path: '/hot-topics', name: 'HotTopics', component: () => import('@/views/HotTopics.vue') },
   { path: '/podcast', name: 'PodcastChannel', component: () => import('@/views/PodcastChannelView.vue') },
+  // 兜底路由（阶段 1.9）：未登记路径过去落到"无匹配 ⇒ 内容区整块空白"，用户既看不到提示也没有出口。
+  // 位置是**可读性约定**，不是匹配防线：vue-router 4 按 rank（静态 > 参数 > 通配）排序后匹配，
+  // 变异实测把通配挪到首位时 /publish 仍解析到 Publish。真正守"不吞既有路由"的是
+  // catchall-route.test.js 里逐条真实路由的解析对照。
+  { path: '/:pathMatch(.*)*', name: 'NotFound', component: () => import('@/views/NotFound.vue') },
 ]
 
 const router = createRouter({

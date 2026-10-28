@@ -6,7 +6,7 @@ date: 2026-10-21
 
 # 公众号与微博发布失败（publish-fix-wechat-weibo，2026-10-21）
 
-> 分支 `publish-fix-wechat-weibo`（worktree `D:/全局项目库/mp-worktrees/mp-publish-fix-wx-wb`），起点 `7f3ebb6` = 当时 origin/main。
+> 分支 `publish-fix-wechat-weibo`（worktree `<worktree-root>/mp-worktrees/mp-publish-fix-wx-wb`），起点 `7f3ebb6` = 当时 origin/main。
 
 ## 现场
 
@@ -30,7 +30,7 @@ date: 2026-10-21
 
 取证方式：用应用自己的 RPA 会话（`account-f2667801`，已登录）触发一次发布，在它填表阶段从 CDP 读页面结构。因为旧 `content_textarea` 判据必然落空，流程走不到「点发送」，不会误发。
 
-实测结构（`D:/tmp/weibo-dom-probe.json`）：
+实测结构（`<tmp>/weibo-dom-probe.json`）：
 
 ```
 发布框  <textarea class="_input_1rz8r_8" placeholder="有什么新鲜事想分享给大家？">   ← 可见
@@ -111,17 +111,15 @@ publish done platform=wechat_mp url=...&appmsgid=100000236&token=***&lang=zh_CN
 | 第一性原因 | PASS | 微博：缺 publish_url + 旧版选择器全落空（真机 0 命中）；微信：回退链缺可信点击档（实机 `appReq:0`） |
 | 逃逸分析 | PASS | 既有测试只覆盖「行为层失败 → isolated 合成 click」这一条，从未断言点击**是否被页面接受**；微博选择器无任何真机判据，改版后全仓测试仍全绿 |
 | 修复 + 回归保护 | PASS | 新增 `rpa-behavior-mixin.click-fallback.test.js` 7 例、`weibo-selectors-live-dom.test.js` 5 例；既有的回退链用例按新链路拆成「可信命中 / 可信未命中」两条 |
-| 测试 | PASS | apps/desktop：click-fallback 7 + rpa-view-helpers 22 + cdp-input 8 = 30 passed；rpa-view-platforms 79 passed；packages/rpa-engine 全量 287 passed |
+| 测试 | PASS | 2026-10-28 rebase 后复跑：apps/desktop `vitest` → `stealth/rpa-behavior-mixin.click-fallback.test.js` **7 passed**、`rpa-view-helpers.test.js` **15 passed**、`wechat-mp-draft-mediaid.test.js` **22 passed**（合计 44）；packages/rpa-engine 全量 **290 passed / 10 文件**（含 `tests/weibo-selectors-live-dom.test.js`） |
 | ESLint | PASS | 改动文件 0 error（修掉了 `no-useless-assignment` 两处） |
 | 真机验证 | 微信 PASS / 微博 部分 | 微信：实跑存草稿成功（落点 896,705、URL 带 `appmsgid=100000236`、`phase-success` percent=100）；微博：DOM 结构已按真机取证，但**未真发**（发一条微博是对外动作，未获授权） |
-| QM-1 打包 | 待 CI | 本机依赖为跨盘 junction（store 在 C 盘、worktree 在 D 盘），无法本地产包 |
-| QM-6 双模型评审 | 未执行 | 触及点击基础设施（所有平台共用），属需要外部轴复核的面 |
-| 远程同步 | PENDING | PR 未合并 |
+| QM-1 打包 | 由 CI 实证 | 本 PR 的 `Build & Release` job 在 `package-relevant=true` 时执行 `electron-builder --win --x64 -p never` + `check-asar-test-files.js`（app.asar / resources 两通道），以该 run 读数为准；本次会话的 worktree 与 pnpm store 同在 D 盘，未重复本地产包 |
+| QM-6 双模型评审 | 未执行（tier 缺席，如实登记） | 本机无 `codeagent-wrapper`，`sh scripts/deep-review.sh` 未跑；触及点击基础设施（所有平台共用）属需要外部轴复核的面 —— 不以自审冒充通过 |
+| 远程同步 | 由门禁推导 | 收口由 scripts/lib/merge-ledger.js 按主干历史推导（squash 尾注 (#4168)），合并前不写状态词 |
 
 ## 未闭合（不假装已修好）
 
 - **微博未真发验证**：选择器与 URL 已按真机 DOM 更新，但仍需一次真实发布确认「发送」能成功、且标题合并进正文（微博 `titleMode=caption`）的格式正确。
 - B 站图文专栏通道：另立需求。
 - 验证过程在公众号草稿箱留下了两条测试草稿（标题含「DOM取证-可删」「批量删除修复验证-可删」），需手动删除；微博侧未产生任何内容。
-
-| 远程同步 | 由门禁推导 |

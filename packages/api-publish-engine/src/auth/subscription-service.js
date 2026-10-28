@@ -1,15 +1,12 @@
 'use strict'
-
 /**
  * 会员中心 · 订阅服务：兑换码核销 / 后台开通 / 到期惰性降级 / 视图组装。
  * 真源：01-docs/DESIGN-MEMBER-CENTER-2026-09-23.md §3.1/§3.3/§3.5。
  * 多表写入一律走 repository.commerceTransaction；错误统一 CommerceError{code,status} 由路由层映射 HTTP。
  */
-
 const crypto = require('crypto')
 const { PLAN_IDS, getPlanEntitlement, planRank } = require('./plan-matrix')
 const { resolvePrice } = require('./promo-resolver')
-
 // 排除易混淆字符 I/O/0/1；格式 4-4-4（与 LicenseManager.activate 的输入习惯兼容）。
 const REDEEM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const REDEEM_CODE_PATTERN = /^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{4}$/
@@ -119,6 +116,8 @@ class SubscriptionService {
     // 支付通道适配器（PaymentProvider）。未注入 ⇒ 下单入口 fail-closed 503，
     // 兑换码/后台开通两条既有通道不受影响（它们本就不经过供应商）。
     this.paymentProvider = options.paymentProvider || null
+    // P1-5：订阅生效/续叠后发放官方积分；未注入（测试/旧装配）时跳过，不影响订阅主链路。
+    this.creditRepository = options.creditRepository || null
     // 标准版月付促销配置（由 logto-runtime 从 env 装配后注入）。null = 不做任何促销判定，
     // 与「促销关闭」等价；配置非法在装配期就已抛错，不会走到这里。
     this.promoConfig = options.promoConfig || null
@@ -202,6 +201,7 @@ class SubscriptionService {
     await this.settleExpiry(userId)
     const subscription = await this.repository.getActiveSubscription(userId)
     const plan = subscription ? subscription.plan : 'free'
+    if (plan === 'free') await this._grantFreeMonthlyCredits(userId)
     return {
       plan,
       status: subscription ? subscription.status : 'free',
@@ -292,7 +292,7 @@ class SubscriptionService {
     if (!REDEEM_CODE_PATTERN.test(normalized)) {
       throw new CommerceError('兑换码格式不正确（形如 ABCD-EFGH-JKMN）', 'REDEEM_CODE_FORMAT', 400)
     }
-    return this.repository.commerceTransaction(async (tx) => {
+    const result = await this.repository.commerceTransaction(async (tx) => {
       const row = await tx.lockRedeemCode(normalized)
       if (!row) throw new CommerceError('兑换码不存在', 'REDEEM_CODE_NOT_FOUND', 404)
       if (row.status === 'used') {
@@ -345,6 +345,8 @@ class SubscriptionService {
         periodEnd: applied.periodEnd ?? null,
       }
     })
+    await this._grantCreditsForApplied(userId, result)
+    return result
   }
 
   /** 后台开通（ops-center，阶段 1 不走支付）：channel=admin_grant，金额 0。 */
@@ -355,7 +357,7 @@ class SubscriptionService {
     if (!Number.isInteger(durationDays) || durationDays <= 0) {
       throw new CommerceError('时长必须为正整数天', 'DURATION_INVALID', 400)
     }
-    return this.repository.commerceTransaction(async (tx) => {
+    const result = await this.repository.commerceTransaction(async (tx) => {
       // provider_reference 在 identity_subscriptions 上是 UNIQUE（migrations/postgresql/002_logto_identity.sql:29），默认值必须逐次唯一，
       // 否则同一 operator 连续给两个用户开通时第二个必然撞唯一约束导致整个事务回滚。
       const grantOrderId = `ord-${crypto.randomUUID()}`
@@ -395,6 +397,8 @@ class SubscriptionService {
         periodEnd: applied.periodEnd ?? null,
       }
     })
+    await this._grantCreditsForApplied(userId, result)
+    return result
   }
 
   // createRedeemBatch（批量签发）已搬去 ./subscription-redeem-batch.js（mixin）。
@@ -479,6 +483,7 @@ class SubscriptionService {
 // 注意：本行必须排在 class 定义之后、module.exports 之前 —— require 是循环的一侧，
 // subscription-payment.js 内部用惰性 require 取 CommerceError（见该文件 commerceError()）。
 require('./subscription-payment').applySubscriptionPaymentOps(SubscriptionService)
+require('./subscription-credit-grant').applySubscriptionCreditGrantOps(SubscriptionService)
 // 006 兑换码批量签发（含 issued_to 透传）：同样以 mixin 体例挂上，见该文件头注释。
 require('./subscription-redeem-batch').applySubscriptionRedeemBatchOps(SubscriptionService)
 

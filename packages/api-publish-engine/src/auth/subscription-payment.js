@@ -282,7 +282,7 @@ class SubscriptionPaymentOps {
         409,
       )
     }
-    return this.repository.commerceTransaction(async (tx) => {
+    const result = await this.repository.commerceTransaction(async (tx) => {
       // 回调留痕（PRD §15.9）：回调到达必须有持久化痕迹，事后追查不能只靠日志。
       // 幂等键是订单号 —— 同一单的重复投递落到同一行、`claimed=false` 时**直接短路**，
       // 连 markOrderPaid/applySubscription 都不再执行（比只靠 UNIQUE 冲突更早拦住）。
@@ -378,6 +378,7 @@ class SubscriptionPaymentOps {
         requestedPlan: order.plan,
         downgradeSuppressed: applied.downgradeSuppressed === true,
         orderId: orderId,
+        periodStart: applied.periodStart ?? null,
         periodEnd: applied.periodEnd ?? null,
         // 三值语义，**键永远存在**（缺键会被读成"成功"）：
         //   true  = 已落库
@@ -390,6 +391,8 @@ class SubscriptionPaymentOps {
         maxPromoPurchases,
       }
     })
+    await this._grantCreditsForApplied(order.user_id, result)
+    return result
   }
 }
 

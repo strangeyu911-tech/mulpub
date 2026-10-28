@@ -4,6 +4,7 @@ const { LogtoWebhookConsumer } = require('./logto-webhook')
 const { signEntitlement } = require('./entitlement')
 const { PostgresEntitlementProvider, PostgresIdentityRepository } = require('./postgres-identity-repository')
 const { SubscriptionService } = require('./subscription-service')
+const { PostgresCreditRepository } = require('./credit-repository')
 // 促销配置在**装配期**从 env 读一次（改 env 需重启生效，与决策表一致）；
 // 配置非法（endsAt ≤ startsAt / price ≥ listPrice）在这里直接抛 PROMO_CONFIG_INVALID。
 const { buildStandardMonthlyPromoConfig } = require('./plan-matrix')
@@ -144,6 +145,7 @@ async function createLogtoRuntime(options = {}) {
       planOverrides: options.planOverrides || null,
       paymentProvider,
       promoConfig,
+      creditRepository: options.creditRepository || (repository.pool ? new PostgresCreditRepository({ pool: repository.pool }) : null),
     })
     const webhookKey = String(env.LOGTO_WEBHOOK_SIGNING_KEY || '')
     const createWebhookConsumer = options.createWebhookConsumer || ((consumerOptions) => new LogtoWebhookConsumer(consumerOptions))

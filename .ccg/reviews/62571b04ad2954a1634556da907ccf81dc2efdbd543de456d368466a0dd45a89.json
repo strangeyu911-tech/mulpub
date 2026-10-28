@@ -1,0 +1,69 @@
+{
+  "sha": "88640e1c0f483be4e075383255c07c3e3a87a6da",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 240 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 240,
+    "fileCount": 10,
+    "codeFileCount": 7,
+    "sensitivePathHits": [
+      "packages/api-publish-engine/src/auth/credit-grant.js",
+      "packages/api-publish-engine/src/auth/logto-runtime.js",
+      "packages/api-publish-engine/src/auth/subscription-credit-grant.js",
+      "packages/api-publish-engine/src/auth/subscription-payment.js",
+      "packages/api-publish-engine/src/auth/subscription-service.js"
+    ],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "62571b04ad2954a1634556da907ccf81dc2efdbd543de456d368466a0dd45a89",
+  "decidedAt": "2026-10-28T03:56:42.288Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [],
+    "findings": null,
+    "template": ".adversarial\\ccg-deep-43e85314\\adjudication.json",
+    "note": "裁决尚未填写：5/5 条未定（i1, i2, i3, i4, i5）",
+    "at": "2026-10-28T03:59:41.977Z",
+    "tier": "external",
+    "closureNote": "tier 由会话手写（self-play + 公开复核）。轮次 1/3：5 条问题，最低分 4；i1/i2 假阳性，i3/i4/i5 接受并写明理由；公开证据见 PR 评论。",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4582#issuecomment-6460324701"
+  }
+}

@@ -1,6 +1,6 @@
 # 会员档位机制（MEMBER TIERS MECHANISM）
 
-> **状态**：🟢 现行（v3.8，2026-10-28）
+> **状态**：🟢 现行（v3.9，2026-10-28）
 > **数值真源**：`packages/api-publish-engine/src/auth/plan-matrix.js`（`PLAN_MATRIX_VERSION = 2026-10-26`）
 > **价格与积分推导**：`01-docs/PRD-CREDIT-PRICING-2026-10-25.md`
 > **价格解释**：`01-docs/pricing-strategy.md` §1–§2
@@ -128,7 +128,7 @@
 
 - **卖什么**：AI 写稿（不限次数）、官方积分（30/1500/3000）、视频创作（免费不可用）、模型档（规划）。
 - **为什么愿意付**：写作是习惯，视频是产出；官方模型的成本用积分计量，不再叠「次数」。
-- **谁强制**：`ai_write` 全档可用且不限次数；官方积分无扣减引擎；`video_create` 已派生但免费未被拦；`tier_access_*` 无消费点。
+- **谁强制**：`ai_write` 全档可用且不限次数；官方积分由订阅/兑换/支付发放（P1-5），扣减走 `POST /api/v1/credit/consume`；`video_create` 免费已拦（P1-1/P1-1b）；`tier_access_*` 无消费点。
 - **成本**：这是唯一有真实成本的一层（模型算力）。视频若走本地渲染，成本在用户机器；若上云，需重新算。
 
 ### 3.4 L4 商业化层
@@ -188,8 +188,8 @@
 
 | # | 权益项 | 免费版 | 标准版 | 专业版 | 计量/重置 | 差异强度 | 证据/备注 |
 |---|---|---|---|---|---|---|---|
-| 13 | AI 写稿 | 不限 | 不限 | 不限 | 官方模型扣积分；BYOK 不扣 | 无差异 | `aiWriteMonthly` 建议三档 -1；无消费点 |
-| 14 | 官方积分（月度额度） | 30 | 1500 | 3000 | 月度发放，月末清零 | **展示** | 无 grant/consume 引擎接线 |
+| 13 | AI 写稿 | 不限 | 不限 | 不限 | 官方模型扣积分；BYOK 不扣 | 无差异 | `aiWriteMonthly` 三档 -1（P1-5 断言） |
+| 14 | 官方积分（月度额度） | 30 | 1500 | 3000 | 按订阅周期发放 | **硬（服务端账本）** | 订阅/兑换/支付 grant + `/credit/consume`（P1-5） |
 | 15 | 视频创作 | 不提供 | 可用 | 可用 | 不设条数上限 | **硬（客户端入口）** | `features.video_create`；`/create` 整页门禁 + 采集/热门选题就地入口（P1-1） |
 | 16 | 可用模型档 | 基础 | 标准 | 高阶 | — | **展示** | `model_tier` / `tier_access_*` 无模型路由消费点 |
 | 17 | AI 图片/封面 | 可用 | 可用 | 可用 | 按积分 | 无差异 | 矩阵无图片额度字段 |
@@ -244,8 +244,8 @@
 | **自定义自动化** | — | 10 条工作流 / 50 条·日 | 50 条 / 500 条·日 | 已交付（P1-4） |
 | **视频创作** | — | ✓ | ✓ | 已交付（P1-1，客户端入口） |
 | **知识库** | — | ✓ | ✓ | 已交付（P1-2，客户端入口） |
-| **AI 写稿** | 不限（积分/BYOK） | 不限（积分/BYOK） | 不限（积分/BYOK） | 待接线（当前无消费点，实际不限） |
-| **官方积分** | 30/月 | 1,500/月 | 3,000/月 | 待接线（P1） |
+| **AI 写稿** | 不限（积分/BYOK） | 不限（积分/BYOK） | 不限（积分/BYOK） | 已交付（P1-5，`aiWriteMonthly=-1`） |
+| **官方积分** | 30/月 | 1,500/月 | 3,000/月 | 已交付发放（P1-5）；消费端点为 Phase 2 |
 | **数据看板** | 基础（3 面板） | 完整 | 完整 | 已拦截（软） |
 | **发布历史** | 7 天 | 90 天 | 365 天 + 导出 | 规划（P2） |
 | **并发任务** | 1 | 3 | 10 | 待接线（P1） |
@@ -333,7 +333,7 @@
 | D | `max_platforms` 判据收到数组，`Number(array)=NaN` | 平台数上限从未生效 | `plan-capabilities.js:67-69` | ✅ 已随平台轴退役（P0）：全档 `-1`，不再作为套餐轴；判据不再被调用 |
 | E | 桌面本地发布/批量/定时绕过服务端 | 不扣额、不校验数量 | `batch-manager.js`；`scheduler.js` | 接受为本地荣誉制；账号/功能在客户端拦 |
 | F | `api_key` legacy 与「无 businessUser」直接放行 | 门禁不是全调用面覆盖 | `plan-capability-guard.js:24-25`；`publish-api-server.js:566-573` | P1：收敛绕过面，至少记审计 |
-| G | AI/积分额度无 consume/grant | 免费可无限用官方模型；付费额度是空数字 | `plan-matrix.test.js:193`；`subscription-service.js:112-121` | P1：接 consume/grant + 失败退回 |
+| G | AI/积分额度无 consume/grant | 免费可无限用官方模型；付费额度是空数字 | `plan-matrix.test.js:193`；`subscription-service.js:112-121` | ✅ 已修（P1-5）：订阅/兑换/支付发放；`/credit/consume` Phase 2；AI 写稿三档 -1 |
 | H | `schedule_batch` / `video_create` / `tier_access_*` 无消费点 | 功能轴全是纸面承诺 | 全仓 grep 仅命中派生与测试 | `video_create` ✅ 已接（P1-1 客户端 + P1-1b IPC）；其余 P1：逐 feature 补消费点或删除 |
 | I | `UsageQuota.vue` 直接渲染原始 quota 键 | `-1` 显示 `-1`、英文键不本地化 | `UsageQuota.vue:26-35` | P2：接 `quotaLabelOf/quotaValueText` |
 | J | `labels.js` 缺新 feature/quota 文案 | 会员中心回退英文码 | `labels.js:52-72` | P2：补齐 zh/en |
@@ -357,7 +357,7 @@
 | 自定义自动化 | 免费不可用；标准 10 条/50 条·日；专业 50 条/500 条·日 | ✅ 已交付（P1-4） | 主进程 save/import + runner；见 `PRD-MEMBER-TIER-AUTOMATION-QUOTA-2026-10-28.md` |
 | 视频创作 | 免费入口关闭；标准/专业可用 | ✅ 已交付（P1-1 + P1-1b） | 客户端入口 + IPC 启动通道；见 `PRD-MEMBER-TIER-VIDEO-GATE-2026-10-27.md` / `PRD-MEMBER-TIER-VIDEO-IPC-GATE-2026-10-27.md` |
 | 知识库 | 免费入口关闭；标准/专业可用 | ✅ 已交付（P1-2） | 客户端入口层；见 `PRD-MEMBER-TIER-KNOWLEDGE-BASE-2026-10-27.md` |
-| 官方积分 | 耗尽后引导 BYOK / 积分包；不锁发布 | 无扣减 | P1 consume + 引导 |
+| 官方积分 | 耗尽后引导 BYOK / 积分包；不锁发布 | 已交付发放（P1-5）；耗尽引导待接 | P1 consume + 引导 |
 | 登录设备 | 超限提示注销最旧设备，不静默踢线 | 无 cap | P1 |
 | 每日发布 | 不设上限；50 条/日软提醒（防滥用） | 无 | 可选 |
 
@@ -559,6 +559,7 @@
 | 2026-10-27 | 机制 v3.6 | P1-2 落地：`knowledgeBase` 矩阵开关 → `features.knowledge_base`；`/knowledge-base` 整页门禁；缺失/空 features 仍 fail-open |
 | 2026-10-27 | 机制 v3.7 | P1-3 落地：`maxScheduledTasks` 0/100/-1；`scheduler:create` 统计待执行单篇 + scheduled 批次；客户端免费档 IPC 前拦截；返回 `SCHEDULE_LIMIT_EXCEEDED` |
 | 2026-10-28 | 机制 v3.8 | P1-4 落地：`maxWorkflows` 0/10/50 + `automationDailyItems` 0/50/500；workflow-service save/import 判条数；workflow-runner 与 guardrail 取更严；schema 上限 500 |
+| 2026-10-28 | 机制 v3.9 | P1-5 落地：订阅/兑换/支付/免费档发放官方积分（30/1500/3000，按周期幂等）；AI 写稿三档 `-1` 契约固化；消费沿用 `/api/v1/credit/consume` |
 
 ## 附录 C：证据索引
 

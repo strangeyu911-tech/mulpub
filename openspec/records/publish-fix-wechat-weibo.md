@@ -103,6 +103,14 @@ publish done platform=wechat_mp url=...&appmsgid=100000236&token=***&lang=zh_CN
 
 点击落在保存按钮区域内（848,687 + 98×36 ⇒ 中心 897,705），URL 带回 `appmsgid=100000236`，任务判成功。
 
+## 2026-10-28 rebase 说明（同一修复的落点归并）
+
+微博的 `publish_url` 与「图文入口指向首页」这两处，与同批的 `fix-publish-cover-url`（PR #4074）**同值同处**。
+两个 PR 各带一份会在 `config/platforms.yaml` 的 weibo 段产生重复键，因此本 PR rebase 时**丢弃自己的那一份**，
+由 #4074 承担（单一真源）；`scripts/verify-platform-onboarding.test.js` 的 weibo 块行数快照随之走 #4074 的取值
+（本 PR 不再改该快照）。本 PR 实际承载的是微博**选择器**与**微信保存点击**两条修复。
+丢弃前实测：本 PR 的 weibo 块 +4 行（14→18）而快照仍写 14 ⇒ `verify-platform-onboarding` 红（`not ok 11`）；
+丢弃后该测试 **21/21 pass**。
 ## 执行记录
 
 | 门禁 | 状态 | Fresh 证据 |

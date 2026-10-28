@@ -18,7 +18,7 @@ const PlatformConfig = require('@multi-publish/shared-utils/src/platform-config'
 const { isNoTitlePlatform, isNoBodyVideoPlatform } = require('@multi-publish/shared-utils/src/publish-capabilities')
 const { platformSelectors } = require('@multi-publish/rpa-engine')
 const { resolvePublishSelectors } = require('@multi-publish/rpa-engine/src/publish-selectors-by-content-type')
-const { getPublishUrl } = require('@multi-publish/api-publish-engine/src/platform-entries')
+const { getPublishUrl, resolvePublishUrl } = require('@multi-publish/api-publish-engine/src/platform-entries')
 const { isApiTrack } = require('@multi-publish/api-publish-engine/src/api-router')
 const { buildXhsVideoRefusal } = require('./xiaohongshu-draft-guard')   // 仅作草稿流程异常时的 fail-closed 兜底
 // 2026-10-02 头条兜底：DOM 被闭包门控拦下 ⇒ 失败时走「页面内 SDK 签名 + Node 直连」（toutiao-direct-bridge）
@@ -186,10 +186,13 @@ const platformsMixin = {
     // 这里收集**硬性内容字段**的填写结果，draftOnly 据此 fail-closed。
     const fillReport = { title: null, content: null, tags: null, upload: null }
 
-    if (!config.publish_url) { log.warn('RpaView', '[' + platform + '] no publish_url configured'); return { success: false, error: platform+' no publish_url', platform: platform } }
+    // 2026-10-20（fix-publish-failures）：缺 publish_url 时先走双入口映射兜底（微博无专用方法，只能走 generic），
+    // 映射也没有才 fail-closed。兜底口径收敛在 platform-entries.resolvePublishUrl（单一真源，本文件零增长）。
+    const publishUrl = resolvePublishUrl(platform, article && article.video_path ? 'video' : 'image', config.publish_url)
+    if (!publishUrl) { log.warn('RpaView', '[' + platform + '] no publish_url configured (config + entries 双入口映射均未命中)'); return { success: false, error: platform + ' no publish_url', platform: platform } }
 
     this._emitProgress(platform, 'navigating...', 5)
-    await this._navigateAndWait(win, config.publish_url, 3000)
+    await this._navigateAndWait(win, publishUrl, 3000)
 
     const curUrl = win.webContents.getURL()
     if (curUrl.includes('login')||curUrl.includes('passport')||curUrl.includes('signin')) {

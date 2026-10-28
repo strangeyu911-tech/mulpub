@@ -120,6 +120,7 @@ import SidebarServiceStatus from '@/components/SidebarServiceStatus.vue'
 import SidebarUpdateButton from '@/components/SidebarUpdateButton.vue'
 import { invokePageManager, getApi } from '@/api/electron-bridge'
 import { useTabStore } from '@/stores/tab'
+import { useVisibleNavigation } from '@/composables/useVisibleNavigation'
 import { opsCenterSyncAppMenu, onOpsCenterRuntimeUpdated } from '@/api/ops-center-sync'
 import { useAppVersion } from '@/composables/useAppVersion'
 import brandLogoUrl from '@/assets/brand/tom-fish-logo.png'
@@ -195,28 +196,25 @@ const navPath = computed(() => {
  *   ① 聚焦内嵌主页实例（home-shell）→ 经 IPC 定向让该实例自身 router.push；
  *   ② 聚焦普通网页标签 → 先切回首页标签再导航，让变化可见；
  *   ③ 聚焦首页标签 → 维持原有主窗口路由跳转。
+ * 三段判断（内嵌主页实例定向 / 先切回首页标签 / 才 push）的单一实现在
+ * `@/composables/useVisibleNavigation`，全局快捷键入口（App.vue 的 app:navigate）
+ * 共用同一段——曾经这里抄了一份、快捷键那条路只做了裸 push，于是同一个动作
+ * 鼠标看得见、键盘看不见（UX 审计 1.5）。这里不得再复制判断。
  * 契约与判据见 01-docs/PRD-APP-ROUTE-NAV-VISIBILITY-2026-10-23.md。
  */
+const { navigateVisibly } = useVisibleNavigation({ tabStore, router, apiGetter: () => getApi() })
+
+/**
+ * 侧边栏的导航入口。
+ *
+ * 为什么保留这个名字与 `async` 形态：`src/visible-route-navigation-contract.test.js` 有一条结构锁
+ * 以 `async function onNavClick (to)` 为锚点断言「升级入口 / 头像菜单 / 菜单项都走同一个可 await 的入口」。
+ * 该锁是**加在 subscribe 形态之前**的老契约，改成别名（`{ navigateVisibly: onNavClick }`）会让它失去锚点 ——
+ * 那不是收敛实现，而是把一个既有判据弄瞎。所以这里留一层**只转发的薄包装**：判断逻辑仍然只有一份
+ * （在 `useVisibleNavigation.js`），本函数体内不出现任何定向/切标签分支。
+ */
 async function onNavClick (to) {
-  if (typeof to !== 'string' || !to) return
-  if (tabStore.activeTabIsHomeShell) {
-    const api = getApi()
-    try {
-      const res = api && api.pageManager && typeof api.pageManager.navigateActiveHomeShell === 'function'
-        ? await api.pageManager.navigateActiveHomeShell(to)
-        : null
-      if (res && res.data && res.data.handled) return
-    } catch (error) {
-      console.warn('[sidebar] navigate home-shell failed', error)
-    }
-  }
-  if (!tabStore.isHomeTab) {
-    const homeTab = tabStore.tabs.find((tab) => tab.isHome)
-    if (homeTab && tabStore.activeTabId !== homeTab.tabId) {
-      try { await tabStore.switchToTab(homeTab.tabId) } catch (error) { console.warn('[sidebar] switch home failed', error) }
-    }
-  }
-  try { await router.push(to) } catch (error) { console.warn('[sidebar] navigate failed', error) }
+  return navigateVisibly(to)
 }
 
 /** 「更多」组是否存在当前路由命中项（触发器常驻高亮依据，2026-09-21 选中态修复） */

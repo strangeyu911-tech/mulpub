@@ -46,6 +46,7 @@ import updateZh from './update/zh'
 import perfInsightsZh from './perf-insights/zh'
 import publishDestinationZh from './publish-destination/zh'
 import emptyStatesZh from './empty-states/zh'
+import errorStatesZh from './error-states/zh'
 import contentCategoriesZh from './content-categories/zh'
 import copyLibraryZh from './copy-library/zh'
 import publishZh from './publish/zh'
@@ -332,6 +333,7 @@ knowledgeBase: {
   // ── 热门选题页面 ──
   // ── EmptyState 空状态集中文案（存量硬编码迁移）──
   emptyStates: { ...emptyStatesZh },
+  errorStates: { ...errorStatesZh },
 
   // ── 统一内容类别（2026-10-03）：运营中心「内容类别管理」下发前的内置回退名 ──
   contentCategories: { ...contentCategoriesZh },

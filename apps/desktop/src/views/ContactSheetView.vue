@@ -22,10 +22,14 @@
     </div>
 
     <!-- 错误状态 -->
-    <div v-else-if="error" class="cs-error">
-      <p>{{ error }}</p>
-      <UiButton size="sm" @click="refresh">重试</UiButton>
-    </div>
+    <UiErrorState
+      v-else-if="error"
+      class="cs-error"
+      test-id="contact-sheet-error"
+      :title="error"
+      :retry-text="$t('errorStates.retry')"
+      @retry="refresh"
+    />
 
     <!-- 空状态 -->
     <EmptyState v-else-if="scenes.length === 0" :title="$t('emptyStates.contactSheet.title')" :description="$t('emptyStates.contactSheet.message')" />
@@ -114,6 +118,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, reactive, nextTick } from 'vue'
+import UiErrorState from '@/components/UiErrorState.vue'
 import { getApi } from '@/api/electron-bridge'
 import { useRoute } from 'vue-router'
 import UiButton from '@/components/UiButton.vue'

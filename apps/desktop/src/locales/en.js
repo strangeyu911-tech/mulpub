@@ -46,6 +46,7 @@ import updateEn from './update/en'
 import perfInsightsEn from './perf-insights/en'
 import publishDestinationEn from './publish-destination/en'
 import emptyStatesEn from './empty-states/en'
+import errorStatesEn from './error-states/en'
 import contentCategoriesEn from './content-categories/en'
 import copyLibraryEn from './copy-library/en'
 import publishEn from './publish/en'
@@ -332,6 +333,7 @@ knowledgeBase: {
   // ── Hot topics page ──
   // ── EmptyState centralized copy (migrated from inline hardcode) ──
   emptyStates: { ...emptyStatesEn },
+  errorStates: { ...errorStatesEn },
 
   // ── Unified content categories (2026-10-03): built-in fallback names ──
   contentCategories: { ...contentCategoriesEn },

@@ -69,6 +69,12 @@ describe('PipelineSelector 静态卡片背景（方案 B）', () => {
     expect(loading.find('[data-testid="pipeline-selector-loading"]').exists()).toBe(true)
     const err = mountSelector({ loading: false, error: '加载失败' })
     expect(err.find('.error-state').exists()).toBe(true)
+    // ⛔ 只断"存在"是不够的：Vue 3 对**未注册**的自定义标签不报错，会原样渲染成一个空元素，
+    // 于是 `.error-state` 照样 exists()=true 而屏幕上什么都没有（本批迁移时实测：漏写
+    // `components: { UiErrorState }` 而这条老用例全绿）。断言必须落在"用户真看得见"上。
+    expect(err.find('[data-testid="pipeline-selector-error"]').attributes('role'), '错误必须被播报').toBe('alert')
+    expect(err.find('.ui-error-state__title').text()).toContain('加载失败')
+    expect(err.find('button[type="button"]').exists(), '错误态必须给得出重试出口').toBe(true)
   })
 
   // ── 带文案进入场景（rewrite-to-video-entry 2026-09-13）：非文案型流水线灰显不可选 ──

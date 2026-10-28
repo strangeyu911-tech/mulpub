@@ -1,0 +1,62 @@
+{
+  "sha": "0c64bf7770514738a8348222d223480c8add18db",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 784 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 784,
+    "fileCount": 19,
+    "codeFileCount": 15,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 1,
+    "docSensitiveContentSample": [
+      "- **旧自绘块的 CSS 规则没删**：`.pi-error` / `.cs-error` / `.error-state` 等仍在各视图 `<style>` 中，现与组件自身样式叠加。因此本批**不声明\"零视觉回归\"**——像素判定交给 CI 的 `QG Visual`（基线只能取自同一次 CI 渲染的既有口径），本机不拿截图消化，也不用 `--update-baseline`。"
+    ],
+    "ccgSensitiveContentHits": 1,
+    "ccgSensitiveContentSample": [
+      "      \"- **旧自绘块的 CSS 规则没删**：`.pi-error` / `.cs-error` / `.error-state` 等仍在各视图 `<style>` 中，现与组件自身样式叠加。因此本批**不声明\\\"零视觉回归\\\"**——像素判定交给 CI 的 `QG Visual`（基线只能取自同一次 CI 渲染的既有口径），本机不拿截图消化，也不用 `--update-baseline`。\""
+    ],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-26T05:02:05.829Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "claude",
+    "findings": [],
+    "closureNote": "第 2 轮（会话按门禁出口②手写收口，非 deep-review writeback、非外部直签）：本轮是 critic=claude 的真实深度评审尝试，引擎以 status=error 收场，错误原文写明「模型输出被截断、JSON 不完整，被砍断的是结尾字符串（共 5491 字符）」⇒ 评审确实跑过，但没有产出可解析的完整 findings。按本仓口径「有截断 ≠ 没有发现」复核截断片段：其中落出 1 条 Warning —— QuickRenderPanel.vue 迁移把 [data-testid=quick-retry] 的重试按钮换成组件后只剩 class，按钮锚点静默丢失。该条**成立（upheld）**，已修并留变异反证：① 组件加可选 retryTestId 并回传 quick-retry；② 收敛锁新增「由 origin/main:<file> 改动前 blob 派生」的锚点判据，现场读数 [ERR-ANCHOR] 已核对锚点 37 个（不手抄清单）；③ 正反两档各跑一次 —— 摘掉 retry-test-id ⇒ 1 failed 且逐字点名 video-creation/QuickRenderPanel.vue :: quick-retry，还原 ⇒ Test Files 2 passed / Tests 41 passed；本轮复跑 Test Files 3 passed / Tests 53 passed。处置结论：**驳回「欠深度审查」这条欠账**（成立项已修完并有用例与变异读数）；但**不声称评审已穷举** —— Info 档因截断未产出，属「未穷举」而非「无问题」，该限制已写入执行记录 §第二轮。tier 维持缺席（未声明 external），覆盖率读数里这一档可见。",
+    "error": "JSON解析失败:模型输出被截断，JSON 不完整：括号计数恰好配平（16/16，那是已闭合的内层对象），但结尾不是 }——真正被砍断的是最后一个字符串，共 5491 字符 —— 这通常意味着方案问题太多、模型输出超长被截断。重跑同样输入多半还是截断。可选：把方案拆小后分批评审，或先让 critic 只挑 Critical / Warning、暂不要求 Info。",
+    "validationErrors": null,
+    "at": "2026-10-26T05:06:16.842Z"
+  }
+}

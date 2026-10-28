@@ -34,10 +34,15 @@
 
     <div class="cohere-content">
       <!-- 加载失败横幅：可重试，不吞错误 -->
-      <div v-if="loadError" class="pi-error" data-testid="pi-error">
-        <span>{{ t('perfInsights.loadFailed') }}</span>
-        <el-button link size="small" @click="loadData">{{ t('perfInsights.refresh') }}</el-button>
-      </div>
+      <UiErrorState
+        v-if="loadError"
+        class="pi-error"
+        test-id="pi-error"
+        :title="t('perfInsights.loadFailed')"
+        :hint="t('errorStates.genericHint')"
+        :retry-text="t('errorStates.retry')"
+        @retry="loadData"
+      />
 
       <!-- 数据概览条：仅在有数据时呈现 -->
       <div v-if="!loading && rows.length > 0" class="pi-overview" data-testid="pi-overview">
@@ -136,6 +141,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import UiErrorState from '@/components/UiErrorState.vue'
 import { userFacingErrorMessage } from '@/utils/user-facing-error'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'

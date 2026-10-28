@@ -1,0 +1,59 @@
+{
+  "sha": "b5a219d61f74e2e9b476c6e5bcd3b6c1ee58d04e",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 790 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 790,
+    "fileCount": 18,
+    "codeFileCount": 15,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 1,
+    "docSensitiveContentSample": [
+      "- **旧自绘块的 CSS 规则没删**：`.pi-error` / `.cs-error` / `.error-state` 等仍在各视图 `<style>` 中，现与组件自身样式叠加。因此本批**不声明\"零视觉回归\"**——像素判定交给 CI 的 `QG Visual`（基线只能取自同一次 CI 渲染的既有口径），本机不拿截图消化，也不用 `--update-baseline`。"
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-26T04:58:33.150Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": [],
+    "closureNote": "第 1 轮（会话按门禁出口②手写收口，非 deep-review writeback、非外部直签）：本条是同一 diff 的**前一次**深度评审尝试，status=pending 表示该轮**没有产出任何结论**（随后被 05:06 那一轮取代，载体为 .ccg/reviews/0c64bf77….json）。因此本记录不承载任何风险结论，也不得被读成「评审通过」：实质裁决在那条记录里 —— 那一轮跑到 critic 输出被截断，截断片段中的 1 条 Warning（按钮锚点静默丢失）成立并已修完，留有用例与正反两档变异读数（Test Files 3 passed / Tests 53 passed）。处置结论：本条按「未完成即被取代」驳回其欠账，不另立风险项、不重复登记同一条 Warning；若后续要求逐轮留痕，正解是重跑 sh scripts/deep-review.sh 让引擎自己写 cleared / needs_revision，而不是继续手写闭环值。tier 维持 unknown（未声明 external）。"
+  }
+}

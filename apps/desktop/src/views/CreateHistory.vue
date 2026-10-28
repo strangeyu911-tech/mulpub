@@ -31,7 +31,14 @@
         <UiSkeleton variant="list" :count="4" />
       </div>
       <div v-else>
-        <div v-if="renderError" class="history-error"><p>{{ renderError }}</p><UiButton size="sm" @click="loadRenders">重试</UiButton></div>
+        <UiErrorState
+          v-if="renderError"
+          class="history-error"
+          test-id="renders-error"
+          :title="renderError"
+          :retry-text="$t('errorStates.retry')"
+          @retry="loadRenders"
+        />
         <EmptyState v-if="renders.length === 0" icon="VideoCamera" :title="$t('emptyStates.createHistoryRenders.title')" :description="$t('emptyStates.createHistoryRenders.message')">
           <template #actions>
             <UiButton @click="$router.push('/create')">去创作</UiButton>
@@ -63,7 +70,14 @@
         <UiSkeleton variant="list" :count="4" />
       </div>
       <div v-else>
-        <div v-if="pipelineError" class="history-error pipeline-history-error"><p>{{ pipelineError }}</p><UiButton size="sm" @click="loadPipelines">重试</UiButton></div>
+        <UiErrorState
+          v-if="pipelineError"
+          class="history-error pipeline-history-error"
+          test-id="pipelines-error"
+          :title="pipelineError"
+          :retry-text="$t('errorStates.retry')"
+          @retry="loadPipelines"
+        />
         <EmptyState v-if="pipelines.length === 0" icon="🔄" title="暂无流水线运行记录" description="选择创作模式开始流水线，运行记录将在这里显示">
           <template #actions>
             <UiButton @click="$router.push('/create')">浏览流水线</UiButton>
@@ -106,6 +120,7 @@
 
 <script>
 import { VideoCamera } from '@element-plus/icons-vue'
+import UiErrorState from '@/components/UiErrorState.vue'
 import '@/styles/history-page.css'
 import { pipelineHistory } from '@/api/publisher'
 import UiButton from '../components/UiButton.vue'
@@ -123,7 +138,7 @@ function settleHistoryRequest (request) {
 }
 export default {
   
-  components: { UiButton },
+  components: { UiButton, UiErrorState },
   data() {
     return {
       tab: 'renders',

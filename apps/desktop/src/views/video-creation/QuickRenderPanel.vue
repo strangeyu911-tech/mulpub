@@ -114,10 +114,8 @@
       <UiButton data-testid="quick-view-result" @click="viewResult">{{ $t('create.story2video.ui.quickViewVideo') }}</UiButton>
     </div>
 
-    <div v-if="error" class="result-banner error">
-      <p data-testid="quick-error">{{ error }}</p>
-      <button class="btn-secondary" data-testid="quick-retry" @click="error = ''">{{ $t('create.story2video.ui.quickRetry') }}</button>
-    </div>
+    <UiErrorState v-if="error" class="result-banner error" test-id="quick-error" retry-test-id="quick-retry" :title="error"
+      :retry-text="$t('create.story2video.ui.quickRetry')" @retry="error = ''" />
 
     <input ref="imageInput" data-testid="quick-image-input" type="file" accept="image/*" multiple style="display:none" @change="onImagesPicked" />
     <input ref="audioInput" data-testid="quick-audio-input" type="file" accept="audio/*" multiple style="display:none" @change="onAudiosPicked" />
@@ -129,6 +127,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import UiErrorState from '@/components/UiErrorState.vue'
 import { useI18n } from 'vue-i18n'
 import UiButton from '@/components/UiButton.vue'
 import UiSelect from '@/components/UiSelect.vue'

@@ -8,11 +8,14 @@
     </div>
 
     <!-- 错误状态 -->
-    <div v-else-if="error" class="error-state">
-      <span class="error-icon">⚠️</span>
-      <p>{{ error }}</p>
-      <button class="retry-btn" @click="$emit('retry')">{{ t('pipelineSelector.retry') }}</button>
-    </div>
+    <UiErrorState
+      v-else-if="error"
+      class="error-state"
+      test-id="pipeline-selector-error"
+      :title="error"
+      :retry-text="t('pipelineSelector.retry')"
+      @retry="$emit('retry')"
+    />
 
     <!-- 流水线网格 -->
     <div v-else class="pipeline-grid" data-testid="pipeline-grid">
@@ -66,6 +69,7 @@
 </template>
 <script>
 import '@/styles/pipeline-selector.css'
+import UiErrorState from '@/components/UiErrorState.vue'
 import { PIPELINE_BG_IMAGES } from '@/story2video/pipeline-card-bg-assets'
 import {
   getPipelineCategory,
@@ -88,6 +92,7 @@ const STABILITY_MAP = {
 }
 
 export default {
+  components: { UiErrorState },
   name: 'PipelineSelector',
   props: {
     pipelines: { type: Array, default: () => [] },

@@ -13,10 +13,14 @@
     </div>
 
     <!-- 错误状态 -->
-    <div v-else-if="error" class="error-state">
-      <p class="error-msg">{{ error }}</p>
-      <UiButton @click="refresh">重试</UiButton>
-    </div>
+    <UiErrorState
+      v-else-if="error"
+      class="error-state"
+      test-id="project-library-error"
+      :title="error"
+      :retry-text="t('errorStates.retry')"
+      @retry="refresh"
+    />
 
     <!-- 空状态 -->
     <EmptyState
@@ -43,11 +47,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import UiErrorState from '@/components/UiErrorState.vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useProjectList } from '@/composables/useBacklot'
 import ProjectCard from '@/components/ProjectCard.vue'
-import UiButton from '@/components/UiButton.vue'
 import { confirmDanger } from '@/utils/confirm-danger'
 
 const { t } = useI18n()

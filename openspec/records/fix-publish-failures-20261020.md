@@ -65,8 +65,15 @@ delivered_by_pr: 4081
 ```
 ❌ TARGET_GREW: apps/desktop/electron/services/rpa-view-platforms.js 现 1518 行已超过点名目标 1499 行（超 19）。
 ```
+**主干前进后再测**（#4074 在同文件落 +6/−3 ⇒ 合并预览跟着变长；锚点必须跟实测值走，否则合并后主干立刻 TARGET_GREW 把下一个会话挡住）：
+```
+❌ TARGET_BUMP_HEADROOM: apps/desktop/electron/services/rpa-view-platforms.js 目标 1518 ≠ 当前 1521 行 ——
+   上调只允许恰好等于当前行数（超出的部分就是白送的免涨额度）
+❌ TARGET_GREW: apps/desktop/electron/services/rpa-view-platforms.js 现 1521 行已超过点名目标 1518 行（超 3）。
+```
+⇒ 最终锚点 = **1521**（`origin/main` 该文件判据计数 1499 + 本 PR `+26/−4`），仍与「恰好等于当前行数」逐字相等。
 
-**为什么这 23 行是实际增长（逐项点名，不许「无关漂移」）**：主干该文件 1495 行、目标 1499 行 ⇒ 余量 4 行。本 PR 原始净增 **85** 行（1580）。先做了一轮**下沉**：把「页面结构留证 + 微博产物证据」两项只读诊断整体搬到 `publish-diagnostics.js`（−62 行，与 2026-10-26 视频号点击链下沉 `tencent-publish-hooks.js` 同型），净增降到 **23**（`git diff --numstat origin/main` 为 `+26 / −4`）。余下 23 行逐项：
+**为什么这 22 行是实际增长（逐项点名，不许「无关漂移」）**：本 PR 原始净增 **85** 行（判据计数 1580，主干当时 1495）。先做了一轮**下沉**：把「页面结构留证 + 微博产物证据」两项只读诊断整体搬到 `publish-diagnostics.js`（−62 行，与 2026-10-26 视频号点击链下沉 `tencent-publish-hooks.js` 同型），净增降到 **22**（`git diff --numstat origin/main` 为 `+26 / −4`，两口径一致）。余下逐项：
 
 | # | 内容 | 行数 |
 |---|---|---|
@@ -79,7 +86,7 @@ delivered_by_pr: 4081
 | ⑦ | 诊断下沉点的指向注释 | +2 |
 | ⑧ | 删除的 4 行：旧 `_publish_generic` 单行 throw、旧 `saveWechatMpDraft` 单行调用、旧 `if (!saved.ok) return …` 单行、旧 `publishContext` 单行 | −4 |
 
-⇒ 判据计数 `1518`，与「采信当场读数、不给余量」的口径一致：`targets["apps/desktop/electron/services/rpa-view-platforms.js"]` 1499 → **1518**，`register.files` 保持 1422 不动（不放松 LEDGER_GREW 的 200 容差），条目未删、其它 targets 未动。
+⇒ 判据计数 `1521`（= `origin/main` 1499 + 本 PR +22），与「采信当场读数、不给余量」的口径一致：`targets["apps/desktop/electron/services/rpa-view-platforms.js"]` 1499 → **1521**，`register.files` 保持 1422 不动（不放松 LEDGER_GREW 的 200 容差），条目未删、其它 targets 未动。
 
 **修后读数**：
 ```
@@ -111,9 +118,9 @@ rc=0
 
 ## 遗留（不假装已闭合）
 
-- `依赖漏洞审计` 的红来自全局 deepmerge 新公告（#4452 承接），本支不改 baseline；主干合入后 rebase 一次即消失。
+- `依赖漏洞审计` 的红来自全局 deepmerge 新公告（#4452 承接，已于 2026-10-28 合入 `9b65a7cef`）；本支 rebase 到该主干后 `check-dep-audit` rc=0，未改任何 baseline。
 - QM-1 的真机三层判据未在本会话执行（见 §六）；合并前如需，应由具备桌面会话的会话补读数。
-- `rpa-view-platforms.js` 仍 1518 行、仍挂账待还；本 PR 只解决「本次增量」的重锚，还债路径见 §四末。
+- `rpa-view-platforms.js` 仍 1521 行、仍挂账待还；本 PR 只解决「本次增量」的重锚，还债路径见 §四末。
 
 ## CHANGELOG 条目
 

@@ -1,0 +1,65 @@
+{
+  "_comment": "本仓打算要求「必须绿才能合进 main」的 check 清单。这是**唯一允许手抄**的那一份——它本身就是被审计对象：判据拿它与 GitHub 现读的并集做双向差集（平台多=加了闸没人知道；平台少=闸被摘）。producedBy 由 .github/workflows 派生，登记面写错会当场红。mechanisms 只作如实记录，不参与判定。",
+  "required": [
+    {
+      "context": "Gate Result",
+      "producedBy": { "workflow": "quality-gate.yml", "job": "gate-result" },
+      "mechanisms": ["classic"],
+      "why": "全部门禁的聚合作业，required 挂它是为了不把矩阵里每个 job 名逐个登记成 required（matrix/分片名会漂移）"
+    },
+    {
+      "context": "QG Static",
+      "producedBy": { "workflow": "quality-gate.yml", "job": "static-gates" },
+      "mechanisms": ["ruleset"],
+      "why": "静态门禁本体（语法、结构、判据回归锁的落点之一）"
+    },
+    {
+      "context": "QG Unit Tests",
+      "producedBy": { "workflow": "quality-gate.yml", "job": "unit-tests" },
+      "mechanisms": ["ruleset", "classic"],
+      "why": "两套机制都挂了这一条（历史上分别加过），并集去重后仍是同一名"
+    },
+    {
+      "context": "QG Coverage",
+      "producedBy": { "workflow": "quality-gate.yml", "job": "coverage" },
+      "mechanisms": ["classic"],
+      "why": "覆盖率门；在 push 侧按 change ci-push-heavy-job-dedupe 的决定跳过、在 PR 侧产出结论（2026-10-27 复测 form=produced）。本刀立项时写的「main push 恒 skipped ⇒ 一条假闸」已被否证：那是只看 main push 的错域取证，原话保留在 required-check-debt.json 的 _否证记录 里"
+    },
+    {
+      "context": "electron-tests",
+      "producedBy": { "workflow": "electron-ci.yml", "job": "electron-tests" },
+      "mechanisms": ["ruleset"],
+      "why": "Electron 主进程/打包态测试；该 job 没有显式 name，check 名来自 job id"
+    },
+    {
+      "context": "build",
+      "producedBy": { "workflow": "build.yml", "job": "build" },
+      "mechanisms": ["classic"],
+      "why": "打包产物可构建（QM-1 的 CI 侧对应物）；同样只有 job id"
+    },
+    {
+      "context": "文档同步检查",
+      "producedBy": { "workflow": "doc-gate.yml", "job": "doc-sync" },
+      "mechanisms": ["ruleset"],
+      "why": "openspec/规格与实现的对账（归档、镜像联动都靠它）"
+    },
+    {
+      "context": "单元测试 + Lint",
+      "producedBy": { "workflow": "doc-gate.yml", "job": "ci-tests" },
+      "mechanisms": ["ruleset"],
+      "why": "doc-gate 作业自身的锁与 lint（纯文档 PR 也要跑的那一档）"
+    },
+    {
+      "context": "债务熔断检查",
+      "producedBy": { "workflow": "debt-guard.yml", "job": "debt-guard" },
+      "mechanisms": ["ruleset"],
+      "why": "欠账熔断：在飞 PR 的重算与积压报警"
+    },
+    {
+      "context": "GUI Gate Result",
+      "producedBy": { "workflow": "gui-test.yml", "job": "gui-gate-result" },
+      "mechanisms": ["ruleset"],
+      "why": "GUI E2E 的聚合作业；不直接收 gui-test 是因为路径判定下沉到作业层后，收下游会形成「判定作业坏了 ⇒ skipped ⇒ required 照满足」的洞"
+    }
+  ]
+}

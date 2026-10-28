@@ -1,0 +1,151 @@
+{
+  "sha": "51023380c2295f6178bcc5d4e7d19103206bbac8",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 138 行（≤ 200）但命中 auth/数据库/加密：敏感内容 3 处",
+  "stats": {
+    "changedLines": 138,
+    "fileCount": 4,
+    "codeFileCount": 4,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 3,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "6c1cee63c583a24a0ae445ae13b0d4aa6b92d0937b2fcc37e5f98efbfc44dc6d",
+  "decidedAt": "2026-10-28T03:25:02.909Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_blocked",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "domains": [
+          "datamigration"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "Mutation overlap claim OVERLAP-UNDECLARED=0 is false: M-J (空行) and M-K (顶格注释) share identical red name '注释后的 job 丢了：a,A' and message pattern on the same fixture (doc-gate.yml:95/96), yet are listed separately without overlap declaration; the defense's own table admits '同名同消息' and relies on M-J's extra lib#19 red, but M-K's expectation list does not include lib#23, making overlap detection purely cosmetic.",
+        "highRiskDomains": [],
+        "prosecution": "M-J 与 M-K 的期望红集里都含同名同消息的那一对（name=「顶格注释不得结束 jobs 区间…」msg=「注释后的 job 丢了：a,A」），因为夹具把空行紧挨着顶格注释写；单看这一对，两条变异确实不可分辨。若区分只靠\"红集大小\"，而 M-K 的台账并不含 lib#23，那么这套区分就是纸面的。",
+        "defense": "两点都被读数否证：① 驱动文件里两条变异**互相显式声明了 overlaps**（scripts/check-required-checks.mutation.js:194 与 :207，各带理由），本次跑打印的是 `OVERLAP-PAIR-DECLARED M-J × M-K pairs=1` 与 `OVERLAP-UNDECLARED=0`，不是 UNDECLARED 那一档；② M-J 的 expect 清单**确实含** lib#23，驱动日志原文 `[M-J] verdict=NAMED reds=3 … red#3 name=空行不得结束 jobs 区间…`。也就是说\"分档靠红集\"不是一句口号，而是当场可复算的差集。",
+        "verdict": "dismissed",
+        "rationale": "取数：`node scripts/check-required-checks.mutation.js`（现读 TOTAL=30 MUTATIONS=27 CONTROLS=3 NAMED=27 OVERLAP-UNDECLARED=0 RESULT=OK）+ `grep -n \"overlaps\" scripts/check-required-checks.mutation.js`（:194 与 :207 两处互指）。指控的\"without overlap declaration\"与\"M-K expect 不含 lib#23 ⇒ 只能靠 M-J 多一条红\"两半都不成立：前者被文件与读数同时否证，后者把\"红集互异\"这套机制本身当成了缺陷——而它正是本仓对\"防御重叠不可分辨\"的既有处置口径。"
+      },
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "finding": "External dependency injection: Gate 2b17 injects live `gh api` (45 calls, 65s, admin/read scope) into `changes` job. A runner-side 403/TLS failure produces SELF_FAULT rc=2; while advisory mode returns exit 0, it still emits `MODE=advisory verdict=SELF_FAULT rc=2`, which downstream parsers may treat as failure. No automatic rollback exists if external dependency fails permanently.",
+        "highRiskDomains": [
+          "datamigration"
+        ],
+        "prosecution": "这条门禁把 45 次 live `gh api` 注进 required 链路上的 changes 作业；外部依赖一旦长期失败（令牌被撤、API 变更、TLS 中间盒），判据永远只能出声不能判事，而仓内没有任何东西在跟踪「它已经多久没读到数」。",
+        "defense": "指控的三处技术断言逐条被实测否证，且它担心的失败模式恰是本笔改动要消灭的东西：① Actions 解析进程退出码而非 stdout 文本，`selfFaultExit` 在 advisory 分支 `return 0`（回归锁 cli#16 断言\"必须打印 verdict=SELF_FAULT rc=2 且返回 0\"）；② 403/无令牌那一格刚被真实 CI 照出（run 40621967491 / job 122597885269 打印 `gh rc=4`，旧实现恒返回 2 ⇒ 整步中止 ⇒ 其后 21 个 gate 全 skipped），本笔补 `env: GH_TOKEN: ${{ github.token }}` 并把恒 2 改掉；③ 判据只读 `branches/main/protection` 与 `rulesets/<id>`，不写平台也不写仓内文件 ⇒ 不存在回滚对象；\"多久没读到数\"由首行 `unproven=` 与 `MODE=… rc=` 两行常驻读数承担，翻 enforce 由 design D6 的 ⓪–② 三条量化前置人工把关。",
+        "verdict": "dismissed",
+        "rationale": "独立复核同判 dismissed：`codeagent-wrapper --backend claude --lite <prompt>` 载荷 3624 字节、rc=0、Session-ID d0f9713e-ee82-4c7e-892c-926c1f38950b，交付原文与本条收据同贴在同一条 PR 评论（URL 见 externalReview.evidenceRef）。复核另给出一条双方都没写到的真实失效模式（平台态读的是 main 当下，与 squash 合并的时序不同步），不构成指控成立的理由，已按\"外部依赖固有时延\"登记进执行记录未闭合清单。",
+        "externalReview": {
+          "performedBy": "claude",
+          "evidenceRef": "https://github.com/Colinchiu007/mulpub/pull/4580#issuecomment-6460289623",
+          "reviewedAt": "2026-10-28T04:02:04.798Z",
+          "verdict": "dismissed",
+          "rationale": "独立复核同判 dismissed：`codeagent-wrapper --backend claude --lite <prompt>` 载荷 3624 字节、rc=0、Session-ID d0f9713e-ee82-4c7e-892c-926c1f38950b，交付原文与本条收据同贴在同一条 PR 评论（URL 见 externalReview.evidenceRef）。复核另给出一条双方都没写到的真实失效模式（平台态读的是 main 当下，与 squash 合并的时序不同步），不构成指控成立的理由，已按\"外部依赖固有时延\"登记进执行记录未闭合清单。 复核交付全文（四条逐句验证 + 一条额外失效模式）在 evidenceRef 那条评论里。"
+        }
+      },
+      {
+        "id": "i3",
+        "severity": "Critical",
+        "finding": "Documentation/code coherence failure: proposal.md and design.md reference prerequisites (#3578 path-judge change, ledger before ruleset changes) as resolved facts, but `.ccg/reviews/3fe4171...json` shows `deepReview.status=pending` alongside completed `decidedAt`/`decidedBy`, creating contradictory metadata. Additionally `.adversarial/` is listed in `.gitignore` (line 543) but the proposal cites its contents as review evidence.",
+        "highRiskDomains": [],
+        "prosecution": "规格文字把前置条件写成既成事实（#3578 路径判定下沉、登记面先于规则集变更），而审计产物里 decidedAt/decidedBy 有值却 status 未闭合，读者会以为\"审过了\"；另外 .adversarial/ 在 .gitignore:543 里，评审原文不在仓内，任何\"六轮已收敛\"的说法都不可追溯。",
+        "defense": "两处事实不符：① 被点名的 `3fe4171….json` 现读是 `status=self_play_blocked tier=external tierBasis=adjudicated-self-play-honored`，不是 pending；`decidedAt/decidedBy` 属判定器（pre-commit）那层，`deepReview.*` 属评审那层，两个生命周期本不同源，不构成自相矛盾。② `grep -n adversarial openspec/changes/required-checks-ledger/proposal.md` 命中 **0 处** ⇒ proposal 从未把 .adversarial 内容当证据引用；唯一提到它的是 `openspec/records/ci-required-checks-ledger.md:30`，而那句话的内容正是\"原文只在盘上、仓内不可追溯、本文只承诺重取命令、要不要入库交人工（D11.1 第 4 条）\"——即这条限制已被登记为具名欠账，而不是被掩盖。",
+        "verdict": "dismissed",
+        "rationale": "取数：`node -e` 读该产物的 deepReview.status/tier/tierBasis 三字段 + `grep -c adversarial` 两个文档各一遍（现读 proposal=0、record=1 且那一条是欠账登记）。指控把\"已登记的透明限制\"读成\"文档说谎\"。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "REPO_SHAPE regex allows dots/dashes inside segments (SEG = '[A-Za-z0-9._-]'), which permits `a.` or `.foo` as segments before the endpoint is built; the defense claims validation happens before endpoint construction, but mutation M-S proves the old regex allowed `a/..`, meaning the regex fix itself is a security-sensitive change that must be tested independently of the mutation framework.",
+        "highRiskDomains": [],
+        "prosecution": "SEG 允许段内含点与连字符，读者会问 `a.`、`.foo` 这类\"看着像但语义不是仓库名\"的值是否被放过去；而且这条正则的收紧发生在拼 endpoint 之前，属安全敏感面，只靠变异框架自证不够。",
+        "defense": "形态上就不成立：SEG 要求**首字符**与**尾字符**都落在 `[A-Za-z0-9_-]`，点只允许出现在段中间，所以 `a.`（尾点）与 `.foo`（首点）均被拒；当场实测 `CLI.REPO_SHAPE.test(\"a.\")=false`、`.test(\".foo\")=false`、`.test(\"a/..\")=false`、`.test(\"my.repo/my-name\")=true`。\"必须独立于变异框架被测\"这半句也已被满足：cli#14 是一条不依赖驱动的单元锁（`node --test scripts/check-required-checks.test.js` 现读 17 passed），M-S 只是用来证明这把锁有牙。",
+        "verdict": "dismissed",
+        "rationale": "取数：`node -e` 打印上述五个 test 值；`node --test scripts/check-required-checks.test.js`（17/17）。指控的两半（放行脏值、只有变异框架在测）分别被正则实现与一条独立单元锁否证。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "Debt mechanism fragility: `scripts/required-check-debt.json` uses `_否证记录` and `readDebt` filters `_` keys, but mutation M-U removes that filter and debt count jumps to 2 (non-zero), violating `MAX_DEBT=0`. The defense relies on a single mutation to prove the filter exists, with no structural guard ensuring `_` keys are never counted regardless of filter presence.",
+        "highRiskDomains": [],
+        "prosecution": "欠账面靠 `_` 前缀过滤把留档键排除在计数之外；如果实现被改回去，MAX_DEBT=0 这一格会怎样发现？只有一条变异在证明过滤器存在，没有一条\"无论如何都不许把 `_` 键算进条数\"的结构判据。",
+        "defense": "守卫本来就是行为判据而不是变异：`scripts/lib/required-checks.js` 的 readDebt 输出条数被 lib 锁「欠账清单起始为空、上限为 0…」直接对**真实文件**断言 == MAX_DEBT(0)。当场实测同一份数据两侧读数：`rawTopKeys=2`（含 `_否证记录`）而 `readDebt keys=0`；摘掉过滤器（M-U）之后，红就红在那条锁上，文案原文 `欠账条数 2 != MAX_DEBT 0`。也就是说\"过滤器被改回去\"这件事有一条独立跑绿/跑红的用例在管，变异只是它的牙口证明。",
+        "verdict": "dismissed",
+        "rationale": "取数：`node --test scripts/lib/required-checks.test.js`（23 passed）+ `node scripts/check-required-checks.mutation.js` 里 `[M-U] verdict=NAMED … red#1 name=欠账清单起始为空、上限为 0…`。指控要的\"第三层结构锁\"是新增诉求：把 `_` 前缀写成正则禁令并不能证明计数正确，能证明正确性的只有拿真实账面跑一次条数断言这一条。"
+      },
+      {
+        "id": "i6",
+        "severity": "Warning",
+        "finding": "Advisory/enforce mode ambiguity: `selfFaultExit` prints `MODE=advisory verdict=SELF_FAULT rc=2` but returns 0; the CLI help says exit codes are 0/1/2, and the proposal says advisory is `rc=0` but does not clarify whether `rc=2` appears in stdout only or could leak to exit status via wrapper errors. Mutation V tests advisory behavior but does not test the interaction with `quality-gate.yml`'s bash `-e -o pipefail` pipeline.",
+        "highRiskDomains": [],
+        "prosecution": "advisory 档打印 `rc=2` 而进程返回 0，这两个数在文案里同形；`--help` 只说\"三档不得混 + advisory 恒 0\"，没写清 rc=2 是否可能经包装器（`bash -e`、`| tee`）漏进真实退出码；M-V 只测 main() 返回值，没测它落进 quality-gate.yml 那个 run 块之后的行为。",
+        "defense": "要的那句澄清已在文案里：`--help` 第二行原文「退出码：0 合规 / 1 发现违规 / 2 判据自身取不到读数（三档不得混）。**advisory 档恒 0 但照样打印 verdict**」——\"恒 0\"与\"打印\"是并列写出的，正指 rc=2 只出现在 stdout。包装器那一半不由本判据负责，而由仓里已有的两把锁负责：`scripts/check-step-failfast.js`（实测现读「含 ≥2 条受管命令的 run 步骤：47 个 … OK」，即该步必须 fail-fast）与接线锁（要求该步 `shell: bash` 且 `--mode=advisory` 在正文里）。单元层测不到的\"CI 真实退出码\"就是 design D6 ⓪ 那一格，由这次接线后的首个 CI run 回答，不靠注释宣称。",
+        "verdict": "dismissed",
+        "rationale": "取数：`node scripts/check-required-checks.js --help`（读第二行文案）+ `node scripts/check-step-failfast.js` + `node --test scripts/check-required-checks.test.js` 里 cli#16/#17 两条。CI 侧退出码读数属 ⓪，正在跑的那次 run 是它的取证对象。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i2",
+        "severity": "Critical",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "datamigration"
+        ]
+      }
+    ],
+    "note": "自扮演裁决：1 条指控成立或需外部复核",
+    "at": "2026-10-28T04:06:17.524Z",
+    "tier": "external",
+    "evidence": "https://github.com/Colinchiu007/mulpub/pull/4580#issuecomment-6460289623",
+    "tierBasis": "adjudicated-self-play-honored",
+    "adjudicationDigest": "adjudicated@793e193e1236cfaea93568b7d77d8aa77c607e88cc244f43ee4fd69ce801c626"
+  }
+}

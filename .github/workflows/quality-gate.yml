@@ -781,6 +781,25 @@ jobs:
           node scripts/check-judge-surface-coverage.js --report
           node --test scripts/check-judge-surface-coverage.test.js
           node --test scripts/lib/judge-closure.test.js
+      # --- Gate 2b17：required 清单对账面 + 恒 skipped 探测（change: required-checks-ledger，2026-10-27）---
+      # 落点必须在 changes 作业：这条判据决定"平台侧到底谁算 required"，而 docs-only PR 会把
+      # static-gates 整个短路（与 Gate 2b9/2b13/2b15/2b16 同一条理由）。
+      # **首档 advisory**：本判据要出网取 gh api，runner 侧令牌 scope 不足（403）与瞬断都是新增失败面；
+      # 第一刀就阻断等于把与代码无关的抖动接进 required。advisory 恒 rc=0 但照样打印 verdict=（不打印"全部合规"），
+      # 转 enforce 的三个前置条件写在 openspec/changes/required-checks-ledger/design.md D6。
+      # 本机实测成本：45 次 gh api、70 秒（changes 作业预算 5 分钟，见同文件 D6 的成本口径）。
+      - name: "Gate 2b17 - Required-checks ledger gate (changes job)"
+        shell: bash
+        # 本判据读的是 GitHub 平台侧清单（rulesets + 分支保护），必须显式把作业令牌交给 gh。
+        # 不接线时实测 gh rc=4「To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN」
+        # ——判据只能走 SELF-FAULT（design D6 前置条件 ⓪ 的那一格）。
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --test scripts/lib/required-checks.test.js
+          node --test scripts/check-required-checks.test.js
+          node scripts/check-required-checks.js --report --mode=advisory
+
 
   static-gates:
     name: QG Static

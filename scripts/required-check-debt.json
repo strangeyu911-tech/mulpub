@@ -1,0 +1,4 @@
+{
+  "_comment": "恒 skipped / absent / no-run 的存量欠账（键 → 原因）。**只能缩小**：加一条必须同时抬起 MAX_DEBT，而抬上限＝放宽「谁来守门」，只能人工改。值必须是非空 reason，且要写清重取命令与证据坐标。读判据：node scripts/check-required-checks.js --report。",
+  "_否证记录": "本文件起始曾登记一条 \"QG Coverage\"，理由是「实测最近 6 次 main push 上该作业全部 skipped」。那句话作为那句话本身是真的，但作为「required 却永不产出结论」的证据是错的：取数域只看了 main push，而 required 检查真正挡的是 PR 合并。按正确域（producer workflow 最近 6 次 push ∪ pull_request run）复测 ⇒ QG Coverage = produced（run 40466480976 上它是 failure，PR 档照常发火）。它在 push 侧 skipped 是 2026-10-25 change ci-push-heavy-job-dedupe 的明文决定（quality-gate.yml:1705 注释：PR 侧验 merge preview、push 侧不是同一棵树 ⇒ 重复劳动），不是病。处置：删登记、上限 MAX_DEBT 退回 0。原错误说法在此保留、标注不实，避免下一个会话再把它当既成事实。"
+}

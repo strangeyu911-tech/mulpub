@@ -1,0 +1,60 @@
+{
+  "sha": "7adff8ce772248245859d0f8f2bdc0f0be5e0aed",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 382 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 382,
+    "fileCount": 6,
+    "codeFileCount": 5,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 2,
+    "docSensitiveContentSample": [
+      "| QM-6 CCG 双模型外部评审 | ✅（出口②） | 见「五、QM-6」：按用户已授权的出口②收口，状态 `self_play_resolved`，`tier` 保持缺席，`closureNote` 含轮次标记 + 逐条处置 |",
+      "本会话的评审面是「接手 fork PR 后的自审 + 变异反证」，不是外部双模型；按用户已授权的**出口②**收口："
+    ],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "ae70bc0578ca7f5c76f69482b13eccf42df3198934c2fcc2282bbfb44210dc4b",
+  "decidedAt": "2026-10-28T03:58:33.066Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "pending",
+    "tier": "unknown",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null
+  }
+}

@@ -114,7 +114,13 @@ describe("接线：超限内容必须穿过 ArticleEditor 的富文本回写口"
     expect(fs.existsSync(file), `取不到被测 SFC：${file}`).toBe(true);
     const src = fs.readFileSync(file, "utf8");
     expect(src.includes("<QuillEditor"), "读到的不是 ArticleEditor 本体（正控失败）").toBe(true);
-    expect(/<textarea[\s\S]*?:maxlength="maxChars"/.test(src), "Markdown 侧的 maxlength 丢了").toBe(true);
+    // ⚠ 2026-10-28（fix-article-hardstop-lock）：这里原先断言 `:maxlength="maxChars"`，而 #4498
+    // 已把模板改成 `:maxlength="effectiveMaxChars"`（平台档就地生效，避免「7/ 字」垃圾分母）。
+    // 两条并行落地的 PR 各自都绿：本锁所在 PR 的分支早于 #4498，git 合并时两侧不冲突（改的不是
+    // 同一行），于是**语义冲突在 git 层不可见** ⇒ squash 到主干后本锁当场红（实测 main 上
+    // `Tests 1 failed | 8 passed`，失败信息 `Markdown 侧的 maxlength 丢了`）。
+    // 判据语义不变（Markdown 侧仍必须绑 maxlength、Quill 侧不得有），只把绑定的表达式改名跟上单一真源。
+    expect(/<textarea[\s\S]*?:maxlength="effectiveMaxChars"/.test(src), "Markdown 侧的 maxlength 丢了").toBe(true);
     // 判据必须只在 QuillEditor 那一个标签内匹配：上一版写成 `<QuillEditor[\s\S]*?maxlength`，
     // 会一路吃过后面的 textarea 标签命中它的 maxlength ⇒ 一条恒红的假判据（当场被自己抓到）。
     expect(/<QuillEditor\b[^>]*\bmaxlength/i.test(src), "给 contenteditable 写 maxlength 是无效写法").toBe(false);

@@ -172,6 +172,8 @@ const platformsMixin = {
     }
   },
 
+  // 发布链只读诊断（DOM 结构留证 / 微博产物证据）已下沉到 ./publish-diagnostics.js（行数门禁）。
+
   // ========== P2-B: Generic publish engine ==========
   async _publish_generic(win, article, platform, publishConfig) {
     const config = publishConfig || this._getPlatformConfig(platform, article)
@@ -388,6 +390,8 @@ const platformsMixin = {
           }
         } else {
           log.warn('RpaView', '[' + platform + '] content editor not found among ' + cs.length + ' candidates')
+          // 正文是发布链的地基：这里落空时页面结构已经可以定性（改版 / 弹层未展开），立即留证
+          await require('./publish-diagnostics').dumpPublishDom(win, platform)
           if (!(fillReport.content && fillReport.content.ok)) fillReport.content = { ok: false, error: 'content editor not found among ' + cs.length + ' candidates' }
         }
       }
@@ -569,7 +573,11 @@ const hit = await win.webContents.executeJavaScript("(function(){var bs=[].slice
             if (await this._waitForElement(win,cand,3000)) { publishSelector = cand; break }
           }
           if (!publishSelector && platform === 'tencent_video') publishSelector = 'body' // wujie-publish-click：按钮在 shadowRoot 内
-          if (!publishSelector) throw new Error('publish btn not found')
+          if (!publishSelector) {
+            // 全部候选落空 ⇒ 先把页面真实结构留证，再如实失败（平台改版的唯一可诊断入口）
+            await require('./publish-diagnostics').dumpPublishDom(win, platform)
+            throw new Error('publish btn not found')
+          }
           // 视频号「发表」点击链（2026-10-26 下沉至 tencent-publish-hooks.js，行数门禁）
           if (platform === 'tencent_video') {
             await require('./tencent-publish-hooks').clickPublishTencent(win, log, this._sleep.bind(this))
@@ -605,7 +613,8 @@ const hit = await win.webContents.executeJavaScript("(function(){var bs=[].slice
           if (article.draft && sel.draft_btn) await this._click(win,sel.draft_btn)
           retry.markDone('publish')
           if (throttle.shouldReport(95)) this._emitProgress(platform,'verifying...',95)
-          const publishContext = { title: article.title, publishedAt: Date.now() }
+          // title/content 一并带过去：微博产物证据要拿两者去时间线里认自己那条（只带 title 时正文探针恒缺席）
+          const publishContext = { title: article.title, content: article.content, publishedAt: Date.now() }
           const verificationCapture = networkCapture
           networkCapture = null
           return await this._verifyPublishSuccess(win,platform,config,rp,verificationCapture,publishContext)
@@ -1022,6 +1031,13 @@ const diagnostics = summarizePublishDiagnostics(stoppedRequests, artifact)
         return await finish({ stage: 'URL fallback', url: url2 })
       }
     } catch(e) { log.warn('RpaView','['+platform+'] URL fallback: '+e.message) }
+    // 2026-10-20（fix-publish-failures）：微博新版首页发布后三类信号一个都不给（不跳转/无文案/
+    // responses=0），只认它们会把**真实成功**判成失败 ⇒ 补一条只读的时间线产物证据（见 publish-diagnostics）。
+    if (platform === 'weibo' && await require('./publish-diagnostics').weiboPublishEvidence(this, win, context)) {
+      // 时间线 DOM 里拿不到稳定的 mid（新版列表不暴露 data-id），故用时间戳派生一个仅供
+      // 历史展示的记录 ID —— 与快手 `from=publish` 分支的 `published-<ts36>` 同一口径。
+      return await finish({ stage: 'weibo timeline evidence', url: win.webContents.getURL() || '', postId: 'published-' + Date.now().toString(36) })
+    }
     // 2026-09-30 严格平台兜底（头条实测）：发布后**既不跳转也不给响应信号**，
     // 上面所有分支都不会命中 ⇒ 判超时前主动查一次发布产物（作品列表 API，见 helpers）。
     if (STRICT_PUBLISH_ID_PLATFORMS.has(platform) && typeof this._strictPublishFallback === 'function') {
@@ -1304,11 +1320,17 @@ const rp = this._waitForResponse(win,['aweme/create_v2','aweme/create','aweme/po
 
     this._emitProgress('wechat_mp','saving draft...',70)
     const draftMediaId = require('./wechat-mp-draft-mediaid')
-    const saved = await draftMediaId.saveWechatMpDraft(this, win).catch((e) => {
+    // saveWechatMpDraft 成功路径必返回 mediaId（字符串，可能为空串）；失败路径已在函数内 return
+    // 第 3 参数 title 供「响应里没有 mediaId 时按标题反查草稿箱」使用（草稿箱反查只在带标题时可用）
+    const saved = await draftMediaId.saveWechatMpDraft(this, win, { title: article.title }).catch((e) => {
       log.warn('RpaView','wechat_mp save: '+e.message+' url='+win.webContents.getURL()+' title='+win.webContents.getTitle())
       return { ok: false, error: '微信公众号草稿保存失败：' + e.message }
     })
-    if (!saved.ok) return { success:false, error:saved.error, platform:'wechat_mp' }
+    if (!saved.ok) {
+      // 保存没触发 / 按钮不可用 ⇒ 页面结构与上次成功时已不同，留证再失败（判据在 publish-diagnostics）
+      await require('./publish-diagnostics').dumpOnSaveFailure(win, saved)
+      return { success:false, error:saved.error, platform:'wechat_mp' }
+    }
     const mediaId = saved.mediaId || ''
 
     if (!mediaId) {

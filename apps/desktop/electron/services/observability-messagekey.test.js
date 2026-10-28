@@ -100,6 +100,9 @@ const ALLOWED_KEYS = new Set([
   'window:show-event-missing-fallback',
   'App:python-backend-start-failed',
   'App:bridge-started',
+  // fix-publish-failures-20261020：bridges 并行收敛后可跳过**可选** bridge（phase2-bridges.js），
+  // 跳过事件必须可观测——否则「少装一个 bridge」与「bridge 静默消失」在日志上同形。
+  'App:bridge-skipped',
   'App:login-status-monitor-started',
   'App:analytics-providers-registered',
   'Scheduler:pending-tasks-restored',

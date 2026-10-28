@@ -103,7 +103,7 @@ publish done platform=wechat_mp url=...&appmsgid=100000236&token=***&lang=zh_CN
 
 点击落在保存按钮区域内（848,687 + 98×36 ⇒ 中心 897,705），URL 带回 `appmsgid=100000236`，任务判成功。
 
-## 2026-10-28 rebase 说明（同一修复的落点归并）
+## 2026-10-28 第一次 rebase 说明（同一修复的落点归并）
 
 微博的 `publish_url` 与「图文入口指向首页」这两处，与同批的 `fix-publish-cover-url`（PR #4074）**同值同处**。
 两个 PR 各带一份会在 `config/platforms.yaml` 的 weibo 段产生重复键，因此本 PR rebase 时**丢弃自己的那一份**，
@@ -111,7 +111,31 @@ publish done platform=wechat_mp url=...&appmsgid=100000236&token=***&lang=zh_CN
 （本 PR 不再改该快照）。本 PR 实际承载的是微博**选择器**与**微信保存点击**两条修复。
 丢弃前实测：本 PR 的 weibo 块 +4 行（14→18）而快照仍写 14 ⇒ `verify-platform-onboarding` 红（`not ok 11`）；
 丢弃后该测试 **21/21 pass**。
-## 执行记录
+
+## 2026-10-28 第二次 rebase 说明（与主干已落地的同类实现归并）
+
+第二次 rebase 时主干已包含 **PR #4081「公众号保存草稿点不动（可信点击 + 请求/拒绝分判 + 草稿箱反查）」**，
+它对 `rpa-behavior-mixin.js` 的改动是**同一处修复的更新版本且更完整**：
+`has-text` 谓词跳过行为层（CDP `DOM.querySelector` 不认文本谓词）→ 可信点击优先于合成 click →
+`owned-detach`（只拆自己 attach 的会话）→ 遮挡层 `pointerEvents` **还原**（还多一档「他方持有时走主世界
+`executeJavaScript` 还原」）。本分支当年那版实现（含 `rpa-behavior-mixin.click-fallback.test.js` 7 例）
+与之逐条重叠，取舍如下（**保主干、丢重复，不两边各留一份**）：
+
+- 丢弃：`apps/desktop/electron/services/stealth/rpa-behavior-mixin.js` 的改动、`rpa-view-helpers.test.js` 的改动、
+  新增的 `rpa-behavior-mixin.click-fallback.test.js`。理由：主干的实现是超集，且它自带 17 例锁；
+  两版并存会在 `_click` 分流与 `_clickViaCdp` 的 detach/还原语义上产生二义。
+- 保留（本分支真正独有、主干没有的）：
+  ① `wechat-mp-draft-mediaid.js` 的保存按钮选择器改为**稳定 id `#js_submit` 优先**、`:has-text` 兜底限定在
+     `span` 上（真机：`a#js_sync_save` / `a[data-action="save"]` / `#js_save` 全 0 命中，
+     `.weui-desktop-btn_primary` 命中的三个元素全部不可见）；
+  ② 微博选择器的 placeholder / woo 稳定类候选（与主干 #4074 之前的取证同源，合并为一份并补两条候选）；
+  ③ 新增真机判据锁 `packages/rpa-engine/tests/weibo-selectors-live-dom.test.js`（5 例）；
+  ④ 上述选择器的 4 条实现锁（追加在既有 `wechat-mp-draft-mediaid.test.js` 尾部，主干的 23 例原样保留）。
+- 冲突解决逐处：`platform-selectors.js`（两侧同源取证 → 取并集，主干首项 `button.woo-button-main:has-text("发送")`
+  保留，补 `.woo-button-primary` 与两条正文候选）；`wechat-mp-draft-mediaid.test.js`（取主干版 + 追加本分支 4 例，
+  并补 `SAVE_BUTTON_SELECTOR` 到解构导入）；`rpa-view-helpers.test.js` / `rpa-behavior-mixin.js`（取主干版）。
+- 复跑读数：`apps/desktop` → `wechat-mp-draft-mediaid.test.js` **27 passed**、`rpa-view-helpers.test.js` **17 passed**；
+  `packages/rpa-engine` 全量 **290 passed / 10 文件**（含 weibo 5 例）。## 执行记录
 
 | 门禁 | 状态 | Fresh 证据 |
 |------|------|-----------|
@@ -119,7 +143,7 @@ publish done platform=wechat_mp url=...&appmsgid=100000236&token=***&lang=zh_CN
 | 第一性原因 | PASS | 微博：缺 publish_url + 旧版选择器全落空（真机 0 命中）；微信：回退链缺可信点击档（实机 `appReq:0`） |
 | 逃逸分析 | PASS | 既有测试只覆盖「行为层失败 → isolated 合成 click」这一条，从未断言点击**是否被页面接受**；微博选择器无任何真机判据，改版后全仓测试仍全绿 |
 | 修复 + 回归保护 | PASS | 新增 `rpa-behavior-mixin.click-fallback.test.js` 7 例、`weibo-selectors-live-dom.test.js` 5 例；既有的回退链用例按新链路拆成「可信命中 / 可信未命中」两条 |
-| 测试 | PASS | 2026-10-28 rebase 后复跑：apps/desktop `vitest` → `stealth/rpa-behavior-mixin.click-fallback.test.js` **7 passed**、`rpa-view-helpers.test.js` **15 passed**、`wechat-mp-draft-mediaid.test.js` **22 passed**（合计 44）；packages/rpa-engine 全量 **290 passed / 10 文件**（含 `tests/weibo-selectors-live-dom.test.js`） |
+| 测试 | PASS | 第二次 rebase 落定后复跑：`apps/desktop` → `wechat-mp-draft-mediaid.test.js` **27 passed**（主干 23 + 本分支 4 条选择器锁）、`rpa-view-helpers.test.js` **17 passed**（主干版）；`packages/rpa-engine` 全量 **290 passed / 10 文件**（含 `tests/weibo-selectors-live-dom.test.js` 5 例） |
 | ESLint | PASS | 改动文件 0 error（修掉了 `no-useless-assignment` 两处） |
 | 真机验证 | 微信 PASS / 微博 部分 | 微信：实跑存草稿成功（落点 896,705、URL 带 `appmsgid=100000236`、`phase-success` percent=100）；微博：DOM 结构已按真机取证，但**未真发**（发一条微博是对外动作，未获授权） |
 | QM-1 打包 | 由 CI 实证 | 本 PR 的 `Build & Release` job 在 `package-relevant=true` 时执行 `electron-builder --win --x64 -p never` + `check-asar-test-files.js`（app.asar / resources 两通道），以该 run 读数为准；本次会话的 worktree 与 pnpm store 同在 D 盘，未重复本地产包 |

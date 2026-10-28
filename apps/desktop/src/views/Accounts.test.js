@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { messageContains, messageIs, messageOf } from '@/utils/toast-assert-helpers'
 import { mount } from "@vue/test-utils";
 import { nextTick, ref } from "vue";
 import { setActivePinia, createPinia } from "pinia";
@@ -832,7 +833,7 @@ describe("AccountsView", () => {
     await w.vm.addAccount();
     const { ElMessage } = await import("element-plus");
     const { authOpenLogin, accountAdd } = await import("@/api/publisher");
-    expect(ElMessage.warning).toHaveBeenCalledWith("请选择平台");
+    expect(ElMessage.warning).toHaveBeenCalledWith(messageIs("请选择平台"));
     expect(authOpenLogin).not.toHaveBeenCalled();
     expect(accountAdd).not.toHaveBeenCalled();
   });
@@ -876,7 +877,7 @@ describe("AccountsView", () => {
     w.vm.newPlatform = "zhihu";
     await w.vm.addAccount();
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.error).toHaveBeenCalledWith("auth failed");
+    expect(ElMessage.error).toHaveBeenCalledWith(messageIs("auth failed"));
     expect(w.vm.adding).toBe(false);
   });
 
@@ -887,7 +888,7 @@ describe("AccountsView", () => {
     w.vm.newPlatform = "douyin";
     await w.vm.addAccount();
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.error).toHaveBeenCalledWith(expect.stringContaining("\u7f51\u7edc"));
+    expect(ElMessage.error).toHaveBeenCalledWith(messageContains("\u7f51\u7edc"));
   });
 
   it("addAccount 重复账号返回 409 提示", async () => {
@@ -898,7 +899,7 @@ describe("AccountsView", () => {
     w.vm.newPlatform = "douyin";
     await w.vm.addAccount();
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.error).toHaveBeenCalledWith(expect.stringContaining("此账号已添加过"));
+    expect(ElMessage.error).toHaveBeenCalledWith(messageContains("此账号已添加过"));
   });
 
   it("失效账号重新登录复用网页登录 IPC 且不重新打开添加账号弹窗", async () => {
@@ -923,7 +924,7 @@ describe("AccountsView", () => {
     await w.vm.reloginAccount({ id: "expired-1", platform: "zhihu", status: "inactive" });
 
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.error).toHaveBeenCalledWith("重新登录失败");
+    expect(ElMessage.error).toHaveBeenCalledWith(messageIs("重新登录失败"));
     // authViewVisible 不再由Accounts.vue管理
     expect(w.vm.pendingAuthAction).toBeNull();
   });
@@ -963,7 +964,7 @@ describe("AccountsView", () => {
 
     await w.vm.setDefault({ id: "missing", platform: "zhihu" });
 
-    expect(ElMessage.error).toHaveBeenCalledWith("账号不存在");
+    expect(ElMessage.error).toHaveBeenCalledWith(messageIs("账号不存在"));
     expect(ElMessage.success).not.toHaveBeenCalled();
     expect(_spies.load).not.toHaveBeenCalled();
   });
@@ -1006,7 +1007,7 @@ describe("AccountsView", () => {
 
     await w.vm.renameAccount({ id: "a1", account_name: "旧名称" }, "新名称");
 
-    expect(ElMessage.error).toHaveBeenCalledWith("账号名称已存在");
+    expect(ElMessage.error).toHaveBeenCalledWith(messageIs("账号名称已存在"));
     expect(_spies.load).not.toHaveBeenCalled();
   });
 
@@ -1077,7 +1078,7 @@ describe("AccountsView", () => {
     const w = await mountView();
     await w.vm.checkLogin({ platform: "douyin", id: "a1" });
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.error).toHaveBeenCalledWith("check failed");
+    expect(ElMessage.error).toHaveBeenCalledWith(messageIs("check failed"));
   });
 
 
@@ -1100,7 +1101,7 @@ describe("AccountsView", () => {
     const w = await mountView();
     await w.vm.removeAccount({ id: "a1", platform: "douyin" });
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.error).toHaveBeenCalledWith("delete failed");
+    expect(ElMessage.error).toHaveBeenCalledWith(messageIs("delete failed"));
   });
 
   it("removeAccount does nothing when user cancels", async () => {
@@ -1257,7 +1258,7 @@ describe("AccountsView", () => {
 
     const { ElMessage } = await import("element-plus");
     expect(_spies.load).toHaveBeenCalledTimes(1);
-    expect(ElMessage.warning).toHaveBeenCalledWith("2 个账号登录已失效");
+    expect(ElMessage.warning).toHaveBeenCalledWith(messageIs("2 个账号登录已失效"));
   });
 
   it("登录完成事件会关闭登录视图、提示凭证已自动保存并刷新账号", async () => {
@@ -1272,7 +1273,7 @@ describe("AccountsView", () => {
     const { ElMessage } = await import("element-plus");
     expect(w.vm.authViewVisible).toBe(false);
     // 成功提示由 useAccountEvents.complete() 统一弹出（凭证已自动保存），页面不再重复提示
-    expect(ElMessage.success).toHaveBeenCalledWith("zhihu 登录凭证已自动保存");
+    expect(ElMessage.success).toHaveBeenCalledWith(messageIs("zhihu 登录凭证已自动保存"));
     expect(_spies.load).toHaveBeenCalledTimes(1);
   });
 
@@ -1287,7 +1288,7 @@ describe("AccountsView", () => {
     await nextTick();
 
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.success).toHaveBeenCalledWith("zhihu 登录凭证已自动保存");
+    expect(ElMessage.success).toHaveBeenCalledWith(messageIs("zhihu 登录凭证已自动保存"));
     expect(_spies.load).toHaveBeenCalledTimes(1);
     expect(w.vm.pendingAuthAction).toBeNull();
   });
@@ -1419,7 +1420,7 @@ describe("AccountsView", () => {
     await w.vm.removeAccount({ id: "a1", platform: "douyin", account_name: "账号" });
 
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.error).toHaveBeenCalledWith("删除失败");
+    expect(ElMessage.error).toHaveBeenCalledWith(messageIs("删除失败"));
     expect(_spies.load).not.toHaveBeenCalled();
   });
 
@@ -1439,7 +1440,7 @@ describe("AccountsView", () => {
     expect(_spies.batchDelete).toHaveBeenCalledTimes(1);
     expect(_spies.load).not.toHaveBeenCalled();
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.success).toHaveBeenCalledWith("已删除 2 个账号");
+    expect(ElMessage.success).toHaveBeenCalledWith(messageIs("已删除 2 个账号"));
   });
 
   it("批量删除部分失败时显示成功和失败数量", async () => {
@@ -1456,7 +1457,7 @@ describe("AccountsView", () => {
     await w.vm.handleBatchDelete();
 
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.warning).toHaveBeenCalledWith("已删除 1 个账号，1 个删除失败");
+    expect(ElMessage.warning).toHaveBeenCalledWith(messageIs("已删除 1 个账号，1 个删除失败"));
     expect(ElMessage.success).not.toHaveBeenCalled();
     expect(_spies.load).not.toHaveBeenCalled();
   });
@@ -1475,7 +1476,7 @@ describe("AccountsView", () => {
     await w.vm.handleBatchDelete();
 
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.error).toHaveBeenCalledWith("2 个账号删除失败");
+    expect(ElMessage.error).toHaveBeenCalledWith(messageIs("2 个账号删除失败"));
     expect(ElMessage.success).not.toHaveBeenCalled();
     expect(_spies.load).not.toHaveBeenCalled();
   });
@@ -1494,7 +1495,7 @@ describe("AccountsView", () => {
 
     expect(_spies.batchSetActive).toHaveBeenCalledWith(true, ["a1", "a2"]);
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.success).toHaveBeenCalledWith("已启用 2 个账号");
+    expect(ElMessage.success).toHaveBeenCalledWith(messageIs("已启用 2 个账号"));
   });
 
   it("批量禁用使用当前可见选中账号，以布尔 false 下传", async () => {
@@ -1511,7 +1512,7 @@ describe("AccountsView", () => {
 
     expect(_spies.batchSetActive).toHaveBeenCalledWith(false, ["a1", "a2"]);
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.success).toHaveBeenCalledWith("已禁用 2 个账号");
+    expect(ElMessage.success).toHaveBeenCalledWith(messageIs("已禁用 2 个账号"));
   });
 
   it("批量启用/禁用部分成功走警告、全失败走错误，且不复用登录态词表", async () => {
@@ -1526,11 +1527,11 @@ describe("AccountsView", () => {
 
     _spies.batchSetActive.mockResolvedValueOnce({ success: 1, failed: 1 });
     await w.vm.handleBatchSetActive(false);
-    expect(ElMessage.warning).toHaveBeenCalledWith("已禁用 1 个账号，1 个失败");
+    expect(ElMessage.warning).toHaveBeenCalledWith(messageIs("已禁用 1 个账号，1 个失败"));
 
     _spies.batchSetActive.mockResolvedValueOnce({ success: 0, failed: 2 });
     await w.vm.handleBatchSetActive(true);
-    expect(ElMessage.error).toHaveBeenCalledWith("批量启用失败");
+    expect(ElMessage.error).toHaveBeenCalledWith(messageIs("批量启用失败"));
     expect(_spies.batchSetActive.mock.calls[1][0]).toBe(true);
   });
 

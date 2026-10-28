@@ -22,6 +22,11 @@ vi.mock('element-plus', () => ({ ElMessage: mocks.elMessage, ElMessageBox: mocks
 vi.mock('@/api/electron-bridge', () => ({ invoke: vi.fn() }))
 
 import { BURST_LIMIT } from '@/utils/notify-burst'
+// 观察面绑**语义**（弹没弹、弹的是哪句话）而不是绑写法：出口在 2026-10「时长/分组/档位策略收进
+// 唯一出口」那一批之后传的是选项对象（`ElMessage[type]({ message, duration, grouping })`）。
+// 若这里继续把 '文案' 当期望值，本文件会整片假红，而"用户看到哪句话"其实没有变
+// —— 同源助手与判据见 src/utils/toast-assert-helpers.js。
+import { messageIs } from '@/utils/toast-assert-helpers'
 
 const totalShown = () =>
   [...Object.values(mocks.elMessage)].reduce((acc, fn) => acc + fn.mock.calls.length, 0)
@@ -77,7 +82,7 @@ describe('useNotify — 连发限频接线', () => {
   it('未超限时行为与改动前一致：文案照常展示且不误报抑制', async () => {
     const { n } = await freshNotify()
     n.notify('only.one', { level: 'success', message: '保存成功' })
-    expect(mocks.elMessage.success).toHaveBeenCalledWith('保存成功')
+    expect(mocks.elMessage.success).toHaveBeenCalledWith(messageIs('保存成功'))
     expect(warn.mock.calls.filter((c) => String(c[0]).includes('burst-limit'))).toHaveLength(0)
   })
 
@@ -100,9 +105,11 @@ describe('useNotify — 连发限频接线', () => {
   it('未知 level 不占窗口额度（QM-6 i4 指出的回归方向）', async () => {
     const { n } = await freshNotify()
     for (let i = 0; i < 30; i++) n.notify('weird' + i, { level: 'no-such-level', message: '怪 level ' + i })
+    // 未知档位在**准入**处就被拦下（不弹、也不扣窗口额度）：这是 4.6 的 i4 口径，
+    // 与「时长/分组策略收进唯一出口」那一批合流后由 useNotify 在派发前先问策略层词表。
     expect(totalShown()).toBe(0)
     n.notify('after', { level: 'error', message: '真实错误仍可展示' })
-    expect(mocks.elMessage.error).toHaveBeenCalledWith('真实错误仍可展示')
+    expect(mocks.elMessage.error).toHaveBeenCalledWith(messageIs('真实错误仍可展示'))
   })
 
   it('空文案路径不受限频影响（守卫在限频之前，不得把"未命中 key"计进窗口）', async () => {

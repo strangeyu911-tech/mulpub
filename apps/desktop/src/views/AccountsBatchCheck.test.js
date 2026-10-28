@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { messageContains, messageIs, messageOf } from '@/utils/toast-assert-helpers'
 import { mount } from "@vue/test-utils";
 import { nextTick, ref } from "vue";
 import { setActivePinia, createPinia } from "pinia";
@@ -339,7 +340,7 @@ describe("AccountsView — 一键检测 batchCheckAllLogins", () => {
     expect(w.vm.batchCheckAllBusy).toBe(false);
     // 有失效时提示汇总（warning）
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.warning).toHaveBeenCalledWith(expect.stringContaining("1"));
+    expect(ElMessage.warning).toHaveBeenCalledWith(messageContains("1"));
   });
 
   it("batchCheckAllLogins 全部有效时提示全部正常", async () => {
@@ -365,7 +366,7 @@ describe("AccountsView — 一键检测 batchCheckAllLogins", () => {
     expect(_testAccounts.find(a => a.id === "b1").status).toBe("active");
     expect(_testAccounts.find(a => a.id === "b2").status).toBe("active");
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.success).toHaveBeenCalledWith(expect.stringContaining("2"));
+    expect(ElMessage.success).toHaveBeenCalledWith(messageContains("2"));
   });
 
   // ── 登录态固化与三态回归 ──
@@ -427,7 +428,7 @@ describe("AccountsView — 一键检测 batchCheckAllLogins", () => {
     const { ElMessage } = await import("element-plus");
     expect(ElMessage.error, "固化失败不得再弹红色 error（那是整个操作失败的级别）").not.toHaveBeenCalled();
     // 可见性不降：文案里必须点名「未能保存到服务端」
-    const shown = ElMessage.warning.mock.calls.map(c => c[0]).join('\n');
+    const shown = ElMessage.warning.mock.calls.map(c => messageOf(c[0])).join('\n');
     expect(shown).toContain("未能保存到服务端");
     expect(w.vm.batchCheckAllBusy).toBe(false);
   });
@@ -442,10 +443,10 @@ describe("AccountsView — 一键检测 batchCheckAllLogins", () => {
     async function toastTexts () {
       const { ElMessage } = await import("element-plus");
       return {
-        info: ElMessage.info.mock.calls.map(c => c[0]),
-        success: ElMessage.success.mock.calls.map(c => c[0]),
-        warning: ElMessage.warning.mock.calls.map(c => c[0]),
-        error: ElMessage.error.mock.calls.map(c => c[0]),
+        info: ElMessage.info.mock.calls.map(c => messageOf(c[0])),
+        success: ElMessage.success.mock.calls.map(c => messageOf(c[0])),
+        warning: ElMessage.warning.mock.calls.map(c => messageOf(c[0])),
+        error: ElMessage.error.mock.calls.map(c => messageOf(c[0])),
       };
     }
 
@@ -527,7 +528,7 @@ describe("AccountsView — 一键检测 batchCheckAllLogins", () => {
 
       const { ElMessage } = await import("element-plus");
       expect(ElMessage.success).toHaveBeenCalledTimes(1);
-      expect(ElMessage.success.mock.calls[0][0]).toContain("2");
+      expect(messageOf(ElMessage.success.mock.calls[0][0])).toContain("2");
       expect(ElMessage.warning).not.toHaveBeenCalled();
       expect(ElMessage.error).not.toHaveBeenCalled();
     });
@@ -835,7 +836,7 @@ describe("AccountsView — 一键检测 batchCheckAllLogins", () => {
     expect(_testAccounts.find(a => a.id === "s2").status).toBe("active");
     expect(w.vm.checkedExpiredIds.has("s1"), "未取到定论不得计入失效集合").toBe(false);
     const { ElMessage } = await import("element-plus");
-    expect(ElMessage.warning).toHaveBeenCalledWith(expect.stringContaining("1"));
+    expect(ElMessage.warning).toHaveBeenCalledWith(messageContains("1"));
   });
 
   it("batchCheckAllLogins 登录态缺席时保持原徽章，不从 valid 反推", async () => {

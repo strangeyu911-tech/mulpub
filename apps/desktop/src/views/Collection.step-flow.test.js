@@ -12,6 +12,7 @@
  * src/features/collection/collection-page-css-contract.test.js）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { messageContains, messageIs, messageOf } from '@/utils/toast-assert-helpers'
 import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
@@ -69,7 +70,7 @@ function mockStealthApi (content, gate) {
 }
 
 function successTexts () {
-  return ElMessage.success.mock.calls.map((c) => String(c[0])).join('\n')
+  return ElMessage.success.mock.calls.map((c) => messageOf(c[0])).join('\n')
 }
 
 describe('采集页一键改写 — 流程状态与按钮态解耦（collection-ux-step-flow）', () => {

@@ -119,6 +119,11 @@ scripts/tmp-*.js
 # ⚠ 读法：没有前置忽略规则时它是空操作，但 `git check-ignore -v <某.test.js>` 仍会把这一行
 # 打出来（命中 negation 也会显示）—— 别把那个输出误读成「该文件被忽略」，以退出码为准。
 !scripts/*.test.js
+# 暗色主题入口的反证驱动本体（UX 审计，2026-10-21）。幂等冗余：change gitignore-scripts-root（#4549）
+# 已把 `scripts/*.js` 整目录通配整条删除，scripts/ 下的 .js 默认可入库（可复核：
+# `node scripts/check-gitignore-scripts.js` → G4_badWildcard=0 PASS）。保留这一行只为遵守
+# 「.gitignore 冲突两侧条目全保留」的热载体纪律。
+!scripts/theme-entry-contract-mutate.js
 !scripts/plan-review.sh
 !scripts/deep-review.sh
 !scripts/visual-coverage-debt.json

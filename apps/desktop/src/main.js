@@ -30,6 +30,7 @@ import './styles/page-skins-data.css'
 import App from './App.vue'
 import i18n from './i18n'
 import router from './router'
+import { applyKnownThemeBeforeMount } from './composables/useTheme'
 import { reportError } from './utils/report-error'
 import { getApi } from './api/electron-bridge'
 import { onRiskHold, onProgress } from './api/publisher'
@@ -75,6 +76,10 @@ app.component('EmptyState', EmptyState)
 // （grep 实测），且组件自身的测试是**自己 mount 它**——于是它在界面上永不可达，
 // 却每次启动都占一份全局注册与打包体积。骨架屏实际由 EmptyState / UiSkeleton 承担。
 app.component('UiSkeleton', UiSkeleton)
+// 首帧落色必须在 mount 之前：主题真源是异步 IPC，等它回来再决定颜色，
+// 偏好暗色的用户每次冷启动都会先看到一帧浅色（FOUC 是用户可见缺陷，不是优化项）。
+// 这里只读同步可用的镜像，终值仍由 useTheme 的 init() 用真源校准。
+applyKnownThemeBeforeMount()
 app.mount('#app')
 
 // W1 §6.1 风控挂起通知消费端：主进程 publish:risk-hold → 渲染层统一通知通道。

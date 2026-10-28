@@ -18,7 +18,7 @@ const PlatformConfig = require('@multi-publish/shared-utils/src/platform-config'
 const { isNoTitlePlatform, isNoBodyVideoPlatform } = require('@multi-publish/shared-utils/src/publish-capabilities')
 const { platformSelectors } = require('@multi-publish/rpa-engine')
 const { resolvePublishSelectors } = require('@multi-publish/rpa-engine/src/publish-selectors-by-content-type')
-const { getPublishUrl } = require('@multi-publish/api-publish-engine/src/platform-entries')
+const { getPublishUrl, resolvePublishUrl } = require('@multi-publish/api-publish-engine/src/platform-entries')
 const { isApiTrack } = require('@multi-publish/api-publish-engine/src/api-router')
 const { buildXhsVideoRefusal } = require('./xiaohongshu-draft-guard')   // 仅作草稿流程异常时的 fail-closed 兜底
 // 2026-10-02 头条兜底：DOM 被闭包门控拦下 ⇒ 失败时走「页面内 SDK 签名 + Node 直连」（toutiao-direct-bridge）
@@ -186,22 +186,10 @@ const platformsMixin = {
     // 这里收集**硬性内容字段**的填写结果，draftOnly 据此 fail-closed。
     const fillReport = { title: null, content: null, tags: null, upload: null }
 
-    // 2026-10-20（fix-publish-failures）：缺 publish_url 时先走双入口映射兜底，再判失败。
-    // 背景：小红书/快手/抖音/头条都有专用发布方法去调 getPublishUrl()，**没有专用方法的平台**
-    // （微博即属此类，见 platforms.yaml 注释）只能靠 config.publish_url——该字段一旦漏配，
-    // 整条链在打开浏览器后 0ms 就 return，而外层重试机制把它当成可重试的瞬时故障反复重试
-    // （实测同一行错误连刷 6 次）。所以这里补一次与专用方法同一真源的兜底：映射命中的平台照常发，
-    // 确实没有映射的（youtube/tiktok/twitter 等）行为不变，仍然 fail-closed。
-    const publishUrl = String(config.publish_url || '').trim()
-      || getPublishUrl(platform, article && article.video_path ? 'video' : 'image')
-      || ''
-    if (!publishUrl) {
-      log.warn('RpaView', '[' + platform + '] no publish_url configured (config + entries 双入口映射均未命中)')
-      return { success: false, error: platform + ' no publish_url', platform: platform }
-    }
-    if (!config.publish_url) {
-      log.info('RpaView', '[' + platform + '] publish_url fallback to entries mapping: ' + publishUrl)
-    }
+    // 2026-10-20（fix-publish-failures）：缺 publish_url 时先走双入口映射兜底（微博无专用方法，只能走 generic），
+    // 映射也没有才 fail-closed。兜底口径收敛在 platform-entries.resolvePublishUrl（单一真源，本文件零增长）。
+    const publishUrl = resolvePublishUrl(platform, article && article.video_path ? 'video' : 'image', config.publish_url)
+    if (!publishUrl) { log.warn('RpaView', '[' + platform + '] no publish_url configured (config + entries 双入口映射均未命中)'); return { success: false, error: platform + ' no publish_url', platform: platform } }
 
     this._emitProgress(platform, 'navigating...', 5)
     await this._navigateAndWait(win, publishUrl, 3000)

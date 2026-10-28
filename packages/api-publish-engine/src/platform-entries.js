@@ -39,4 +39,12 @@ function getPublishUrl(platform, type) {
   return null;
 }
 
-module.exports = { videoPublishUrls, imagePublishUrls, getPublishUrl };
+// 2026-10-28（PR #4074）：缺 `config.publish_url` 时的兜底收敛到本模块单点实现 ——
+// 「映射命中就照常发、确实没有映射才 fail-closed」只有一处口径，调用方只负责判空与出声。
+function resolvePublishUrl(platform, type, configUrl) {
+  const fromConfig = String(configUrl || "").trim();
+  if (fromConfig) return fromConfig;
+  return getPublishUrl(platform, type) || "";
+}
+
+module.exports = { videoPublishUrls, imagePublishUrls, getPublishUrl, resolvePublishUrl };

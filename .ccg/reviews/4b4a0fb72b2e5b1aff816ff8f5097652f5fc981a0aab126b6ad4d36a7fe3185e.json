@@ -1,0 +1,57 @@
+{
+  "sha": "52e51e5f06e3be1d2e1a3cae021089df7f55579a",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 452 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 452,
+    "fileCount": 11,
+    "codeFileCount": 8,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "stagedDiffHash": "4b4a0fb72b2e5b1aff816ff8f5097652f5fc981a0aab126b6ad4d36a7fe3185e",
+  "decidedAt": "2026-10-21T10:25:40.549Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": null,
+    "evidence": null,
+    "findings": null,
+    "closureNote": "第 1 轮：引擎未运行（本记录由 pre-commit 判定器生成，findings 为空，无逐条条目可裁）。\n可审面 = apps/desktop/src/stores/publishProgressWeight.js（软权重纯逻辑）、publishProgress.js 的 aggregate 接线、\nPublishProgressPanel.vue 的进度条与汇总行、publish-page 的 zh/en 文案。逐条自审结论：\n① 运行中任务权重有上界（RUNNING_CEILING 0.95；存在非终态任务时整体封顶 99），不会出现「条满但未成功」，有正反用例；\n② 汇总行的成功/失败/取消仍是终态计数，不被软权重污染（面板只读 aggregate.succeeded 等，本次未改其口径）；\n③ 渲染层不再自算 done/total（那正是 audit-14 的形态），percent 单一来源 + Number.isFinite 兜底，避免 NaN%；\n④ 未知 stageKey 取中位权重、queued 记 0，新阶段不会表现为「条子不动」；⑤ 新增文案键 zh/en 成对。\n实跑读数：publishProgressWeight.test.js 17 + publishProgress.test.js 39 + PublishProgressPanel.test.js 36 = 92 passed，rc=0。\n未发现需修订项，未修项为 0，无 Critical。\n本 status 由会话按门禁出口②手写，非 writeback 直签，tier 保持缺席。"
+  }
+}

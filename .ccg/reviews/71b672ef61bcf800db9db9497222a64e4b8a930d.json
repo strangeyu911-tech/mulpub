@@ -1,0 +1,58 @@
+{
+  "sha": "71b672ef61bcf800db9db9497222a64e4b8a930d",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 452 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 452,
+    "fileCount": 12,
+    "codeFileCount": 8,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 0,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-21T10:37:51.445Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "self_play_resolved",
+    "performedBy": "claude",
+    "findings": null,
+    "error": "JSON解析失败:模型输出被截断，JSON 不完整：括号计数恰好配平（24/24，那是已闭合的内层对象），但结尾不是 }——真正被砍断的是最后一个字符串，共 30225 字符 —— 这通常意味着方案问题太多、模型输出超长被截断。重跑同样输入多半还是截断。可选：把方案拆小后分批评审，或先让 critic 只挑 Critical / Warning、暂不要求 Info。",
+    "validationErrors": null,
+    "at": "2026-10-21T10:58:56.347Z",
+    "closureNote": "第 2 轮：引擎起了但未产出可裁决条目 —— critic 侧产出 30225 字符后被长度上限截断、JSON 未闭合，\nfindings 为空，原文原因保留在本记录的 error 字段。可审面同第 1 轮，逐条自审结论：\n① 本次增量为零依赖纯函数 + 一处 computed 接线，无外部 IO、无副作用；\n② 渲染层 percent 来源唯一，缺字段时兜底 0 而不是 NaN%（NaN% 在视觉上等同条子卡死）；\n③ 空任务集 total=0 时进度条为 0% 且不渲染「第 N / 共 M」；\n④ 单任务行百分比维持既有 task.percent 口径，未被本次改动牵动。\n实跑读数与第 1 轮相同：3 个测试文件 92 passed，rc=0（2 条上游红已单独归因为全局依赖审计公告与主干行数目标值漂移，不属本变更集）。\n处置=登记：本轮阻塞归因于外部评审单次输出超长，不是本变更集的缺陷；未修项为 0，无 Critical。\n本 status 由会话按门禁出口②手写，非 writeback 直签，tier 保持缺席。"
+  }
+}

@@ -71,14 +71,14 @@
   --space-xxl: 32px;
   --space-section: 80px;
 
-  /* 圆角 */
-  --r-xs: 4px;
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 16px;
-  --r-xl: 20px;
-  --r-pill: 32px;
-  --r-full: 9999px;
+  /* 圆角：以 tokens.css 的 --radius-* 为单一真源，这里只做别名——两侧原值逐字相同（4/8/12/16/20/32/9999px）⇒ 零视觉回归；不得在此重新写死 px（有锁，审计 3.5） */
+  --r-xs: var(--radius-xs);
+  --r-sm: var(--radius-sm);
+  --r-md: var(--radius-md);
+  --r-lg: var(--radius-lg);
+  --r-xl: var(--radius-xl);
+  --r-pill: var(--radius-pill);
+  --r-full: var(--radius-full);
 
   /* 布局 */
   --nav-height: 56px;
@@ -177,7 +177,7 @@ body {
 .cohere-topnav .brand .logo-dot {
   width: 8px;
   height: 8px;
-  border-radius: var(--r-full);
+  border-radius: var(--radius-full);
   background: var(--coral);
   display: inline-block;
 }
@@ -188,7 +188,7 @@ body {
   font-weight: 400;
   color: var(--muted);
   padding: 8px 16px;
-  border-radius: var(--r-sm);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.15s;
   display: flex;
@@ -240,7 +240,7 @@ body {
   margin-top: 4px;
   background: var(--surface, #fff);
   border: 1px solid var(--border-light, #e5e7eb);
-  border-radius: var(--r-sm, 8px);
+  border-radius: var(--radius-sm, 8px);
   box-shadow: 0 8px 24px rgba(30, 27, 75, 0.12);
   min-width: 160px;
   z-index: 1000;
@@ -376,7 +376,7 @@ body {
   cursor: pointer;
   transition: all 0.15s;
   margin: 6px var(--space-sm);
-  border-radius: var(--r-sm);
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
 }
 
@@ -394,7 +394,7 @@ body {
 .cohere-platform-item .platform-icon {
   width: 40px;
   height: 40px;
-  border-radius: var(--r-sm);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -493,7 +493,7 @@ body {
   color: var(--on-primary);
   background: var(--primary);
   border: none;
-  border-radius: var(--r-pill);
+  border-radius: var(--radius-pill);
   padding: 8px 24px;
   cursor: pointer;
   transition: all 0.15s;
@@ -743,7 +743,7 @@ body {
   font-weight: 500;
   border: 1px solid var(--border-light);
   background: transparent;
-  border-radius: var(--r-pill);
+  border-radius: var(--radius-pill);
   padding: 4px 14px;
   cursor: pointer;
   color: var(--ink);
@@ -837,7 +837,7 @@ body {
   font-size: var(--font-size-xs);
   font-weight: 500;
   padding: 2px 8px;
-  border-radius: var(--r-pill);
+  border-radius: var(--radius-pill);
 }
 
 .cohere-tag-success {
@@ -1113,7 +1113,7 @@ body {
   font-size: var(--font-size-xs);
   font-weight: 500;
   padding: 2px 10px;
-  border-radius: var(--r-pill);
+  border-radius: var(--radius-pill);
 }
 
 .cohere-publish-item .pi-status.success {

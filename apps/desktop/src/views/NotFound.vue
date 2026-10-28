@@ -90,14 +90,14 @@ function goBack () {
 .nf-page {
   display: flex;
   justify-content: center;
-  padding: var(--spacing-8, 32px) var(--spacing-6, 24px);
+  padding: var(--space-xxl, 32px) var(--space-xl, 24px);
 }
 .nf-card {
   width: 100%;
   max-width: 640px;
 }
 .nf-title {
-  margin: 0 0 var(--spacing-2, 8px);
+  margin: 0 0 var(--space-sm, 8px);
   font-size: var(--font-size-xl, 20px);
 }
 .nf-desc {
@@ -111,7 +111,7 @@ function goBack () {
 }
 .nf-path {
   margin: 0 0 var(--spacing-5, 20px);
-  padding: var(--spacing-2, 8px) var(--spacing-3, 12px);
+  padding: var(--space-sm, 8px) var(--space-md, 12px);
   border: 1px solid var(--color-border-default, #ddd);
   border-radius: var(--radius-sm, 4px);
   background: var(--color-bg-secondary, #f7f7f7);
@@ -123,8 +123,8 @@ function goBack () {
 }
 .nf-actions {
   display: flex;
-  gap: var(--spacing-3, 12px);
-  margin-bottom: var(--spacing-4, 16px);
+  gap: var(--space-md, 12px);
+  margin-bottom: var(--space-lg, 16px);
 }
 .nf-hint {
   margin: 0;

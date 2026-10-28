@@ -147,7 +147,7 @@
 
 /* 图标底座改为圆角方片淡色底：去掉 1px 实线描边（描边+方角+底色三层叠加是粗糙感来源） */
 .cohere-card .card-icon {
-  border-radius: var(--r-md);
+  border-radius: var(--radius-md);
   border: none;
   background: var(--brand-gradient-soft);
   color: var(--primary);
@@ -206,7 +206,7 @@
 .cohere-select {
   font-family: var(--font-family-ui);
   border: 1px solid var(--hairline-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--radius-md);
   background: var(--surface-raised);
   transition: border-color var(--motion-fast) var(--ease-default),
               box-shadow var(--motion-fast) var(--ease-default),

@@ -1,0 +1,147 @@
+{
+  "sha": "799296ef4ca6a7ffd2bb4c5d182db6fa2b06237a",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 320 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 320,
+    "fileCount": 8,
+    "codeFileCount": 3,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 3,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-26T04:10:15.502Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "needs_revision",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "domains": [
+          "auth"
+        ]
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "domains": [
+          "auth"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "finding": "存量棘轮只覆盖 radius 族，与 PRD/执行记录宣称的口径不符。PRD §4 表「存量棘轮」一行写的是「被废弃侧 var() 消费者数 ≤ 当场实测上界」，执行记录也说棘轮覆盖两侧，但 `design-token-single-track.test.js` 的棘轮用例只遍历 `ALIASES.filter(([d]) => d.startsWith('--r-'))`，`UPPER_BOUND` 只有 7 个 `--r-*` 键。被废弃侧 `--spacing-{2,3,4,6,8}`（PRD §1 当场实测 45/124/69/20/18 处消费者）没有任何消费者上界：第二阶段或任何新代码继续写 `var(--spacing-2)` 会通过全部 6 条锁，且 spacing 侧不存在「随批次下调」的棘轮进度条。",
+        "highRiskDomains": [
+          "auth"
+        ],
+        "prosecution": "成立。棘轮用例第一版只遍历 `ALIASES.filter(d => d.startsWith('--r-'))`，`UPPER_BOUND` 只有 7 个 radius 键；被废弃侧的 `--spacing-{2,3,4,6,8}` 一个上界都没有。PRD §4 与执行记录却都写成\"被废弃侧消费者数 ≤ 实测上界 / 棘轮覆盖两侧\"。后果具体：第二阶段或任何新代码继续写 `var(--spacing-2)`，6 条锁全绿，而\"随批次下调\"的进度条在 spacing 侧根本不存在。",
+        "defense": "只能辩护\"不是故意只测一族\"，不能辩护\"没影响\"：一族有牙一族没牙恰恰是最危险的形态，因为读判据的人会以为两族都被守。",
+        "verdict": "upheld",
+        "rationale": "处置：棘轮改为遍历全部 12 个别名的废弃侧，并加 `rows.length === ALIASES.length` 的域完整性断言（漏一族即红，而不是静默少测）。顺带证实这条有牙：按测试自己的口径重测后 `--spacing-2` 实为 127（我先从**滞后的共享根**量到 124，被这条棘轮当场拒了），上界因此按实测重写：spacing 侧 127/69/20/12/2。变异 T6 把棘轮退回\"只测 radius 一族\"已实测红（现场 `[MUTATE] 汇总 CAUGHT=9/9`，见下方驱动读数）。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "本批把 `--spacing-{2,3,4,6,8}`（tokens.css）指向 `--space-*`（cohere-design-system.css），把 `--r-*`（cohere）指向 `--radius-*`（tokens.css），制造了两份文件之间新的硬运行时依赖（互相依赖），但 6 条锁 + 快照锁全部是文本正则级校验，没有一条真正把两份 CSS 同时装入真实级联验证。若存在只加载 tokens.css 而不加载 cohere-design-system.css 的上下文（或两文件把令牌定义在 `:root` 与其它选择器/作用域上导致 `--space-sm` 在使用元素上不可继承），`--spacing-2: var(--space-sm)` 会成为 guaranteed-invalid，消费者静默回落到初始值，所有锁保持绿色 —— 「零视觉回归」断言在这一点上无牙。",
+        "highRiskDomains": [],
+        "prosecution": "成立。别名引入了 tokens.css ↔ cohere-design-system.css 的**跨文件运行时依赖**，而 6 条锁 + 快照锁全是文本级正则；若某上下文只装载其中一份（或存活令牌不在同一作用域可继承），`--spacing-2: var(--space-sm)` 就是 guaranteed-invalid，消费者静默回落初始值，所有锁照绿 —— \"零视觉回归\"在这一点上无牙。",
+        "defense": "本仓样式只在 `main.js` 一处装载，实践中不存在\"只装一份\"的入口；jsdom 也不可靠地解析 CSS 自定义属性级联，做\"真级联验证\"成本高且有假阴风险。但\"实践上不会发生\"不是判据 —— 风险 3 里我自己承认了这一点。",
+        "verdict": "upheld",
+        "rationale": "处置取\"能机械化的两格\"，并如实声明没覆盖的那一格：新增**装配锁**，① `main.js` 必须同时装载两份令牌文件（少一行 import 即红），② 存活令牌必须在 `:root` 内恰好声明一次（落在别的选择器上会导致部分元素不可继承）。变异 T7 取被禁形态本身（把 cohere 的 import 注释掉）已实测当场红（第一轮该刀 NOT_CAUGHT，正是这条锁当时确实没牙的现场证据；修好判据后复跑转 CAUGHT）。残余未覆盖：真实级联的端到端计算值验证（jsdom 不解析 var，需真浏览器），留给 `QG Visual` 的像素门禁 + 第二阶段换名批次；不把这一格写成已守。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "零回归锁 FROZEN_PAIRS 是手工抄写的常量表，锁只校验表内自洽（`FROZEN_PAIRS[dep] === FROZEN_PAIRS[survivor]`），不校验表与 git 历史真实值一致。若抄写错误是对称的（两侧都误抄成同一个错值），锁照样通过，而实际两侧旧值不同 ⇒ 别名化真实改像素；且 radius 族恰好没有被其它锁兜底——快照锁只快照 tokens.css 的令牌，`--r-*` 及其解析结果不在快照里，`--radius-*` 快照期望值也未变化，所以对称抄错可以全链路漏过。执行记录声称「当场从 git 里的旧版读出」，但实现是硬编码拷贝，不是读出来的。",
+        "highRiskDomains": [],
+        "prosecution": "成立。`FROZEN_PAIRS` 是手抄常量表，锁只校验表内自洽（`表[dep] === 表[survivor]`）。若抄写错误是**对称的**（两侧都抄成同一个错值），锁照样通过，而历史上两侧值其实不同 ⇒ 别名化真的改了像素。且 radius 族没有别的锁兜底（快照锁只快照 tokens.css 的 `--radius-*` 原值），所以对称抄错可全链路漏过。执行记录写\"当场从 git 里的旧版读出\"，实现却是硬编码 —— 声明与实现不符。",
+        "defense": "无实质辩护。\"我确实读过一遍再抄\"正是本仓反复否证的那类自证：判据不能依赖抄写者不犯错。",
+        "verdict": "upheld",
+        "rationale": "处置：新增一条**从 git 的改动前 blob 复现基线**的用例 —— 用 `git show origin/main:<两份样式文件>` 读 `:root` 字面量，与 `FROZEN_PAIRS` 逐项比对（24 项全等才通过），现场读数 `[TOKEN-BASELINE] 逐项比对通过（表 24 项 = git 值）`。本批已合并后该 blob 会含别名，此时读不到字面值 ⇒ 用例**打印退化说明**（把锁自己失明的那一格说出来），不静默算通过。变异 T8 用对称抄错（两侧同改为 17px）取被禁形态本身 ⇒ 已实测该用例当场红。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "变异驱动 `scripts/design-token-alias-mutate.cjs` 是独立本地脚本，未接入 CI/QG 任何阶段。AC4（6 刀 CAUGHT）的证据是一次性本地运行；此后任何改动若悄悄削弱某条锁（例如放宽漂移锁正则、掏空棘轮下界），该脚本不会被自动重跑，锁「有牙」的保证随时间衰减。PRD §6 把 AC4 列为验收标准，但交付物里没有让它在每次变更时重新执行的机制。",
+        "highRiskDomains": [
+          "auth"
+        ],
+        "prosecution": "成立。`scripts/design-token-alias-mutate.cjs` 不在任何 CI 阶段里，AC4（\"6 刀 CAUGHT\"）的证据是一次性本地运行；此后任何人悄悄放宽漂移锁正则或掏空棘轮下界，没有东西会重跑驱动，\"锁有牙\"的保证随时间衰减。",
+        "defense": "可辩护的只有落点：驱动是\"逐刀起一次 vitest\"的形态，单程数十秒到数分钟，直接挂进每个 PR 的关键路径等于重立本仓刚推倒的 30 分钟预算墙；而把它接进 CI 必须新增/修改 `.github/workflows/` 与 required 清单，属\"改谁来守门\"，AGENTS 明确要求人工过目。",
+        "verdict": "upheld",
+        "rationale": "本条**不在本批闭合**，但也没有被读成已完成：登记为既有任务 #23（现已把该驱动与另三个同族驱动一起列入，含分档口径：≤30s 接每次 PR、数百秒级只能进 schedule），并在 PRD/执行记录里把 AC4 措辞改为\"本地实跑证据，未接 CI\"。不做的事：不为了\"看起来闭环\"把驱动塞进一个不会被执行的步骤、不改 required 清单、不把 AC4 改口成已交付。现场读数如实分三档记录：第一轮 9 刀报 CAUGHT=7/9，其中 `ERROR T4` 是**驱动自身**锚点失配（不是锁没牙），`NOT_CAUGHT T7` 是**锁真没牙**（装配锁当时按注释也匹配文本写，注释掉 import 仍绿）；修锚点 + 修判据后复跑 `[MUTATE] 基线趟 rc=0` / `[MUTATE] 还原后复跑 rc=0` / `[MUTATE] 汇总 CAUGHT=9/9`，并把 T5、T6、T7、T8 四刀的点名用例逐条对上 i1–i3 的处置。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i1",
+        "severity": "Warning",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "auth"
+        ]
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "auth"
+        ]
+      }
+    ],
+    "note": "出口②收口：成立项已逐条处置，残余按任务 #23 登记；status/closureNote 会话手写，tier 缺席",
+    "at": "2026-10-28T03:27:12.276Z",
+    "closureNote": "第 3 轮（head fb937da36）按用户裁决走门禁出口②：第 1 轮 4 条指控 verdict 均为 upheld，逐条处置 —— i1 棘轮判据域只覆盖 radius 族已修（改为遍历全部 12 个别名 + 域完整性断言，变异 T6 实测 CAUGHT）；i2 跨文件运行时依赖缺装配验证已修（新增装配锁 main.js 双装载 + :root 唯一声明，变异 T7 实测 CAUGHT）；i3 FROZEN_PAIRS 手抄常量改为从 git 改动前 blob 复现基线（24 项逐项比对，变异 T8 实测 CAUGHT）；i4 变异驱动未接 CI 属既有流程欠账，登记为任务 #23（分档：<=30s 接每次 PR、数百秒级进 schedule），本条不在本批闭合。因仍有后续修订项（#23），状态置 needs_revision 而非 resolved。status 与 closureNote 由会话按出口②手写，非 writeback 直签，tier 保持缺席。"
+  }
+}

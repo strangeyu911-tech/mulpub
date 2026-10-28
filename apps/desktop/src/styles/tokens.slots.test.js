@@ -21,6 +21,9 @@ const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)),
 
 const tokensCss = read('./tokens.css')
 const videoCreationTokensCss = read('./video-creation-tokens.css')
+// 别名可能指向另一份令牌文件（阶段 3.5 第一步：--spacing-2 → var(--space-sm)），
+// 所以快照必须按**生效值**断言，而不是按字面文本断言 —— 否则"收敛真源"会被误读成"改了刻度"。
+const cohereCss = read('./cohere-design-system.css')
 
 /** 取 CSS 变量定义：返回 { name: value }，scope 为 root 或 dark */
 function readVarBlock (css, scope) {
@@ -33,8 +36,26 @@ function readVarBlock (css, scope) {
   )
 }
 
-const light = readVarBlock(tokensCss, 'root')
-const dark = readVarBlock(tokensCss, 'dark')
+/** 把 var(--x) 解析到实际字面值（最多 3 层，防环）；解析不出来时**原样返回**，让快照当场报不等而不是静默变绿 */
+function resolveVars (own, ...others) {
+  const out = {}
+  const resolveOne = (name, raw, depth) => {
+    let v = raw
+    for (let i = 0; i < 3 && /^var\(--[a-z0-9-]+\)$/i.test(v); i++) {
+      const ref = v.slice(4, -1).trim()
+      const next = others.find((o) => Object.prototype.hasOwnProperty.call(o, ref))
+      if (next === undefined) return v
+      v = next[ref]
+      if (depth > 2) return v
+    }
+    return v
+  }
+  for (const [k, v] of Object.entries(own)) out[k] = resolveOne(k, v, 0)
+  return out
+}
+
+const light = resolveVars(readVarBlock(tokensCss, 'root'), readVarBlock(cohereCss, 'root'))
+const dark = resolveVars(readVarBlock(tokensCss, 'dark'), readVarBlock(cohereCss, 'dark'))
 
 /** 相对亮度（WCAG 2.x） */
 function luminance (hex) {

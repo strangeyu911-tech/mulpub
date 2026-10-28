@@ -104,7 +104,7 @@
   gap: 2px;
   padding: 3px;
   border: 1px solid var(--hairline-soft);
-  border-radius: var(--r-pill);
+  border-radius: var(--radius-pill);
   background: var(--surface-sunken);
   max-width: 100%;
   overflow-x: auto;
@@ -365,7 +365,7 @@
   gap: 10px;
   padding: 12px 14px;
   border: 1px solid var(--hairline);
-  border-radius: var(--r-md);
+  border-radius: var(--radius-md);
   background: var(--color-info-soft);
   color: var(--color-info-text);
   font-size: var(--font-size-xs);

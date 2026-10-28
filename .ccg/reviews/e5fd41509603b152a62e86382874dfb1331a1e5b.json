@@ -1,0 +1,150 @@
+{
+  "sha": "e5fd41509603b152a62e86382874dfb1331a1e5b",
+  "layer": "diff",
+  "mode": "dual",
+  "reason": "变更 419 行 > 200 行阈值（对齐 §12.6 Red Team）",
+  "stats": {
+    "changedLines": 419,
+    "fileCount": 9,
+    "codeFileCount": 3,
+    "sensitivePathHits": [],
+    "plannedPathHits": [],
+    "sensitiveContentHits": 3,
+    "docSensitiveContentHits": 0,
+    "docSensitiveContentSample": [],
+    "ccgSensitiveContentHits": 0,
+    "ccgSensitiveContentSample": [],
+    "lineReadGaps": []
+  },
+  "decidedAt": "2026-10-26T04:31:39.902Z",
+  "decidedBy": "ccg-review-decider",
+  "reviewBackends": {
+    "proposer": "opencode",
+    "critic": "claude",
+    "from": {
+      "proposer": "list",
+      "critic": "list"
+    },
+    "notes": [],
+    "overridden": false
+  },
+  "backendAvailability": {
+    "count": 2,
+    "total": 2,
+    "partial": false,
+    "wrapperReady": true,
+    "backends": {
+      "wrapperExists": true,
+      "names": [
+        "claude",
+        "opencode"
+      ],
+      "onPath": [
+        "claude",
+        "opencode"
+      ]
+    }
+  },
+  "deepReview": {
+    "required": true,
+    "status": "needs_revision",
+    "performedBy": "self-play",
+    "confidenceWeight": 0.6,
+    "requiresExternalReview": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "domains": [
+          "auth"
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "finding": "git 基线锁（i3 处置）在合并后必然红，且文档声称的退化路径不可达。readVarLiterals 会滤掉值为 var() 的声明，因此本批合并进 origin/main 后，12 个被废弃名（--r-* 7 档 + --spacing-{2,3,4,6,8} 5 档）在 git show origin/main:... 的 blob 里读不到字面值；但退化分支的条件是 `Object.keys(derived).length === 0`，而 12 个存活名（--radius-*、--space-* 及冲突档）的字面值仍留在 blob 里 ⇒ derived 非空 ⇒ 退化分支永不触发 ⇒ 逐项比对时报 12 条「在基准 blob 里读不到」⇒ expect(diffs).toEqual([]) 红。这直接违背执行记录与 PRD §8 所写「合并后打印 [TOKEN-BASELINE] 退化说明而不是静默通过」：实际是合并后 main 上第一次跑该套件就红。另：origin/main 是移动目标，PR 等待期若被 rebase 到已改动这两份 CSS 的 main（如另一 PR 合法改过 --space-sm），基线会与本批无关地误红。",
+        "highRiskDomains": [
+          "auth"
+        ],
+        "prosecution": "成立（Critical）。上一轮为处置 i3 加的 git 基线锁，其退化分支条件是 `Object.keys(derived).length === 0`，而 `readVarLiterals` 只筛掉值为 `var()` 的声明 —— 基准 blob 里还有几十个未参与的令牌，所以\"整份 blob 一个字面值都没有\"永不成立。本批合并进 origin/main 后，12 个已别名化的名字逐个走 `got === undefined` 分支 ⇒ 每次跑记 12 条\"在基准 blob 里读不到\"，用例**永久红**；而 PRD 与执行记录都写着\"合并后打印退化说明\"。这是把自己写的锁焊死在只生效一次的窗口里。",
+        "defense": "无实质辩护。我当时确实想到\"合并后怎么办\"，但把判据写成\"整表为空\"这一形状，恰好是\"用聚合值测逐元素属性\"的同型错误（12 个让位 + 几十个仍在场 ⇒ 聚合非空 ⇒ 分支不可达）。",
+        "verdict": "upheld",
+        "rationale": "处置：判据改为**按名逐个判**。新增 `readVarRefs(css)`（与 `readVarLiterals` 同一根块坐标、只收 `var()` 侧）；某名在基准 blob 里已是 var 引用 ⇒ 记 `mergedAway`（合法让位，交快照锁），既不是字面也不是引用 ⇒ 记\"采集断了，不得当通过\"。另加 `compared===0 ⇒ mergedAway>0` 的下界，把\"一个都没读到\"与\"全已合并\"分开。合并态已实测：把基准 ref 临时换成 HEAD（= 合并后的 origin/main 形态）跑该文件 ⇒ `Test Files 1 passed (1)` 且打印 `[TOKEN-BASELINE] 逐项比对通过（比对 12 项 = git 值；已合并让位 12 项）`，随后按原样还原。这条正向对偶目前是一次性实跑证据、未接进驱动（与 i4 同族欠账，任务 #23）。"
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "finding": "基线锁在无 origin/main 引用的环境里静默放行：git show origin/main:... 抛错被 catch，打印「git show 失败…按未证实出声」后绿退。CI 常见 actions/checkout 默认浅克隆、单分支拉取，未必存在 origin/main 远程引用 ⇒ i3 的「对称抄错由 git 复现抓住」在 CI 中实际不执行，只在本机全量克隆且 PR 未合并的窄窗口内有效 —— 与 i4 同类（一次性本地证据），但 PRD §8 把 i3 标为已在本批机械化落地，保证被高估。",
+        "highRiskDomains": [],
+        "prosecution": "成立。`git show origin/main:…` 抛错被 catch 后打印一行\"按未证实出声\"就 `return`，用例判绿。CI 的 actions/checkout 默认浅克隆/单分支，未必存在 `origin/main` 引用 ⇒ i3 那条\"对称抄错由 git 复现抓住\"在 CI 里实际不执行，只在本机全量克隆且 PR 未合并的窄窗口有效。",
+        "defense": "可辩护的只有\"我没有把它写成 CI 保证\"：文案确实说了\"按未证实出声\"。但「打印一行说明 + return」与「静默通过」在退出码上完全同形，下一个会话读不出差别 —— 这正是本仓反复否证的\"把工具的失明读成结论\"。",
+        "verdict": "upheld",
+        "rationale": "处置：该分支改打 `[TOKEN-BASELINE] UNVERIFIED :: <原因>`，把\"未证实\"做成**独立档位名**而不是散文，与\"逐项比对通过\"字面不再同形。如实声明未闭合的那半：它仍然不阻断（浅克隆环境下这条就是测不到）；正解是把基准 ref 由 CI 显式注入（例如 `MP_TOKEN_BASELINE_REF`）并让缺注入时报 UNVERIFIED 计入可见面，属与 i4 同一批 workflow 改动，登记任务 #23，不在本批偷偷扩面。"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "finding": "判据域 ALIASES 没有独立锚，整个 spacing（或 radius）族可以静默退出保护而全锁保持绿。所有 6 条锁（漂移锁/零回归/存活侧/棘轮/装配）都遍历 ALIASES；把 ALIASES 删成只留 7 个 radius 行后：棘轮的 `rows.length === ALIASES.length` 是自参照断言（7===7 绿）；把 tokens.css 的 --spacing-2 改回字面 8px 后，tokens.slots.test.js 按生效值解析仍得 8px ⇒ 快照也绿；基线锁遍历的是 FROZEN_PAIRS（24 项仍与 git 一致）⇒ 绿。即 i1 处置里「只量一族=一半没牙」的对偶形态（直接把一族从域里删掉）不被任何锁拦截；变异驱动也只有 T6（filter 变体），没有「掏空 ALIASES」这一刀。",
+        "highRiskDomains": [],
+        "prosecution": "成立。所有 6 条锁都遍历 `ALIASES`，而域完整性断言 `rows.length === ALIASES.length` 是**自参照**——把 `ALIASES` 删成只留 7 个 radius 行，棘轮 7===7 照样绿；此时把 `tokens.css` 的 `--spacing-2` 改回字面 8px，快照锁与漂移锁都不看它 ⇒ 整族静默退出保护。上一轮我补的\"spacing 侧也进棘轮\"只解决了\"当时两族都在表里\"的情形。",
+        "defense": "只能辩护\"不是故意留自参照\"。自参照断言在删项时必然恒真，这一条没有辩护空间。",
+        "verdict": "upheld",
+        "rationale": "处置：加**独立锚点** `ALIAS_ROSTER` —— 12 个废弃名逐个字面写出（不由 ALIASES 派生），棘轮先要求 `ALIASES` 废弃侧与之 `toEqual`，再逐族给成员下界（radius ≥7、spacing ≥5）。现在\"整族退出保护\"必须同时改两处字面清单，属显式改判据、会被 review 看见。"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "finding": "「只能缩小/随批下调」的收敛机制与实现冲突：(a) 冲突清单被 toBeGreaterThanOrEqual(5) 与 toBeLessThanOrEqual(5) 同时钉死为恰好 5 条 —— 第二阶段任何合法收敛（5→4）都必须改测试常量，且报错文案把缩减定性为「掏空 ⇒ 逐条校验恒真，锁变装饰」，与 PRD §4「清单只能缩小」矛盾；(b) 棘轮 expect(UPPER_BOUND[dep]).toBeTruthy() 使 0（某名完全迁移完成）不可表示 —— 想表示 0 只能删 UPPER_BOUND 条目、进而删 ALIASES 行（落入 i3 的掏域形态），PRD §7「棘轮上界随批下调」到不了 0。收敛的审计痕迹全是「改测试常量」，且其中一条合法路径（删 ALIASES 行）正好是判据域的失明形态。",
+        "highRiskDomains": [],
+        "prosecution": "成立。(a) 冲突清单同时被 `toBeGreaterThanOrEqual(5)` 与 `toBeLessThanOrEqual(5)` 钉死为恰好 5，而 PRD §4 写的是\"清单只能缩小\"——第二阶段任何合法收敛（5→4）都必须改测试常量才能过，且红文案还把缩减定性成\"掏空 ⇒ 锁变装饰\"，等于**把合法收敛判成退化**。(b) `expect(UPPER_BOUND[dep]).toBeTruthy()` 使某名完全迁移后上界合法为 0 时被误判成\"漏登记\"。",
+        "defense": "可辩护的只有一半：上界那根的初衷是\"新增登记=把双轨合法化\"。但它同时拦住了缩减，这是判据写错形状，不是初衷合理。",
+        "verdict": "upheld",
+        "rationale": "处置：(a) 删掉 `<=5` 那根钉。拦新增改由**逐条当场校验**承担（每条登记的两侧都必须当场是字面值且真不等），它测的是登记内容的语义而不是一个手写计数；下界保留但降到 1（防清单被整体掏空）。(b) 存在性判据改 `Object.prototype.hasOwnProperty.call(UPPER_BOUND, dep)` + `toBe(true)`，让合法的 0 不再是假红。"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "finding": "「当场实测」证据表自相矛盾，无法判断哪个是当前真值：(a) PRD §1 的 --r-* 行写「＝83」，但 23+33+4+7+1+12+13=93，与测试 UPPER_BOUND 求和 93 一致 —— 表的合计或其中一格抄错；(b) --spacing-6 在 PRD §1 为 18，而测试/执行记录的棘轮上界为 12，PRD §8 只解释了 --spacing-2（124→127），18→12 无任何说明。若真实存量是 18 而锁界是 12，锁会在超标时仍绿（或计数函数漏计 6 处）；若锁界 12 是对的，则 PRD §1 的 18 是旧数据。两处只能二选一，记录却都宣称为实测。",
+        "highRiskDomains": [],
+        "prosecution": "成立。PRD §1 的\"当场实测\"表自相矛盾：`--r-*` 行写合计 **83**，而逐格 23+33+4+7+1+12+13 = **93**，且与测试 `UPPER_BOUND` 求和一致；`--spacing-6` 在 §1 写 18，而棘轮上界与现场读数都是 12，§8 只解释了 `--spacing-2` 的 124→127。读者无法判断哪个是真值；若真值是 18 而界是 12，锁会在别人**没有变差**的情况下报红。",
+        "defense": "无实质辩护。\"抄的时候看错了\"正是本仓反复否证的那类自证；更糟的是我上一轮刚为 i3 论证过\"手抄常量不是证据\"，却在文档里继续手抄数字。",
+        "verdict": "upheld",
+        "rationale": "处置：按棘轮现场读数重写 §1（radius 合计 93；参与档 127/69/20/12/2 = 230，并注明 124/18 那组数是在**滞后 234 个提交的共享根**上量的），并把口径改为\"**存活方由 `[TOKEN-RATCHET]` 当场打印的读数决定，本文不再手抄合计**\"——删掉矛盾源本身，而不是再抄一遍新数字（83/172/278+ 三个手抄数就是这次的病灶）。"
+      }
+    ],
+    "blocking": [
+      {
+        "id": "i1",
+        "severity": "Critical",
+        "reason": "high_risk_requires_external",
+        "domains": [
+          "auth"
+        ]
+      },
+      {
+        "id": "i2",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i3",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i4",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      },
+      {
+        "id": "i5",
+        "severity": "Warning",
+        "reason": "self_play_upheld"
+      }
+    ],
+    "note": "出口②收口：成立项已逐条处置，残余按任务 #23 登记；status/closureNote 会话手写，tier 缺席",
+    "at": "2026-10-28T03:27:12.293Z",
+    "closureNote": "第 2 轮（head fb937da36）按用户裁决走门禁出口②：第 1 轮 5 条指控 verdict 均为 upheld，逐条处置 —— i1 git 基线锁在合并后必然红已修（判据改为按名逐个判：新增 readVarRefs 收 var() 侧、基准已是引用记 mergedAway 交快照锁、采集断裂不得当通过，并加 compared===0 => mergedAway>0 的下界；合并态实测 12 项逐项通过）；i2 无 origin/main 引用环境静默放行已修（抓取失败单独出声，不再绿退）；i3 判据域缺独立锚已修（ALIASES 域完整性断言）；i4 收敛机制与实现冲突已修（冲突清单不再被两侧同时钉死）；i5 当场实测证据表自相矛盾已修（读数按最终基线重算并标明截面）。仍属流程欠账的一格（合并态正向对偶未接驱动）与 i4 同族，登记任务 #23，故状态置 needs_revision。status 与 closureNote 由会话按出口②手写，非 writeback 直签，tier 保持缺席。"
+  }
+}

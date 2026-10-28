@@ -81,14 +81,14 @@
   --radius-pill: 32px;
   --radius-full: 9999px;
 
-  /* ---- 间距阶梯（4px 基数，对齐既有 --space-*）---- */
+  /* ---- 间距阶梯（4px 基数）：值 1:1 相等的档位以 --space-* 为单一真源，本族只做别名（审计 3.5，零视觉回归）；--spacing-1/5/10/16 与 --space-xxs/xs/section 无等值对应（4/20/40/64 对 2/6/80）⇒ 刻度冲突，保留字面值并进 design-token-single-track.test.js 冲突清单 ---- */
   --spacing-1: 4px;
-  --spacing-2: 8px;
-  --spacing-3: 12px;
-  --spacing-4: 16px;
+  --spacing-2: var(--space-sm);
+  --spacing-3: var(--space-md);
+  --spacing-4: var(--space-lg);
   --spacing-5: 20px;
-  --spacing-6: 24px;
-  --spacing-8: 32px;
+  --spacing-6: var(--space-xl);
+  --spacing-8: var(--space-xxl);
   --spacing-10: 40px;
 
   /* ---- 阴影 elevation 阶梯与奶油表面 ----

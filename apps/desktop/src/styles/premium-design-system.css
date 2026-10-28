@@ -153,7 +153,7 @@ body {
  */
 .config-item,
 .member-center-card {
-  border-radius: var(--r-lg);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--hairline);
   background: var(--surface-raised);
   box-shadow: var(--elevation-1);
@@ -384,7 +384,7 @@ body {
  * ---------------------------------------------------------------------------
  */
 .el-message-box {
-  border-radius: var(--r-lg) !important;
+  border-radius: var(--radius-lg) !important;
   box-shadow: var(--elevation-4) !important;
   border: 1px solid var(--hairline) !important;
   background: var(--surface-overlay) !important;
